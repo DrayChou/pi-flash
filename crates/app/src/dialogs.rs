@@ -387,11 +387,20 @@ fn render_provider_picker(chat: &Chat, weak: &gpui::WeakEntity<Chat>, input: &gp
         .map(|(n, _)| n)
         .collect();
 
-    // API KEY 组：registry 原始顺序（不排序，对齐 pi-web）；匹配显示名或 id
+    // API KEY 组：registry 原始顺序（不排序，对齐 pi-web）；匹配显示名或 id。
+    // 已配置（auth.json 有 key）不列——**被【移除】的商除外**：移除删的是
+    // PF 账本（pf-auth）的 key，pi 的 auth.json 里旧 key 仍在（PF 不写 pi
+    // 文件），但用户必须能从弹窗重新配置 → 除名商无视 configured 过滤。
+    let removed = crate::services::workspace::removed_providers();
     let api_cards: Vec<(String, String, usize)> = match &dump {
         Some(d) => d
-            .api_key_providers()
+            .providers
             .iter()
+            .filter(|p| {
+                p.has_api_key_login
+                    && (d.credential(&p.id) != Some("api_key")
+                        || removed.iter().any(|r| r == &p.id))
+            })
             .filter(|p| !custom_names.iter().any(|n| n == &p.id))
             .filter(|p| {
                 q.is_empty()
