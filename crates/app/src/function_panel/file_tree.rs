@@ -169,6 +169,8 @@ fn changes_row(row: crate::services::file_tree::TreeRow, weak: gpui::WeakEntity<
     let rel = row.name.clone();
     let file_name = rel.rsplit('/').next().unwrap_or(&rel).to_string();
     let dir_part = rel[..rel.len() - file_name.len()].to_string();
+    // 021 三改：徽标与文件图标都去掉（信息冗余——变更态整表皆然，
+    // 数量/增删在头行 numstat），行 = 纯路径
     let mut el = div()
         .id(SharedString::from(format!("chg-{}", row.path.display())))
         .w_full()
@@ -181,22 +183,6 @@ fn changes_row(row: crate::services::file_tree::TreeRow, weak: gpui::WeakEntity<
         .cursor_pointer()
         .hover(|s| s.bg(rgb(t.bg_hover)))
         .text_size(crate::appearance::ui_size(11.5));
-    if let Some(st) = row.git {
-        el = el.child(
-            div()
-                .w(px(14.))
-                .flex_shrink_0()
-                .text_size(crate::appearance::ui_size(11.))
-                .font_weight(gpui::FontWeight::SEMIBOLD)
-                .text_color(rgb(st.color()))
-                .child(st.badge()),
-        );
-    }
-    el = el.child(
-        div()
-            .flex_shrink_0()
-            .child(icon_path(file_icons::get_icon(&row.path), 14., t.text_dim)),
-    );
     // 路径连续左对齐（截图2 语义）：目录段自然宽、仅在过长时收缩截断
     // （中段省略），文件名紧跟其后恒可见，尾部弹性空隙吃掉剩余宽
     el = el.child(
@@ -303,7 +289,7 @@ fn action_bar(
                 .child(bar_btn(
                     "ft-toggle-changes",
                     "git-commit-horizontal",
-                    tr("切换显示变更"),
+                    tr("只看变更"),
                     t,
                     changes_only,
                     move |_, _, cx| {
