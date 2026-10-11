@@ -4,7 +4,7 @@ use std::{ops::Range, rc::Rc};
 
 use gpui::{
     actions, canvas, div, prelude::FluentBuilder as _, App, AppContext as _, Context, Empty,
-    Entity, FocusHandle, Focusable, Half, InteractiveElement as _, IntoElement, KeyBinding,
+    Entity, FocusHandle, Focusable, InteractiveElement as _, IntoElement, KeyBinding,
     ParentElement as _, Pixels, Render, Styled, Subscription, Window,
 };
 use ropey::Rope;
@@ -174,6 +174,15 @@ pub(super) struct SearchPanel {
 }
 
 impl InputState {
+    /// 编辑器搜索面板（Ctrl+F）的输入框当前是否持焦。宿主 app 的帧级焦点
+    /// 仲裁用：面板输入框不是 InputState 自身的 focus_handle，不查它会被
+    /// 「默认抢回主输入框」的仲裁每帧夺焦，面板一打开就打不了字。
+    pub fn search_panel_focused(&self, window: &Window, cx: &App) -> bool {
+        self.search_panel
+            .as_ref()
+            .is_some_and(|p| p.read(cx).inputs_focused(window, cx))
+    }
+
     /// Update the search matcher when text changes.
     pub(super) fn update_search(&mut self, cx: &mut App) {
         let Some(search_panel) = self.search_panel.as_ref() else {
@@ -330,6 +339,23 @@ impl SearchPanel {
         Some(&self.matcher)
     }
 
+    /// 搜索/替换输入框当前是否持焦（面板打开才算）。宿主 app 的帧级焦点
+    /// 仲裁靠它判断「不回收」——面板输入框不属于 InputState 自身的
+    /// focus_handle，漏判会被抢回默认输入框，面板一打开就打不了字。
+    pub fn inputs_focused(&self, window: &Window, cx: &App) -> bool {
+        self.open
+            && (self
+                .search_input
+                .read(cx)
+                .focus_handle
+                .is_focused(window)
+                || self
+                    .replace_input
+                    .read(cx)
+                    .focus_handle
+                    .is_focused(window))
+    }
+
     fn replace_next(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let new_text = self.replace_input.read(cx).value();
         self.matcher.replacing = true;
@@ -420,10 +446,10 @@ impl Render for SearchPanel {
             .px_3()
             .w_full()
             .gap_1()
-            .bg(cx.theme().popover)
-            .border_b_1()
-            .rounded(cx.theme().radius.half())
-            .border_color(cx.theme().border)
+            // zed 同款：全宽平贴、背景与上方操作栏（面包屑栏）同色；
+            // 不做浮卡（popover 底/圆角/下边框的卡片感已按用户口径撤掉），
+            // 层次全靠输入框自己的边框
+            .bg(cx.theme().editor_background())
             .child(
                 h_flex()
                     .w_full()
@@ -438,9 +464,10 @@ impl Render for SearchPanel {
                                     .suffix(
                                         Button::new("case-insensitive")
                                             .selected(!self.case_insensitive)
-                                            .xsmall()
+                                            .small()
                                             .compact()
                                             .ghost()
+                                            .tooltip(t!("Input.Search Match Case"))
                                             .icon(IconName::CaseSensitive)
                                             .on_click(cx.listener(|this, _, _, cx| {
                                                 this.case_insensitive = !this.case_insensitive;
@@ -448,7 +475,6 @@ impl Render for SearchPanel {
                                                 cx.notify();
                                             })),
                                     )
-                                    .small()
                                     .w_full()
                                     .shadow_none(),
                             )
@@ -470,8 +496,9 @@ impl Render for SearchPanel {
                     )
                     .child(
                         Button::new("replace-mode")
-                            .xsmall()
+                            .small()
                             .ghost()
+                            .tooltip(t!("Input.Search Toggle Replace"))
                             .icon(IconName::Replace)
                             .selected(self.replace_mode)
                             .on_click(cx.listener(|this, _, window, cx| {
@@ -486,8 +513,9 @@ impl Render for SearchPanel {
                     )
                     .child(
                         Button::new("prev")
-                            .xsmall()
+                            .small()
                             .ghost()
+                            .tooltip(t!("Input.Search Previous Match"))
                             .icon(IconName::ChevronLeft)
                             .disabled(!has_matches)
                             .on_click(cx.listener(|this, _, window, cx| {
@@ -496,8 +524,9 @@ impl Render for SearchPanel {
                     )
                     .child(
                         Button::new("next")
-                            .xsmall()
+                            .small()
                             .ghost()
+                            .tooltip(t!("Input.Search Next Match"))
                             .icon(IconName::ChevronRight)
                             .disabled(!has_matches)
                             .on_click(cx.listener(|this, _, window, cx| {
@@ -515,8 +544,9 @@ impl Render for SearchPanel {
                     .child(div().w_7())
                     .child(
                         Button::new("close")
-                            .xsmall()
+                            .small()
                             .ghost()
+                            .tooltip(t!("Input.Search Close"))
                             .icon(IconName::Close)
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.on_action_escape(&Escape, window, cx);
@@ -531,7 +561,6 @@ impl Render for SearchPanel {
                         .child(
                             TextInput::new(&self.replace_input)
                                 .focus_bordered(false)
-                                .small()
                                 .w(self.input_width)
                                 .shadow_none(),
                         )

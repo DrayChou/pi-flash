@@ -60,6 +60,20 @@ pub fn sync_gpui_tokens(cx: &mut App) {
     // text_dim 与正文难区分；composer 自绘占位同色，两处一致）
     c.muted_foreground = gpui::rgb(t.text_faint).into();
     c.secondary = gpui::rgb(t.bg_selected).into();
+    // secondary 家族 + popover：组件库的 secondary/ghost 按钮（编辑器搜索替换
+    // 条的 prev/next/close/Replace 全是）与 tooltip/通知/补全菜单都读这两个。
+    // 此前没映射，停在 theme::init() 按**系统外观**加载的默认配置上——浅色
+    // 主题遇到系统深色时，Ctrl+F 搜索条背景就是默认盘的 #0a0a0a（纯黑）、
+    // ghost 图标是白字。按应用主题 token 映射，hover/active 向 text 微混加深。
+    c.secondary_foreground = gpui::rgb(t.text).into();
+    c.secondary_hover = gpui::rgb(theme::mix_rgb(t.text, t.bg_selected, 0.06)).into();
+    c.secondary_active = gpui::rgb(theme::mix_rgb(t.text, t.bg_selected, 0.12)).into();
+    // popover 相对 bg_panel 混入 4% text 做抬升（浅色加深、深色提亮），
+    // 搜索条浮在编辑器底色 t.bg 上能显出层次，tooltip/菜单同款。
+    // 注意 mix_rgb(a,b,wa) 的 wa 是 a 的权重（color-mix(in srgb, a wa, b)），
+    // 主色放第二参、微混色放第一参
+    c.popover = gpui::rgb(theme::mix_rgb(t.text, t.bg_panel, 0.04)).into();
+    c.popover_foreground = gpui::rgb(t.text).into();
     c.danger = gpui::rgb(t.danger).into();
     c.danger_hover = gpui::rgb(t.danger_hover).into();
     c.danger_foreground = gpui::rgb(0xffffff).into();

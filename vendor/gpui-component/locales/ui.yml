@@ -164,6 +164,26 @@ Input:
     en: Replace All
     zh-CN: 全部替换
     zh-HK: 全部替換
+  Search Match Case:
+    en: Match case
+    zh-CN: 区分大小写
+    zh-HK: 區分大小寫
+  Search Toggle Replace:
+    en: Toggle replace
+    zh-CN: 切换替换
+    zh-HK: 切換替換
+  Search Previous Match:
+    en: Previous match (Shift+Enter)
+    zh-CN: 上一个匹配 (Shift+Enter)
+    zh-HK: 上一個匹配 (Shift+Enter)
+  Search Next Match:
+    en: Next match (Enter)
+    zh-CN: 下一个匹配 (Enter)
+    zh-HK: 下一個匹配 (Enter)
+  Search Close:
+    en: Close search bar (Escape)
+    zh-CN: 关闭搜索栏 (Escape)
+    zh-HK: 關閉搜尋欄 (Escape)
   Cut:
     en: Cut
     zh-CN: 剪切

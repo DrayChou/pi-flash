@@ -75,6 +75,13 @@ assets! {
     "icons/chevron-down.svg",
     "icons/chevron-up.svg",
     "icons/chevron-right.svg",
+    // 编辑器 Ctrl+F 搜索替换条（gpui-component SearchPanel 按钮引用，缺了
+    // 就渲染成空白钮——080 前面板上一颗按钮都看不见的根因）；上游源：
+    // gpui-component crates/assets/assets/icons（lucide，随升级对账）
+    "icons/case-sensitive.svg",
+    "icons/replace.svg",
+    "icons/chevron-left.svg",
+    "icons/close.svg",
     "icons/folder.svg",
     "icons/file.svg",
     "icons/send.svg",

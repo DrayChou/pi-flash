@@ -11,7 +11,15 @@ static LANG_IX: AtomicUsize = AtomicUsize::new(0);
 pub const LANG_LABELS: [&str; 3] = ["简体中文", "繁體中文", "English"];
 
 pub fn set_lang(ix: usize) {
-    LANG_IX.store(ix.min(2), Ordering::Relaxed);
+    let ix = ix.min(2);
+    LANG_IX.store(ix, Ordering::Relaxed);
+    // gpui-component（rust_i18n）词表同步：搜索条按钮文案/tooltip 用组件
+    // 自己的 locales/ui.yml（繁体落组件的 zh-HK 桶）
+    gpui_component::set_locale(match ix {
+        1 => "zh-HK",
+        2 => "en",
+        _ => "zh-CN",
+    });
 }
 
 pub fn lang_ix() -> usize {

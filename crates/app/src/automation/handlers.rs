@@ -4,7 +4,7 @@
 
 use super::snapshot;
 use crate::{Chat, ContentView, DockPanel};
-use gpui::{Context, Keystroke, Window};
+use gpui::{Context, Focusable, Keystroke, Window};
 use pi_link::automation::method;
 use serde_json::{json, Value};
 use std::path::PathBuf;
@@ -122,7 +122,7 @@ pub(super) fn dispatch(
             let target = params
                 .get("target")
                 .and_then(Value::as_str)
-                .ok_or_else(|| bad("需要 {\"target\": \"composer|chat|git_commit|terminal\"}"))?;
+                .ok_or_else(|| bad("需要 {\"target\": \"composer|chat|git_commit|terminal|editor\"}"))?;
             let handle = match target {
                 "composer" => chat
                     .composer
@@ -138,9 +138,22 @@ pub(super) fn dispatch(
                         .map(|t| t.focus.clone())
                         .ok_or_else(|| not_found("没有打开的终端"))?
                 }
+                // 文件编辑器：Ctrl+F 搜索替换条这类「焦点在编辑器才生效」的
+                // 键位/弹层断言入口（file.open 后焦点仍可能停在 composer）
+                "editor" => {
+                    let path = chat
+                        .active_file_path()
+                        .ok_or_else(|| not_found("没有打开的文件（先 file.open）"))?;
+                    let ed = chat
+                        .file_cache
+                        .get(&path)
+                        .and_then(|f| f.editor.clone())
+                        .ok_or_else(|| not_found("文件没有编辑器"))?;
+                    ed.read(cx).focus_handle(cx)
+                }
                 other => {
                     return Err(bad(format!(
-                        "未知 focus 目标: {other:?}（composer|chat|git_commit|terminal）"
+                        "未知 focus 目标: {other:?}（composer|chat|git_commit|terminal|editor）"
                     )))
                 }
             };

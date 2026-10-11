@@ -1524,8 +1524,11 @@ impl Chat {
         }
         let path = self.active_file_path()?;
         let ed = self.file_cache.get(&path)?.editor.clone()?;
-        let handle = ed.read(cx).focus_handle(cx);
-        handle.is_focused(window).then_some(handle)
+        let st = ed.read(cx);
+        let handle = st.focus_handle(cx);
+        // 搜索面板（Ctrl+F）输入框持焦同样不回收——它不是编辑器本体的
+        // focus_handle，漏判会被下方仲裁抢回 composer，面板打不了字
+        (handle.is_focused(window) || st.search_panel_focused(window, cx)).then_some(handle)
     }
 }
 
