@@ -13,7 +13,10 @@ use crate::{
     actions::SelectPrev,
     button::{Button, ButtonVariants},
     h_flex,
-    input::{Enter, Escape, IndentInline, InputEvent, InputState, RopeExt as _, Search, TextInput},
+    input::{
+        Enter, Escape, IndentInline, InputEvent, InputState, RopeExt as _, Search, SearchReplace,
+        TextInput,
+    },
     label::Label,
     v_flex, ActiveTheme, Disableable, IconName, Selectable, Sizable,
 };
@@ -216,6 +219,25 @@ impl InputState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.open_search_panel(window, cx, false);
+    }
+
+    /// Ctrl+H：搜索 + 替换行展开（zed 同款）。
+    pub(super) fn on_action_search_replace(
+        &mut self,
+        _: &SearchReplace,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.open_search_panel(window, cx, true);
+    }
+
+    fn open_search_panel(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        replace: bool,
+    ) {
         if !self.searchable {
             return;
         }
@@ -231,7 +253,7 @@ impl InputState {
         search_panel.update(cx, |this, cx| {
             this.editor = editor;
             this.matcher.update(&text);
-            this.show(&selected_text, window, cx);
+            this.show(&selected_text, window, cx, replace);
         });
         self.search_panel = Some(search_panel);
         cx.notify();
@@ -241,7 +263,8 @@ impl InputState {
 impl SearchPanel {
     pub fn new(editor: Entity<InputState>, window: &mut Window, cx: &mut App) -> Entity<Self> {
         let search_input = cx.new(|cx| InputState::new(window, cx));
-        let replace_input = cx.new(|cx| InputState::new(window, cx));
+        let replace_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder(t!("Input.Search Replace With")));
 
         cx.new(|cx| {
             let _subscriptions =
@@ -276,8 +299,12 @@ impl SearchPanel {
         selected_text: &Rope,
         window: &mut Window,
         cx: &mut Context<Self>,
+        replace: bool,
     ) {
         self.open = true;
+        // ctrl+f 只出搜索行，ctrl+h 出搜索+替换（zed 同款）；面板已开时
+        // 重复按键也按新意图归位
+        self.replace_mode = replace;
         self.search_input.read(cx).focus_handle.focus(window);
 
         self.search_input.update(cx, |this, cx| {
@@ -585,7 +612,9 @@ impl Render for SearchPanel {
                         .child(
                             Button::new("replace-one")
                                 .small()
-                                .label(t!("Input.Replace"))
+                                .ghost()
+                                .tooltip(t!("Input.Replace"))
+                                .icon(IconName::Replace)
                                 .disabled(!has_matches)
                                 .on_click(cx.listener(|this, _, window, cx| {
                                     this.replace_next(window, cx);
@@ -594,7 +623,9 @@ impl Render for SearchPanel {
                         .child(
                             Button::new("replace-all")
                                 .small()
-                                .label(t!("Input.Replace All"))
+                                .ghost()
+                                .tooltip(t!("Input.Replace All"))
+                                .icon(IconName::ReplaceAll)
                                 .disabled(!has_matches)
                                 .on_click(cx.listener(|this, _, window, cx| {
                                     this.replace_all(window, cx);

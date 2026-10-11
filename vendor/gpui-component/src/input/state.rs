@@ -96,6 +96,7 @@ actions!(
         Escape,
         ToggleCodeActions,
         Search,
+        SearchReplace,
         GoToDefinition,
     ]
 );
@@ -227,6 +228,8 @@ pub(crate) fn init(cx: &mut App) {
         KeyBinding::new("cmd-f", Search, Some(CONTEXT)),
         #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-f", Search, Some(CONTEXT)),
+        // zed 同款：Ctrl+H 出搜索+替换（替换行展开）
+        KeyBinding::new("ctrl-h", SearchReplace, Some(CONTEXT)),
     ]);
 
     search::init(cx);

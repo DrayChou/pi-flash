@@ -80,6 +80,7 @@ assets! {
     // gpui-component crates/assets/assets/icons（lucide，随升级对账）
     "icons/case-sensitive.svg",
     "icons/replace.svg",
+    "icons/replace-all.svg",
     "icons/chevron-left.svg",
     "icons/close.svg",
     "icons/folder.svg",

@@ -2198,10 +2198,9 @@ fn main() {
             theme::set_by_name(&name);
         }
     }
-    // language: persisted workspace-memory preference
-    if let Some(ix) = load_lang_pref() {
-        i18n::set_lang(ix);
-    }
+    // language: persisted workspace-memory preference；无偏好默认 zh-CN。
+    // set_lang 内同步 gpui-component 的 rust_i18n locale（搜索条文案/tooltip）
+    i18n::set_lang(load_lang_pref().unwrap_or(0));
     Application::new()
         .with_assets(assets::Assets)
         .run(|cx: &mut App| {

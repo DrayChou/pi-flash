@@ -180,6 +180,10 @@ Input:
     en: Next match (Enter)
     zh-CN: 下一个匹配 (Enter)
     zh-HK: 下一個匹配 (Enter)
+  Search Replace With:
+    en: Replace with…
+    zh-CN: 替换为…
+    zh-HK: 替換為…
   Search Close:
     en: Close search bar (Escape)
     zh-CN: 关闭搜索栏 (Escape)
