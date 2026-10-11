@@ -437,6 +437,10 @@ fn project_row(
         .id(SharedString::from(format!("prj-{pi}")))
         // §5.8 主列表档真行高 32（原 33=32+mb2 补偿，mb 写法废除）
         .h(px(crate::ui::tokens::row::MAIN))
+        // 滚动容器 overflow 压缩行时 flex-shrink 会把行压到内容高
+        // （min-height:auto），hover 按钮一现（28 高）行高就跳变、整列
+        // 下移（「行浮动」）——列表行一律禁止收缩
+        .flex_shrink_0()
         .flex()
         .items_center()
         .gap(px(8.))
@@ -686,6 +690,9 @@ fn session_row_view(
     let weak_for_row_el = weak.clone();
     let _ = weak_for_row_el;
     div()
+        // 与项目行同理：滚动容器 overflow 压缩时会连内部行一起压（内层
+        // h(32) 被 wrapper 的收缩顶掉），列表行一律禁止收缩
+        .flex_shrink_0()
         .on_children_prepainted(move |children: Vec<gpui::Bounds<gpui::Pixels>>, _, cx| {
             if let Some(b) = children.first() {
                 let top = b.origin.y;
