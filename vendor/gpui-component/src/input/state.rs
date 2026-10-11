@@ -1115,6 +1115,16 @@ impl InputState {
         cx.notify();
     }
 
+    /// Select an arbitrary byte range of the current text (PF project panel
+    /// inline rename: files select the stem, directories the whole name —
+    /// Zed project_panel rename_impl parity).
+    pub fn set_selected_range(&mut self, range: Range<usize>, cx: &mut Context<Self>) {
+        let end = range.end.min(self.text.len());
+        let start = range.start.min(end);
+        self.selected_range = (start..end).into();
+        cx.notify();
+    }
+
     pub(super) fn select_to_start(
         &mut self,
         _: &SelectToStart,

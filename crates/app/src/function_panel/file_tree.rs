@@ -84,7 +84,7 @@ impl Chat {
 pub(crate) fn files_view(
     chat: &mut Chat,
     weak: &gpui::WeakEntity<Chat>,
-    _cx: &mut gpui::Context<Chat>,
+    cx: &mut gpui::Context<Chat>,
 ) -> gpui::AnyElement {
     let rows = chat.tree_rows.clone();
     let changes_only = chat.changes_only;
@@ -99,6 +99,24 @@ pub(crate) fn files_view(
         .flex_col()
         .overflow_hidden()
         .bg(rgb(t.nav))
+        // Zed EditState 收场主路：行内编辑激活时，面板内任何左键按下
+        // （点别的行/空白/操作栏）= 提交。Zed 里这次点击先靠 uniform_list
+        // `track_focus` 把焦点抢到面板（编辑行随之 blur → confirm_edit），
+        // pi-flash 的面板不可聚焦（焦点保持见 `Chat::render` 级联末级，
+        // 行内编辑存续期即焦点所有者），所以点击语义在面板本层直接兑现。
+        // 编辑输入框内部点击在行内 stop_propagation 不受影响；点面板外的
+        // 可聚焦目标（对话框/终端/文件编辑器/其它输入框）走真夺焦 → blur
+        // 收场。
+        .on_mouse_down(gpui::MouseButton::Left, {
+            let weak_commit = weak.clone();
+            move |_, _, cx| {
+                let _ = weak_commit.update(cx, |c, cx| {
+                    if c.tree_edit.is_some() {
+                        c.tree_edit_confirm_from_click(cx);
+                    }
+                });
+            }
+        })
         .child(action_bar(chat, &weak, t));
     if changes_only {
         // 「只看变更」= 扁平列表（021 二改定稿：不要树状）。头行 =
@@ -139,7 +157,7 @@ pub(crate) fn files_view(
         let weak_c = weak.clone();
         let weak_bg = weak.clone();
         let cwd_bg = chat.cwd.clone();
-        let renaming = chat.tree_rename.clone();
+        let editing = chat.tree_edit.clone();
         col = col.child(
             div()
                 .flex_1()
@@ -174,17 +192,39 @@ pub(crate) fn files_view(
                     tr("暂无变更"),
                     None,
                     move |ix, _window, _cx| match rows.get(ix) {
-                        Some(row) => changes_row(row.clone(), renaming.clone(), weak_c.clone()),
+                        Some(row) => changes_row(row.clone(), editing.clone(), weak_c.clone()),
                         None => div().into_any_element(),
                     },
                 )),
         );
     } else {
-        let sticky =
-            Box::new(StickyAncestors { weak: weak.clone() }) as Box<dyn UniformListDecoration>;
         let weak_bg = weak.clone();
         let cwd_bg = chat.cwd.clone();
-        let renaming = chat.tree_rename.clone();
+        let edit = chat.tree_edit.clone();
+        // 新建行的落点（Zed new_entry：虚拟行插在目录行下方、子项之前；
+        // 目标 = 项目根时插列表顶）。改名行不注入（原地替换该行）。
+        let edit_slot: Option<(usize, usize)> = edit.as_ref().and_then(|e| match &e.kind {
+            crate::TreeEditKind::New { dir } => {
+                if same_path(dir, &chat.cwd) {
+                    Some((0, 0))
+                } else {
+                    Some(
+                        rows.iter()
+                            .position(|r| r.is_dir && same_path(&r.path, dir))
+                            .map_or((rows.len(), 1), |ix| (ix + 1, rows[ix].depth + 1)),
+                    )
+                }
+            }
+            crate::TreeEditKind::Rename { .. } => None,
+        });
+        let edit_ix = edit_slot.map(|(ix, _)| ix);
+        let total = rows.len() + edit_slot.map_or(0, |_| 1);
+        // 键入中的文件名（Zed：新建文件行的类型图标跟名字实时换）
+        let live_name = edit
+            .as_ref()
+            .map(|e| e.input.read(cx).value().to_string())
+            .unwrap_or_default();
+        let sticky = Box::new(StickyAncestors { weak: weak.clone(), edit_ix }) as Box<dyn UniformListDecoration>;
         col = col.child(
             div()
                 .flex_1()
@@ -209,29 +249,51 @@ pub(crate) fn files_view(
                 )
                 .child(vlist(
                     FILE_TREE_LIST_ID,
-                    rows.len(),
+                    total,
                     ROW_H,
                     VListHeight::Fill,
                     false,
                     true,
                     "暂无文件",
                     Some(sticky),
-                    move |ix, _window, _cx| match rows.get(ix) {
-                        Some(row) => {
-                            // 邻行深度决定各段引导线的首尾裁剪（整段只在首行留上
-                            // 4px、尾行留下 4px，段中连续成一条线）
-                            let prev_depth =
-                                if ix == 0 { None } else { rows.get(ix - 1).map(|r| r.depth) };
-                            let next_depth = rows.get(ix + 1).map(|r| r.depth);
-                            tree_row(
-                                row.clone(),
-                                prev_depth,
-                                next_depth,
-                                renaming.clone(),
-                                weak.clone(),
-                            )
+                    move |ix, _window, _cx| {
+                        // 行内新建：该输出位渲染编辑行，其余行做索引平移
+                        if edit_slot.is_some_and(|(eix, _)| ix == eix) {
+                            let Some((_, depth)) = edit_slot else { return div().into_any_element() };
+                            return tree_edit_row(
+                                edit.clone().expect("slot checked"),
+                                depth,
+                                &live_name,
+                            );
                         }
-                        None => div().into_any_element(),
+                        let row_ix = match edit_ix {
+                            Some(eix) if ix > eix => ix - 1,
+                            _ => ix,
+                        };
+                        let Some(row) = rows.get(row_ix) else { return div().into_any_element() };
+                        // 邻行深度决定各段引导线的首尾裁剪（整段只在首行留上
+                        // 4px、尾行留下 4px，段中连续成一条线）；编辑行占位时
+                        // 邻行深度取编辑行的深度
+                        let depth_at = |out_ix: usize| -> Option<usize> {
+                            if Some(out_ix) == edit_ix {
+                                edit_slot.map(|(_, d)| d)
+                            } else {
+                                let rix = match edit_ix {
+                                    Some(eix) if out_ix > eix => out_ix - 1,
+                                    _ => out_ix,
+                                };
+                                rows.get(rix).map(|r| r.depth)
+                            }
+                        };
+                        let prev_depth = if ix == 0 { None } else { depth_at(ix - 1) };
+                        let next_depth = depth_at(ix + 1);
+                        tree_row(
+                            row.clone(),
+                            prev_depth,
+                            next_depth,
+                            edit.clone(),
+                            weak.clone(),
+                        )
                     },
                 )),
         );
@@ -248,17 +310,16 @@ const CHANGES_ROW_H: f32 = 28.;
 /// 让位给输入框。
 fn changes_row(
     row: crate::services::file_tree::TreeRow,
-    renaming: Option<crate::TreeRename>,
+    editing: Option<crate::TreeEdit>,
     weak: gpui::WeakEntity<Chat>,
 ) -> gpui::AnyElement {
     let t = theme::theme();
     let rel = row.name.clone();
     let file_name = rel.rsplit('/').next().unwrap_or(&rel).to_string();
     let dir_part = rel[..rel.len() - file_name.len()].to_string();
-    let renaming_input = renaming
-        .as_ref()
-        .filter(|r| same_path(&r.path, &row.path))
-        .map(|r| r.input.clone());
+    let editing = editing.filter(|e| {
+        matches!(&e.kind, crate::TreeEditKind::Rename { path } if same_path(path, &row.path))
+    });
     // 021 三改：徽标与文件图标都去掉（信息冗余——变更态整表皆然，
     // 数量/增删在头行 numstat），行 = 纯路径
     let mut el = div()
@@ -273,9 +334,16 @@ fn changes_row(
         .cursor_pointer()
         .hover(|s| s.bg(rgb(t.bg_hover)))
         .text_size(crate::appearance::ui_size(11.5));
-    if let Some(input) = renaming_input {
-        // 行内改名态：输入框吃满名字区（目录段一并隐去——改名仅同级）
-        el = el.child(div().flex_1().min_w_0().child(input));
+    if let Some(e) = editing {
+        // 行内改名态：输入框吃满名字区（目录段一并隐去），边框与校验
+        // 消息同 Zed 编辑行
+        let (border, message) = edit_chrome(&e, t);
+        el = el
+            .border_1()
+            .border_color(rgb(border))
+            .relative()
+            .child(edit_input_slot(e.input.clone()))
+            .children(message.map(|m| validation_note(m, border)));
     } else {
         // 021 五改：文件名前置（各行文件名同一起点左对齐、恒可见），目录段
         // 后置 dim、仅在过长时收缩截断（中段省略），尾部弹性空隙吃掉剩余宽
@@ -466,16 +534,16 @@ fn tree_row(
     row: TreeRow,
     prev_depth: Option<usize>,
     next_depth: Option<usize>,
-    renaming: Option<crate::TreeRename>,
+    editing: Option<crate::TreeEdit>,
     weak: gpui::WeakEntity<Chat>,
 ) -> gpui::AnyElement {
     let t = theme::theme();
     let weak_menu = weak.clone();
-    // 本行处于行内改名：名字标签换输入框，点击展开/打开让位给输入框
-    let renaming_input = renaming
-        .as_ref()
-        .filter(|r| same_path(&r.path, &row.path))
-        .map(|r| r.input.clone());
+    // 本行处于行内改名（Zed EditState 命中该行）：名字标签换输入框，点
+    // 击展开/打开让位给输入框
+    let editing = editing.filter(|e| {
+        matches!(&e.kind, crate::TreeEditKind::Rename { path } if same_path(path, &row.path))
+    });
     let mut el = div()
         .id(SharedString::from(format!("tree-{}", row.path.display())))
         .relative()
@@ -510,6 +578,23 @@ fn tree_row(
         .ml(px(row.depth as f32 * INDENT))
         .px(px(CONTENT_PAD));
 
+    if let Some(e) = &editing {
+        // 编辑行 chrome（Zed show_focused_border + validation 同位）：边框
+        // 随校验态变色，校验消息浮在该行下缘
+        let (border, message) = edit_chrome(e, t);
+        el = el.border_1().border_color(rgb(border));
+        let icon = if row.is_dir {
+            file_icons::get_generic_folder_icon(false)
+        } else {
+            file_icons::get_icon(&row.path)
+        };
+        inner = inner
+            .child(div().flex_shrink_0().child(icon_path(icon, 14., t.text_dim)))
+            .child(edit_input_slot(e.input.clone()));
+        el = el.child(inner).children(message.map(|m| validation_note(m, border)));
+        return el.into_any_element();
+    }
+
     if row.is_dir {
         // Zed project_panel 默认 folder_indicator = "icon"：纯文件夹图标，
         // 无 chevron，展开态由开/闭图标区分（面板后续若加该设置再接
@@ -521,20 +606,18 @@ fn tree_row(
                     .flex_shrink_0()
                     .child(icon_path(folder, 14., t.text_dim)),
             )
-            .child(name_or_editor(&row.name, renaming_input.clone()));
+            .child(name_label(&row.name));
         el = el.child(inner);
         let dir_path = row.path.clone();
-        if renaming_input.is_none() {
-            el = el.on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                let _ = weak.update(cx, |c, cx| {
-                    if !c.expanded_dirs.remove(&dir_path) {
-                        c.expanded_dirs.insert(dir_path.clone());
-                    }
-                    c.rebuild_tree();
-                    cx.notify();
-                });
+        el = el.on_mouse_down(MouseButton::Left, move |_, _, cx| {
+            let _ = weak.update(cx, |c, cx| {
+                if !c.expanded_dirs.remove(&dir_path) {
+                    c.expanded_dirs.insert(dir_path.clone());
+                }
+                c.rebuild_tree();
+                cx.notify();
             });
-        }
+        });
         el = el.child(tree_right_click(&weak_menu, &row));
         // 目录圆点：子树有变更（祖先链上浮，services 层已算好）
         if row.changed_dot && crate::services::workspace::git_markers() {
@@ -548,18 +631,16 @@ fn tree_row(
                     .flex_shrink_0()
                     .child(icon_path(icon, 14., t.text_dim)),
             )
-            .child(name_or_editor(&row.name, renaming_input.clone()));
+            .child(name_label(&row.name));
         el = el.child(inner);
-        if renaming_input.is_none() {
-            let fp = row.path.clone();
-            // 023：文件点击一律进 fileView（编辑器区）。旧行为「带 git 变更
-            // 徽标的文件点击弹 GitDiff」废弃——diff 入口收敛在 git 面板。
-            el = el.on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                let _ = weak.update(cx, |c, cx| {
-                    c.open_file_tab(fp.clone(), cx);
-                });
+        let fp = row.path.clone();
+        // 023：文件点击一律进 fileView（编辑器区）。旧行为「带 git 变更
+        // 徽标的文件点击弹 GitDiff」废弃——diff 入口收敛在 git 面板。
+        el = el.on_mouse_down(MouseButton::Left, move |_, _, cx| {
+            let _ = weak.update(cx, |c, cx| {
+                c.open_file_tab(fp.clone(), cx);
             });
-        }
+        });
         el = el.child(tree_right_click(&weak_menu, &row));
         // git badge on files（pi-web 徽标语义：M/A/D/R/U/C；023 默认关）
         if let Some(st) = row.git.filter(|_| crate::services::workspace::git_markers()) {
@@ -589,18 +670,91 @@ fn name_label(name: &str) -> gpui::AnyElement {
         .into_any_element()
 }
 
-/// 行内改名（Zed project_panel 同款）：`renaming_input` = 本行匹配到改名
-/// 槽的输入框（上游按 path 过滤好）；有则名字标签原地换成紧凑输入框
-/// （22px 塞进 24px 行），无则回落普通标签。
-fn name_or_editor(
-    name: &str,
-    renaming_input: Option<gpui::Entity<crate::ui::TextInput>>,
-) -> gpui::AnyElement {
-    if let Some(input) = renaming_input {
-        div().flex_1().min_w_0().ml(px(6.)).child(input).into_any_element()
-    } else {
-        name_label(name)
+/// 编辑态 chrome：边框色（校验错误红 / 警告黄 / 常态 accent）+ 校验消息。
+fn edit_chrome(e: &crate::TreeEdit, t: &'static crate::theme::Theme) -> (u32, Option<SharedString>) {
+    match &e.validation {
+        crate::TreeValidation::Error(m) => (t.danger, Some(SharedString::from(m.clone()))),
+        crate::TreeValidation::Warning(m) => (theme::WARN, Some(SharedString::from(m.clone()))),
+        crate::TreeValidation::None => (t.accent, None),
     }
+}
+
+/// 校验消息浮条（Zed render 的 validation_color_and_message 同位：行下缘
+/// 绝对定位、描边小卡）。
+fn validation_note(message: SharedString, color: u32) -> gpui::AnyElement {
+    div()
+        .absolute()
+        .top_full()
+        .left(px(-1.))
+        .right(px(-1.))
+        .py(px(4.))
+        .px(px(8.))
+        .border_1()
+        .border_color(rgb(color))
+        .bg(rgb(theme::theme().bg))
+        .text_size(crate::appearance::ui_size(10.5))
+        .text_color(rgb(color))
+        .whitespace_nowrap()
+        .overflow_hidden()
+        .text_ellipsis()
+        .child(message)
+        .into_any_element()
+}
+
+/// 行内编辑输入槽：输入框吃满名字区，内部左键 stop_propagation——点击
+/// 输入框本身不得触发面板级「点别处提交」。
+fn edit_input_slot(input: gpui::Entity<crate::ui::TextInput>) -> gpui::AnyElement {
+    div()
+        .flex_1()
+        .min_w_0()
+        .ml(px(6.))
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .child(input)
+        .into_any_element()
+}
+
+/// 行内新建行（Zed NEW_ENTRY_ID 虚拟行）：目录行下方、子项之前，缩进 =
+/// 目录深度 + 1；文件图标随键入名实时变化；行带编辑边框 + 校验消息。
+/// 无点击动作（行体点击 = 点别处，冒泡到面板收场，同 Zed blur）。
+fn tree_edit_row(edit: crate::TreeEdit, depth: usize, live_name: &str) -> gpui::AnyElement {
+    let t = theme::theme();
+    let (border, message) = edit_chrome(&edit, t);
+    let icon = if edit.is_dir {
+        file_icons::get_generic_folder_icon(false)
+    } else if live_name.chars().count() > 2 {
+        file_icons::get_icon(Path::new(live_name))
+    } else {
+        file_icons::get_icon(Path::new(""))
+    };
+    let mut el = div()
+        .relative()
+        .w_full()
+        .h(px(ROW_H))
+        .flex()
+        .items_center()
+        .overflow_hidden()
+        .pr(px(8.))
+        .rounded(px(4.))
+        .text_size(crate::appearance::ui_size(11.))
+        .text_color(rgb(t.text))
+        .border_1()
+        .border_color(rgb(border));
+    for g in guide_lines(depth, Some(depth), Some(depth), t.border) {
+        el = el.child(g);
+    }
+    let inner = div()
+        .flex_1()
+        .min_w_0()
+        .flex()
+        .items_center()
+        .overflow_hidden()
+        .ml(px(depth as f32 * INDENT))
+        .px(px(CONTENT_PAD))
+        .child(div().flex_shrink_0().child(icon_path(icon, 14., t.text_dim)))
+        .child(edit_input_slot(edit.input.clone()));
+    el.child(inner)
+        .children(message.map(|m| validation_note(m, border)))
+        .into_any_element()
 }
 
 /// 缩进引导线（Zed indent_guides 装饰层的行内画法）：第 L 级竖线在
@@ -645,9 +799,11 @@ fn changed_dot() -> gpui::AnyElement {
 /// 钉住祖先链的装饰层：可见行里找锚点（祖先已滚出视口的行），把它的祖先
 /// 目录链钉在列表顶部。挂在 vlist 的 `UniformListDecoration` 上，每次
 /// paint 按当前可见范围与滚动位重算——滚动中实时跟手（行闭包只在视口内
-/// 重建，装饰层同样只在 paint 期取数，render 不多跑）。
+/// 重建，装饰层同样只在 paint 期取数，render 不多跑）。`edit_ix` = 行内
+/// 新建的虚拟行位置（不在 tree_rows 里，可见范围做一次索引平移）。
 struct StickyAncestors {
     weak: gpui::WeakEntity<Chat>,
+    edit_ix: Option<usize>,
 }
 
 impl UniformListDecoration for StickyAncestors {
@@ -685,7 +841,8 @@ impl StickyAncestors {
         if scroll_offset.y >= px(0.) {
             return div().into_any_element();
         }
-        let Some((anchor_ix, drifting)) = find_sticky_anchor(rows, visible_range) else {
+        let Some((anchor_ix, drifting)) = find_sticky_anchor(rows, visible_range, self.edit_ix)
+        else {
             return div().into_any_element();
         };
         let chain = ancestor_chain(rows, anchor_ix);
@@ -849,19 +1006,39 @@ fn tree_right_click(weak: &gpui::WeakEntity<Chat>, row: &TreeRow) -> gpui::AnyEl
 /// - ② `depth == 序号(+1)` 且下一行退出本子树（`next.depth + 1 == depth`）：
 ///   该行是子树内最后可见的行，其父链即将全部滚出；+1 的情况（深度刚好
 ///   比序号大 1）父链只差一行滚出，标记 drifting（链末行跟着锚点滑）。
-fn find_sticky_anchor(rows: &[TreeRow], visible: Range<usize>) -> Option<(usize, bool)> {
+fn find_sticky_anchor(
+    rows: &[TreeRow],
+    visible: Range<usize>,
+    edit_ix: Option<usize>,
+) -> Option<(usize, bool)> {
+    // 行内新建的虚拟行夹在列表中间：输出序号 → tree_rows 序号平移一位
+    // （虚拟行自身不参与锚点判定）
+    let to_row = |abs: usize| -> Option<usize> {
+        match edit_ix {
+            Some(eix) if abs == eix => None,
+            Some(eix) if abs > eix => Some(abs - 1),
+            _ => Some(abs),
+        }
+    };
     for abs in visible.start..visible.end {
         let ix = abs - visible.start;
-        let Some(row) = rows.get(abs) else { break };
+        let Some(row_ix) = to_row(abs) else { continue };
+        let Some(row) = rows.get(row_ix) else { break };
         let depth = row.depth;
         if depth < ix {
-            return Some((abs, false));
+            return Some((row_ix, false));
         }
-        if let Some(next) = rows.get(abs + 1)
+        // 下一「输出行」的深度：虚拟行夹在中间时取虚拟行前一行（近似——
+        // 虚拟行深度与被编辑目录子项同级，规则只做引导线裁剪，误差可忽略）
+        let next_row_ix = row_ix + 1;
+        if Some(abs + 1) == edit_ix {
+            continue;
+        }
+        if let Some(next) = rows.get(next_row_ix)
             && next.depth + 1 == depth
             && (depth == ix || depth == ix + 1)
         {
-            return Some((abs, depth == ix + 1));
+            return Some((row_ix, depth == ix + 1));
         }
     }
     None
@@ -936,7 +1113,7 @@ mod sticky_tests {
         // → 首个命中行为锚点。滚动 1px 起即钉 [root, A]——钉住行恰好盖在
         // 这两行的真实位置上，视觉无缝（Zed 同款行为）
         let rows = fixture();
-        assert_eq!(find_sticky_anchor(&rows, 0..9), Some((3, false)));
+        assert_eq!(find_sticky_anchor(&rows, 0..9, None), Some((3, false)));
         assert_eq!(ancestor_chain(&rows, 3), vec![0, 1]);
     }
 
@@ -945,7 +1122,7 @@ mod sticky_tests {
         // 滚到 a1（视口 2..9）：a2 是子树内最后可见行且下一行退出子树、
         // 深度恰比视口序号大 1 → 锚点 a2、漂移态；链 = [root, A]（A 已滚出）
         let rows = fixture();
-        assert_eq!(find_sticky_anchor(&rows, 2..9), Some((3, true)));
+        assert_eq!(find_sticky_anchor(&rows, 2..9, None), Some((3, true)));
         assert_eq!(ancestor_chain(&rows, 3), vec![0, 1]);
         assert_eq!(ancestor_chain(&rows, 6), vec![0, 4, 5]);
     }
@@ -956,7 +1133,7 @@ mod sticky_tests {
         // 等于视口序号 → 锚点 a2、不漂移，链 = [root, A]（A 在视口内，钉住
         // 行覆盖其上，Zed 同款）
         let rows = fixture();
-        assert_eq!(find_sticky_anchor(&rows, 1..9), Some((3, false)));
+        assert_eq!(find_sticky_anchor(&rows, 1..9, None), Some((3, false)));
         assert_eq!(ancestor_chain(&rows, 3), vec![0, 1]);
     }
 
@@ -965,7 +1142,7 @@ mod sticky_tests {
         // 视口 [a1, a2, B, ...]（滚 2 行）：a2 深度 2 = 视口序号 1 + 1 且
         // 下一行退出子树 → 漂移态
         let rows = fixture();
-        assert_eq!(find_sticky_anchor(&rows, 2..9), Some((3, true)));
+        assert_eq!(find_sticky_anchor(&rows, 2..9, None), Some((3, true)));
     }
 
     #[test]
@@ -974,7 +1151,7 @@ mod sticky_tests {
         // bk 深度 3 > 序号 1 也不满足，规则①在 C（深度 1 < 序号 2）命中。
         // C 与 B 是兄弟，链只有根
         let rows = fixture();
-        assert_eq!(find_sticky_anchor(&rows, 3..9), Some((7, false)));
+        assert_eq!(find_sticky_anchor(&rows, 3..9, None), Some((7, false)));
         assert_eq!(ancestor_chain(&rows, 7), vec![0]);
         // bk 在 B 子树深处：它的链才是 [root, B, b1]（锚点判定另有规则，
         // 这里只测链回溯）
@@ -993,7 +1170,7 @@ mod sticky_tests {
             row("B", 1),
             row("b/x/y", 2),
         ];
-        assert_eq!(find_sticky_anchor(&rows, 0..6), Some((4, false)));
+        assert_eq!(find_sticky_anchor(&rows, 0..6, None), Some((4, false)));
         assert_eq!(ancestor_chain(&rows, 5), vec![0, 4]);
         assert_eq!(ancestor_chain(&rows, 3), vec![0, 1, 2]);
     }

@@ -377,6 +377,31 @@ pub(super) fn dispatch(
             cx.notify();
             ok()
         }
+        // 021 行内改名：打开编辑行（可选 name 预填新名）。提交/取消走
+        // input.keys（enter/escape）或 input.focus（失焦收场），断言读
+        // files 面快照的 tree_edit 字段
+        method::FILES_RENAME => {
+            let path = params_path(params, "path")?;
+            if !path.exists() {
+                return Err(not_found(format!("条目不存在: {}", path.display())));
+            }
+            let is_dir = path.is_dir();
+            chat.open_file_rename(path, is_dir, false, cx);
+            tree_edit_prefill(chat, params, cx);
+            ok()
+        }
+        // 021 行内新建：在 dir 下开编辑行（is_dir = 建目录；尾随 `/` 名字
+        // 同样会升级为目录）。文件/目录菜单的行内语义直通。
+        method::FILES_NEW_ENTRY => {
+            let dir = params_path(params, "dir")?;
+            if !dir.is_dir() {
+                return Err(not_found(format!("目录不存在: {}", dir.display())));
+            }
+            let is_dir = params.get("is_dir").and_then(Value::as_bool).unwrap_or(false);
+            chat.open_file_new(dir, is_dir, cx);
+            tree_edit_prefill(chat, params, cx);
+            ok()
+        }
         method::PROJECT_SWITCH => {
             let cwd = params_path(params, "cwd")?;
             if !cwd.is_dir() {
@@ -624,5 +649,21 @@ fn git_stage_op(chat: &mut Chat, params: &Value, stage: bool) -> Result<(), Stri
         } else {
             crate::services::git::git_unstage(&chat.cwd, &path)
         }
+    }
+}
+
+/// 021 行内编辑的预填（files.rename / files.new_entry 的可选 `name`）：
+/// 打开编辑行后直接把新名灌进输入框，省一次 input.keys 逐字键入。
+fn tree_edit_prefill(
+    chat: &mut Chat,
+    params: &Value,
+    cx: &mut gpui::Context<Chat>,
+) {
+    let Some(name) = params.get("name").and_then(Value::as_str) else {
+        return;
+    };
+    if let Some(edit) = chat.tree_edit.as_ref() {
+        let name = name.to_string();
+        edit.input.update(cx, |ti, cxi| ti.set_value(name, cxi));
     }
 }

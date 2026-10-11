@@ -78,20 +78,6 @@ pub(crate) fn render_dialogs(
             if let Some(Dialog::FileSearch { input, scroll }) = chat.dialog.as_ref() {
                 root = root.child(render_file_search(chat, weak, input, scroll, t, cx));
             }
-            if let Some(Dialog::FileNew { dir, is_dir, input }) = chat.dialog.as_ref() {
-                let title = if *is_dir { tr("新建目录") } else { tr("新建文件") };
-                root = root.child(render_file_name_dialog(
-                    chat,
-                    weak,
-                    title,
-                    tr("文件名（可含子目录）"),
-                    tr("创建"),
-                    input,
-                    t,
-                    dir.clone(),
-                    *is_dir,
-                ));
-            }
     root
 }
 
@@ -219,88 +205,6 @@ fn render_file_search(
                 ),
         );
     dialog_shell(chat, weak, panel)
-}
-
-/// 021 文件树右键「新建文件/新建目录」小表单弹窗（§5.7 表单档 380）：
-/// 标题 + 输入框 + 提示行 + 取消/确认。确认提交到 file_new_commit；
-/// 校验失败（重名/非法名）只出状态栏提示，弹窗不关。（「改名」已改走
-/// 文件树行内输入框，2026-10-11 用户定案对齐 Zed，不走弹窗。）
-#[allow(clippy::too_many_arguments)]
-fn render_file_name_dialog(
-    chat: &Chat,
-    weak: &gpui::WeakEntity<Chat>,
-    title: &str,
-    hint: &str,
-    ok_label: &str,
-    input: &gpui::Entity<TextInput>,
-    t: &theme::Theme,
-    dir: PathBuf,
-    is_dir: bool,
-) -> Div {
-    let weak_cancel = weak.clone();
-    let weak_ok = weak.clone();
-    let input_ok = input.clone();
-    dialog_shell(
-        chat,
-        weak,
-        div()
-            .w(px(380.))
-            .p(px(16.))
-            .bg(rgb(t.bg))
-            .border_1()
-            .border_color(gpui::rgba(theme::border_alpha(t, 0x8c)))
-            .rounded(px(10.))
-            .shadow_lg()
-            .flex()
-            .flex_col()
-            .gap(px(12.))
-            .child(
-                div()
-                    .text_size(crate::appearance::ui_size(13.5))
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .text_color(rgb(t.text))
-                    .child(SharedString::from(title.to_string())),
-            )
-            .child(input.clone())
-            .child(
-                div()
-                    .text_size(crate::appearance::ui_size(11.))
-                    .text_color(rgb(t.text_faint))
-                    .child(SharedString::from(hint.to_string())),
-            )
-            .child(
-                div()
-                    .flex()
-                    .justify_end()
-                    .gap(px(8.))
-                    .child(crate::ui::button(
-                        "fname-cancel",
-                        tr("取消"),
-                        crate::ui::BtnSize::Md,
-                        crate::ui::BtnVariant::Secondary,
-                        false,
-                        move |_, _, cx| {
-                            let _ = weak_cancel.update(cx, |c, cx| {
-                                c.dialog = None;
-                                cx.notify();
-                            });
-                        },
-                    ))
-                    .child(crate::ui::button(
-                        "fname-ok",
-                        ok_label.to_string(),
-                        crate::ui::BtnSize::Md,
-                        crate::ui::BtnVariant::Primary,
-                        false,
-                        move |_, _, cx| {
-                            let name = input_ok.read(cx).value().trim().to_string();
-                            let _ = weak_ok.update(cx, |c, cx| {
-                                c.file_new_commit(&dir, is_dir, name, cx)
-                            });
-                        },
-                    )),
-            ),
-    )
 }
 
 /// 060 远程控制：扫码弹窗（原手机图标入口已隐藏 2026-10-10，自动化

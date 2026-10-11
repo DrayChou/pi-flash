@@ -122,13 +122,6 @@ enum Dialog {
         input: gpui::Entity<TextInput>,
         scroll: gpui::ScrollHandle,
     },
-    /// 021 文件树右键「新建文件/新建目录」：在 `dir` 下按输入名创建
-    /// （名字可含子目录）。`is_dir` = 建目录。
-    FileNew {
-        dir: PathBuf,
-        is_dir: bool,
-        input: gpui::Entity<TextInput>,
-    },
 }
 
 /// ⋯ 菜单的两个面：系统提示词原文 / 已加载工具的声明。各自画在设置弹窗
@@ -235,14 +228,34 @@ pub(crate) enum TreeMenu {
     File { path: PathBuf, x: f32, y: f32 },
 }
 
-/// 021 行内改名（Zed project_panel 同款）：改名不弹窗，文件树行原地变
-/// 输入框——Enter 提交 / Esc 取消 / 失焦提交。`is_dir` 决定提交后的重
-/// 映射范围（目录 = 整棵前缀）。
+/// 021 行内新建/改名（Zed project_panel `EditState` 移植）：面板同一时刻
+/// 至多一个行内编辑器——Enter 提交 / Esc 取消 / 点击别处（面板 mouse-down
+/// 或焦点迁走）按 Zed 语义收场。`is_dir` 可被提交时的尾随 `/` 升级（仅
+/// 新建，Zed filename_indicates_dir 同款）。
 #[derive(Debug, Clone)]
-pub(crate) struct TreeRename {
-    pub(crate) path: PathBuf,
+pub(crate) struct TreeEdit {
+    pub(crate) kind: TreeEditKind,
     pub(crate) is_dir: bool,
     pub(crate) input: gpui::Entity<TextInput>,
+    /// 实时校验态（键入即查，Zed populate_validation_error 移植）
+    pub(crate) validation: TreeValidation,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum TreeEditKind {
+    /// 在该目录下新建（Zed leaf_entry_id: None——is_new_entry 判据）
+    New { dir: PathBuf },
+    /// 同目录改名该条目
+    Rename { path: PathBuf },
+}
+
+/// Zed ValidationState 移植：错误（重名/非法）拦 Enter 提交，警告放行。
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) enum TreeValidation {
+    #[default]
+    None,
+    Error(String),
+    Warning(String),
 }
 
 #[derive(Debug, Clone)]
@@ -535,9 +548,9 @@ struct Chat {
     confirm_prj_del: Option<(PathBuf, f32, f32)>,
     /// 021 文件树右键菜单状态槽（渲染挂 psp_overlays 同层）
     tree_menu: Option<TreeMenu>,
-    /// 021 行内改名（Zed 同款）：非空 = 该行变输入框（渲染挂 file_tree
-    /// 行内，焦点走主 render 焦点保持链）
-    tree_rename: Option<TreeRename>,
+    /// 021 行内新建/改名（Zed EditState 移植）：非空 = 树里有一行编辑器
+    /// （渲染挂 file_tree；焦点走主 render 焦点保持链）
+    tree_edit: Option<TreeEdit>,
     /// 编辑区右键菜单（zed 式：编辑块 + 文件动作块；渲染挂 psp_overlays
     /// 同层）。(文件路径, 鼠标 x, y)
     editor_menu: Option<(PathBuf, f32, f32)>,
@@ -898,7 +911,7 @@ impl Chat {
             psp_menu: None,
             confirm_prj_del: None,
             tree_menu: None,
-            tree_rename: None,
+            tree_edit: None,
             editor_menu: None,
             tree_del_error: None,
             tree_confirm_del: None,
@@ -1671,8 +1684,7 @@ impl Render for Chat {
         let dialog_input = match &self.dialog {
             Some(Dialog::ProviderPicker { input, .. }) | Some(Dialog::SessionSearch { input })
             | Some(Dialog::ProjectPicker { input, .. })
-            | Some(Dialog::FileSearch { input, .. })
-            | Some(Dialog::FileNew { input, .. }) => {
+            | Some(Dialog::FileSearch { input, .. }) => {
                 Some(input.clone())
             }
             _ => None,
@@ -1691,13 +1703,7 @@ impl Render for Chat {
             .hover_card
             .as_ref()
             .and_then(|c| c.rename_input.clone());
-        // 文件树行内改名输入框同享焦点保持（021 行内改名，Zed 同款）
-        let tree_rename_focus = self.tree_rename.as_ref().map(|r| r.input.clone());
-        let rename_focus = self
-            .rename_input
-            .clone()
-            .or(card_rename_focus)
-            .or(tree_rename_focus);
+        let rename_focus = self.rename_input.clone().or(card_rename_focus);
         if let Some(input) = rename_focus.or(dialog_input) {
             let handle = input.read(cx).focus_handle_in(cx);
             if !handle.is_focused(window) {
@@ -1742,7 +1748,27 @@ impl Render for Chat {
             // 023：文件编辑器持有焦点时不回收——否则点进去下一帧就被抢回
             // composer，打字全失效（编辑器此前不在白名单）
         } else if !self.terminals.iter().any(|t| t.focus.is_focused(window)) {
-            window.focus(&self.focus_handle(cx));
+            // 文件树行内编辑（Zed project_panel `filename_editor`）：编辑
+            // 存续期它就是焦点所有者——Zed 里这条由面板列表 `track_focus`
+            // 承担（编辑行是面板的一部分，焦点不会跑到别处），pi-flash 的
+            // 面板不可聚焦，故在此把它排在 composer 之前。每帧只在「没被
+            // 别人夺走」时补焦：抢在级联末级之前让出 composer 回收，编辑行
+            // 不再被逐帧抢回——那正是「改名焦点捕捉不到」的根因（首发聚焦
+            // 请求见 open_file_new / open_file_rename 的 focus_soon；用户点
+            // 别处造成的真夺焦（对话框/终端/编辑器/设置）走前面各分支，本
+            // 分支看不到，blur 收场照常触发）。
+            match self.tree_edit.as_ref().filter(|_| self.dock_panel == DockPanel::Files) {
+                Some(edit) if edit.input.read(cx).has_inner() => {
+                    let handle = edit.input.read(cx).focus_handle_in(cx);
+                    if !handle.is_focused(window) {
+                        window.focus(&handle);
+                    }
+                }
+                // 内件未就绪（打开当帧）：本帧让位，输入框渲染时由 focus_soon
+                // 一次性首发（Zed focus_filename_editor 请求同位）
+                Some(_) => {}
+                None => window.focus(&self.focus_handle(cx)),
+            }
         }
         let t = T();
 

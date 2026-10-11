@@ -16,6 +16,8 @@ use gpui::{
 };
 use gpui_component::input::{InputEvent, InputState, SelectAll, TextInput as GpInput};
 
+use std::ops::Range;
+
 use crate::theme::theme as T;
 
 /// fires after every user value mutation; receives the new value so callers
@@ -26,8 +28,10 @@ type Changed = Box<dyn Fn(&str, &mut App)>;
 type Submitted = Box<dyn Fn(&str, &mut App)>;
 /// Escape (propagates out of the inner widget; IME-cancel keeps priority)
 type Escaped = Box<dyn Fn(&mut App)>;
-/// focus left the input (rename-in-row commits on blur)
-type Blurred = Box<dyn Fn(&mut App)>;
+/// focus left the input; receives the current value (rename-in-row commits
+/// on blur — the value is passed through so callbacks never re-read the
+/// entity, same rule as Changed/Submitted)
+type Blurred = Box<dyn Fn(&str, &mut App)>;
 
 pub struct TextInput {
     fallback_focus: FocusHandle,
@@ -39,6 +43,9 @@ pub struct TextInput {
     multiline: bool,
     /// 紧凑档（22px 高 + XSmall 内距）：文件树行内改名用，塞进 24px 行
     compact: bool,
+    /// 平面档（无组件底色/边框）：行内编辑的 chrome（边框/底色）由所在
+    /// 行提供，Zed project_panel 编辑行同款——行 = 唯一的框
+    flat: bool,
     select_all_on_focus: bool,
     select_all_done: bool,
     want_focus: bool,
@@ -46,6 +53,9 @@ pub struct TextInput {
     pending_value: Option<String>,
     pending_placeholder: Option<SharedString>,
     pending_masked: Option<bool>,
+    /// 选区在 set_value 之后落（内件建好才有 text 可选）；Zed project_panel
+    /// 行内改名选 stem 用
+    pending_select: Option<Range<usize>>,
     want_select_all: bool,
     /// mirrored inner value so `value()` works without cx (call-site compat)
     value: String,
@@ -65,12 +75,14 @@ impl TextInput {
             numeric: false,
             multiline: false,
             compact: false,
+            flat: false,
             select_all_on_focus: false,
             select_all_done: false,
             want_focus: false,
             pending_value: None,
             pending_placeholder: None,
             pending_masked: None,
+            pending_select: None,
             want_select_all: false,
             value: String::new(),
             on_change: None,
@@ -109,6 +121,12 @@ impl TextInput {
         self
     }
 
+    /// 平面档：内件不出底色/边框，由宿主行提供 chrome（行内编辑用）。
+    pub fn flat(mut self) -> Self {
+        self.flat = true;
+        self
+    }
+
     /// pi-web rename parity: when focus first lands, the whole value is
     /// selected so typing replaces it (←/→ collapse, Backspace clears).
     pub fn select_all_on_focus(mut self) -> Self {
@@ -116,8 +134,12 @@ impl TextInput {
         self
     }
 
-    /// Focus the inner input on the next render (popup filter best-effort
-    /// auto-focus; clicking the field always works regardless).
+    /// Focus the inner input on the next render: the request is honored
+    /// after the inner state is created (otherwise the focused handle would
+    /// not be in that frame's element tree — the frame's focus path empties
+    /// and the previous owner blurs for nothing). 一次性首发聚焦用：popup
+    /// 过滤框；文件树行内编辑 = Zed project_panel `focus_filename_editor`
+    /// 请求同位（打开当帧请求、内件就绪即兑现）。
     pub fn focus_soon(&mut self, _cx: &mut Context<Self>) {
         self.want_focus = true;
         _cx.notify();
@@ -176,6 +198,13 @@ impl TextInput {
         cx.notify();
     }
 
+    /// Select a byte range of the value (applied after the pending value
+    /// lands — Zed project_panel rename parity: stem selection).
+    pub fn select_range(&mut self, range: Range<usize>, cx: &mut Context<Self>) {
+        self.pending_select = Some(range);
+        cx.notify();
+    }
+
     /// Focus handle before the inner state exists (one-frame fallback).
     pub fn focus_handle(&self) -> FocusHandle {
         self.fallback_focus.clone()
@@ -190,9 +219,12 @@ impl TextInput {
             .unwrap_or_else(|| self.fallback_focus.clone())
     }
 
-    /// Create (once) + focus the inner state immediately — for callers that
-    /// must focus programmatically (session search toggle).
-    
+    /// 内件是否已创建（焦点级联的判据：未建时不能把 fallback 句柄推上
+    /// 焦点位——它不在元素树里，本帧焦点路径变空，会白白触发一轮 blur）。
+    pub fn has_inner(&self) -> bool {
+        self.state.is_some()
+    }
+
     fn ensure_state(
         &mut self,
         window: &mut Window,
@@ -267,7 +299,8 @@ impl TextInput {
             }
             InputEvent::Blur => {
                 if let Some(cb) = self.on_blur.take() {
-                    cb(cx);
+                    let v = self.value.clone();
+                    cb(&v, cx);
                     self.on_blur = Some(cb);
                 }
             }
@@ -282,6 +315,9 @@ impl Render for TextInput {
         if let Some(v) = self.pending_value.take() {
             self.value = v.clone();
             state.update(cx, |st, scx| st.set_value(v, window, scx));
+        }
+        if let Some(r) = self.pending_select.take() {
+            state.update(cx, |st, scx| st.set_selected_range(r, scx));
         }
         if let Some(ph) = self.pending_placeholder.take() {
             state.update(cx, |st, scx| st.set_placeholder(ph, window, scx));
@@ -310,26 +346,24 @@ impl Render for TextInput {
         } else {
             (gpui::px(30.), false)
         };
-        let input = GpInput::new(&state)
-            .appearance(true)
-            .bordered(true)
+        let mut input = GpInput::new(&state)
+            .appearance(!self.flat)
+            .bordered(!self.flat)
             .map(|input| if self.compact {
                 use gpui_component::Sizable as _;
                 input.with_size(gpui_component::Size::XSmall)
             } else {
                 input
-            })
-            .map(|input| {
-                let input = input
-                    .bg(gpui::rgb(t.bg_panel))
-                    .border_color(gpui::rgb(if focused { t.accent } else { t.border }))
-                    .rounded(gpui::px(5.));
-                if fill {
-                    input.h_full()
-                } else {
-                    input
-                }
             });
+        if !self.flat {
+            input = input
+                .bg(gpui::rgb(t.bg_panel))
+                .border_color(gpui::rgb(if focused { t.accent } else { t.border }))
+                .rounded(gpui::px(5.));
+        }
+        if fill {
+            input = input.h_full();
+        }
         div()
             .w_full()
             .h(h)

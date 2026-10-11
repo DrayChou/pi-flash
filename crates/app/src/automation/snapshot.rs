@@ -413,6 +413,25 @@ fn files_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
     let mut expanded: Vec<String> =
         chat.expanded_dirs.iter().map(|p| p.display().to_string()).collect();
     expanded.sort();
+    // 021 行内编辑（Zed EditState 移植）状态：新建/改名行开合、键入值与
+    // 校验态——行内编辑的事务断言全靠这条
+    let tree_edit = chat.tree_edit.as_ref().map(|e| {
+        let (kind, subject) = match &e.kind {
+            crate::TreeEditKind::New { dir } => ("new", dir.display().to_string()),
+            crate::TreeEditKind::Rename { path } => ("rename", path.display().to_string()),
+        };
+        json!({
+            "kind": kind,
+            "subject": subject,
+            "is_dir": e.is_dir,
+            "value": e.input.read(cx).value(),
+            "validation": match &e.validation {
+                crate::TreeValidation::None => "none",
+                crate::TreeValidation::Error(_) => "error",
+                crate::TreeValidation::Warning(_) => "warning",
+            },
+        })
+    });
     // 文件 tab 明细（023）：编辑器状态事务断言用（dirty/conflict/预览态）
     let active_file = chat.active_file_path();
     // 面包屑分段文本（023 导航栏）：与渲染共用 breadcrumb_segments（防漂移），
@@ -462,6 +481,7 @@ fn files_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
             .collect::<Vec<String>>(),
         "expanded": expanded,
         "rows": rows,
+        "tree_edit": tree_edit,
         "file_tabs": file_tabs,
         "ext_probe": {"runs": chat.ext_probe.0, "hits": chat.ext_probe.1},
         "open_tabs": chat.panel_tabs.iter().map(|t| match t {
@@ -536,7 +556,6 @@ fn dialogs_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
         Dialog::FileDirty { .. } => "file_dirty",
         Dialog::WxQr => "wx_qr",
         Dialog::FileSearch { .. } => "file_search",
-        Dialog::FileNew { .. } => "file_new",
     });
     // 打开项目菜单：列表数据随弹窗一起上报（扫描是异步回填，UI 测试
     // 据此轮询就绪）

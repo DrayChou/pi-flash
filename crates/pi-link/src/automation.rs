@@ -56,6 +56,12 @@ pub mod method {
     pub const FILE_DELETE: &str = "file.delete";
     pub const FILE_DELETE_CONFIRM: &str = "file.delete_confirm";
     pub const FILES_TOGGLE_DIR: &str = "files.toggle_dir";
+    /// 021 行内编辑（Zed EditState 移植）的自动化入口：files.rename 打开
+    /// 改名行（可选 name 预填新名），files.new_entry 打开新建行；提交/取消
+    /// 走 input.keys（enter/escape）与 input.focus（失焦收场），状态断言读
+    /// files 面快照的 tree_edit 字段
+    pub const FILES_RENAME: &str = "files.rename";
+    pub const FILES_NEW_ENTRY: &str = "files.new_entry";
     pub const GIT_STAGE: &str = "git.stage";
     pub const GIT_UNSTAGE: &str = "git.unstage";
     pub const GIT_COMMIT: &str = "git.commit";

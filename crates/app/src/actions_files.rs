@@ -151,38 +151,242 @@ impl Chat {
     // 右键菜单：新建 / 改名 / 删除 / 复制路径 / @ 插入
     // -------------------------------------------------------------------
 
-    /// 「新建文件/新建目录」弹窗：在 `dir` 下按输入名创建（名字可含子目录）。
+    /// 「新建文件/新建目录」= Zed project_panel `new_entry` 移植：不弹窗，
+    /// 目标目录行下方插入一行行内编辑器（无 placeholder），Enter 创建 /
+    /// Esc 取消 / 点别处按 Zed 失焦语义收场。名字可含子目录，尾随 `/`
+    /// 升级为目录（Zed filename_indicates_dir）。
     pub(crate) fn open_file_new(&mut self, dir: PathBuf, is_dir: bool, cx: &mut Context<Self>) {
-        let weak_submit = cx.weak_entity();
-        let weak_esc = weak_submit.clone();
-        let dir_submit = dir.clone();
-        let input = cx.new(|cx| TextInput::new(cx).placeholder(tr("文件名（可含子目录）")));
-        input.update(cx, |ti, _| {
-            ti.set_on_submit(Box::new(move |v, cx| {
-                let weak = weak_submit.clone();
-                let dir = dir_submit.clone();
-                let v = v.trim().to_string();
-                // 提交会 drop 派发事件的输入框（dialog 换型）——defer 出帧
-                cx.defer(move |cx| {
-                    let _ = weak.update(cx, |c, cx| c.file_new_commit(&dir, is_dir, v, cx));
-                });
-            }));
-            ti.set_on_escape(Box::new(move |cx: &mut App| {
-                let weak = weak_esc.clone();
-                cx.defer(move |cx| {
-                    let _ = weak.update(cx, |c, cx| {
-                        c.dialog = None;
-                        cx.notify();
-                    });
-                });
-            }));
+        self.tree_menu = None;
+        self.editor_menu = None;
+        // 「只看变更」列表放不下新建行（列表里没有目录行）：回退树模式
+        if self.changes_only {
+            self.changes_only = false;
+            self.rebuild_tree();
+            self.persist_ui();
+        }
+        // 目标目录可见且展开（Zed new_entry：directory_id 沿途展开）
+        self.expand_tree_dir(&dir);
+        let weak = cx.entity().downgrade();
+        let input = cx.new(|cx| TextInput::new(cx).compact().flat());
+        wire_tree_edit(&weak, &input, cx);
+        // 首发聚焦请求（Zed `add_entry` → `update_visible_entries(... ,
+        // focus_filename_editor: true, ...)` 同位）：一次性，输入框渲染时
+        // 内件建好即兑现为焦点；此后由焦点级联按「编辑存续期 = 焦点所有者」
+        // 兜底，不再重复请求。
+        input.update(cx, |ti, tcx| ti.focus_soon(tcx));
+        self.tree_edit = Some(TreeEdit {
+            kind: TreeEditKind::New { dir },
+            is_dir,
+            input,
+            validation: TreeValidation::None,
         });
-        self.dialog = Some(Dialog::FileNew { dir, is_dir, input });
         cx.notify();
     }
 
-    /// 新建提交：名字裁边后逐段校验（禁 `..` / 空段 / 绝对路径），存在
-    /// 即报错不覆盖；成功后沿途目录展开 + 刷新 git（未跟踪文件立即可见）。
+    /// 「改名」= Zed project_panel `rename_impl` 移植：行内编辑器预填原
+    /// 名，文件选 stem（扩展名不选）、目录全选；Enter 提交 / Esc 取消 /
+    /// 点别处收场。`reveal` = 编辑区右键菜单入口：先切到文件树面板并滚
+    /// 动到该行（Zed「改名聚焦 project panel」同语义）。
+    pub(crate) fn open_file_rename(
+        &mut self,
+        path: PathBuf,
+        is_dir: bool,
+        reveal: bool,
+        cx: &mut Context<Self>,
+    ) {
+        self.tree_menu = None;
+        self.editor_menu = None;
+        if reveal {
+            self.dock_panel = DockPanel::Files;
+            self.reveal_tree_row(&path);
+        }
+        let name =
+            path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        // Zed rename_impl 选区：目录无扩展名选全名，文件选 stem
+        let sel_end = if is_dir {
+            name.len()
+        } else {
+            std::path::Path::new(&name)
+                .file_stem()
+                .map(|s| s.to_string_lossy().len())
+                .unwrap_or(name.len())
+        };
+        let weak = cx.entity().downgrade();
+        let input = cx.new(|cx| TextInput::new(cx).compact().flat());
+        input.update(cx, |ti, cxi| ti.set_value(name, cxi));
+        input.update(cx, |ti, cxi| ti.select_range(0..sel_end, cxi));
+        wire_tree_edit(&weak, &input, cx);
+        // 首发聚焦请求同 open_file_new（Zed `rename_impl` → 同一条
+        // focus_filename_editor 请求）
+        input.update(cx, |ti, tcx| ti.focus_soon(tcx));
+        self.tree_edit = Some(TreeEdit {
+            kind: TreeEditKind::Rename { path },
+            is_dir,
+            input,
+            validation: TreeValidation::None,
+        });
+        cx.notify();
+    }
+
+    /// 行内编辑提交（Zed `confirm_edit` 移植）。`via` 区分两条收场路：
+    /// - Enter：空名/重名/非法名 → 留在编辑态（校验消息在行上显示）；
+    /// - 点别处/失焦：一律收场——空名 = 丢弃，重名 = 静默丢弃（Zed
+    ///   confirm_edit 返回 None → discard_edit_state 同款）。
+    /// 提交动作：新建支持子目录段与尾随 `/` 升级目录；Windows 剥尾随点。
+    /// `value` = 键入值，随回调传入（禁止回读输入框实体，见 wire_tree_edit）。
+    pub(crate) fn tree_edit_confirm(
+        &mut self,
+        via: TreeEditVia,
+        value: &str,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(mut edit) = self.tree_edit.clone() else { return };
+        let mut filename = value.to_string();
+        // Zed confirm_edit：Windows 下尾随点被文件系统忽略，剥掉防错位
+        #[cfg(windows)]
+        while let Some(trimmed) = filename.strip_suffix('.') {
+            filename = trimmed.to_string();
+        }
+        if filename.trim().is_empty() {
+            if via == TreeEditVia::Dismiss {
+                self.tree_edit_discard(cx);
+            }
+            return;
+        }
+        let indicates_dir = filename.ends_with('/') || filename.ends_with('\\');
+        let filename = filename.trim_start_matches(['/', '\\']).to_string();
+        // Zed RelPath 语义：禁空段 / "." / ".."（绝对路径由越界护栏兜底）
+        let segs: Vec<&str> = filename.split(['/', '\\']).collect();
+        let name_ok = !segs.iter().any(|s| s.is_empty() || *s == "." || *s == "..");
+        if !name_ok {
+            if via == TreeEditVia::Dismiss {
+                self.tree_edit_discard(cx);
+            } else {
+                edit.validation =
+                    TreeValidation::Error(tr("名称不能为空或包含 .. 等非法段").to_string());
+                cx.notify();
+            }
+            return;
+        }
+        match &edit.kind {
+            TreeEditKind::New { dir } => {
+                // 尾随 / 升级目录（仅新建，Zed edit_state.is_dir 同款）
+                if indicates_dir {
+                    edit.is_dir = true;
+                }
+                let target = dir.join(&filename);
+                if target.exists() {
+                    if via == TreeEditVia::Dismiss {
+                        self.tree_edit_discard(cx);
+                    } else {
+                        if let Some(slot) = self.tree_edit.as_mut() {
+                            slot.validation = TreeValidation::Error(existing_msg(&filename));
+                        }
+                        cx.notify();
+                    }
+                    return;
+                }
+                self.tree_edit = None;
+                self.file_new_commit(dir, edit.is_dir, filename, cx);
+            }
+            TreeEditKind::Rename { path } => {
+                let Some(parent) = path.parent() else { return };
+                let target = parent.join(&filename);
+                if same_path(&target, path) {
+                    // 字面同名：Enter = 留在编辑（Zed refocus 分支），
+                    // 点别处 = 取消
+                    if via == TreeEditVia::Dismiss {
+                        self.tree_edit_discard(cx);
+                    } else {
+                        cx.notify();
+                    }
+                    return;
+                }
+                if target.exists() {
+                    if via == TreeEditVia::Dismiss {
+                        self.tree_edit_discard(cx);
+                    } else {
+                        if let Some(slot) = self.tree_edit.as_mut() {
+                            slot.validation = TreeValidation::Error(existing_msg(&filename));
+                        }
+                        cx.notify();
+                    }
+                    return;
+                }
+                self.tree_edit = None;
+                self.file_rename_commit(path, edit.is_dir, filename, cx);
+            }
+        }
+    }
+
+    /// 键入即校验（Zed populate_validation_error 移植）：首尾空白 = 警告，
+    /// 目标已存在 = 错误（同名自身除外），其余清空。`value` 随回调传入。
+    pub(crate) fn tree_edit_validate(&mut self, value: &str, cx: &mut Context<Self>) {
+        let Some(edit) = self.tree_edit.as_mut() else { return };
+        let filename = value.to_string();
+        edit.validation = if filename.trim().is_empty() {
+            TreeValidation::None
+        } else if filename.trim() != filename {
+            TreeValidation::Warning(tr("名称首尾包含空白字符").to_string())
+        } else {
+            let f = filename.trim_start_matches(['/', '\\']);
+            let target = match &edit.kind {
+                TreeEditKind::New { dir } => dir.join(f),
+                TreeEditKind::Rename { path } => match path.parent() {
+                    Some(parent) => parent.join(f),
+                    None => PathBuf::from(f),
+                },
+            };
+            let is_same_entry = match &edit.kind {
+                TreeEditKind::Rename { path } => same_path(&target, path),
+                TreeEditKind::New { .. } => false,
+            };
+            if !is_same_entry && target.exists() {
+                TreeValidation::Error(existing_msg(f))
+            } else {
+                TreeValidation::None
+            }
+        };
+        cx.notify();
+    }
+
+    /// 取消行内编辑（Esc；Zed cancel → discard_edit_state）。
+    pub(crate) fn tree_edit_discard(&mut self, cx: &mut Context<Self>) {
+        if self.tree_edit.take().is_some() {
+            cx.notify();
+        }
+    }
+
+    /// 面板「点别处提交」（文件树 mouse-down 冒泡入口）：现读键入值再走
+    /// Dismiss。这里的实体读发生在面板的 mouse-down 派发栈里——输入框
+    /// 自身的点击在 edit_input_slot 已 stop_propagation，绝无派发中的
+    /// 输入框租借（与快照读同类）。
+    pub(crate) fn tree_edit_confirm_from_click(&mut self, cx: &mut Context<Self>) {
+        let Some(edit) = self.tree_edit.clone() else { return };
+        let value = edit.input.read(cx).value().to_string();
+        self.tree_edit_confirm(TreeEditVia::Dismiss, &value, cx);
+    }
+
+    /// 沿途展开 `dir` 的祖先链与自身并重建展平表（新建行要落在可见的
+    /// 目录行下方，Zed new_entry 展开 directory_id 同款）。项目根无需展开。
+    fn expand_tree_dir(&mut self, dir: &Path) {
+        let mut anc = Some(dir.to_path_buf());
+        let mut opened = false;
+        while let Some(p) = anc {
+            if same_path(&p, &self.cwd) {
+                break;
+            }
+            opened |= self.expanded_dirs.insert(p.clone());
+            anc = p.parent().map(|q| q.to_path_buf());
+        }
+        if opened {
+            self.rebuild_tree();
+        }
+    }
+
+    /// 新建提交：逐段校验（禁 `..` / 空段 / 绝对路径），成功后沿途目录
+    /// 展开 + 刷新 git（未跟踪文件立即可见）。重名拦截在 tree_edit_confirm
+    /// （Zed 校验先行），这里只兜竞态。
     pub(crate) fn file_new_commit(
         &mut self,
         dir: &Path,
@@ -190,23 +394,17 @@ impl Chat {
         name: String,
         cx: &mut Context<Self>,
     ) {
-        let name = name.trim().trim_matches(['/', '\\']).to_string();
-        if name.is_empty() {
-            self.set_status(tr("名称不能为空").to_string(), cx);
-            return;
-        }
         let segs: Vec<&str> = name.split(['/', '\\']).collect();
-        if name.starts_with('/') || name.contains(':') || segs.iter().any(|s| s.is_empty() || *s == "..") {
+        if name.starts_with('/')
+            || name.contains(':')
+            || segs.iter().any(|s| s.is_empty() || *s == "..")
+        {
             self.set_status(tr("路径越出项目根").to_string(), cx);
             return;
         }
         let target = dir.join(&name);
         if !target.starts_with(&self.cwd) {
             self.set_status(tr("路径越出项目根").to_string(), cx);
-            return;
-        }
-        if target.exists() {
-            self.set_status(format!("{}：{}", tr("已存在"), target.display()), cx);
             return;
         }
         let r = if is_dir {
@@ -227,9 +425,12 @@ impl Chat {
                     self.expanded_dirs.insert(p.clone());
                     anc = p.parent().map(|q| q.to_path_buf());
                 }
-                self.dialog = None;
                 self.refresh_git();
-                // 创建成功静默（文件菜单不弹成功提示，错误才提示）
+                // Zed auto_open：新建的文件随即打开（目录不打开）
+                if !is_dir {
+                    self.open_file_tab(target, cx);
+                }
+                // 创建成功静默（Zed 同：成功无提示）
                 cx.notify();
             }
             Err(e) => {
@@ -238,80 +439,10 @@ impl Chat {
         }
     }
 
-    /// 「改名」= Zed project_panel 行内改名（2026-10-11 用户定案）：不弹
-    /// 窗，文件树行原地变输入框——Enter 提交 / Esc 取消 / 失焦提交。
-    /// `reveal` = 编辑区右键菜单入口：先切到文件树面板并滚动到该行，保
-    /// 证输入框可见（Zed「改名聚焦 project panel」同语义）；树菜单入口
-    /// 行本就在视口里，传 false 不打扰滚动位置。
-    pub(crate) fn open_file_rename(
-        &mut self,
-        path: PathBuf,
-        is_dir: bool,
-        reveal: bool,
-        cx: &mut Context<Self>,
-    ) {
-        self.tree_menu = None;
-        self.editor_menu = None;
-        if reveal {
-            self.dock_panel = DockPanel::Files;
-            self.reveal_tree_row(&path);
-        }
-        let prefill =
-            path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-        let weak = cx.entity().downgrade();
-        let input = cx.new(|cx| TextInput::new(cx).compact().select_all_on_focus());
-        input.update(cx, |ti, cxi| ti.set_value(prefill, cxi));
-        input.update(cx, |ti, _| {
-            let weak_submit = weak.clone();
-            ti.set_on_submit(Box::new(move |v, cx| {
-                // 提交会 drop 派发事件的输入框（清槽）——defer 出帧
-                let weak = weak_submit.clone();
-                let v = v.trim().to_string();
-                cx.defer(move |cx| {
-                    let _ = weak.update(cx, |c, cx| c.tree_rename_slot_commit(Some(v), cx));
-                });
-            }));
-            let weak_esc = weak.clone();
-            ti.set_on_escape(Box::new(move |cx| {
-                // 取消同样 drop 输入框，defer 避开派发期
-                let weak = weak_esc.clone();
-                cx.defer(move |cx| {
-                    let _ = weak.update(cx, |c, cx| {
-                        c.tree_rename = None;
-                        cx.notify();
-                    });
-                });
-            }));
-            let weak_blur = weak.clone();
-            ti.set_on_blur(Box::new(move |cx| {
-                // 失焦 = 提交（Zed 同款）；取值交给槽提交（读输入框），
-                // defer 避开 blur 派发期
-                let weak = weak_blur.clone();
-                cx.defer(move |cx| {
-                    let _ = weak.update(cx, |c, cx| c.tree_rename_slot_commit(None, cx));
-                });
-            }));
-        });
-        self.tree_rename = Some(TreeRename { path, is_dir, input });
-        cx.notify();
-    }
-
-    /// 行内改名提交统一口：`v` = Some 为显式提交（值已随提交带来），
-    /// None = 失焦提交（现读输入框）。槽已空（Esc 取消后跟着的 blur、
-    /// 提交后跟着的 blur）则无事发生。
-    fn tree_rename_slot_commit(&mut self, v: Option<String>, cx: &mut Context<Self>) {
-        let Some(r) = self.tree_rename.clone() else { return };
-        let name = match v {
-            Some(v) => v,
-            None => r.input.read(cx).value().trim().to_string(),
-        };
-        self.tree_rename = None;
-        self.file_rename_commit(&r.path, r.is_dir, name, cx);
-    }
-
-    /// 行内改名提交：仅同级改名（禁路径分隔符），同名（字面）静默收场。
-    /// 成功后打开的文件 tab / 缓冲 / 待聚焦 / 展开集合（目录）按前缀重映射。
-    /// 调用方（tree_rename_slot_commit）已先行清改名槽。
+    /// 改名提交：目标 = 父目录 + 新名（允许子目录段，Zed RelPath 同款；
+    /// 缺失的中间目录随建）。打开的文件 tab / 缓冲 / 待聚焦 / 展开集合
+    /// （目录）按前缀重映射。重名/同名拦截在 tree_edit_confirm，这里只
+    /// 兜竞态。
     pub(crate) fn file_rename_commit(
         &mut self,
         path: &Path,
@@ -319,15 +450,6 @@ impl Chat {
         name: String,
         cx: &mut Context<Self>,
     ) {
-        let name = name.trim().to_string();
-        if name.is_empty() {
-            self.set_status(tr("名称不能为空").to_string(), cx);
-            return;
-        }
-        if name.contains('/') || name.contains('\\') || name == ".." {
-            self.set_status(tr("名称不能包含路径分隔符").to_string(), cx);
-            return;
-        }
         let Some(parent) = path.parent() else { return };
         let target = parent.join(&name);
         if target == path {
@@ -337,6 +459,13 @@ impl Chat {
         }
         if target.exists() {
             self.set_status(format!("{}：{}", tr("已存在"), target.display()), cx);
+            return;
+        }
+        // 子目录段改名：缺失的中间目录随建（Zed rename_entry 同语义）
+        if target.parent().is_some_and(|p| !p.exists())
+            && let Err(e) = std::fs::create_dir_all(target.parent().unwrap())
+        {
+            self.set_status(crate::i18n::tf("重命名失败: {e}", &[("e", e.to_string())]), cx);
             return;
         }
         if let Err(e) = std::fs::rename(path, &target) {
@@ -471,6 +600,67 @@ impl Chat {
         self.set_input_with_cursor(base, cursor, cx);
         self.set_content_view(ContentView::Chat);
     }
+}
+
+/// 行内编辑的收场来路：Enter 显式提交 vs 点别处/失焦（Zed confirm_edit
+/// 的 `refocus` 参数同义——true = Enter，false = Dismiss）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TreeEditVia {
+    Enter,
+    Dismiss,
+}
+
+/// 重名校验消息（Zed "File or directory '{}' already exists at location."
+/// 同义，走三语）。
+fn existing_msg(name: &str) -> String {
+    crate::i18n::tf("「{name}」已存在，请换一个名称", &[("name", name.to_string())])
+}
+
+/// 行内编辑回调统一接线：Enter 提交 / Esc 取消 / 失焦与点别处提交、键入
+/// 即校验（Zed filename_editor 的 EditorEvent 订阅同款）。值一律随回调
+/// 参数传递——回调可能在输入框实体自身的事件派发栈内执行（set_value 的
+/// Change 同步回流），回读实体 = entity_map 双重租借 panic（门面文档明
+/// 令禁止）。提交会 drop 派发事件的输入框，defer 出帧。
+fn wire_tree_edit(
+    weak: &gpui::WeakEntity<Chat>,
+    input: &gpui::Entity<TextInput>,
+    cx: &mut Context<Chat>,
+) {
+    input.update(cx, |ti, _| {
+        let weak_submit = weak.clone();
+        ti.set_on_submit(Box::new(move |v, cx| {
+            let weak = weak_submit.clone();
+            let v = v.to_string();
+            cx.defer(move |cx| {
+                let _ = weak.update(cx, |c, cx| {
+                    c.tree_edit_confirm(TreeEditVia::Enter, &v, cx)
+                });
+            });
+        }));
+        let weak_esc = weak.clone();
+        ti.set_on_escape(Box::new(move |cx| {
+            let weak = weak_esc.clone();
+            cx.defer(move |cx| {
+                let _ = weak.update(cx, |c, cx| c.tree_edit_discard(cx));
+            });
+        }));
+        let weak_blur = weak.clone();
+        ti.set_on_blur(Box::new(move |v, cx| {
+            let weak = weak_blur.clone();
+            let v = v.to_string();
+            cx.defer(move |cx| {
+                let _ = weak.update(cx, |c, cx| {
+                    c.tree_edit_confirm(TreeEditVia::Dismiss, &v, cx)
+                });
+            });
+        }));
+        let weak_change = weak.clone();
+        ti.set_on_change(Box::new(move |v, cx| {
+            let weak = weak_change.clone();
+            let v = v.to_string();
+            let _ = weak.update(cx, |c, cx| c.tree_edit_validate(&v, cx));
+        }));
+    });
 }
 
 /// 「在资源管理器中打开」的文件语义（与 open_in_explorer 的目录语义分
