@@ -308,7 +308,7 @@ fn action_bar(
                 ))
                 .child(bar_btn(
                     "ft-explorer",
-                    "icon-filebrowser",
+                    "folder-input",
                     tr("在资源管理器中打开"),
                     t,
                     false,

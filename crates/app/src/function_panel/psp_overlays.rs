@@ -485,7 +485,7 @@ fn menu_layer(
                 .child(
                     menu_item(
                         "pm-explorer",
-                        "icon-filebrowser",
+                        "folder-input",
                         tr("在文件浏览器中打开"),
                         false,
                         false,
@@ -732,7 +732,7 @@ fn tree_menu_layer(
                 .child(tree_item(
                     &weak,
                     "ftm-dir-explorer",
-                    "icon-filebrowser",
+                    "folder-input",
                     tr("在资源管理器中打开"),
                     false,
                     {
@@ -798,7 +798,7 @@ fn tree_menu_layer(
                 .child(tree_item(
                     &weak,
                     "ftm-file-explorer",
-                    "icon-filebrowser",
+                    "folder-input",
                     tr("在资源管理器中打开"),
                     false,
                     {

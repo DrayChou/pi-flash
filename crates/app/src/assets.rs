@@ -116,6 +116,9 @@ assets! {
     "icons/at-sign.svg",
     "icons/globe.svg",
     "icons/file-plus.svg",
+    // 资源管理器打开（lucide folder-input，2026-10-11 用户定稿替换
+    // iconfont 的 icon-filebrowser——后者除名）
+    "icons/folder-input.svg",
     "icons/clock.svg",
     "icons/arrow-up.svg",
     "icons/arrow-down.svg",
@@ -133,7 +136,6 @@ assets! {
     // v54 UI: iconfont solid set (from the design html)
     "icons/icon-project.svg",
     "icons/icon-new-chat.svg",
-    "icons/icon-filebrowser.svg",
     "icons/icon-terminal-solid.svg",
     "icons/icon-trash-solid.svg",
     "icons/icon-organize.svg",
