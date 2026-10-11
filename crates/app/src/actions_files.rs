@@ -11,6 +11,40 @@ use crate::*;
 /// 内滚动翻不完 200 行之外的内容已够用）。
 const FILE_SEARCH_LIMIT: usize = 200;
 
+/// 文件清单缓存条目（key = cwd；021 细节定稿：60s TTL，最多 10 份——
+/// 超限整表清空，at_index 同策略）。
+struct ListingEntry {
+    files: std::sync::Arc<Vec<String>>,
+    built: std::time::Instant,
+}
+
+static LISTING_CACHE: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<String, ListingEntry>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+/// 带 60s×10 缓存的文件清单（git ls-files / BFS 回退）。命中 TTL 内
+/// 直接复用——弹窗里逐字过滤不再每键重扫盘；TTL 过期或换 cwd 才真扫。
+fn cached_listing(cwd: &Path) -> std::sync::Arc<Vec<String>> {
+    const TTL: std::time::Duration = std::time::Duration::from_secs(60);
+    const MAX_PROJECTS: usize = 10;
+    let key = cwd.to_string_lossy().to_string();
+    if let Ok(cache) = LISTING_CACHE.lock() {
+        if let Some(e) = cache.get(&key) {
+            if e.built.elapsed() < TTL {
+                return e.files.clone();
+            }
+        }
+    }
+    let files = std::sync::Arc::new(crate::services::file_index::load_listing(cwd).files);
+    if let Ok(mut cache) = LISTING_CACHE.lock() {
+        if cache.len() >= MAX_PROJECTS {
+            cache.clear();
+        }
+        cache.insert(key, ListingEntry { files: files.clone(), built: std::time::Instant::now() });
+    }
+    files
+}
+
 impl Chat {
     // -------------------------------------------------------------------
     // 操作栏
@@ -90,8 +124,8 @@ impl Chat {
             }
             let hits = cx
                 .background_spawn(async move {
-                    let listing = crate::services::file_index::load_listing(&cwd);
-                    filter_file_names(&listing.files, &needle)
+                    let files = cached_listing(&cwd);
+                    filter_file_names(&files, &needle)
                 })
                 .await;
             let _ = weak.update(cx, |c, cx| {

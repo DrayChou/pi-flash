@@ -1089,12 +1089,12 @@ impl Chat {
     /// 盘 + gitignore 过滤 + Zed 语义排序 + git 徽标回填）。展开/折叠、
     /// git 刷新、fs 事件、切项目后都走这里。
     fn rebuild_tree(&mut self) {
-        self.tree_rows = std::sync::Arc::new(services::file_tree::flatten(
-            &self.cwd,
-            &self.expanded_dirs,
-            &self.git_files,
-            self.changes_only,
-        ));
+        self.tree_rows = std::sync::Arc::new(if self.changes_only {
+            // 「只看变更」= 扁平表直接吃 git status 结果（不扫盘）
+            services::file_tree::flatten_changes(&self.cwd, &self.git_files)
+        } else {
+            services::file_tree::flatten(&self.cwd, &self.expanded_dirs, &self.git_files)
+        });
     }
 
     /// 挂上 fs watcher（递归 watch cwd；旧句柄 drop 即解除）。切项目时

@@ -49,18 +49,82 @@ pub(crate) fn files_view(
     let changes_only = chat.changes_only;
     let weak = weak.clone();
     let t = theme::theme();
-    let sticky = Box::new(StickyAncestors { weak: weak.clone() }) as Box<dyn UniformListDecoration>;
-    div()
+    // 021 操作栏：项目目录行固定在树顶（高度 40），名字居左、操作钮
+    // 右对齐（切换显示变更 / 搜索文件 / 资源管理器 / 终端），不随列表滚动
+    let mut col = div()
         .flex_1()
         .min_h_0()
         .flex()
         .flex_col()
         .overflow_hidden()
         .bg(rgb(t.nav))
-        // 021 操作栏：项目目录行固定在树顶（高度 40），左侧 4 操作钮
-        // （切换显示变更 / 搜索文件 / 资源管理器 / 终端），不随列表滚动
-        .child(action_bar(chat, &weak, t))
-        .child(
+        .child(action_bar(chat, &weak, t));
+    if changes_only {
+        // 「只看变更」= 扁平列表（021 二改定稿：不要树状）。头行 =
+        // N 个文件 + numstat（+绿 -红，色同 git 徽标盘）；行 = 状态徽标
+        // + 文件图标 + 相对路径（目录段可截断、文件名恒可见）。
+        let (add, del) = chat.git_add_del;
+        let n = rows.len();
+        if n > 0 {
+            let mut head = div()
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .px(px(12.))
+                .py(px(8.))
+                .flex_shrink_0()
+                .text_size(crate::appearance::ui_size(11.))
+                .text_color(rgb(t.text_dim))
+                .child(SharedString::from(crate::i18n::tf(
+                    "{n} 个文件",
+                    &[("n", n.to_string())],
+                )));
+            if add > 0 {
+                head = head.child(
+                    div()
+                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                        .text_color(rgb(crate::services::git::GitStatus::Added.color()))
+                        .child(SharedString::from(format!("+{add}"))),
+                );
+            }
+            if del > 0 {
+                head = head.child(
+                    div()
+                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                        .text_color(rgb(crate::services::git::GitStatus::Deleted.color()))
+                        .child(SharedString::from(format!("-{del}"))),
+                );
+            }
+            col = col.child(head);
+        }
+        let weak_c = weak.clone();
+        col = col.child(
+            div()
+                .flex_1()
+                .min_h_0()
+                .flex()
+                .flex_col()
+                .overflow_hidden()
+                .py(px(6.))
+                .child(vlist(
+                    FILE_TREE_LIST_ID,
+                    rows.len(),
+                    CHANGES_ROW_H,
+                    VListHeight::Fill,
+                    false,
+                    true,
+                    tr("暂无变更"),
+                    None,
+                    move |ix, _window, _cx| match rows.get(ix) {
+                        Some(row) => changes_row(row.clone(), weak_c.clone()),
+                        None => div().into_any_element(),
+                    },
+                )),
+        );
+    } else {
+        let sticky =
+            Box::new(StickyAncestors { weak: weak.clone() }) as Box<dyn UniformListDecoration>;
+        col = col.child(
             div()
                 .flex_1()
                 .min_h_0()
@@ -69,27 +133,100 @@ pub(crate) fn files_view(
                 .overflow_hidden()
                 .py(px(10.))
                 .child(vlist(
-            FILE_TREE_LIST_ID,
-            rows.len(),
-            ROW_H,
-            VListHeight::Fill,
-            false,
-            true,
-            // 变更过滤态的空表 = 「暂无变更」（无 git 变更时根行也被滤掉）
-            if changes_only { tr("暂无变更") } else { "暂无文件" },
-            Some(sticky),
-            move |ix, _window, _cx| match rows.get(ix) {
-                Some(row) => {
-                    // 邻行深度决定各段引导线的首尾裁剪（整段只在首行留上
-                    // 4px、尾行留下 4px，段中连续成一条线）
-                    let prev_depth = if ix == 0 { None } else { rows.get(ix - 1).map(|r| r.depth) };
-                    let next_depth = rows.get(ix + 1).map(|r| r.depth);
-                    tree_row(row.clone(), prev_depth, next_depth, weak.clone())
-                }
-                None => div().into_any_element(),
-            },
-        )),
-        )
+                    FILE_TREE_LIST_ID,
+                    rows.len(),
+                    ROW_H,
+                    VListHeight::Fill,
+                    false,
+                    true,
+                    "暂无文件",
+                    Some(sticky),
+                    move |ix, _window, _cx| match rows.get(ix) {
+                        Some(row) => {
+                            // 邻行深度决定各段引导线的首尾裁剪（整段只在首行留上
+                            // 4px、尾行留下 4px，段中连续成一条线）
+                            let prev_depth =
+                                if ix == 0 { None } else { rows.get(ix - 1).map(|r| r.depth) };
+                            let next_depth = rows.get(ix + 1).map(|r| r.depth);
+                            tree_row(row.clone(), prev_depth, next_depth, weak.clone())
+                        }
+                        None => div().into_any_element(),
+                    },
+                )),
+        );
+    }
+    col.into_any_element()
+}
+
+/// 变更列表行高（比树行稍宽舒，对齐 pi-web 截图的呼吸感）。
+const CHANGES_ROW_H: f32 = 28.;
+
+/// 「只看变更」的扁平行：状态徽标（定宽对齐列）+ 文件类型图标 +
+/// 相对路径——目录段 dim 可截断（flex_1），文件名恒可见（shrink 0），
+/// 点击开文件 tab，右键沿用文件菜单。
+fn changes_row(row: crate::services::file_tree::TreeRow, weak: gpui::WeakEntity<Chat>) -> gpui::AnyElement {
+    let t = theme::theme();
+    let rel = row.name.clone();
+    let file_name = rel.rsplit('/').next().unwrap_or(&rel).to_string();
+    let dir_part = rel[..rel.len() - file_name.len()].to_string();
+    let mut el = div()
+        .id(SharedString::from(format!("chg-{}", row.path.display())))
+        .w_full()
+        .h(px(CHANGES_ROW_H))
+        .flex()
+        .items_center()
+        .px(px(12.))
+        .gap(px(7.))
+        .overflow_hidden()
+        .cursor_pointer()
+        .hover(|s| s.bg(rgb(t.bg_hover)))
+        .text_size(crate::appearance::ui_size(11.5));
+    if let Some(st) = row.git {
+        el = el.child(
+            div()
+                .w(px(14.))
+                .flex_shrink_0()
+                .text_size(crate::appearance::ui_size(11.))
+                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .text_color(rgb(st.color()))
+                .child(st.badge()),
+        );
+    }
+    el = el.child(
+        div()
+            .flex_shrink_0()
+            .child(icon_path(file_icons::get_icon(&row.path), 14., t.text_dim)),
+    );
+    // 路径连续左对齐（截图2 语义）：目录段自然宽、仅在过长时收缩截断
+    // （中段省略），文件名紧跟其后恒可见，尾部弹性空隙吃掉剩余宽
+    el = el.child(
+        div()
+            .flex_shrink()
+            .min_w_0()
+            .overflow_hidden()
+            .whitespace_nowrap()
+            .text_ellipsis()
+            .text_color(rgb(t.text_faint))
+            .child(SharedString::from(dir_part)),
+    );
+    el = el.child(
+        div()
+            .flex_shrink_0()
+            .overflow_hidden()
+            .whitespace_nowrap()
+            .text_ellipsis()
+            .text_color(rgb(t.text))
+            .child(SharedString::from(file_name)),
+    );
+    el = el.child(div().flex_1());
+    let fp = row.path.clone();
+    let weak_click = weak.clone();
+    el = el.on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
+        let _ = weak_click.update(cx, |c, cx| {
+            c.open_file_tab(fp.clone(), cx);
+        });
+    });
+    el.child(tree_right_click(&weak, &row))
         .into_any_element()
 }
 
@@ -116,8 +253,9 @@ fn action_bar(
     let cwd_menu = chat.cwd.clone();
     let cwd_explorer = chat.cwd.clone();
     let cwd_term = chat.cwd.clone();
-    // 021 二改定稿：操作栏即根行——项目名居左、操作钮右对齐；名字区
-    // 右键 = 根目录菜单（树体不再有根行，根下的新建/改名等入口保留下）
+    // 021 二改定稿：操作栏即根行——项目名居左（粗体）、操作钮右对齐
+    // （间距 10px，各带 tooltip）；名字区右键 = 根目录菜单（树体不再有
+    // 根行，根下的新建/改名等入口保留下）
     div()
         .id("ft-action-bar")
         .w_full()
@@ -139,7 +277,7 @@ fn action_bar(
                 .whitespace_nowrap()
                 .text_ellipsis()
                 .text_size(crate::appearance::ui_size(12.))
-                .font_weight(gpui::FontWeight::MEDIUM)
+                .font_weight(gpui::FontWeight::SEMIBOLD)
                 .text_color(rgb(t.text_soft))
                 .child(project)
                 .on_mouse_down(gpui::MouseButton::Right,
@@ -156,52 +294,66 @@ fn action_bar(
                     },
                 ),
         )
-        .child(bar_btn(
-            "ft-toggle-changes",
-            "git-commit-horizontal",
-            t,
-            changes_only,
-            move |_, _, cx| {
-                let _ = w_toggle.update(cx, |c, cx| c.toggle_changes_only(cx));
-            },
-        ))
-        .child(bar_btn(
-            "ft-search",
-            "search",
-            t,
-            false,
-            move |_, _, cx| {
-                let _ = w_search.update(cx, |c, cx| c.open_file_search(cx));
-            },
-        ))
-        .child(bar_btn(
-            "ft-explorer",
-            "icon-filebrowser",
-            t,
-            false,
-            move |_, _, _cx| {
-                crate::actions_panels::open_in_explorer(&cwd_explorer);
-            },
-        ))
-        .child(bar_btn(
-            "ft-term",
-            "icon-terminal-solid",
-            t,
-            false,
-            move |_, window, cx| {
-                let _ = w_term.update(cx, |c, cx| {
-                    c.open_terminal_in(cwd_term.clone(), window, cx)
-                });
-            },
-        ))
+        .child(
+            div()
+                .flex_shrink_0()
+                .flex()
+                .items_center()
+                .gap(px(10.))
+                .child(bar_btn(
+                    "ft-toggle-changes",
+                    "git-commit-horizontal",
+                    tr("切换显示变更"),
+                    t,
+                    changes_only,
+                    move |_, _, cx| {
+                        let _ = w_toggle.update(cx, |c, cx| c.toggle_changes_only(cx));
+                    },
+                ))
+                .child(bar_btn(
+                    "ft-search",
+                    "search",
+                    tr("搜索文件"),
+                    t,
+                    false,
+                    move |_, _, cx| {
+                        let _ = w_search.update(cx, |c, cx| c.open_file_search(cx));
+                    },
+                ))
+                .child(bar_btn(
+                    "ft-explorer",
+                    "icon-filebrowser",
+                    tr("在资源管理器中打开"),
+                    t,
+                    false,
+                    move |_, _, _cx| {
+                        crate::actions_panels::open_in_explorer(&cwd_explorer);
+                    },
+                ))
+                .child(bar_btn(
+                    "ft-term",
+                    "icon-terminal-solid",
+                    tr("在终端中打开"),
+                    t,
+                    false,
+                    move |_, window, cx| {
+                        let _ = w_term.update(cx, |c, cx| {
+                            c.open_terminal_in(cwd_term.clone(), window, cx)
+                        });
+                    },
+                )),
+        )
         .into_any_element()
 }
 
 /// 操作栏图标钮：26px 命中槽 + 16px 图标（icon_hover 悬停变亮；激活态
-/// 用 accent 实色不参与 hover 变亮——开关点亮语义）。
+/// 用 accent 实色不参与 hover 变亮——开关点亮语义）。`tip` = hover
+/// tooltip（gpui 原生 tooltip 手势 + gpui-component Tooltip 视图，文案
+/// 过 tr 随语言切换）。
 fn bar_btn(
     id: &'static str,
     icon_name: &'static str,
+    tip: &'static str,
     t: &'static crate::theme::Theme,
     active: bool,
     on_click: impl Fn(&gpui::MouseDownEvent, &mut gpui::Window, &mut gpui::App) + 'static,
@@ -216,6 +368,9 @@ fn bar_btn(
         .rounded(px(6.))
         .cursor_pointer()
         .hover(|s| s.bg(rgb(t.bg_hover)))
+        .tooltip(move |window, cx| {
+            gpui_component::tooltip::Tooltip::new(crate::i18n::tr(tip)).build(window, cx)
+        })
         .on_mouse_down(gpui::MouseButton::Left, on_click)
         .child(if active {
             crate::ui::icon(icon_name, 16., t.accent).into_any_element()
