@@ -67,7 +67,9 @@ fn tabs(
     [
         (DockPanel::Sessions, "messages-square", "psp-tab"),
         (DockPanel::Files, "folder-tree", "files-tab"),
-        (DockPanel::Git, "git-branch", "git-tab"),
+        // git tab 隐藏（2026-10-10 用户定夺：PF 定位傻瓜化，git 面板暂缓设计；
+        // 恢复走 git 历史找回本行）
+        // (DockPanel::Git, "git-branch", "git-tab"),
     ]
     .iter()
     .map(|(panel, icon_name, id)| {
