@@ -292,7 +292,10 @@ impl TextElement {
         let start_ix = range.start;
         let end_ix = range.end;
 
-        let mut prev_lines_offset = visible_start_offset;
+        // 行首偏移游标：折叠态下按 vis 累加（从 0 起，绝对化用
+        // doc_to_vis(visible_start_offset)）；非折叠 vis==doc，加上
+        // visible_start_offset 即 doc 行首
+        let mut prev_lines_offset = 0;
         let mut offset_y = visible_top;
         let mut line_corners = vec![];
 
@@ -302,10 +305,27 @@ impl TextElement {
 
             let line_origin = point(px(0.), offset_y);
 
-            let line_cursor_start =
-                line.position_for_index(start_ix.saturating_sub(prev_lines_offset), line_height);
-            let line_cursor_end =
-                line.position_for_index(end_ix.saturating_sub(prev_lines_offset), line_height);
+            // PF-024：折叠态（md wysiwyg）下行布局是折叠后文本，len 是 vis
+            // 长度——匹配区间是 doc 偏移，必须先 doc→vis 再查 index，否则
+            // 高亮整体错位（光标 pos_for 同款换算）；prev_lines_offset 随
+            // 累加也变成 vis 坐标，行首 doc 偏移用 vis_to_doc 反推。
+            let (local_start, local_end) = match &last_layout.decorations {
+                Some(dec) => {
+                    let line_start_doc =
+                        dec.vis_to_doc(dec.doc_to_vis(visible_start_offset) + prev_lines_offset);
+                    let base = dec.doc_to_vis(line_start_doc);
+                    (
+                        dec.doc_to_vis(start_ix).saturating_sub(base),
+                        dec.doc_to_vis(end_ix).saturating_sub(base),
+                    )
+                }
+                None => (
+                    start_ix.saturating_sub(visible_start_offset + prev_lines_offset),
+                    end_ix.saturating_sub(visible_start_offset + prev_lines_offset),
+                ),
+            };
+            let line_cursor_start = line.position_for_index(local_start, line_height);
+            let line_cursor_end = line.position_for_index(local_end, line_height);
 
             if line_cursor_start.is_some() || line_cursor_end.is_some() {
                 let start = line_cursor_start
