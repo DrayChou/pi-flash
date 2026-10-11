@@ -275,6 +275,7 @@ const TABLE: &[(&str, &str, &str)] = &[
     ("正在扫描文件…", "正在掃描檔案…", "Scanning files…"),
     ("{n} 个文件", "{n} 個檔案", "{n} files"),
     ("暂无变更", "暫無變更", "No changes"),
+    ("不能删除项目根目录", "不能刪除專案根目錄", "Cannot delete the project root"),
     ("重命名失败: {e}", "重新命名失敗: {e}", "Rename failed: {e}"),
     // 会话功能栏（session::session_fn_bar，原 topbar ⋯ 菜单三入口）
     ("打开终端", "開啟終端機", "Open terminal"),

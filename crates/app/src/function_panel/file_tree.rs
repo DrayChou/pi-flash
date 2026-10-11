@@ -112,8 +112,12 @@ fn action_bar(
     let w_toggle = weak.clone();
     let w_search = weak.clone();
     let w_term = weak.clone();
+    let w_menu = weak.clone();
+    let cwd_menu = chat.cwd.clone();
     let cwd_explorer = chat.cwd.clone();
     let cwd_term = chat.cwd.clone();
+    // 021 二改定稿：操作栏即根行——项目名居左、操作钮右对齐；名字区
+    // 右键 = 根目录菜单（树体不再有根行，根下的新建/改名等入口保留下）
     div()
         .id("ft-action-bar")
         .w_full()
@@ -126,6 +130,32 @@ fn action_bar(
         .gap(px(2.))
         .border_b_1()
         .border_color(rgb(t.border))
+        .child(
+            div()
+                .id("ft-project")
+                .flex_1()
+                .min_w_0()
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .text_ellipsis()
+                .text_size(crate::appearance::ui_size(12.))
+                .font_weight(gpui::FontWeight::MEDIUM)
+                .text_color(rgb(t.text_soft))
+                .child(project)
+                .on_mouse_down(gpui::MouseButton::Right,
+                    move |ev: &gpui::MouseDownEvent, _, cx| {
+                        cx.stop_propagation();
+                        let _ = w_menu.update(cx, |c, cx| {
+                            c.tree_menu = Some(crate::TreeMenu::Dir {
+                                path: cwd_menu.clone(),
+                                x: f32::from(ev.position.x),
+                                y: f32::from(ev.position.y),
+                            });
+                            cx.notify();
+                        });
+                    },
+                ),
+        )
         .child(bar_btn(
             "ft-toggle-changes",
             "git-commit-horizontal",
@@ -164,19 +194,6 @@ fn action_bar(
                 });
             },
         ))
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .overflow_hidden()
-                .whitespace_nowrap()
-                .text_ellipsis()
-                .ml(px(6.))
-                .text_size(crate::appearance::ui_size(12.))
-                .font_weight(gpui::FontWeight::MEDIUM)
-                .text_color(rgb(t.text_soft))
-                .child(project),
-        )
         .into_any_element()
 }
 

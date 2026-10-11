@@ -317,6 +317,13 @@ impl Chat {
     /// 可恢复）。打开中的 tab 丢弃、展开集合清枝，git 随刷。
     pub(crate) fn tree_delete_commit(&mut self, cx: &mut Context<Self>) {
         let Some(path) = self.tree_confirm_del.take() else { return };
+        // 兜底护栏：项目根不可删（操作栏右键菜单已豁免该入口，这里防
+        // 其他调用路径误投递）
+        if same_path(&path, &self.cwd) {
+            self.set_status(tr("不能删除项目根目录").to_string(), cx);
+            cx.notify();
+            return;
+        }
         match trash::delete(&path) {
             Ok(_) => {
                 let stale: Vec<PathBuf> = self

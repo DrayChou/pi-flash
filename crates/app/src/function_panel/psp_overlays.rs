@@ -763,30 +763,35 @@ fn tree_menu_layer(
                         let path = path.clone();
                         move |c, cx| c.tree_at_insert(path.clone(), true, cx)
                     },
-                ))
-                .child(menu_sep())
-                .child(tree_item(
-                    &weak,
-                    "ftm-dir-rename",
-                    "pencil",
-                    tr("改名"),
-                    false,
-                    {
-                        let path = path.clone();
-                        move |c, cx| c.open_file_rename(path.clone(), true, cx)
-                    },
-                ))
-                .child(tree_item(
-                    &weak,
-                    "ftm-dir-del",
-                    "trash",
-                    tr("删除"),
-                    true,
-                    {
-                        let path = path.clone();
-                        move |c, cx| c.confirm_tree_delete(path.clone(), cx)
-                    },
                 ));
+            // 根目录（操作栏名字区右键）不出现 改名/删除——项目根本身不是
+            // 可操作对象（改名会拖走整个工作区、删除等于删项目）
+            if !same_path(&path, &chat.cwd) {
+                card = card
+                    .child(menu_sep())
+                    .child(tree_item(
+                        &weak,
+                        "ftm-dir-rename",
+                        "pencil",
+                        tr("改名"),
+                        false,
+                        {
+                            let path = path.clone();
+                            move |c, cx| c.open_file_rename(path.clone(), true, cx)
+                        },
+                    ))
+                    .child(tree_item(
+                        &weak,
+                        "ftm-dir-del",
+                        "trash",
+                        tr("删除"),
+                        true,
+                        {
+                            let path = path.clone();
+                            move |c, cx| c.confirm_tree_delete(path.clone(), cx)
+                        },
+                    ));
+            }
         }
         crate::TreeMenu::File { path, .. } => {
             card = card

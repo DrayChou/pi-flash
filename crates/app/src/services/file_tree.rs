@@ -164,17 +164,17 @@ fn changed_ancestor_dirs(cwd: &Path, files: &[GitFile]) -> HashSet<PathBuf> {
     out
 }
 
-/// Flatten the root project row (depth 0, Zed 单根 worktree 的项目行) plus
-/// every directory in `expanded` into rows. Sorting/filtering follow Zed
-/// semantics: dot files hidden, `.git` skipped, gitignored entries shown
-/// dimmed (`ignored`), directories first, natural sort.
+/// Flatten every directory in `expanded` into rows. Sorting/filtering
+/// follow Zed semantics: dot files hidden, `.git` skipped, gitignored
+/// entries shown dimmed (`ignored`), directories first, natural sort.
+///
+/// 021 定稿（二改）：**根行不再进树**——项目名由操作栏承载（树顶 40px
+/// 固定行，名字居左、操作钮右对齐，右键弹根目录菜单），树体直接从根的
+/// 子项排起（depth 0 起，不再有一层幻缩进）。
 ///
 /// `changes_only`（021 操作栏「切换显示变更」）：无视展开集合全量下钻，
-/// 只保留 git 变更文件行与其祖先目录行（圆点行）——无变更时仅剩根行，
-/// 根行也无圆点则整个列表为空（渲染层显示「暂无变更」空态）。
-///
-/// 根行的展开态同样读 `expanded`（含 cwd 即展开）；Chat 侧在新建/切项目
-/// 时把 cwd 塞进集合，保证默认展开。
+/// 只保留 git 变更文件行与其祖先目录行（圆点行）——无变更时整个列表
+/// 为空（渲染层显示「暂无变更」空态）。
 pub fn flatten(
     cwd: &Path,
     expanded: &HashSet<PathBuf>,
@@ -201,25 +201,11 @@ pub fn flatten(
         stack = stack.append(IgnoreKind::Gitignore(Arc::from(cwd)), Arc::new(gi));
     }
 
-    let root_name = cwd
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| cwd.to_string_lossy().to_string());
     let mut out = Vec::new();
-    out.push(TreeRow {
-        path: cwd.to_path_buf(),
-        name: root_name,
-        depth: 0,
-        is_dir: true,
-        expanded: changes_only || expanded.contains(cwd),
-        git: None,
-        changed_dot: changed_dirs.contains(cwd),
-        ignored: false,
-    });
     if changes_only || expanded.contains(cwd) {
         walk(
             cwd,
-            1,
+            0,
             expanded,
             changes_only,
             &git_map,
@@ -230,13 +216,7 @@ pub fn flatten(
         );
     }
     if changes_only {
-        out.retain(|r| {
-            if r.depth == 0 {
-                r.changed_dot
-            } else {
-                r.changed_dot || r.git.is_some()
-            }
-        });
+        out.retain(|r| r.changed_dot || r.git.is_some());
     }
     out
 }
@@ -429,16 +409,12 @@ mod tests {
         t.file("b.txt");
         t.file("z.md");
         t.dir("node_modules/pkg"); // 未展开的目录不应下钻
-        let root_name = t.0.file_name().unwrap().to_string_lossy().to_string();
 
-        // 未展开任何目录：只有根项目行
+        // 未展开任何目录：空树（根行已由操作栏承载，021 二改）
         let rows = flatten(&t.0, &HashSet::new(), &[], false);
-        assert_eq!(rows.len(), 1);
-        assert!(rows[0].is_dir && !rows[0].expanded);
-        assert_eq!(rows[0].path, t.0);
-        assert_eq!(rows[0].name, root_name);
+        assert!(rows.is_empty());
 
-        // 展开根 + node_modules：根行 + 目录先 + 自然排序，pkg 深度 2
+        // 展开根 + node_modules：目录先 + 自然排序，根子项 depth 0 起
         let mut expanded = HashSet::new();
         expanded.insert(t.0.clone());
         expanded.insert(t.0.join("node_modules"));
@@ -448,7 +424,6 @@ mod tests {
         assert_eq!(
             names,
             vec![
-                root_name,
                 "node_modules".to_string(),
                 "pkg".to_string(),
                 "src".to_string(),
@@ -457,11 +432,13 @@ mod tests {
                 "z.md".to_string(),
             ]
         );
-        assert!(rows[0].expanded);
+        let node_modules = rows.first().expect("node_modules row");
+        assert!(node_modules.is_dir && node_modules.expanded);
+        assert_eq!(node_modules.depth, 0);
         let src = rows.iter().find(|r| r.name == "src").expect("src row");
         assert!(!src.expanded, "unexpanded dir stays collapsed");
         let pkg = rows.iter().find(|r| r.name == "pkg").expect("pkg row");
-        assert_eq!(pkg.depth, 2);
+        assert_eq!(pkg.depth, 1);
         assert_eq!(pkg.path, t.0.join("node_modules").join("pkg"));
     }
 
@@ -491,7 +468,7 @@ mod tests {
         assert!(!keep.ignored, "whitelist survives as normal");
         assert!(!by_name("src").ignored, "normal dir unmarked");
         // src/ 未展开不显示子文件，但目录本身在
-        let names: Vec<&str> = rows.iter().skip(1).map(|r| r.name.as_str()).collect();
+        let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
         assert_eq!(names, vec!["build", "src", "debug.log", "keep.log"]);
 
         // .git/info/exclude 也生效（同样显示但标记）
@@ -517,29 +494,29 @@ mod tests {
         let mut expanded = HashSet::new();
         expanded.insert(t.0.clone());
         let rows = flatten(&t.0, &expanded, &[], false);
-        let names: Vec<&str> = rows.iter().skip(1).map(|r| r.name.as_str()).collect();
+        let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
         assert_eq!(names, vec!["a/x/y", "r.txt"]);
-        assert_eq!(rows[1].path, t.0.join("a").join("x").join("y"));
-        assert!(!rows[1].expanded);
+        assert_eq!(rows[0].path, t.0.join("a").join("x").join("y"));
+        assert!(!rows[0].expanded);
 
-        // 展开链尾：行名不变、行内打开，f.txt 深度 2
+        // 展开链尾：行名不变、行内打开，f.txt 深度 1
         expanded.insert(t.0.join("a").join("x").join("y"));
         let rows = flatten(&t.0, &expanded, &[], false);
-        assert_eq!(rows[1].name, "a/x/y");
-        assert!(rows[1].expanded);
-        assert_eq!(rows[2].name, "f.txt");
-        assert_eq!(rows[2].depth, 2);
+        assert_eq!(rows[0].name, "a/x/y");
+        assert!(rows[0].expanded);
+        assert_eq!(rows[1].name, "f.txt");
+        assert_eq!(rows[1].depth, 1);
 
         // 展开中段：断链成 a/x + y 两行（y 仍保持展开，f.txt 随其下钻）
         expanded.insert(t.0.join("a").join("x"));
         let rows = flatten(&t.0, &expanded, &[], false);
-        assert_eq!(rows[1].name, "a/x");
+        assert_eq!(rows[0].name, "a/x");
+        assert!(rows[0].expanded);
+        assert_eq!(rows[1].name, "y");
+        assert_eq!(rows[1].depth, 1);
         assert!(rows[1].expanded);
-        assert_eq!(rows[2].name, "y");
+        assert_eq!(rows[2].name, "f.txt");
         assert_eq!(rows[2].depth, 2);
-        assert!(rows[2].expanded);
-        assert_eq!(rows[3].name, "f.txt");
-        assert_eq!(rows[3].depth, 3);
     }
 
     #[test]
@@ -559,8 +536,6 @@ mod tests {
         expanded.insert(deep);
 
         let rows = flatten(&t.0, &expanded, &git_files, false);
-        // 根行：有任何变更即点亮
-        assert!(rows[0].changed_dot);
         let a = rows.iter().find(|r| r.name == "a").unwrap();
         assert!(a.changed_dot, "ancestor dir a gets the dot");
         let c = rows.iter().find(|r| r.name == "c").unwrap();
@@ -585,13 +560,11 @@ mod tests {
         // 展开集合为空也要全量下钻：a/b 链上的变更文件必须可见
         let rows = flatten(&t.0, &HashSet::new(), &git_files, true);
         let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
-        let root = t.0.file_name().unwrap().to_string_lossy().to_string();
         assert_eq!(
             names,
-            vec![root.as_str(), "a", "b", "mod.rs"],
+            vec!["a", "b", "mod.rs"],
             "only changed file + its ancestor dirs survive"
         );
-        assert!(rows[0].changed_dot, "root lit when any change exists");
         assert!(rows.iter().find(|r| r.name == "a").unwrap().changed_dot);
         assert!(rows.iter().find(|r| r.name == "b").unwrap().changed_dot);
         assert!(rows.last().unwrap().git.is_some());
