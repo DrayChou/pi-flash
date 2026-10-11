@@ -211,7 +211,6 @@ fn mcp_sidebar(
             move |c, cx| c.mcp_bulk(enabled != total, cx),
         ),
     )));
-    let empty = items.is_empty();
     for entry in items {
         let key = section_key(entry);
         let active = key == section;
@@ -263,25 +262,8 @@ fn mcp_sidebar(
     }
 
     // 列表底色压平（040：与页面同色，选中态只靠字重字色）
-    let mut shell =
+    let shell =
         sidebar_shell("mc-sidebar").w(px(LIST_W)).bg(rgb(t.bg)).child(list);
-    // 空态：placeholder 色，水平垂直居中
-    if empty {
-        shell = shell.child(
-            div()
-                .flex_1()
-                .min_h_0()
-                .flex()
-                .items_center()
-                .justify_center()
-                .child(
-                    div()
-                        .text_size(crate::appearance::ui_size(11.))
-                        .text_color(rgb(t.text_faint))
-                        .child(tr("没有服务器")),
-                ),
-        );
-    }
     shell.into_any_element()
 }
 

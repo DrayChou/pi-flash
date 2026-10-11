@@ -17,14 +17,14 @@ RUST_MIN_STACK=33554432 cargo test -p pi-link   # 协议/路径测试都在 pi-l
 
 # 铁律
 - **内置pi**：内置 `@earendil-works/pi-coding-agent`，vendor 进应用分发，运行时 spawn `node <app>/vendor/pi/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js --mode rpc`。**不读 PATH/系统 pi**；升级 = bump `vendor/pi/package.json` + VERSION + 跑 pi-link 符合性测试（wire 陷阱与升级复核点见 `docs/agents/pi-rpc.md`）。开发期 `PI_FLASH_PI_BIN` 可覆盖。
-- **目标平台**：Windows + macOS。**macOS CI 已停用**（2026-10-10 定）：Apple 签名/公证要 99 美元/年，免费软件不买——ad-hoc 包过不了 Gatekeeper。恢复：`gh workflow enable release-macos.yml`（workflow 保留在 `.github/workflows/`，构建已修绿）。
-- 完成任务保证编译通过后提交git，测试和验收交给用户
+- **目标平台**：Windows 
+- 完成任务保证编译通过后提交git，验收交给用户，禁止UI测试
 - **GitHub 推送**：远端 `https://github.com/danielbill/pi-flash.git` 间歇被墙（github.com 不通、api.github.com 通）。`git push` 失败直接走 SSH over 443，勿反复重试 HTTPS：`GIT_SSH_COMMAND="ssh -i ~/.ssh/id_rsa_github -o StrictHostKeyChecking=no" git push ssh://git@ssh.github.com:443/danielbill/pi-flash.git main`。gh CLI 走 api.github.com，一般不受影响。
 - UI绘制遵循 docs\UI设计\UI组件规范.md
 
 # 路径
-- pi-web 功能原型：`D:\github\---ai-tools---\pi-web`
-- zed 性能原型：`D:\github\zed` → gpui、markdown、theme、ui、terminal、agent_ui
+- pi-web ：`D:\github\---ai-tools---\pi-web`
+- zed ：`D:\github\zed` 
 - vendored pi：`vendor/pi`（package.json+lock 入库；node_modules 走 `npm ci` 不入库）
 - 架构设计：`docs/ARCHITECTURE.md`；复刻计划：`docs/PORT_PLAN.md`
 - 模块设计：`docs/模块设计/`（编号即模块，正文里的 0xx/vNN 引用都指这里）

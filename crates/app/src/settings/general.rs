@@ -97,29 +97,7 @@ pub(crate) fn mc_general_view(
         )),
     );
 
-    // 文件树 git 标识 switch（023：默认关 = 清爽目录树；开 = 徽标+变更点）
-    let git_markers_on = crate::services::workspace::git_markers();
-    col = col.child(set_row(
-        tr("文件树 Git 标识"),
-        tr("文件树显示 git 修改徽标与目录变更点"),
-        switch_base(
-            "general-git-markers",
-            git_markers_on,
-            false,
-            {
-                let weak = weak.clone();
-                move |on, cx| {
-                    let _ = weak.update(cx, |_c, cx| {
-                        let mut s = crate::services::workspace::app_settings();
-                        s.git_markers = Some(on);
-                        crate::services::workspace::save_app_settings(&s);
-                        cx.notify();
-                    });
-                }
-            },
-        ),
-        t,
-    ));
+
 
     // ---- 语言：三个一排，左对齐（置底——用户定夺） ------------------------
     col = col.child(section_label(tr("语言")));

@@ -109,23 +109,37 @@ echo "==> 5/8 更新 CHANGELOG.md / CHANGELOG_EN.md"
 # 说明文件双语约定：中文段在上，单独一行 <!-- EN --> 分隔，下接英文段。
 # 中文段收编 docs/CHANGELOG.md（权威版），英文段收编 docs/CHANGELOG_EN.md，
 # 全文作 GitHub Release 正文（<!-- EN --> 为 HTML 注释，渲染不可见）→ 同一 tag 下中英同页对齐。
-{
-  echo "## [$VERSION] - $TODAY"
-  echo
-  sed '/^<!-- EN -->\r\?$/,$d' "$NOTES_FILE"
-  echo
-  tail -n +2 docs/CHANGELOG.md 2>/dev/null || true
-} > docs/CHANGELOG.md.new
-mv docs/CHANGELOG.md.new docs/CHANGELOG.md
+# upsert_section <目标文件> <新版本段临时文件>：把新版本段写进 CHANGELOG——
+# 同版本段已存在则原地替换（幂等，整脚重跑不会写出两份），否则插到首个 `## [` 段之前；
+# 文件顶部的标题与说明段（# 更新日志 / 格式指路）原样保留。
+upsert_section() {
+  local target="$1" newsec="$2"
+  [[ -f "$target" ]] || return 0
+  awk -v vf="$newsec" -v ver="$VERSION" '
+    BEGIN { while ((getline l < vf) > 0) sec = sec l ORS }
+    skip {
+      if ($0 ~ /^## \[/) { skip = 0; if (!inserted) { printf "%s", sec; inserted = 1 } }
+      next
+    }
+    /^## \[/ {
+      if ($0 ~ "^## \\[" ver "\\]") { skip = 1; if (!inserted) { printf "%s", sec; inserted = 1 } next }
+      if (!inserted) { printf "%s", sec; inserted = 1 }
+    }
+    { print }
+    END { if (!inserted) printf "%s", sec }
+  ' "$target" > "$target.new"
+  mv "$target.new" "$target"
+}
+
+ZH_SEC=$(mktemp)
+{ echo "## [$VERSION] - $TODAY"; echo; sed '/^<!-- EN -->\r\?$/,$d' "$NOTES_FILE"; } > "$ZH_SEC"
+upsert_section docs/CHANGELOG.md "$ZH_SEC"
+rm -f "$ZH_SEC"
 if grep -q '^<!-- EN -->\r\?$' "$NOTES_FILE"; then
-  {
-    echo "## [$VERSION] - $TODAY"
-    echo
-    sed -n '/^<!-- EN -->\r\?$/,$p' "$NOTES_FILE" | tail -n +2
-    echo
-    tail -n +2 docs/CHANGELOG_EN.md 2>/dev/null || true
-  } > docs/CHANGELOG_EN.md.new
-  mv docs/CHANGELOG_EN.md.new docs/CHANGELOG_EN.md
+  EN_SEC=$(mktemp)
+  { echo "## [$VERSION] - $TODAY"; echo; sed -n '/^<!-- EN -->\r\?$/,$p' "$NOTES_FILE" | tail -n +2; } > "$EN_SEC"
+  upsert_section docs/CHANGELOG_EN.md "$EN_SEC"
+  rm -f "$EN_SEC"
   echo "    英文段已收编 CHANGELOG_EN.md"
 else
   echo "    说明文件无 <!-- EN --> 英文段，CHANGELOG_EN.md 本次不收编"
@@ -143,7 +157,7 @@ cat <<EOF
 
 后续（按序手动执行；gh release 紧跟 tag 推送、别等 CI——CI 遇到无 release 会自建）：
   git add crates/app/Cargo.toml npm/package.json Cargo.lock docs/CHANGELOG.md docs/CHANGELOG_EN.md
-  git commit -m "release v${VERSION}"
+  git commit -m "release v${VERSION}" -- crates/app/Cargo.toml npm/package.json Cargo.lock docs/CHANGELOG.md docs/CHANGELOG_EN.md
   git tag v${VERSION}
   git push && git push --tags   # 推送 tag 触发 macOS CI（darwin-arm64 资产 + .sha256 自动挂载）
   gh release create "v${VERSION}" --verify-tag --title "v${VERSION}" \\
