@@ -126,36 +126,51 @@ fn hover_card(
     let anchor_x = chat.slp_w + 8.;
     let title_for_rename = title.clone();
 
-    let mut el = PopupEdges::around((anchor_x, card.y), vp, 0., 0.).apply(
-        div()
-            .id("psp-hcard")
-            .absolute()
-            .w(px(258.))
-            .bg(rgb(t.bg))
-            .border_1()
-            .border_color(gpui::rgba(crate::theme::border_alpha(t, 0x8c)))
-            .rounded(px(12.))
-            .shadow_lg()
-            // 遮挡只作用于卡片自身 bounds（父层 occlude 会断全窗口 hit-test）
-            .occlude()
-            .px(px(13.))
-            .pt(px(11.))
-            .pb(px(9.))
-            .flex()
-            .flex_col()
-            // 卡内点击不落穿（改名/删除按钮依赖）
-            .on_mouse_down(MouseButton::Left, |_, _, cx| {
-                cx.stop_propagation();
-            })
-            // 进卡取消隐藏 / 离卡进入宽限
-            .on_hover(cx.listener(|this, h: &bool, _w, cx| {
-                if let Some(card) = this.hover_card.as_mut() {
-                    card.card_hovered = *h;
-                    card.hide_at = (!*h).then(std::time::Instant::now);
-                }
-                cx.notify();
-            })),
-    )
+    // 统一算法只裁决弹出方向（锚 = 行顶 y）；精准对齐是调用方语义
+    //（2026-10-11 二次定夺）：向下弹卡顶 = 行顶、向上弹卡底 = 行底——
+    // 卡悬在行的背离侧，行与相邻行都不被遮挡
+    let dir = PopupEdges::around((anchor_x, card.y), vp, 0., 0.);
+    let mut el = div()
+        .id("psp-hcard")
+        .absolute()
+        .w(px(258.))
+        .bg(rgb(t.bg))
+        .border_1()
+        .border_color(gpui::rgba(crate::theme::border_alpha(t, 0x8c)))
+        .rounded(px(12.))
+        .shadow_lg()
+        // 遮挡只作用于卡片自身 bounds（父层 occlude 会断全窗口 hit-test）
+        .occlude()
+        .px(px(13.))
+        .pt(px(11.))
+        .pb(px(9.))
+        .flex()
+        .flex_col()
+        // 卡内点击不落穿（改名/删除按钮依赖）
+        .on_mouse_down(MouseButton::Left, |_, _, cx| {
+            cx.stop_propagation();
+        })
+        // 进卡取消隐藏 / 离卡进入宽限
+        .on_hover(cx.listener(|this, h: &bool, _w, cx| {
+            if let Some(card) = this.hover_card.as_mut() {
+                card.card_hovered = *h;
+                card.hide_at = (!*h).then(std::time::Instant::now);
+            }
+            cx.notify();
+        }));
+    // 横向：左半 → 卡左缘贴锚点（侧栏右缘外 8px），反之右缘贴锚点
+    el = match (dir.left, dir.right) {
+        (Some(l), _) => el.left(l),
+        (_, Some(r)) => el.right(r),
+        _ => el,
+    };
+    // 纵向精准对齐：行底 y+h 由 prepaint 钩子实测写入
+    el = match (dir.top, dir.bottom) {
+        (Some(_), _) => el.top(px(card.y)),
+        (_, Some(_)) => el.bottom(px(vp.1 - card.y - card.h)),
+        _ => el,
+    };
+    el = el
         .children(if card.renaming {
             // 设计稿：标题原地变输入框（Enter 提交 / Esc 取消）
             card.rename_input.clone().map(|inp| {

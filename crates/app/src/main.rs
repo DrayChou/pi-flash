@@ -186,7 +186,11 @@ pub(crate) struct ProjectEntry {
 #[derive(Debug, Clone)]
 pub(crate) struct HoverCard {
     pub path: PathBuf,
+    /// 悬停行的真实顶部（prepaint 钩子校正，初始为鼠标 y − 半行高估计值）
     pub y: f32,
+    /// 悬停行高（prepaint 钩子随 y 同步校正）：详情卡向上弹时卡底 = y + h
+    /// （贴行底），向下弹卡顶 = y（贴行顶）——精准对齐是调用方语义
+    pub h: f32,
     pub hide_at: Option<std::time::Instant>,
     /// 创建时刻：悬停满 300ms 才显示（快速滑过列表不弹卡、不干扰行悬停）
     pub show_at: std::time::Instant,

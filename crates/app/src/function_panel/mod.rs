@@ -682,18 +682,22 @@ fn session_row_view(
     // getBoundingClientRect；gpui 等价物 = wrapper 的 children_prepainted）。
     // 自下而上进入行时鼠标首事件落在行底，只靠 mouse move 会偏下——这里
     // 用真实 bounds 校正；bounds 稳定后不再 notify。滚动时自动跟随。
+    // 行高 h 同步写入：详情卡向上弹要贴行底（y + h）。
     let weak_for_row_el = weak.clone();
     let _ = weak_for_row_el;
     div()
         .on_children_prepainted(move |children: Vec<gpui::Bounds<gpui::Pixels>>, _, cx| {
             if let Some(b) = children.first() {
                 let top = b.origin.y;
+                let h = b.size.height;
                 let _ = w_bounds.update(cx, |c, cx| {
                     if let Some(card) = c.hover_card.as_mut() {
                         if crate::services::workspace::same_path(&card.path, &path_bounds)
-                            && (card.y - f32::from(top)).abs() > 0.5
+                            && ((card.y - f32::from(top)).abs() > 0.5
+                                || (card.h - f32::from(h)).abs() > 0.5)
                         {
                             card.y = f32::from(top);
+                            card.h = f32::from(h);
                             cx.notify();
                         }
                     }
@@ -747,8 +751,10 @@ fn session_row_view(
                     c.hover_card = Some(crate::HoverCard {
                         path: path_card.clone(),
                         // 临时估计（鼠标 y - 半行高）；prepaint 钩子会把
-                        // y 校正为本行的真实顶部（bounds.origin.y）
+                        // y 校正为本行的真实顶部（bounds.origin.y），行高
+                        // h 随同一钩子校正（详情卡贴行底对齐要用）
                         y: y - 16.,
+                        h: crate::ui::tokens::row::MAIN,
                         hide_at: None,
                         show_at: std::time::Instant::now(),
                         shown: false,
