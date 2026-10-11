@@ -6,7 +6,7 @@
 
 use crate::session::runtime::SessionRuntime;
 use crate::{Chat, Dialog};
-use gpui::Context;
+use gpui::{Context, Focusable};
 use pi_link::protocol::Block;
 use serde_json::{json, Value};
 use std::time::UNIX_EPOCH;
@@ -92,6 +92,17 @@ fn focused_str(chat: &Chat, window: &gpui::Window, cx: &Context<Chat>) -> Value 
     for t in &chat.terminals {
         if t.focus.is_focused(window) {
             return json!(format!("terminal:{}", t.id));
+        }
+    }
+    // 文件编辑器（input.focus editor 的对向探针）：此前焦点落在编辑器报
+    // "other"，而 other 被文档定义为「不该发生时的线索」——焦点类断言反被误导
+    for tab in &chat.panel_tabs {
+        if let crate::PanelTab::File(p) = tab {
+            if let Some(ed) = chat.file_cache.get(p).and_then(|f| f.editor.as_ref()) {
+                if ed.read(cx).focus_handle(cx).is_focused(window) {
+                    return json!("editor");
+                }
+            }
         }
     }
     json!("other")
@@ -595,6 +606,13 @@ fn dialogs_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
         // 040 扩展页卸载确认浮层（Some=开着，值为待卸载来源）
         "pkg_confirm_remove": chat.pkg_confirm_remove.clone(),
         "renaming": opt_path(chat.renaming.as_ref()),
+        // 编辑区右键菜单（file.context_menu 置槽；null=关）——开合/收起
+        // 断言的数据化出口（此前只能开，断言靠 shot 像素）
+        "editor_menu": chat.editor_menu.as_ref().map(|(p, x, y)| json!({
+            "path": p.display().to_string(),
+            "x": x,
+            "y": y,
+        })),
         "ext_dialog": chat.ext_dialog.is_some(),
         "toast": chat.status_toast.as_ref().map(|(t, _)| truncate(t, 200)),
         "settings_open": chat.settings.is_some(),

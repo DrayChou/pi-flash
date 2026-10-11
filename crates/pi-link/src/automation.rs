@@ -48,6 +48,10 @@ pub mod method {
     /// 编辑区右键菜单（自动化验证入口：状态与真右键同槽，触发后
     /// shot/snapshot 断言菜单渲染与收起）
     pub const FILE_CONTEXT_MENU: &str = "file.context_menu";
+    /// 编辑区右键菜单收起（file.context_menu 的对向 op）：幂等清
+    /// editor_menu 槽（与点菜单项外区域同效），回 {had_menu}；dialogs 面
+    /// `editor_menu`（null=关）断言开合
+    pub const FILE_CONTEXT_MENU_CLOSE: &str = "file.context_menu_close";
     /// 文件树删除流（自动化验证入口，settings.remove_ext 同款两段式）：
     /// file.delete 弹确认浮层（与右键菜单「删除」同一方法
     /// confirm_tree_delete），file.delete_confirm 应答「确认」（与确认按钮

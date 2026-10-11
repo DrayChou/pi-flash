@@ -36,8 +36,8 @@ pif-ui — pi-flash UI 自动化 CLI
   list                          列出本机 pi-flash 自动化实例
   info                          app 级信息
   snapshot [surface] [--only k] 数据化界面快照（app/sessions/session/composer/
-                                files/git/settings/dialogs；--only 只留指定
-                                顶层键，可重复，大面裁剪用）
+                                files/git/settings/dialogs/term；--only 只留
+                                指定顶层键，可重复，大面裁剪用）
   exec <method> [json] [--arg k=v]... [--params-file f.json]
                                 执行 op。参数三种给法：位置 JSON、--arg
                                 键值（值合法 JSON 则按 JSON，否则字符串；
@@ -229,10 +229,12 @@ fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
 
-/// 一条已握手的连接；wait 复用同一条轮询。
+/// 一条已握手的连接；wait 复用同一条轮询。timeout = 全局 --timeout（单次
+/// 请求读超时，call/wait 共用——此前 call 硬编码 15s，旗标只对握手生效）。
 struct Conn {
     stream: TcpStream,
     reader: BufReader<TcpStream>,
+    timeout: Duration,
 }
 
 impl Conn {
@@ -272,7 +274,7 @@ impl Conn {
     fn call(&mut self, m: &str, params: &Value) -> Result<Value, String> {
         let id = format!("cli-{}", now_ms());
         self.write_line(&automation::request_record(&id, m, params).to_string())?;
-        self.read_response(&id, Duration::from_secs(15))
+        self.read_response(&id, self.timeout)
     }
 }
 
@@ -282,7 +284,7 @@ fn handshake(stream: TcpStream, token: &str, timeout: Duration) -> Result<Conn, 
         .set_read_timeout(Some(timeout))
         .map_err(|e| format!("设超时失败: {e}"))?;
     let reader = BufReader::new(stream.try_clone().map_err(|e| e.to_string())?);
-    let mut conn = Conn { stream, reader };
+    let mut conn = Conn { stream, reader, timeout };
     // hello
     let mut line = String::new();
     conn.reader.read_line(&mut line).map_err(|e| format!("读 hello 失败: {e}"))?;
@@ -443,11 +445,9 @@ fn cmd_wait(
     let id = format!("cli-wait-{}", now_ms());
     loop {
         conn.write_line(&automation::request_record(&id, method::UI_SNAPSHOT, &params).to_string())?;
-        let snap = conn.read_response(&id, Duration::from_secs(timeout))?;
+        let snap = conn.read_response(&id, conn.timeout)?;
         let hit = lookup(&snap, &path).map(|got| {
-            if let Some(eq) = &eq {
-                // --eq 比较前也做一次字符串宽容：true/false 数字等走 JSON，其余字符串
-                let _ = eq;
+            if eq.is_some() {
                 *got == expect
             } else if let Some(sub) = &contains {
                 serde_json::to_string(got)
@@ -521,7 +521,7 @@ mod tests {
         assert_eq!(lookup(&v, "tabs.5.file"), None); // 越界
         assert_eq!(lookup(&v, "app.booted.x"), None); // 标量再下钻
         assert_eq!(lookup(&v, ".app..booted"), Some(&json!(true))); // 容忍空段
-        assert_eq!(lookup(&v, "[0].x", ), None); // 根不是数组
+        assert_eq!(lookup(&v, "[0].x"), None); // 根不是数组
     }
 
     #[test]

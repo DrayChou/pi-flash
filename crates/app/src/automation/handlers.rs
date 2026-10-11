@@ -332,6 +332,14 @@ pub(super) fn dispatch(
             cx.notify();
             ok()
         }
+        // 编辑区右键菜单收起（file.context_menu 的对向 op，与点菜单项外
+        // 区域同效——清槽）。幂等：无菜单开着也 ok，回 had_menu 供断言
+        method::FILE_CONTEXT_MENU_CLOSE => {
+            let had_menu = chat.editor_menu.is_some();
+            chat.editor_menu = None;
+            cx.notify();
+            Ok(json!({"ok": true, "had_menu": had_menu}))
+        }
         method::FILE_VIEW_MODE => {
             let path = params_path(params, "path")?;
             let mode = params
@@ -626,7 +634,8 @@ pub(super) fn dispatch(
 }
 
 /// stage/unstage 共用体：{"path": "..."} 单文件 或 {"all": true}（unstage
-/// 无现成全量函数，逐个 reset 已登记的 staged 文件）。
+/// 无现成全量函数，逐个 reset 已登记的 staged 文件；批量只保留最后一个
+/// 错误——更早的失败被吞，详情走 git_error 进 git 面可见）。
 fn git_stage_op(chat: &mut Chat, params: &Value, stage: bool) -> Result<(), String> {
     if params.get("all").and_then(Value::as_bool).unwrap_or(false) && !stage {
         let staged: Vec<PathBuf> = chat

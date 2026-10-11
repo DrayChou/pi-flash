@@ -988,7 +988,7 @@ mod tests {
     fn pending_menu_intercepts_numbers_before_the_model() {
         use menu::{MenuKind, Outcome, PendingMenu};
         let mut rc = RemoteControl::new();
-        let (prompt, m) = PendingMenu::build(
+        let (_, m) = PendingMenu::build(
             MenuKind::Think,
             None,
             "选择思考档位",
