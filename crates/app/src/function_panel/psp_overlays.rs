@@ -34,7 +34,7 @@ pub(crate) fn psp_overlays(
         .absolute()
         .inset_0();
     if let Some((path, x, y)) = &chat.proj_tip {
-        el = el.child(proj_tip(path, *x, *y, vp));
+        el = el.child(proj_tip(path, *x, *y, vp, t));
     }
     if let Some(card) = &chat.hover_card {
         // 延迟显示（0.3s）：快速滑过会话列表时不创建视觉，不干扰行悬停
@@ -51,9 +51,16 @@ pub(crate) fn psp_overlays(
     el.into_any_element()
 }
 
-/// 项目行 tooltip：短名 + 全路径（mono），深色底，跟随鼠标。锚点 = 光标，
-/// 统一算法：光标在右半 → 贴光标左侧弹，下半 → 贴光标上方弹。
-fn proj_tip(path: &std::path::PathBuf, x: f32, y: f32, vp: (f32, f32)) -> impl gpui::IntoElement {
+/// 项目行 tooltip：短名 + 全路径（mono），随主题（与 toast 同族：bg_panel
+/// + border + text），跟随鼠标。锚点 = 光标，统一算法：光标在右半 → 贴
+/// 光标左侧弹，下半 → 贴光标上方弹。t 从外层传入（psp_overlays 已取）。
+fn proj_tip(
+    path: &std::path::PathBuf,
+    x: f32,
+    y: f32,
+    vp: (f32, f32),
+    t: &'static crate::theme::Theme,
+) -> impl gpui::IntoElement {
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
@@ -68,7 +75,9 @@ fn proj_tip(path: &std::path::PathBuf, x: f32, y: f32, vp: (f32, f32)) -> impl g
                 .px(px(11.))
                 .py(px(8.))
                 .rounded(px(8.))
-                .bg(rgb(0x22312d))
+                .border_1()
+                .border_color(rgb(t.border))
+                .bg(rgb(t.bg_panel))
                 .shadow_lg()
                 .flex()
                 .flex_col()
@@ -78,14 +87,14 @@ fn proj_tip(path: &std::path::PathBuf, x: f32, y: f32, vp: (f32, f32)) -> impl g
             div()
                 .text_size(crate::appearance::ui_size(11.5))
                 .font_weight(gpui::FontWeight::BOLD)
-                .text_color(rgb(0xeef4f1))
+                .text_color(rgb(t.text))
                 .child(SharedString::from(name)),
         )
         .child(
             div()
                 .text_size(crate::appearance::ui_size(10.5))
                 .font_family(crate::editor::markdown::MONO_FAMILY)
-                .text_color(rgb(0x9fbcb2))
+                .text_color(rgb(t.text_muted))
                 .child(SharedString::from(full)),
         )
 }
