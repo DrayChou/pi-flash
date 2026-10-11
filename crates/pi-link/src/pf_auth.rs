@@ -117,19 +117,15 @@ pub fn store_catalog_key_at(
     raw: &str,
     vault: &dyn SecretVault,
 ) -> Result<StoreMode, String> {
+    // 2026-10-10 定稿：内置商只收明文 key——`$`/`!` 引用形态对内置商是
+    // 死路径（PF 不注入 Ref 条目、pi 不读 pf-auth），不再产生。`$`/`!` 的
+    // 消费方在自定义商 apiKey 字段（pi 扩展侧）。
     let var = env_var_name(provider);
-    let (stored, mode) = if raw.starts_with('$') || raw.starts_with('!') {
-        (raw.to_string(), StoreMode::Ref)
-    } else {
-        match vault.set(&var, raw) {
-            Ok(()) => (format!("${var}"), StoreMode::Vault),
-            Err(_) => (raw.to_string(), StoreMode::File),
-        }
+    let (stored, mode) = match vault.set(&var, raw) {
+        Ok(()) => (format!("${var}"), StoreMode::Vault),
+        Err(_) => (raw.to_string(), StoreMode::File),
     };
-    let inject = match mode {
-        StoreMode::Ref => None,
-        _ => Some(official_env_name(provider).map(str::to_string).unwrap_or(var)),
-    };
+    let inject = Some(official_env_name(provider).map(str::to_string).unwrap_or(var));
     set_entry_at(pf_path, provider, &stored, inject.as_deref(), mode)?;
     Ok(mode)
 }
@@ -271,13 +267,14 @@ mod tests {
         let entries = entries_at(&p).unwrap();
         assert_eq!(entries[0].2.as_deref(), Some("DEEPSEEK_API_KEY"));
         assert_eq!(v.get("PF_KEY_DEEPSEEK").unwrap().as_deref(), Some("sk-xxx"));
-        // 高级引用原样、不进凭据库、不注入
+        // `$`/`!` 输入一律按明文入库（Ref 死路径已移除：字面值进凭据库、
+        // 照常注入）
         let mode = store_catalog_key_at(&p, "deepseek", "!my-cmd", &v).unwrap();
-        assert_eq!(mode, StoreMode::Ref);
+        assert_eq!(mode, StoreMode::Vault);
         let entries = entries_at(&p).unwrap();
-        let reference = entries.iter().find(|(p, _, _, _)| *p == "deepseek" ).unwrap();
-        assert_eq!(reference.1, "!my-cmd");
-        assert_eq!(reference.2, None);
+        let entry = entries.iter().find(|(p, _, _, _)| *p == "deepseek").unwrap();
+        assert_eq!(entry.1, "$PF_KEY_DEEPSEEK");
+        assert_eq!(v.get("PF_KEY_DEEPSEEK").unwrap().as_deref(), Some("!my-cmd"));
         // 官方名未知（glm 不在 pi 的 getApiKeyEnvVars 表）：injectAs = 自身
         // 变量名，诚实降级——**不写任何 models.json**
         let mode = store_catalog_key_at(&p, "glm", "sk-glm", &v).unwrap();
