@@ -1,7 +1,9 @@
 //! topbar 三段 (016): 左段在 panel-col 内（收放钮；手机遥控钮已隐藏——
 //! 2026-10-10 定，060 管线保留），右段在 content-col 内（中段标签栏 +
 //! 窗口控制钮）。中段标签栏 =
-//! 置顶会话 tab（第一位，无 × 无 icon）+ 自由标签区（终端/文件，023 规则），
+//! 置顶会话 tab（第一位，无 ×；行尾 ⋯ 菜单 2026-10-11 撤销，三入口改
+//! session tab 下方功能栏 session::session_fn_bar）+ 自由标签区（终端/文件，
+//! 023 规则），
 //! 激活 tab Obsidian 卡片融底、条上不画横线。设置钮下放 018 状态栏、+ 已删
 //! （016 定案）。整条是客户区自绘标题栏——空段挂 `WindowControlArea::Drag`
 //! 命中盒，三个窗口钮注册 Min/Max/Close 命中盒（zed platform_title_bar
@@ -136,122 +138,6 @@ fn icon_btn(
         .child(crate::ui::icon_hover(icon_name, 18., t.text_muted))
 }
 
-/// 会话标题后的 ⋯ 更多菜单：下拉三个入口（打开终端 / 此会话系统提示词 /
-/// 此会话加载工具）。弹层用 ui::dropdown（deferred+anchored：出裁剪、
-/// 贴窗口收口、点外收起）；菜单项自己收起菜单。
-fn session_more_btn(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyElement {
-    let t = T();
-    let open = chat.top_menu_open;
-    let guard = chat.top_dd.clone();
-
-    let weak_toggle = cx.entity().downgrade();
-    let weak_dismiss = cx.entity().downgrade();
-    let open_term = cx.listener(|this, _: &gpui::MouseDownEvent, window, cx| {
-        this.top_menu_open = false;
-        this.open_terminal(None, window, cx);
-        cx.notify();
-    });
-    let open_prompt = cx.listener(|this, _: &gpui::MouseDownEvent, _w, cx| {
-        this.open_session_info(crate::TopPanel::System, cx);
-    });
-    let open_tools = cx.listener(|this, _: &gpui::MouseDownEvent, _w, cx| {
-        this.open_session_info(crate::TopPanel::Tools, cx);
-    });
-
-    crate::ui::dropdown(
-        "topbar-more",
-        &guard,
-        open,
-        move |_w, cx| {
-            let _ = weak_toggle.update(cx, |c, cx| {
-                c.top_menu_open = !c.top_menu_open;
-                cx.notify();
-            });
-        },
-        move |_w, cx| {
-            let _ = weak_dismiss.update(cx, |c, cx| {
-                c.top_menu_open = false;
-                cx.notify();
-            });
-        },
-        div()
-            .id("topbar-more-btn")
-            .size(px(22.))
-            .flex_shrink_0()
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(px(6.))
-            .text_color(rgb(t.text_muted))
-            .cursor_pointer()
-            .hover(|s| s.bg(rgb(t.bg_hover)).text_color(rgb(t.text)))
-            .child(crate::ui::icon_hover("circle-ellipsis", 14., t.text_muted))
-            .into_any_element(),
-        move || {
-            div()
-                .min_w(px(200.))
-                .p(px(4.))
-                .bg(rgb(t.bg))
-                .border_1()
-                .border_color(gpui::rgba(crate::theme::border_alpha(t, 0x8c)))
-                .rounded(px(8.))
-                .shadow_lg()
-                .flex()
-                .flex_col()
-                .child(menu_row(
-                    "tbm-term",
-                    "terminal",
-                    tr("打开终端"),
-                    chat.content_view == ContentView::Term,
-                    open_term,
-                ))
-                .child(menu_row(
-                    "tbm-prompt",
-                    "file-sliders",
-                    tr("此会话系统提示词"),
-                    chat.session_info_open(crate::TopPanel::System),
-                    open_prompt,
-                ))
-                .child(menu_row(
-                    "tbm-tools",
-                    "wrench",
-                    tr("此会话加载工具"),
-                    chat.session_info_open(crate::TopPanel::Tools),
-                    open_tools,
-                ))
-                .into_any_element()
-        },
-    )
-}
-
-/// 更多菜单的一行：图标 + 文案（样式对齐 psp ⋯ 菜单）；`checked` = 该面板
-/// 当前开着（pi-web 的面板按钮 active 态在这里落在菜单项的打勾上）。
-fn menu_row(
-    id: &'static str,
-    icon_name: &'static str,
-    label: &'static str,
-    checked: bool,
-    handler: impl Fn(&gpui::MouseDownEvent, &mut Window, &mut gpui::App) + 'static,
-) -> impl gpui::IntoElement {
-    let t = T();
-    div()
-        .id(id)
-        .flex()
-        .items_center()
-        .gap(px(8.))
-        .px(px(10.))
-        .py(px(7.))
-        .rounded(px(6.))
-        .text_size(crate::appearance::ui_size(12.))
-        .text_color(rgb(t.text))
-        .cursor_pointer()
-        .hover(|s| s.bg(rgb(t.bg_hover)))
-        .on_mouse_down(MouseButton::Left, handler)
-        .child(crate::ui::icon(icon_name, 14., t.text_muted))
-        .child(div().flex_1().child(SharedString::from(label)))
-        .children(checked.then(|| crate::ui::icon("check", 12., t.accent)))
-}
-
 /// 内容区 tab（Obsidian 式）：激活 = 凸起卡片（bg 色、顶圆角、下缘融入
 /// 内容区、× 可见）；非激活 = 平铺文字。`ml` = 距分隔线/前一 tab 的间距。
 
@@ -353,10 +239,10 @@ fn tab_strip(
     tabs_host.child(div().w(px(20.)).flex_shrink_0())
 }
 
-/// 置顶会话 tab（016）：中段第一位（距条左缘 10px），无 ×，label = 会话
-/// 标题（≤30 字截断不变），前置 bot-message-square icon。激活 = 会话视图
-/// （Obsidian 卡片融底），卡片内右缘保留原标题行的 ⋯ 菜单（仅会话态
-/// 显示，与旧标题行一致）；点击回会话视图（status_bar 会话 tab 同语义）。
+/// 置顶会话 tab（016）：中段第一位（距条左缘 10px），无 × 无 ⋯（2026-10-11
+/// 定夺：⋯ 菜单三入口改到会话 tab 下方的功能栏，见 session::session_fn_bar），
+/// label = 会话标题（≤30 字截断不变），前置 bot-message-square icon。激活 =
+/// 会话视图（Obsidian 卡片融底）；点击回会话视图（status_bar 会话 tab 同语义）。
 fn session_tab(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyElement {
     let t = T();
     let active = chat.content_view == ContentView::Chat;
@@ -365,7 +251,6 @@ fn session_tab(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyElemen
         this.set_content_view(crate::ContentView::Chat);
         cx.notify();
     });
-    let more = active.then(|| session_more_btn(chat, cx));
     tab_shell(
         "ctab-session",
         Some("bot-message-square"),
@@ -374,7 +259,7 @@ fn session_tab(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyElemen
         0.,
         t,
         switch,
-        more,
+        None,
         None,
     )
     .into_any_element()
@@ -505,7 +390,9 @@ fn tab_shell(
                 .rounded_tl(px(9.))
                 .rounded_tr(px(9.))
                 .pl(px(12.))
-                .pr(px(5.))
+                // 行尾有交互钮（文件/终端 tab 的 ×，自带 20px 命中区）让位
+                // 5px；无行尾钮（会话 tab，⋯ 已撤 2026-10-11）右距对齐左距
+                .pr(px(if trailing.is_some() { 5. } else { 12. }))
                 .text_color(rgb(t.text))
         })
         .when(!active, |d| {

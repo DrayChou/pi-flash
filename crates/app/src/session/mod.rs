@@ -1,6 +1,7 @@
 //! sessionView (v54): 聊天列（消息列表 + 悬浮 composer；空会话走 012 新会话页
 //! = `new_session`）+ 会话导航面板（033：右缘 10px 刻度条，75% 高，悬停左弹
-//! 400px 轮次摘要卡片列表）。无工具栏、无内嵌状态行（v54 按设计删除）。
+//! 400px 轮次摘要卡片列表）。顶部会话功能栏（2026-10-11，原 topbar ⋯ 菜单
+//! 改条）；无内嵌状态行（v54 按设计删除）。
 
 pub(crate) mod actions_bar;
 pub(crate) mod chat_list;
@@ -17,6 +18,8 @@ pub(crate) mod tools_recipe;
 
 use gpui::{Animation, AnimationExt, MouseButton, SharedString, div, list, prelude::*, px, relative, rgb};
 use pi_link::protocol::Block;
+
+use crate::i18n::tr;
 
 use self::messages::{
     Role, compute_meta, render_assistant_turn, render_bash_msg, render_custom_msg, render_msg,
@@ -74,6 +77,7 @@ pub(crate) fn main_column(
         .bg(rgb(t.bg))
         .text_color(rgb(t.text))
         .font_family(sf.family.clone())
+        .child(session_fn_bar(chat, cx))
         .child(
             div()
                 .id("chat-and-nav")
@@ -130,6 +134,94 @@ pub(crate) fn main_column(
                 })
                 .child(nav_gutter(chat, rt_entity.clone(), weak.clone(), t, cx)),
         )
+}
+
+/// 会话功能栏（2026-10-11：topbar ⋯ 菜单撤下拉改常驻条）：会话 tab 下方
+/// 32px 操作条，版式对齐文件标签下方的 file_nav_bar（同高、同下边框、同
+/// pl12/pr8）。三钮自动左对齐：系统提示词 / 会话工具集 / 打开终端，icon
+/// 在前，钮间用淡色 `|` 区隔；每段对称 padding（内容段内居中）。对应
+/// 面板/视图开着时该钮点亮 accent（原 ⋯ 菜单打勾语义的条上形态）。
+fn session_fn_bar(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyElement {
+    let t = T();
+    div()
+        .id("session-fn-bar")
+        .h(px(32.))
+        .flex_shrink_0()
+        .flex()
+        .items_center()
+        .pl(px(12.))
+        .pr(px(8.))
+        .border_b_1()
+        .border_color(gpui::rgba(crate::theme::border_alpha(t, 0x66)))
+        .child(fn_bar_btn(
+            "sfbar-prompt",
+            "file-sliders",
+            tr("系统提示词"),
+            chat.session_info_open(crate::TopPanel::System),
+            cx.listener(|this, _: &gpui::MouseDownEvent, _w, cx| {
+                this.open_session_info(crate::TopPanel::System, cx);
+            }),
+        ))
+        .child(fn_bar_sep(t))
+        .child(fn_bar_btn(
+            "sfbar-tools",
+            "wrench",
+            tr("会话工具集"),
+            chat.session_info_open(crate::TopPanel::Tools),
+            cx.listener(|this, _: &gpui::MouseDownEvent, _w, cx| {
+                this.open_session_info(crate::TopPanel::Tools, cx);
+            }),
+        ))
+        .child(fn_bar_sep(t))
+        .child(fn_bar_btn(
+            "sfbar-term",
+            "terminal",
+            tr("打开终端"),
+            chat.content_view == crate::ContentView::Term,
+            cx.listener(|this, _: &gpui::MouseDownEvent, window, cx| {
+                this.open_terminal(None, window, cx);
+                cx.notify();
+            }),
+        ))
+        .into_any_element()
+}
+
+/// 功能栏按钮：icon 在前 + 文案，段内对称 padding（内容居中）；`on` =
+/// 对应面板/视图开着（accent 点亮）。
+fn fn_bar_btn(
+    id: &'static str,
+    icon_name: &'static str,
+    label: &'static str,
+    on: bool,
+    handler: impl Fn(&gpui::MouseDownEvent, &mut gpui::Window, &mut gpui::App) + 'static,
+) -> gpui::AnyElement {
+    let t = T();
+    let hover_fg = if on { t.accent } else { t.text };
+    div()
+        .id(id)
+        .flex()
+        .items_center()
+        .gap(px(6.))
+        .px(px(8.))
+        .py(px(4.))
+        .rounded(px(6.))
+        .text_size(crate::appearance::ui_size(11.5))
+        .text_color(rgb(if on { t.accent } else { t.text_muted }))
+        .cursor_pointer()
+        .hover(move |s| s.bg(rgb(t.bg_hover)).text_color(rgb(hover_fg)))
+        .on_mouse_down(MouseButton::Left, handler)
+        .child(crate::ui::icon(icon_name, 13., if on { t.accent } else { t.text_muted }))
+        .child(SharedString::from(label))
+        .into_any_element()
+}
+
+/// 功能栏钮间淡化分隔（文字竖线，text_faint 档）。
+fn fn_bar_sep(t: &'static crate::theme::Theme) -> gpui::AnyElement {
+    div()
+        .text_size(crate::appearance::ui_size(11.))
+        .text_color(rgb(t.text_faint))
+        .child(SharedString::from("|"))
+        .into_any_element()
 }
 
 /// 回到最新消息（pi-web chat-scroll-to-bottom parity）：32px 圆钮，由

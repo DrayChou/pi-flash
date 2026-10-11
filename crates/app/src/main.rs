@@ -498,10 +498,6 @@ struct Chat {
     psp_menu: Option<PspMenu>,
     confirm_prj_del: Option<(PathBuf, f32, f32)>,
     status_toast: Option<(String, std::time::Instant)>,
-    /// topbar 会话视图的 ⋯ 更多菜单开合（打开终端 / 系统提示词 / 已加载工具）
-    top_menu_open: bool,
-    /// 该 dropdown 的收起防抖守卫（ui::dropdown 组件持有，点外收起不双触发）
-    top_dd: gpui::Entity<crate::ui::DropdownState>,
     /// 工具定义弹窗左列表选中的工具名（pi-web ToolDefinitionsPanel 的
     /// selectedToolName）
     tool_sel: Option<String>,
@@ -843,8 +839,6 @@ impl Chat {
             psp_menu: None,
             confirm_prj_del: None,
             status_toast: None,
-            top_menu_open: false,
-            top_dd: cx.new(|_| crate::ui::DropdownState::new()),
             crumb_menu_dir: None,
             crumb_dd: cx.new(|_| crate::ui::DropdownState::new()),
             ext_probe: (0, 0),

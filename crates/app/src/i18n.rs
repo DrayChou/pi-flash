@@ -248,12 +248,11 @@ const TABLE: &[(&str, &str, &str)] = &[
     ("（无文件）", "（無檔案）", "(no files)"),
     ("编辑器初始化中…", "編輯器初始化中…", "Initializing editor…"),
     ("文件已关闭", "檔案已關閉", "File closed"),
-    // topbar ⋯ 更多菜单（三个入口）
+    // 会话功能栏（session::session_fn_bar，原 topbar ⋯ 菜单三入口）
     ("打开终端", "開啟終端機", "Open terminal"),
-    ("此会话系统提示词", "此會話系統提示詞", "Session system prompt"),
-    ("此会话加载工具", "此會話載入工具", "Session loaded tools"),
-    // top panel：系统提示词（pi-web system.*）
     ("系统提示词", "系統提示詞", "System prompt"),
+    ("会话工具集", "會話工具集", "Session tools"),
+    // top panel：系统提示词（pi-web system.*）
     ("工具定义", "工具定義", "Tool definitions"),
     ("系统提示词为空（工具已禁用）", "系統提示詞為空（工具已停用）", "System prompt is empty (tools are disabled)"),
     ("系统提示词加载中…", "系統提示詞載入中…", "Loading system prompt…"),
