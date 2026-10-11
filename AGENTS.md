@@ -1,52 +1,113 @@
 # 项目名
-Pi-Flash 
-缩写 PF
-注意单词开头大写，UI设计以此为准。
+Pi-Flash 缩写 PF
 
 # 项目目标
-以PI-WEB为功能原型，ZED为性能原型，用Rust+GPUI编写一个极速的Pi桌面端。
+以PI-WEB为功能原型，ZED为性能原型，用Rust+GPUI编写极速的Pi桌面端。
+
+# Quick Start
+
+```bash
+cd vendor/pi && npm ci && cd ../..              # 首次；node_modules 不入库
+cargo run -p app                                # 运行（bin: pi-flash）
+RUST_MIN_STACK=33554432 cargo test -p pi-link   # 协议/路径测试都在 pi-link
+```
+
+- 环境变量：`PI_FLASH_PI_BIN` 覆盖内置 pi；`PI_FLASH_THEME` 切主题（default/dark/rose）；`PI_FLASH_RPC_LOG` 开 RPC 线缆日志
+- UI 验证一律走 pif-ui 自动化链路（见下节），禁止抢真实屏幕
 
 # 铁律
-- **内置pi**：内置 `@earendil-works/pi-coding-agent` ，vendor 进应用分发，运行时 spawn `node <app>/vendor/pi/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js --mode rpc`。**不读 PATH/系统 pi**；升级 = bump `vendor/pi/package.json` + VERSION + 跑 pi-link 符合性测试。开发期 `PI_FLASH_PI_BIN` 可覆盖。
-- **目标平台**：Windows + macOS。**macOS CI 已停用**（2026-10-10 定）：Apple 签名/公证要 99 美元/年 Developer Program，免费软件不买——ad-hoc 包无法过 Gatekeeper 分发，构建了也白搭。恢复方式：`gh workflow enable release-macos.yml`（workflow 文件保留在 `.github/workflows/`，构建本身已修绿：winresource 门控 / 无 --deep / node+vendor 在 Contents/Resources）。
+- **内置pi**：内置 `@earendil-works/pi-coding-agent`，vendor 进应用分发，运行时 spawn `node <app>/vendor/pi/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js --mode rpc`。**不读 PATH/系统 pi**；升级 = bump `vendor/pi/package.json` + VERSION + 跑 pi-link 符合性测试（wire 陷阱与升级复核点见 `docs/agents/pi-rpc.md`）。开发期 `PI_FLASH_PI_BIN` 可覆盖。
+- **目标平台**：Windows + macOS。**macOS CI 已停用**（2026-10-10 定）：Apple 签名/公证要 99 美元/年，免费软件不买——ad-hoc 包过不了 Gatekeeper。恢复：`gh workflow enable release-macos.yml`（workflow 保留在 `.github/workflows/`，构建已修绿）。
 - 完成任务保证编译通过后提交git，测试和验收交给用户
-- **GitHub 推送**：远端 `https://github.com/danielbill/pi-flash.git` 间歇被墙（github.com 不通、api.github.com 通）。`git push` 失败时直接走 SSH over 443，勿反复重试 HTTPS：`GIT_SSH_COMMAND="ssh -i ~/.ssh/id_rsa_github -o StrictHostKeyChecking=no" git push ssh://git@ssh.github.com:443/danielbill/pi-flash.git main`（key 已认证；若远端 URL 改为 SSH 可省略此长命令）。gh CLI 走 api.github.com，一般不受影响。
+- **GitHub 推送**：远端 `https://github.com/danielbill/pi-flash.git` 间歇被墙（github.com 不通、api.github.com 通）。`git push` 失败直接走 SSH over 443，勿反复重试 HTTPS：`GIT_SSH_COMMAND="ssh -i ~/.ssh/id_rsa_github -o StrictHostKeyChecking=no" git push ssh://git@ssh.github.com:443/danielbill/pi-flash.git main`。gh CLI 走 api.github.com，一般不受影响。
 - UI绘制遵循 docs\UI设计\UI组件规范.md
 
 # 路径
-
-- pi-web 功能原型：`D:\github\---ai-tools---\pi-web` 
+- pi-web 功能原型：`D:\github\---ai-tools---\pi-web`
 - zed 性能原型：`D:\github\zed` → gpui、markdown、theme、ui、terminal、agent_ui
 - vendored pi：`vendor/pi`（package.json+lock 入库；node_modules 走 `npm ci` 不入库）
-- 架构设计：`docs/ARCHITECTURE.md`
-- 软件分发（一条命令装/更）：`docs/模块设计/080-软件分发.md`（npm 薄壳 + GitHub Releases；本地自测 `node npm/test/e2e.js`）
-- 发版规范（唯一操作路径）：`docs/RELEASE.md`——版本号由所有者拍板，禁止擅自变更/建议
-- bug 追踪：`docs/bugs.md`
-- 进度：`docs/progress.md`；复刻计划：`docs/PORT_PLAN.md`
-- 截图：`tmp/屏幕截图/`
+- 架构设计：`docs/ARCHITECTURE.md`；复刻计划：`docs/PORT_PLAN.md`
+- 模块设计：`docs/模块设计/`（编号即模块，正文里的 0xx/vNN 引用都指这里）
+- 领域陷阱笔记：`docs/agents/`（见下方「领域笔记」节）
+- 软件分发：`docs/模块设计/080-软件分发.md`；发版唯一路径：`docs/RELEASE.md`（版本号由所有者拍板，禁止擅自变更/建议）
+- bug 追踪：`docs/bugs.md`；进度：`docs/progress.md`；截图：`tmp/屏幕截图/`
 
 # 架构
-
 - workspace：`crates/pi-link`（钉版 pi RPC 协议层，测试在此）+ `crates/app`（GPUI 界面）
+- gpui 0.2.2 / gpui-component **vendored**：`[patch.crates-io]` → `vendor/gpui`、`vendor/gpui-component`（workspace exclude；debug profile 保留行号表）
 - 主题：`theme.rs`（mist 默认；`PI_FLASH_THEME` 可切 default/dark/rose）
-- gpui 0.2.2（crates.io，自包含）；0.2.2 要点：`cx.spawn(async move |weak, &mut AsyncApp|)`、prompt_for_paths 返回 oneshot Receiver、HighlightStyle 无 builder（字段赋值）
+
+# File Map
+
+一行一个职责；细粒度见各文件 `//!` 头注释。
+
+```
+crates/pi-link/src/     钉版 pi RPC 协议层（typed bridge，测试在此）
+  protocol.rs             typed pi RPC（JSONL over stdio）
+  client.rs               pi 侧车进程所有权与 JSONL 管线
+  json.rs                 pi 返回 JSON 的解析入口（disable_recursion_limit 在此）
+  transcript.rs           transcript 系统提示词 + 工具声明重放
+  catalog.rs              启动期目录直读（get_commands 无内置命令的补偿）
+  vendor.rs               vendored pi 运行时定位
+  sessions.rs             会话发现（~/.pi/agent/sessions 索引扫描）
+  recents.rs              最近活动会话列表（003）
+  config.rs               pi 配置文件访问（Models 面板）
+  models_json.rs          ~/.pi/agent/models.json（pi 的文件，PF 只读）
+  registry.rs             全量 provider 注册表（042 新增 Provider 数据源）
+  pf_auth.rs              ~/.pi-flash/pf-auth.json PF 密钥账本（051）
+  pf_providers.rs         ~/.pi-flash/providers.json 自定义 provider（051）
+  credentials.rs          OS 凭据库 keyring + $PF_KEY_* 引用（051）
+  probe.rs                apikey 保存后通路探查（042）
+  estimate.rs             token 估算（pi-web parity）
+  mcp.rs                  mcp.json 全局/项目配置（043）
+  skills.rs               技能发现 + SKILL.md frontmatter 编辑
+  extensions.rs           扩展发现口径（复刻 pi core/extensions）
+  session_ext.rs          会话级插件清单（031/034）
+  paths.rs                PF 自有文件路径（不污染 pi，010）
+  automation.rs           pif-ui 自动化协议（NDJSON over TCP 127.0.0.1）
+  bin/                    附属可执行
+
+crates/app/src/         GPUI 界面
+  main.rs / startup.rs    壳 / 启动唯一入口（010）
+  agent_session.rs        AgentSession：RPC 进程所有权、事件泵、状态机
+  content.rs              内容区状态机 chat / term / md（v54）
+  actions_*.rs            动作层：sessions 会话池、runtime 订阅切换、files 文件树动作、
+                          menu 补全菜单、dialogs 弹窗+搜索、rename 行内改名+provider 弹窗、
+                          panels 预览tab+附件+psp 动作、terminal 终端
+  dialogs.rs              模态弹窗 ModelSelect / GitDiff / SessionSearch / ImagePreview
+  ext_ui.rs / _actions.rs 扩展 UI 面 + 扩展 UI 协议动作（040）
+  i18n.rs                 三语（zh-CN 为源）
+  models_config.rs        enabledModels 白名单编辑（pi-web port）
+  theme.rs                七主题，1:1 翻译 pi-web globals.css
+  appearance/             主题注册表 + 界面/多语言（006/007）
+  automation/             pif-ui 自动化服务：snapshot / screenshot / op 分发
+  editor/                 文件编辑器域（023）+ Markdown 渲染与所见即所得（024/025）
+  function_panel/         psp 项目+会话一体列表（015）+ 文件树（021）+ git 面板（022）+ 悬浮层
+  remote_control/         微信 ⇄ 会话桥（060）
+  services/               pi-web lib/ parity 的无 UI 助手：file_icons / at_file / file_index /
+                          file_tree / format / git / paths_sort / sound / token_probe /
+                          updater / watcher / workspace
+  session/                会话域：runtime 会话池（030）、messages、chat_list 滚屏、input
+                          composer（031）、fork、diff、model/plugin/mcp picker、new_session（012）、
+                          tools_recipe 档位配方（034）
+  settings/               设置面板六页（界面/模型/技能/扩展/MCP/其他）+ widgets 公共件
+  ui/                     通用件：tokens（UI组件规范唯一代码落点）、button、text_input、
+                          composer_input、dropdown、overlay、popup、vlist、psp_scrollbar
+  assets.rs               图标编入二进制；status_bar.rs 状态栏；titlebar.rs topbar；
+                          top_panels.rs 系统提示词/工具定义面板
+```
+
+# 领域笔记（docs/agents/）
+
+**改哪片代码，先读覆盖它的笔记；新陷阱写进所属笔记，不堆回本文件。**
+
+- [pi-rpc.md](docs/agents/pi-rpc.md)：pi RPC wire 陷阱 + vendor 升级复核点。覆盖 `crates/pi-link/**` 与 app 侧消费方（agent_session、session/runtime、messages、ext_ui）。
+- [gpui.md](docs/agents/gpui.md)：gpui 0.2.2（vendored）/ gpui-component 渲染与交互陷阱。覆盖 `crates/app/src/**`。
+- [engineering.md](docs/agents/engineering.md)：Rust/工具链工程杂项（补丁方式、CRLF、Windows 路径、测试栈、真实按键链）。
 
 # UI 自动化测试
 **agent 调试 UI 一律走 pif-ui 自动化链路，禁止抢真实屏幕/鼠标/键盘，禁止 OS 截图。**
-UI 测试技能：`.agents/skills/pi-flash-ui-test/SKILL.md` 
-
-# GPUI/Rust 陷阱
-
-- 交互 handler（on_mouse_down/on_key_down/listener）漏 `cx.notify()` = 状态变 UI 不动
-- 方法链中间插入语句后漏/多 `),` → 结构性编译错误；大补丁用脚本文件，勿用 bash heredoc（会静默截断）
-- `gen` 是 edition 2024 保留字
-
-# pi 协议陷阱（详见 progress.md）
-
-- 内容块类型 camelCase `toolCall`；流式 args 起始走 `partialJson`；工具结果 `role:"toolResult"` 回灌
-- set_model 字段是 `modelId`；client 不得硬编码 `--no-session`
-
-
+UI 测试技能：`.agents/skills/pi-flash-ui-test/SKILL.md`
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:970c3bf2 -->
 ## Beads Issue Tracker

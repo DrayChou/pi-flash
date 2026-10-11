@@ -4,7 +4,8 @@
 > ① 每轮工作更新「当前状态」，并在「里程碑索引」顶部加**一条一行**纪要；
 > ② 实现细节不进本文件——commit message 即详录（本仓库惯例：提交信息自带
 >    根因/方案/验证），检索用 `git log --oneline --grep=<关键词>`；
-> ③ 陷阱与用户定案沉淀进下方「持久参考」两节，长期保留、随踩随补。
+> ③ 用户定案沉淀进下方「产品定案」节；陷阱住 `docs/agents/`（pi-rpc / gpui /
+>    engineering），随踩随补去那边。
 >
 > 2026-10-10 压缩：2716 行 → 现行规模。详版全文在 git 历史——压缩提交的
 > 父提交是最后全量版（`git log -p -- docs/progress.md`）。旧文件「当前状态
@@ -143,80 +144,9 @@
   三轮失败定案绕行）；主题持久化只写 app_settings.json；模型弹窗短名/思考
   off = 预期（非推理模型）；新会话页判据 = isEmptyNew。
 
-## 持久参考：陷阱库
+## 陷阱
 
-### pi 协议（wire，AGENTS.md 摘要版的扩集）
-
-- 内容块 camelCase `toolCall`；流式 args 起始 `partialJson`；工具结果
-  `role:"toolResult"` 独立回灌（按 toolCallId 挂回卡片）；`set_model` 字段是
-  `modelId`；client 不得硬编码 `--no-session`（压掉 `--session`）。
-- 无 `navigate_tree`/`systemPrompt`/`get_tools`（后者是 pi-web 进程内 SDK 专属）。
-  系统提示词与工具声明在 transcript 的 `role:"system"` 消息里（content 追加 +
-  sections 补丁 + toolsAdded/Removed），重放对齐 pi-ai `utils/transcript.js`；
-  serde_json 开 `preserve_order` 保 sections 顺序。turn_start 后的 system
-  message 全量携带 transcript 补丁（app 靠它 live 重放）；1.1.0 起多 `toolsAdded`
-  键、`agent_settled` 多 `aborted` 字段。
-- `get_tree` 深树双炸：客户端 serde_json 默认 128 层递归上限（→ `parse_value`
-  disable_recursion_limit + reader 线程 16MB 栈）；pi 侧超长会话自己
-  `Maximum call stack`。fork 锚点正解 = `get_entries` 扁平列表走 parentId。
-- `get_commands` 只回扩展 + skill 命令，**无内置**（1.0.0/1.1.0 实测，vendor
-  升级时复核 catalog.rs）；`extension_ui_response` 的 id 必须是请求 id
-  （pi 在 raw-line 层按 id 关联）；RPC 模式不支持 custom 扩展 UI。
-- `get_messages` 快照携带 bashExecution（与乐观卡并轨会双卡）；`set_model`
-  异步：立刻 get_state 拿旧值，响应 data 里才有切换后的完整模型对象。
-- `-ne` 只关扩展，个人 skills 照旧（关要 `-ns/-np/--no-themes`）；`--tools`
-  是注册级硬 allowlist（连 getAllTools 都挡）；重复 `-ne` 无害。
-
-### gpui 0.2.2 vendored / gpui-component
-
-- `overflow_y_scroll`/`track_scroll` 只在 `Stateful<Div>`（先 `.id()`）；
-  `visible_on_hover` 不存在 → `.group()` + `group_hover`。
-- `list()` 虚拟列表条目**只认上下 padding**，左右无效 → 外层容器包 `.px()`；
-  item 宽度语义不可靠（psp 弃用改全量 div）。
-- `uniform_list` 契约 = 容器 fixed/max 高（Fill 需 relative+flex_1 外包 +
-  absolute 定死四角，否则画全部内容）；**UniformListScrollHandle 必须跨帧
-  复用**（每帧 `new()` = 滚动全丢）→ `ui::vlist` thread_local 句柄表按 id 复用。
-- overlay 必须 `absolute().inset_0()` + `occlude()`（防 0 高容器裁掉子元素 /
-  鼠标穿透）；但 `occlude()` 会**截断祖先 hitbox**（hit_test 从后往前 break）
-  → 行级 hover 失效、滚轮困死——消息气泡禁止加 occlude。
-- 滚轮派发给**所有**命中可滚动 hitbox 含祖先（嵌套 = 内外同时滚，非先内后外）。
-- 滚屏铁律：Bottom 对齐下内容填不满视口 → 强制 logical=None 贴底（钉顶必须
-  靠 spacer 垫片，常数化最稳）；`ListState::reset()` 清滚动位（notify 前存、
-  后恢复）；`scroll_to*` 不触发 notify（程序化滚动自补通知 + window.refresh）；
-  滚动回调内**严禁**触碰 ListState（BorrowMutError → 置标记渲染帧补账）。
-- hover 事件按绘制逆序派发：向下移动时上一行 leave 晚于下一行 enter →
-  enter-only 置位。
-- **StyledText runs 的 font_size/font_weight 无效**（shape_text 只认容器继承
-  链）→ 字号/加粗挂容器 div（markdown sized_text/weight 参数即此）。
-- `WindowBounds::Maximized` 创建路径无效 → `zoom_window()`；gpui 无逐元素
-  backdrop blur → 遮罩用 bg 色 80% 透明近似柔雾。
-- 字节/字符边界：gpui highlight/切片 range 按字节且必须落字符边界（粘贴
-  panic 0xc0000409 两连的根源）。
-- 双重租约：事件派发期间同步 update/drop 正被派发的实体 → `cx.defer`；
-  自动化 keys 同理（INPUT_KEYS 走 window.defer）。
-- `icon_hover` 自定义元素在 list 虚拟条目里占位不绘制 → 用 `icon()`/
-  `icon_current`；svg 未登记进 `assets!()` 会**静默画空白**（有双向一致性
-  测试守卫）。
-- `window.update`/`chat.update` 不 flatten（catch_unwind 四层嵌套）；vendored
-  `WeakEntity::update` 签名与 Zed 上游不同，别照抄；渲染期读取的实体会注册
-  window invalidator（InputState notify 即重渲染）。
-- 杂项：prepaint/paint 第 5 参是 prepaint state 非 hitbox；Pixels 字段私有
-  （f32::from/除法）；move 闭包捕获 `&WeakEntity` 参数 E0521（闭包外 clone）；
-  `unbounded()` 返回值不能别解构。
-
-### 工程/工具链
-
-- python 脚本整文件重写会把 CRLF 翻成 LF：改前探 `\r`、写回保原行尾；子串
-  替换锚点带行首 `\n` 防缩进误匹配（AGENTS.md：大补丁用脚本文件，勿 heredoc）。
-- gpui-component Input `set_value` 全文走 utf16 编辑管线（4.6MB ≈48ms）→
-  大文本走 vendor state.rs 的 reset 路径（换 Rope + wrapper.reset）。
-- Windows 路径：`Path::components()` RootDir 保留原始分隔符（不可做路径 key）；
-  盘符大小写双写（`d:\` vs `D:\`）跨写方真实存在 → 归一化键小写化
-  （pi-link `path_key`）。
-- 深递归 JSON 测试（deep_tree）在 Windows 默认测试栈溢出 → `RUST_MIN_STACK`
-  ≥32MB（bead 在案）。
-- UI 自动化断言交互 bug 必须走**真实按键链**（`input.keys`）：直调 setter
-  测不出 on_change 类缺陷（菜单 latch 泄漏即漏测案例）。
+已迁 `docs/agents/`（pi-rpc.md / gpui.md / engineering.md），随踩随补去那边。
 
 ## 截图索引（tmp/屏幕截图/）
 
