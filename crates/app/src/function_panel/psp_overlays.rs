@@ -703,7 +703,8 @@ fn confirm_project_del(
 // ---------------------------------------------------------------------------
 
 /// 文件树右键菜单：条目按设计稿 021——目录=新建/资源管理器/终端/复制/
-/// @/改名/删除，文件=资源管理器/终端/浏览器(html)/复制/@/改名/删除。
+/// @/改名/删除，文件=新建(落点=所在目录)/资源管理器/终端/浏览器(html)/
+/// 复制/@/改名/删除。
 /// 复用 psp 菜单的 menu_card/menu_item（同一 theme 样式族），锚点 =
 /// 右键事件坐标，弹出方向走统一算法。
 fn tree_menu_layer(
@@ -817,7 +818,44 @@ fn tree_menu_layer(
             }
         }
         crate::TreeMenu::File { path, .. } => {
+            // 新建对齐目录菜单语义：落点 = 文件所在目录（parent 取不到时
+            // 兜底项目根）
             card = card
+                .child(tree_item(
+                    &weak,
+                    "ftm-file-new-file",
+                    "file-plus",
+                    tr("新建文件"),
+                    false,
+                    {
+                        let path = path.clone();
+                        move |c, cx| {
+                            let dir = path
+                                .parent()
+                                .map(|p| p.to_path_buf())
+                                .unwrap_or_else(|| c.cwd.clone());
+                            c.open_file_new(dir, false, cx)
+                        }
+                    },
+                ))
+                .child(tree_item(
+                    &weak,
+                    "ftm-file-new-dir",
+                    "folder-plus",
+                    tr("新建目录"),
+                    false,
+                    {
+                        let path = path.clone();
+                        move |c, cx| {
+                            let dir = path
+                                .parent()
+                                .map(|p| p.to_path_buf())
+                                .unwrap_or_else(|| c.cwd.clone());
+                            c.open_file_new(dir, true, cx)
+                        }
+                    },
+                ))
+                .child(menu_sep())
                 .child(tree_item(
                     &weak,
                     "ftm-file-explorer",
