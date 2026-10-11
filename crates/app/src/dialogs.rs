@@ -88,28 +88,11 @@ pub(crate) fn render_dialogs(
                     tr("创建"),
                     input,
                     t,
-                    NameDialogKind::New { dir: dir.clone(), is_dir: *is_dir },
-                ));
-            }
-            if let Some(Dialog::FileRename { path, is_dir, input }) = chat.dialog.as_ref() {
-                root = root.child(render_file_name_dialog(
-                    chat,
-                    weak,
-                    tr("重命名"),
-                    &path.to_string_lossy().to_string(),
-                    tr("重命名"),
-                    input,
-                    t,
-                    NameDialogKind::Rename { path: path.clone(), is_dir: *is_dir },
+                    dir.clone(),
+                    *is_dir,
                 ));
             }
     root
-}
-
-/// 021 文件树右键「新建/改名」的提交目标（两弹窗共用一个渲染器）。
-pub(crate) enum NameDialogKind {
-    New { dir: PathBuf, is_dir: bool },
-    Rename { path: PathBuf, is_dir: bool },
 }
 
 /// 021 文件树操作栏「搜索文件」：500×500 居中（§5.7 中型档 + 项目选择
@@ -238,10 +221,11 @@ fn render_file_search(
     dialog_shell(chat, weak, panel)
 }
 
-/// 021 文件树右键「新建/改名」共用的小表单弹窗（§5.7 表单档 380）：
-/// 标题 + 输入框 + 提示行 + 取消/确认。确认按钮按 kind 分派到
-/// file_new_commit / file_rename_commit；校验失败（重名/非法名）只出
-/// 状态栏提示，弹窗不关。
+/// 021 文件树右键「新建文件/新建目录」小表单弹窗（§5.7 表单档 380）：
+/// 标题 + 输入框 + 提示行 + 取消/确认。确认提交到 file_new_commit；
+/// 校验失败（重名/非法名）只出状态栏提示，弹窗不关。（「改名」已改走
+/// 文件树行内输入框，2026-10-11 用户定案对齐 Zed，不走弹窗。）
+#[allow(clippy::too_many_arguments)]
 fn render_file_name_dialog(
     chat: &Chat,
     weak: &gpui::WeakEntity<Chat>,
@@ -250,7 +234,8 @@ fn render_file_name_dialog(
     ok_label: &str,
     input: &gpui::Entity<TextInput>,
     t: &theme::Theme,
-    kind: NameDialogKind,
+    dir: PathBuf,
+    is_dir: bool,
 ) -> Div {
     let weak_cancel = weak.clone();
     let weak_ok = weak.clone();
@@ -309,13 +294,8 @@ fn render_file_name_dialog(
                         false,
                         move |_, _, cx| {
                             let name = input_ok.read(cx).value().trim().to_string();
-                            let _ = weak_ok.update(cx, |c, cx| match &kind {
-                                NameDialogKind::New { dir, is_dir } => {
-                                    c.file_new_commit(dir, *is_dir, name, cx)
-                                }
-                                NameDialogKind::Rename { path, is_dir } => {
-                                    c.file_rename_commit(path, *is_dir, name, cx)
-                                }
+                            let _ = weak_ok.update(cx, |c, cx| {
+                                c.file_new_commit(&dir, is_dir, name, cx)
                             });
                         },
                     )),

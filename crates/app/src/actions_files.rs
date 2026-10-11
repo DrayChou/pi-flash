@@ -238,40 +238,80 @@ impl Chat {
         }
     }
 
-    /// 「改名」弹窗：输入框预填原名并全选。
-    pub(crate) fn open_file_rename(&mut self, path: PathBuf, is_dir: bool, cx: &mut Context<Self>) {
+    /// 「改名」= Zed project_panel 行内改名（2026-10-11 用户定案）：不弹
+    /// 窗，文件树行原地变输入框——Enter 提交 / Esc 取消 / 失焦提交。
+    /// `reveal` = 编辑区右键菜单入口：先切到文件树面板并滚动到该行，保
+    /// 证输入框可见（Zed「改名聚焦 project panel」同语义）；树菜单入口
+    /// 行本就在视口里，传 false 不打扰滚动位置。
+    pub(crate) fn open_file_rename(
+        &mut self,
+        path: PathBuf,
+        is_dir: bool,
+        reveal: bool,
+        cx: &mut Context<Self>,
+    ) {
+        self.tree_menu = None;
+        self.editor_menu = None;
+        if reveal {
+            self.dock_panel = DockPanel::Files;
+            self.reveal_tree_row(&path);
+        }
         let prefill =
             path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-        let weak_submit = cx.weak_entity();
-        let weak_esc = weak_submit.clone();
-        let path_submit = path.clone();
-        let input = cx.new(|cx| TextInput::new(cx).select_all_on_focus().placeholder(tr("名称")));
+        let weak = cx.entity().downgrade();
+        let input = cx.new(|cx| TextInput::new(cx).compact().select_all_on_focus());
         input.update(cx, |ti, cxi| ti.set_value(prefill, cxi));
         input.update(cx, |ti, _| {
+            let weak_submit = weak.clone();
             ti.set_on_submit(Box::new(move |v, cx| {
+                // 提交会 drop 派发事件的输入框（清槽）——defer 出帧
                 let weak = weak_submit.clone();
-                let path = path_submit.clone();
                 let v = v.trim().to_string();
                 cx.defer(move |cx| {
-                    let _ = weak.update(cx, |c, cx| c.file_rename_commit(&path, is_dir, v, cx));
+                    let _ = weak.update(cx, |c, cx| c.tree_rename_slot_commit(Some(v), cx));
                 });
             }));
-            ti.set_on_escape(Box::new(move |cx: &mut App| {
+            let weak_esc = weak.clone();
+            ti.set_on_escape(Box::new(move |cx| {
+                // 取消同样 drop 输入框，defer 避开派发期
                 let weak = weak_esc.clone();
                 cx.defer(move |cx| {
                     let _ = weak.update(cx, |c, cx| {
-                        c.dialog = None;
+                        c.tree_rename = None;
                         cx.notify();
                     });
                 });
             }));
+            let weak_blur = weak.clone();
+            ti.set_on_blur(Box::new(move |cx| {
+                // 失焦 = 提交（Zed 同款）；取值交给槽提交（读输入框），
+                // defer 避开 blur 派发期
+                let weak = weak_blur.clone();
+                cx.defer(move |cx| {
+                    let _ = weak.update(cx, |c, cx| c.tree_rename_slot_commit(None, cx));
+                });
+            }));
         });
-        self.dialog = Some(Dialog::FileRename { path, is_dir, input });
+        self.tree_rename = Some(TreeRename { path, is_dir, input });
         cx.notify();
     }
 
-    /// 改名提交：仅同级改名（禁路径分隔符），同名（字面）静默关弹窗。
+    /// 行内改名提交统一口：`v` = Some 为显式提交（值已随提交带来），
+    /// None = 失焦提交（现读输入框）。槽已空（Esc 取消后跟着的 blur、
+    /// 提交后跟着的 blur）则无事发生。
+    fn tree_rename_slot_commit(&mut self, v: Option<String>, cx: &mut Context<Self>) {
+        let Some(r) = self.tree_rename.clone() else { return };
+        let name = match v {
+            Some(v) => v,
+            None => r.input.read(cx).value().trim().to_string(),
+        };
+        self.tree_rename = None;
+        self.file_rename_commit(&r.path, r.is_dir, name, cx);
+    }
+
+    /// 行内改名提交：仅同级改名（禁路径分隔符），同名（字面）静默收场。
     /// 成功后打开的文件 tab / 缓冲 / 待聚焦 / 展开集合（目录）按前缀重映射。
+    /// 调用方（tree_rename_slot_commit）已先行清改名槽。
     pub(crate) fn file_rename_commit(
         &mut self,
         path: &Path,
@@ -292,7 +332,6 @@ impl Chat {
         let target = parent.join(&name);
         if target == path {
             // 字面同名：视为取消（大小写改名走 fs::rename 的原生支持）
-            self.dialog = None;
             cx.notify();
             return;
         }
@@ -334,9 +373,8 @@ impl Chat {
                 .map(remap)
                 .collect();
         }
-        self.dialog = None;
         self.refresh_git();
-        self.set_status(tr("已改名").to_string(), cx);
+        // 改名成功静默（同新建/删除：成功不提示，失败才提示）
         cx.notify();
     }
 

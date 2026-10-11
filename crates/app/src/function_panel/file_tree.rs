@@ -15,14 +15,14 @@
 //! 钉在列表顶部，点击钉住行滚回对应目录。
 
 use std::ops::Range;
+use std::path::Path;
 
 use gpui::{
     Bounds, MouseButton, Pixels, Point, SharedString, UniformListDecoration, div, hsla,
     linear_color_stop, linear_gradient, point, prelude::*, px, rgb,
 };
 
-use crate::Chat;
-use crate::i18n::tr;
+use crate::{Chat, i18n::tr, same_path};
 use crate::services::file_icons;
 use crate::services::file_tree::TreeRow;
 use crate::theme;
@@ -39,6 +39,47 @@ const CONTENT_PAD: f32 = 6.;
 const GUIDE_X: f32 = 13.;
 /// 文件树 vlist 的元素 id——sticky 点击「滚到目录」按同一 id 取句柄。
 const FILE_TREE_LIST_ID: &str = "file-tree";
+
+impl Chat {
+    /// 行内改名前置（Zed project_panel 语义）：沿途展开祖先目录 + 把改名
+    /// 行滚进视口。树右键菜单入口行本就可见（幂等）；编辑区右键菜单入口
+    /// 可能该行还没展开/滚出视口，不做这些就没有输入框可编辑。
+    pub(crate) fn reveal_tree_row(&mut self, path: &Path) {
+        let mut anc = path.parent().map(|p| p.to_path_buf());
+        let mut opened = false;
+        while let Some(p) = anc {
+            if same_path(&p, &self.cwd) {
+                break;
+            }
+            opened |= self.expanded_dirs.insert(p.clone());
+            anc = p.parent().map(|q| q.to_path_buf());
+        }
+        if opened {
+            self.rebuild_tree();
+        }
+        // 「只看变更」列表可能不含目标（无 git 变更的文件）：回退树模式
+        if self.changes_only && !self.tree_rows.iter().any(|r| same_path(&r.path, path)) {
+            self.changes_only = false;
+            self.rebuild_tree();
+            self.persist_ui();
+        }
+        let Some(row) = self.tree_rows.iter().find(|r| same_path(&r.path, path)) else {
+            return;
+        };
+        // 滚动落点给 sticky 祖先链留位：行顶对齐到「链高 = 深度×行高」
+        // 之下（对齐 Zed scroll_to_item_strict_with_offset 的 sticky_index
+        // 语义），祖先全可见后钉住链自然不触发；变更列表 depth 恒 0 恒顶
+        let ix = self
+            .tree_rows
+            .iter()
+            .position(|r| same_path(&r.path, path))
+            .unwrap_or(0);
+        let y = ix.saturating_sub(row.depth) as f32
+            * if self.changes_only { CHANGES_ROW_H } else { ROW_H };
+        let handle = crate::ui::vlist::scroll_handle(FILE_TREE_LIST_ID);
+        handle.0.borrow().base_handle.set_offset(point(px(0.), px(y)));
+    }
+}
 
 pub(crate) fn files_view(
     chat: &mut Chat,
@@ -98,6 +139,7 @@ pub(crate) fn files_view(
         let weak_c = weak.clone();
         let weak_bg = weak.clone();
         let cwd_bg = chat.cwd.clone();
+        let renaming = chat.tree_rename.clone();
         col = col.child(
             div()
                 .flex_1()
@@ -132,7 +174,7 @@ pub(crate) fn files_view(
                     tr("暂无变更"),
                     None,
                     move |ix, _window, _cx| match rows.get(ix) {
-                        Some(row) => changes_row(row.clone(), weak_c.clone()),
+                        Some(row) => changes_row(row.clone(), renaming.clone(), weak_c.clone()),
                         None => div().into_any_element(),
                     },
                 )),
@@ -142,6 +184,7 @@ pub(crate) fn files_view(
             Box::new(StickyAncestors { weak: weak.clone() }) as Box<dyn UniformListDecoration>;
         let weak_bg = weak.clone();
         let cwd_bg = chat.cwd.clone();
+        let renaming = chat.tree_rename.clone();
         col = col.child(
             div()
                 .flex_1()
@@ -180,7 +223,13 @@ pub(crate) fn files_view(
                             let prev_depth =
                                 if ix == 0 { None } else { rows.get(ix - 1).map(|r| r.depth) };
                             let next_depth = rows.get(ix + 1).map(|r| r.depth);
-                            tree_row(row.clone(), prev_depth, next_depth, weak.clone())
+                            tree_row(
+                                row.clone(),
+                                prev_depth,
+                                next_depth,
+                                renaming.clone(),
+                                weak.clone(),
+                            )
                         }
                         None => div().into_any_element(),
                     },
@@ -195,11 +244,21 @@ const CHANGES_ROW_H: f32 = 28.;
 
 /// 「只看变更」的扁平行：文件名前置左对齐（恒可见，shrink 0）+
 /// 目录段后置 dim（过长收缩截断），点击开文件 tab，右键沿用文件菜单。
-fn changes_row(row: crate::services::file_tree::TreeRow, weak: gpui::WeakEntity<Chat>) -> gpui::AnyElement {
+/// 行处于行内改名时（Zed 同款）名字段整体换成紧凑输入框，点击开文件
+/// 让位给输入框。
+fn changes_row(
+    row: crate::services::file_tree::TreeRow,
+    renaming: Option<crate::TreeRename>,
+    weak: gpui::WeakEntity<Chat>,
+) -> gpui::AnyElement {
     let t = theme::theme();
     let rel = row.name.clone();
     let file_name = rel.rsplit('/').next().unwrap_or(&rel).to_string();
     let dir_part = rel[..rel.len() - file_name.len()].to_string();
+    let renaming_input = renaming
+        .as_ref()
+        .filter(|r| same_path(&r.path, &row.path))
+        .map(|r| r.input.clone());
     // 021 三改：徽标与文件图标都去掉（信息冗余——变更态整表皆然，
     // 数量/增删在头行 numstat），行 = 纯路径
     let mut el = div()
@@ -214,35 +273,40 @@ fn changes_row(row: crate::services::file_tree::TreeRow, weak: gpui::WeakEntity<
         .cursor_pointer()
         .hover(|s| s.bg(rgb(t.bg_hover)))
         .text_size(crate::appearance::ui_size(11.5));
-    // 021 五改：文件名前置（各行文件名同一起点左对齐、恒可见），目录段
-    // 后置 dim、仅在过长时收缩截断（中段省略），尾部弹性空隙吃掉剩余宽
-    el = el.child(
-        div()
-            .flex_shrink_0()
-            .overflow_hidden()
-            .whitespace_nowrap()
-            .text_ellipsis()
-            .text_color(rgb(t.text))
-            .child(SharedString::from(file_name)),
-    );
-    el = el.child(
-        div()
-            .flex_shrink()
-            .min_w_0()
-            .overflow_hidden()
-            .whitespace_nowrap()
-            .text_ellipsis()
-            .text_color(rgb(t.text_faint))
-            .child(SharedString::from(dir_part)),
-    );
-    el = el.child(div().flex_1());
-    let fp = row.path.clone();
-    let weak_click = weak.clone();
-    el = el.on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
-        let _ = weak_click.update(cx, |c, cx| {
-            c.open_file_tab(fp.clone(), cx);
+    if let Some(input) = renaming_input {
+        // 行内改名态：输入框吃满名字区（目录段一并隐去——改名仅同级）
+        el = el.child(div().flex_1().min_w_0().child(input));
+    } else {
+        // 021 五改：文件名前置（各行文件名同一起点左对齐、恒可见），目录段
+        // 后置 dim、仅在过长时收缩截断（中段省略），尾部弹性空隙吃掉剩余宽
+        el = el.child(
+            div()
+                .flex_shrink_0()
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .text_ellipsis()
+                .text_color(rgb(t.text))
+                .child(SharedString::from(file_name)),
+        );
+        el = el.child(
+            div()
+                .flex_shrink()
+                .min_w_0()
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .text_ellipsis()
+                .text_color(rgb(t.text_faint))
+                .child(SharedString::from(dir_part)),
+        );
+        el = el.child(div().flex_1());
+        let fp = row.path.clone();
+        let weak_click = weak.clone();
+        el = el.on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
+            let _ = weak_click.update(cx, |c, cx| {
+                c.open_file_tab(fp.clone(), cx);
+            });
         });
-    });
+    }
     el.child(tree_right_click(&weak, &row))
         .into_any_element()
 }
@@ -402,10 +466,16 @@ fn tree_row(
     row: TreeRow,
     prev_depth: Option<usize>,
     next_depth: Option<usize>,
+    renaming: Option<crate::TreeRename>,
     weak: gpui::WeakEntity<Chat>,
 ) -> gpui::AnyElement {
     let t = theme::theme();
     let weak_menu = weak.clone();
+    // 本行处于行内改名：名字标签换输入框，点击展开/打开让位给输入框
+    let renaming_input = renaming
+        .as_ref()
+        .filter(|r| same_path(&r.path, &row.path))
+        .map(|r| r.input.clone());
     let mut el = div()
         .id(SharedString::from(format!("tree-{}", row.path.display())))
         .relative()
@@ -451,18 +521,20 @@ fn tree_row(
                     .flex_shrink_0()
                     .child(icon_path(folder, 14., t.text_dim)),
             )
-            .child(name_label(&row.name));
+            .child(name_or_editor(&row.name, renaming_input.clone()));
         el = el.child(inner);
         let dir_path = row.path.clone();
-        el = el.on_mouse_down(MouseButton::Left, move |_, _, cx| {
-            let _ = weak.update(cx, |c, cx| {
-                if !c.expanded_dirs.remove(&dir_path) {
-                    c.expanded_dirs.insert(dir_path.clone());
-                }
-                c.rebuild_tree();
-                cx.notify();
+        if renaming_input.is_none() {
+            el = el.on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                let _ = weak.update(cx, |c, cx| {
+                    if !c.expanded_dirs.remove(&dir_path) {
+                        c.expanded_dirs.insert(dir_path.clone());
+                    }
+                    c.rebuild_tree();
+                    cx.notify();
+                });
             });
-        });
+        }
         el = el.child(tree_right_click(&weak_menu, &row));
         // 目录圆点：子树有变更（祖先链上浮，services 层已算好）
         if row.changed_dot && crate::services::workspace::git_markers() {
@@ -476,16 +548,18 @@ fn tree_row(
                     .flex_shrink_0()
                     .child(icon_path(icon, 14., t.text_dim)),
             )
-            .child(name_label(&row.name));
+            .child(name_or_editor(&row.name, renaming_input.clone()));
         el = el.child(inner);
-        let fp = row.path.clone();
-        // 023：文件点击一律进 fileView（编辑器区）。旧行为「带 git 变更
-        // 徽标的文件点击弹 GitDiff」废弃——diff 入口收敛在 git 面板。
-        el = el.on_mouse_down(MouseButton::Left, move |_, _, cx| {
-            let _ = weak.update(cx, |c, cx| {
-                c.open_file_tab(fp.clone(), cx);
+        if renaming_input.is_none() {
+            let fp = row.path.clone();
+            // 023：文件点击一律进 fileView（编辑器区）。旧行为「带 git 变更
+            // 徽标的文件点击弹 GitDiff」废弃——diff 入口收敛在 git 面板。
+            el = el.on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                let _ = weak.update(cx, |c, cx| {
+                    c.open_file_tab(fp.clone(), cx);
+                });
             });
-        });
+        }
         el = el.child(tree_right_click(&weak_menu, &row));
         // git badge on files（pi-web 徽标语义：M/A/D/R/U/C；023 默认关）
         if let Some(st) = row.git.filter(|_| crate::services::workspace::git_markers()) {
@@ -513,6 +587,20 @@ fn name_label(name: &str) -> gpui::AnyElement {
         .ml(px(6.))
         .child(SharedString::from(name.to_string()))
         .into_any_element()
+}
+
+/// 行内改名（Zed project_panel 同款）：`renaming_input` = 本行匹配到改名
+/// 槽的输入框（上游按 path 过滤好）；有则名字标签原地换成紧凑输入框
+/// （22px 塞进 24px 行），无则回落普通标签。
+fn name_or_editor(
+    name: &str,
+    renaming_input: Option<gpui::Entity<crate::ui::TextInput>>,
+) -> gpui::AnyElement {
+    if let Some(input) = renaming_input {
+        div().flex_1().min_w_0().ml(px(6.)).child(input).into_any_element()
+    } else {
+        name_label(name)
+    }
 }
 
 /// 缩进引导线（Zed indent_guides 装饰层的行内画法）：第 L 级竖线在

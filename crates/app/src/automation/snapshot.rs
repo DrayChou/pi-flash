@@ -537,7 +537,6 @@ fn dialogs_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
         Dialog::WxQr => "wx_qr",
         Dialog::FileSearch { .. } => "file_search",
         Dialog::FileNew { .. } => "file_new",
-        Dialog::FileRename { .. } => "file_rename",
     });
     // 打开项目菜单：列表数据随弹窗一起上报（扫描是异步回填，UI 测试
     // 据此轮询就绪）

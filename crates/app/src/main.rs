@@ -129,13 +129,6 @@ enum Dialog {
         is_dir: bool,
         input: gpui::Entity<TextInput>,
     },
-    /// 021 文件树右键「改名」：原地改名（文件/目录），打开的 tab 与展开
-    /// 集合随后重映射。`is_dir` 决定提交后的重映射范围。
-    FileRename {
-        path: PathBuf,
-        is_dir: bool,
-        input: gpui::Entity<TextInput>,
-    },
 }
 
 /// ⋯ 菜单的两个面：系统提示词原文 / 已加载工具的声明。各自画在设置弹窗
@@ -240,6 +233,16 @@ pub(crate) enum PspMenu {
 pub(crate) enum TreeMenu {
     Dir { path: PathBuf, x: f32, y: f32 },
     File { path: PathBuf, x: f32, y: f32 },
+}
+
+/// 021 行内改名（Zed project_panel 同款）：改名不弹窗，文件树行原地变
+/// 输入框——Enter 提交 / Esc 取消 / 失焦提交。`is_dir` 决定提交后的重
+/// 映射范围（目录 = 整棵前缀）。
+#[derive(Debug, Clone)]
+pub(crate) struct TreeRename {
+    pub(crate) path: PathBuf,
+    pub(crate) is_dir: bool,
+    pub(crate) input: gpui::Entity<TextInput>,
 }
 
 #[derive(Debug, Clone)]
@@ -532,6 +535,9 @@ struct Chat {
     confirm_prj_del: Option<(PathBuf, f32, f32)>,
     /// 021 文件树右键菜单状态槽（渲染挂 psp_overlays 同层）
     tree_menu: Option<TreeMenu>,
+    /// 021 行内改名（Zed 同款）：非空 = 该行变输入框（渲染挂 file_tree
+    /// 行内，焦点走主 render 焦点保持链）
+    tree_rename: Option<TreeRename>,
     /// 编辑区右键菜单（zed 式：编辑块 + 文件动作块；渲染挂 psp_overlays
     /// 同层）。(文件路径, 鼠标 x, y)
     editor_menu: Option<(PathBuf, f32, f32)>,
@@ -892,6 +898,7 @@ impl Chat {
             psp_menu: None,
             confirm_prj_del: None,
             tree_menu: None,
+            tree_rename: None,
             editor_menu: None,
             tree_del_error: None,
             tree_confirm_del: None,
@@ -1665,8 +1672,7 @@ impl Render for Chat {
             Some(Dialog::ProviderPicker { input, .. }) | Some(Dialog::SessionSearch { input })
             | Some(Dialog::ProjectPicker { input, .. })
             | Some(Dialog::FileSearch { input, .. })
-            | Some(Dialog::FileNew { input, .. })
-            | Some(Dialog::FileRename { input, .. }) => {
+            | Some(Dialog::FileNew { input, .. }) => {
                 Some(input.clone())
             }
             _ => None,
@@ -1685,7 +1691,13 @@ impl Render for Chat {
             .hover_card
             .as_ref()
             .and_then(|c| c.rename_input.clone());
-        let rename_focus = self.rename_input.clone().or(card_rename_focus);
+        // 文件树行内改名输入框同享焦点保持（021 行内改名，Zed 同款）
+        let tree_rename_focus = self.tree_rename.as_ref().map(|r| r.input.clone());
+        let rename_focus = self
+            .rename_input
+            .clone()
+            .or(card_rename_focus)
+            .or(tree_rename_focus);
         if let Some(input) = rename_focus.or(dialog_input) {
             let handle = input.read(cx).focus_handle_in(cx);
             if !handle.is_focused(window) {

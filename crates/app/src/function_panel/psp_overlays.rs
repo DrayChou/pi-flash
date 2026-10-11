@@ -801,7 +801,7 @@ fn tree_menu_layer(
                         false,
                         {
                             let path = path.clone();
-                            move |c, cx| c.open_file_rename(path.clone(), true, cx)
+                            move |c, cx| c.open_file_rename(path.clone(), true, false, cx)
                         },
                     ))
                     .child(tree_item(
@@ -919,7 +919,7 @@ fn tree_menu_layer(
                     false,
                     {
                         let path = path.clone();
-                        move |c, cx| c.open_file_rename(path.clone(), false, cx)
+                        move |c, cx| c.open_file_rename(path.clone(), false, false, cx)
                     },
                 ))
                 .child(tree_item(
@@ -1065,7 +1065,7 @@ fn editor_menu_layer(
             false,
             {
                 let path = path.clone();
-                move |c, cx| c.open_file_rename(path.clone(), false, cx)
+                move |c, cx| c.open_file_rename(path.clone(), false, true, cx)
             },
         ))
         .child(editor_item(

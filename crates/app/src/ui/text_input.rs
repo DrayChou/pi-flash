@@ -26,6 +26,8 @@ type Changed = Box<dyn Fn(&str, &mut App)>;
 type Submitted = Box<dyn Fn(&str, &mut App)>;
 /// Escape (propagates out of the inner widget; IME-cancel keeps priority)
 type Escaped = Box<dyn Fn(&mut App)>;
+/// focus left the input (rename-in-row commits on blur)
+type Blurred = Box<dyn Fn(&mut App)>;
 
 pub struct TextInput {
     fallback_focus: FocusHandle,
@@ -35,6 +37,8 @@ pub struct TextInput {
     masked: bool,
     numeric: bool,
     multiline: bool,
+    /// 紧凑档（22px 高 + XSmall 内距）：文件树行内改名用，塞进 24px 行
+    compact: bool,
     select_all_on_focus: bool,
     select_all_done: bool,
     want_focus: bool,
@@ -48,6 +52,7 @@ pub struct TextInput {
     on_change: Option<Changed>,
     on_submit: Option<Submitted>,
     on_escape: Option<Escaped>,
+    on_blur: Option<Blurred>,
 }
 
 impl TextInput {
@@ -59,6 +64,7 @@ impl TextInput {
             masked: false,
             numeric: false,
             multiline: false,
+            compact: false,
             select_all_on_focus: false,
             select_all_done: false,
             want_focus: false,
@@ -70,6 +76,7 @@ impl TextInput {
             on_change: None,
             on_submit: None,
             on_escape: None,
+            on_blur: None,
         }
     }
 
@@ -93,6 +100,12 @@ impl TextInput {
     /// 多行模式（Enter 换行不提交；渲染高度约 8 行，MCP 粘贴框用）。
     pub fn multiline(mut self) -> Self {
         self.multiline = true;
+        self
+    }
+
+    /// 紧凑单行档：22px 高 + XSmall 内距 + 11px 字号，文件树行内改名用。
+    pub fn compact(mut self) -> Self {
+        self.compact = true;
         self
     }
 
@@ -133,6 +146,10 @@ impl TextInput {
 
     pub fn set_on_escape(&mut self, cb: Escaped) {
         self.on_escape = Some(cb);
+    }
+
+    pub fn set_on_blur(&mut self, cb: Blurred) {
+        self.on_blur = Some(cb);
     }
 
     pub fn set_placeholder(&mut self, ph: Option<SharedString>) {
@@ -248,7 +265,12 @@ impl TextInput {
                     cx.notify();
                 }
             }
-            InputEvent::Blur => {}
+            InputEvent::Blur => {
+                if let Some(cb) = self.on_blur.take() {
+                    cb(cx);
+                    self.on_blur = Some(cb);
+                }
+            }
         }
     }
 }
@@ -279,15 +301,24 @@ impl Render for TextInput {
 
         let t = T();
         let focused = state.read(cx).focus_handle(cx).is_focused(window);
-        // 多行：容器给足高度，内件 h_full 撑满（单行保持固定 30px）
+        // 多行：容器给足高度，内件 h_full 撑满（单行保持固定 30px；紧凑
+        // 档 22px 塞进文件树 24px 行）
         let (h, fill) = if self.multiline {
             (gpui::px(170.), true)
+        } else if self.compact {
+            (gpui::px(22.), false)
         } else {
             (gpui::px(30.), false)
         };
         let input = GpInput::new(&state)
             .appearance(true)
             .bordered(true)
+            .map(|input| if self.compact {
+                use gpui_component::Sizable as _;
+                input.with_size(gpui_component::Size::XSmall)
+            } else {
+                input
+            })
             .map(|input| {
                 let input = input
                     .bg(gpui::rgb(t.bg_panel))
@@ -304,7 +335,7 @@ impl Render for TextInput {
             .h(h)
             // inherit into the inner widget's text shaping
             .font_family(crate::editor::markdown::MONO_FAMILY)
-            .text_size(gpui::px(12.))
+            .text_size(gpui::px(if self.compact { 11. } else { 12. }))
             // escape bubbles up from the inner widget (it only unmarks IME
             // composition and propagates) — turn it into the app callback
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _window, cx| {
