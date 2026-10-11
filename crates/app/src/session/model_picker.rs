@@ -315,12 +315,8 @@ pub(crate) fn group_model_row(
                         .overflow_hidden()
                         .whitespace_nowrap()
                         .text_ellipsis()
+                        // 默认行只用品色区分（2026-10-10 定稿：不加粗）
                         .text_color(rgb(if is_default { t.text } else { t.text_muted }))
-                        .font_weight(if is_default {
-                            gpui::FontWeight::SEMIBOLD
-                        } else {
-                            gpui::FontWeight::NORMAL
-                        })
                         .child(SharedString::from(label)),
                 )
                 .children(pin.map(|p| {

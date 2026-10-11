@@ -983,16 +983,28 @@ fn mc_enabled_section(
                 &[("enabled", enabled_count.to_string()), ("total", models.len().to_string())],
             )))
             .child(div().flex_1())
-            .child(crate::ui::button::icon_button(
-                "mc-fetch",
-                "rotate-ccw",
-                crate::ui::button::IconBtnSize::Md,
-                running,
-                move |_, _, cx| {
-                    let _ =
-                        fetch_weak.update(cx, |c, cx| c.mc_fetch_models(fetch_provider.clone(), cx));
-                },
-            )),
+            .child({
+                // icon + 模型：BTN_LG Secondary（与上方保存钮同档同 padding），
+                // 图标走按钮内 ICON_SM(14) + gap 8（§5.1）
+                let el = crate::ui::button::button_base(
+                    "mc-fetch",
+                    crate::ui::button::BtnSize::Lg,
+                    crate::ui::button::BtnVariant::Secondary,
+                )
+                .gap(px(8.))
+                .child(crate::ui::icon("rotate-ccw", 14., t.text))
+                .child(SharedString::from(tr("模型")));
+                if running {
+                    el.opacity(0.5).into_any_element()
+                } else {
+                    let weak = fetch_weak.clone();
+                    let fp = fetch_provider.clone();
+                    el.on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                        let _ = weak.update(cx, |c, cx| c.mc_fetch_models(fp.clone(), cx));
+                    })
+                    .into_any_element()
+                }
+            }),
     );
     if chat.mc_project_scope {
         section = section.child(note(

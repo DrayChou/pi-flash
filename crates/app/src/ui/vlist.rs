@@ -82,7 +82,6 @@ pub fn vlist(
                         .rounded(px(6.))
                         .border_1()
                         .border_color(rgb(t.border))
-                        .bg(rgb(t.bg_panel))
                         .overflow_hidden();
                 }
                 return empty.into_any_element();
@@ -133,11 +132,11 @@ pub fn vlist(
     if !shell {
         return list_el;
     }
+    // 壳只画边框不画底色（2026-10-10 用户定稿：列表区不加背景）
     let mut box_ = div()
         .rounded(px(6.))
         .border_1()
         .border_color(rgb(t.border))
-        .bg(rgb(t.bg_panel))
         .overflow_hidden();
     box_ = match fixed_h {
         Some(h) => {
