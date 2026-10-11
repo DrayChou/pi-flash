@@ -1350,12 +1350,21 @@ impl Chat {
     /// 一个项目的模型目录（010-启动.md §7）：**进程答案优先**（`models_by_cwd`
     /// 有该 cwd 的非空条目 → 用它），否则回落启动装载的全局清单（磁盘 ∪ 自有缓存）——
     /// 于是 lazy draft / 冷启动也有清单，不再出现「选择模型」「no models match」。
-    pub(crate) fn catalog_for(&self, cwd: &std::path::Path) -> &[pi_link::protocol::ModelInfo] {
-        self.models_by_cwd
+    /// 042【移除】墓碑在此统一过滤（composer 模型菜单 / 设置列表 / 新会话
+    /// 默认回落 / remote /模型 全走本口）——移除只删 PF 账本与凭据，pi 侧
+    /// 目录缓存与 auth.json 不归 PF 管，数据面原样保留、展示层除名。
+    pub(crate) fn catalog_for(&self, cwd: &std::path::Path) -> Vec<pi_link::protocol::ModelInfo> {
+        let raw = self
+            .models_by_cwd
             .get(&cwd.to_string_lossy().to_string())
             .map(|v| v.as_slice())
             .filter(|v| !v.is_empty())
-            .unwrap_or(self.globals.models.as_slice())
+            .unwrap_or(self.globals.models.as_slice());
+        let removed = crate::services::workspace::removed_providers();
+        raw.iter()
+            .filter(|m| !removed.iter().any(|p| p == &m.provider))
+            .cloned()
+            .collect()
     }
 
     /// 「获取模型」落盘后刷新内存目录：该 provider 的条目整体以磁盘现读为

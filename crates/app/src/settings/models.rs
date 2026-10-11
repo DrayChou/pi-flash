@@ -43,9 +43,6 @@ impl Chat {
                 out.push(p.clone());
             }
         }
-        // 【移除】过的内置商不再出现在列表（重新配置 key 时自动除名）
-        let removed = crate::services::workspace::removed_providers();
-        out.retain(|p| !removed.contains(p));
         out
     }
 
@@ -54,8 +51,8 @@ impl Chat {
         provider: &str,
         enabled_set: &std::collections::HashSet<String>,
     ) -> (usize, usize) {
-        let models: Vec<&pi_link::protocol::ModelInfo> = self
-            .catalog_for(&self.cwd)
+        let catalog = self.catalog_for(&self.cwd);
+        let models: Vec<&pi_link::protocol::ModelInfo> = catalog
             .iter()
             .filter(|m| m.provider == provider)
             .collect();

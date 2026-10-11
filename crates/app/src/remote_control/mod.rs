@@ -534,6 +534,7 @@ fn think_options() -> Vec<(String, String)> {
 }
 
 /// `/模型` 第一层：去重后的供应商列表（全局清单 ∪ 当前项目进程答案）。
+/// 042【移除】墓碑同款过滤（与 catalog_for 一致，remote 菜单不列已移除商）。
 fn provider_options(chat: &crate::Chat) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = Vec::new();
     let live = chat
@@ -541,7 +542,11 @@ fn provider_options(chat: &crate::Chat) -> Vec<(String, String)> {
         .get(&chat.cwd.to_string_lossy().to_string())
         .map(|v| v.as_slice())
         .unwrap_or(&[]);
+    let removed = crate::services::workspace::removed_providers();
     for m in live.iter().chain(chat.globals.models.iter()) {
+        if removed.iter().any(|p| p == &m.provider) {
+            continue;
+        }
         if !out.iter().any(|(_, p)| p == &m.provider) {
             out.push((m.provider.clone(), m.provider.clone()));
         }
@@ -549,7 +554,7 @@ fn provider_options(chat: &crate::Chat) -> Vec<(String, String)> {
     out
 }
 
-/// `/模型` 第二层：某供应商下的模型。
+/// `/模型` 第二层：某供应商下的模型（入参来自第一层，已过移除墓碑）。
 fn model_options(chat: &crate::Chat, provider: &str) -> Vec<(String, String)> {
     let live = chat
         .models_by_cwd
@@ -819,15 +824,17 @@ impl crate::Chat {
     }
 
     /// 直接给模型 id 时反查其供应商（`/模型 <id>` 不带 provider 前缀）。
+    /// 移除墓碑过滤：已移除商的模型 id 不再可被指定。
     fn provider_of_model(&self, id: &str) -> Option<String> {
         let live = self
             .models_by_cwd
             .get(&self.cwd.to_string_lossy().to_string())
             .map(|v| v.as_slice())
             .unwrap_or(&[]);
-        live
-            .iter()
+        let removed = crate::services::workspace::removed_providers();
+        live.iter()
             .chain(self.globals.models.iter())
+            .filter(|m| !removed.iter().any(|p| p == &m.provider))
             .find(|m| m.id == id)
             .map(|m| m.provider.clone())
     }
