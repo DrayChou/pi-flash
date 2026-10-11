@@ -61,8 +61,8 @@ pub(crate) fn files_view(
         .child(action_bar(chat, &weak, t));
     if changes_only {
         // 「只看变更」= 扁平列表（021 二改定稿：不要树状）。头行 =
-        // N 个文件 + numstat（+绿 -红，色同 git 徽标盘）；行 = 状态徽标
-        // + 文件图标 + 相对路径（目录段可截断、文件名恒可见）。
+        // N 个文件 + numstat（+绿 -红，色同 git 徽标盘）；行 = 文件名
+        // 前置左对齐 + 目录段后置（目录段可截断、文件名恒可见）。
         let (add, del) = chat.git_add_del;
         let n = rows.len();
         if n > 0 {
@@ -82,7 +82,6 @@ pub(crate) fn files_view(
             if add > 0 {
                 head = head.child(
                     div()
-                        .font_weight(gpui::FontWeight::SEMIBOLD)
                         .text_color(rgb(crate::services::git::GitStatus::Added.color()))
                         .child(SharedString::from(format!("+{add}"))),
                 );
@@ -90,7 +89,6 @@ pub(crate) fn files_view(
             if del > 0 {
                 head = head.child(
                     div()
-                        .font_weight(gpui::FontWeight::SEMIBOLD)
                         .text_color(rgb(crate::services::git::GitStatus::Deleted.color()))
                         .child(SharedString::from(format!("-{del}"))),
                 );
@@ -195,9 +193,8 @@ pub(crate) fn files_view(
 /// 变更列表行高（比树行稍宽舒，对齐 pi-web 截图的呼吸感）。
 const CHANGES_ROW_H: f32 = 28.;
 
-/// 「只看变更」的扁平行：状态徽标（定宽对齐列）+ 文件类型图标 +
-/// 相对路径——目录段 dim 可截断（flex_1），文件名恒可见（shrink 0），
-/// 点击开文件 tab，右键沿用文件菜单。
+/// 「只看变更」的扁平行：文件名前置左对齐（恒可见，shrink 0）+
+/// 目录段后置 dim（过长收缩截断），点击开文件 tab，右键沿用文件菜单。
 fn changes_row(row: crate::services::file_tree::TreeRow, weak: gpui::WeakEntity<Chat>) -> gpui::AnyElement {
     let t = theme::theme();
     let rel = row.name.clone();
@@ -217,8 +214,17 @@ fn changes_row(row: crate::services::file_tree::TreeRow, weak: gpui::WeakEntity<
         .cursor_pointer()
         .hover(|s| s.bg(rgb(t.bg_hover)))
         .text_size(crate::appearance::ui_size(11.5));
-    // 路径连续左对齐（截图2 语义）：目录段自然宽、仅在过长时收缩截断
-    // （中段省略），文件名紧跟其后恒可见，尾部弹性空隙吃掉剩余宽
+    // 021 五改：文件名前置（各行文件名同一起点左对齐、恒可见），目录段
+    // 后置 dim、仅在过长时收缩截断（中段省略），尾部弹性空隙吃掉剩余宽
+    el = el.child(
+        div()
+            .flex_shrink_0()
+            .overflow_hidden()
+            .whitespace_nowrap()
+            .text_ellipsis()
+            .text_color(rgb(t.text))
+            .child(SharedString::from(file_name)),
+    );
     el = el.child(
         div()
             .flex_shrink()
@@ -228,15 +234,6 @@ fn changes_row(row: crate::services::file_tree::TreeRow, weak: gpui::WeakEntity<
             .text_ellipsis()
             .text_color(rgb(t.text_faint))
             .child(SharedString::from(dir_part)),
-    );
-    el = el.child(
-        div()
-            .flex_shrink_0()
-            .overflow_hidden()
-            .whitespace_nowrap()
-            .text_ellipsis()
-            .text_color(rgb(t.text))
-            .child(SharedString::from(file_name)),
     );
     el = el.child(div().flex_1());
     let fp = row.path.clone();
