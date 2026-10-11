@@ -193,7 +193,7 @@ pub(crate) fn file_view(
         .flex()
         .flex_col()
         .bg(rgb(t.bg))
-        .child(file_nav_bar(chat, weak, &path, md_source))
+        .child(file_nav_bar(chat, weak, &path, md_source, cx))
         // Ctrl+S 保存：action 绑定在 "Input" 上下文（编辑器聚焦时命中），
         // 由本容器 on_action 接住
         .on_action(cx.listener(|this, _: &crate::FileSave, _w, cx| {
@@ -285,6 +285,7 @@ fn file_nav_bar(
     weak: &gpui::WeakEntity<Chat>,
     path: &Path,
     md_source: bool,
+    cx: &mut Context<Chat>,
 ) -> gpui::AnyElement {
     let t = T();
     let is_md = md_file(path);
@@ -395,6 +396,7 @@ fn file_nav_bar(
                 )),
         );
     }
+    let ed_for_search = ed_for_focus.clone();
     right = right.child(
         div()
             .id("fv-search")
@@ -406,7 +408,7 @@ fn file_nav_bar(
             .cursor_pointer()
             .hover(|s| s.bg(rgb(t.bg_hover)))
             .on_mouse_down(MouseButton::Left, move |_, window, cx| {
-                if let Some(ed) = &ed_for_focus {
+                if let Some(ed) = &ed_for_search {
                     ed.update(cx, |s, scx| s.focus(window, scx));
                     window.dispatch_action(Box::new(gpui_component::input::Search), cx);
                 }
@@ -414,20 +416,35 @@ fn file_nav_bar(
             .child(icon("search", 13., t.text_muted)),
     );
 
-    div()
-        .h(px(32.))
+    // 操作栏整体（zed 同构）：第一行 = 面包屑 + eye/search 图标；第二行 =
+    // 搜索框（Ctrl+F 展开、Esc 收起，不用时整行收起）——搜索框是操作栏的
+    // 一部分，面板元素直接渲染在本栏内（vendor 摘掉了编辑器侧挂载），
+    // × 与右侧图标列同缘
+    let search_open = ed_for_focus
+        .as_ref()
+        .is_some_and(|ed| ed.read(cx).search_panel_open(cx));
+    let mut bar = div()
         .flex_shrink_0()
         .flex()
-        .items_center()
-        .gap(px(8.))
-        .pl(px(12.))
-        .pr(px(8.))
+        .flex_col()
         .border_b_1()
         .border_color(gpui::rgba(crate::theme::border_alpha(t, 0x66)))
-        .child(crumbs)
-        .child(div().flex_1())
-        .child(right)
-        .into_any_element()
+        .child(
+            div()
+                .h(px(32.))
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .pl(px(12.))
+                .pr(px(8.))
+                .child(crumbs)
+                .child(div().flex_1())
+                .child(right),
+        );
+    if search_open && let Some(panel) = ed_for_focus.as_ref().and_then(|ed| ed.read(cx).search_panel_element()) {
+        bar = bar.child(panel);
+    }
+    bar.into_any_element()
 }
 
 /// 面包屑目录段的兄弟文件菜单（对齐 Zed 点击面包屑列同级文件）。

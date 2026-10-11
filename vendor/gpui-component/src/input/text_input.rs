@@ -183,7 +183,9 @@ impl TextInput {
 
         v_flex()
             .size_full()
-            .children(state.search_panel.clone())
+            // 搜索面板不再挂在这里（pi-flash：由宿主操作栏作为第二行渲染，
+            // search.rs::search_panel_element）——挂在本顶它浮在内容上方，
+            // 与操作栏两块皮，不是 zed 的「搜索框属于操作栏」结构
             .child(div().flex_1().child(input_state.clone()).map(|this| {
                 // v57: 无纵向溢出不渲染滚动条（空/短文本下常显滚动条是噪音）
                 if state.has_vertical_overflow() {

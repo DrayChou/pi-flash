@@ -3,8 +3,8 @@ use rust_i18n::t;
 use std::{ops::Range, rc::Rc};
 
 use gpui::{
-    actions, canvas, div, prelude::FluentBuilder as _, App, AppContext as _, Context, Empty,
-    Entity, FocusHandle, Focusable, InteractiveElement as _, IntoElement, KeyBinding,
+    actions, canvas, div, prelude::FluentBuilder as _, App, AnyElement, AppContext as _, Context,
+    Empty, Entity, FocusHandle, Focusable, InteractiveElement as _, IntoElement, KeyBinding,
     ParentElement as _, Pixels, Render, Styled, Subscription, Window,
 };
 use ropey::Rope;
@@ -181,6 +181,21 @@ impl InputState {
         self.search_panel
             .as_ref()
             .is_some_and(|p| p.read(cx).inputs_focused(window, cx))
+    }
+
+    /// 搜索面板是否展开——宿主操作栏（pi-flash file_nav_bar）据此决定
+    /// 是否渲染第二行。
+    pub fn search_panel_open(&self, cx: &App) -> bool {
+        self.search_panel
+            .as_ref()
+            .is_some_and(|p| p.read(cx).open)
+    }
+
+    /// 面板元素（Entity 本身即元素）：宿主把它作为操作栏第二行渲染——
+    /// 此前挂在编辑器 TextInput 顶部（text_input.rs），浮在内容上方、
+    /// 与操作栏两块皮；zed 的搜索框是操作栏（面包屑栏）的一部分。
+    pub fn search_panel_element(&self) -> Option<AnyElement> {
+        self.search_panel.clone().map(|p| p.into_any_element())
     }
 
     /// Update the search matcher when text changes.
@@ -442,8 +457,11 @@ impl Render for SearchPanel {
             .on_action(cx.listener(Self::on_action_tab))
             .font_family(".SystemUIFont")
             .items_center()
-            .py_2()
-            .px_3()
+            // 内边距对齐操作栏行（pl 12 = 面包屑文字左缘，pr 8 = 右侧图标
+            // 列），× 与上方图标列同缘
+            .pl_3()
+            .pr_2()
+            .py_1p5()
             .w_full()
             .gap_1()
             // zed 同款：全宽平贴、背景与上方操作栏（面包屑栏）同色；
