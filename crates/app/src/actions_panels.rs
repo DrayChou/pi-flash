@@ -232,12 +232,17 @@ impl Chat {
         cx.notify();
     }
 
-    /// 关文件 tab：有未保存修改（或挂着冲突）先弹确认，否则直接关。
+    /// 关文件 tab：有未保存修改（或挂着外部改动冲突）先弹确认，否则直接
+    /// 关。zed parity：已从磁盘消失（Deleted）且无未保存修改的缓冲不算
+    /// 脏——直接关，不弹「未保存的修改」；脏的照旧弹（保存并关闭=重建文件）。
     pub(crate) fn close_file_tab(&mut self, path: &Path, cx: &mut Context<Self>) {
         let dirty = self
             .file_cache
             .get(path)
-            .map(|f| f.dirty || f.conflict.is_some())
+            .map(|f| match f.conflict {
+                Some(crate::FileConflict::Deleted) => f.dirty,
+                _ => f.dirty || f.conflict.is_some(),
+            })
             .unwrap_or(false);
         if dirty {
             self.dialog = Some(crate::Dialog::FileDirty { path: path.to_path_buf() });
@@ -313,6 +318,13 @@ impl Chat {
                 None => return None,
             },
         };
+        // zed fs.save 同款：先建父目录再写——已删文件保存即重建（目录被
+        // 一并删除时也能恢复）；目录健在时 create_dir_all 是空操作
+        if let Some(parent) = path.parent() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                return Some(e.to_string());
+            }
+        }
         if let Err(e) = std::fs::write(path, &text) {
             return Some(e.to_string());
         }
@@ -414,7 +426,11 @@ impl Chat {
             };
             match std::fs::metadata(&path) {
                 Err(_) => {
-                    if ft.conflict.is_none() {
+                    // 文件已从磁盘消失：标 Deleted（zed DiskState::Deleted 同构
+                    // ——缓冲保留可继续编辑、tab 删除线、保存即重建；不弹横幅）。
+                    // 已在 Deleted 态不重复置位（watcher 泵 150ms 一轮，避免
+                    // 每轮空 notify）
+                    if ft.conflict != Some(crate::FileConflict::Deleted) {
                         ft.conflict = Some(crate::FileConflict::Deleted);
                         changed = true;
                     }
@@ -431,17 +447,20 @@ impl Chat {
                                 ft.content = String::from_utf8_lossy(&b).to_string();
                                 ft.reload_pending = true;
                                 ft.conflict = None;
-                            } else if ft.conflict.is_none() {
+                            } else if ft.conflict != Some(crate::FileConflict::Changed) {
+                                // Deleted→Changed 覆盖：文件被外部重建而本地
+                                // 仍有未保存修改（zed：has_conflict 弹裁决）
                                 ft.conflict = Some(crate::FileConflict::Changed);
                             }
                             ft.disk_sig = sig;
                             changed = true;
                         }
                         _ => {
-                            if ft.conflict.is_none() {
+                            // 二进制化/读不出来：视同消失（同样只置一次）
+                            if ft.conflict != Some(crate::FileConflict::Deleted) {
                                 ft.conflict = Some(crate::FileConflict::Deleted);
+                                changed = true;
                             }
-                            changed = true;
                         }
                     }
                 }

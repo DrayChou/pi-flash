@@ -48,6 +48,13 @@ pub mod method {
     /// 编辑区右键菜单（自动化验证入口：状态与真右键同槽，触发后
     /// shot/snapshot 断言菜单渲染与收起）
     pub const FILE_CONTEXT_MENU: &str = "file.context_menu";
+    /// 文件树删除流（自动化验证入口，settings.remove_ext 同款两段式）：
+    /// file.delete 弹确认浮层（与右键菜单「删除」同一方法
+    /// confirm_tree_delete），file.delete_confirm 应答「确认」（与确认按钮
+    /// 同一方法 tree_delete_confirm_commit）。dialogs 面的 tree_confirm_del
+    /// 可断言浮层开合
+    pub const FILE_DELETE: &str = "file.delete";
+    pub const FILE_DELETE_CONFIRM: &str = "file.delete_confirm";
     pub const FILES_TOGGLE_DIR: &str = "files.toggle_dir";
     pub const GIT_STAGE: &str = "git.stage";
     pub const GIT_UNSTAGE: &str = "git.unstage";

@@ -637,7 +637,9 @@ impl PanelTab {
 pub(crate) enum FileConflict {
     /// 磁盘内容已变；banner 提供重新加载
     Changed,
-    /// 文件已从磁盘消失
+    /// 文件已从磁盘消失（zed DiskState::Deleted 同构，2026-10-11 改版）：
+    /// 缓冲保留可继续编辑、tab 标题删除线、不弹横幅；手动保存即重建
+    /// （含父目录），自动保存对它保持沉默（防误重建）
     Deleted,
 }
 // 023 文件编辑展示页：所有文件都进 CodeEditor（Zed parity——Zed 里不分
@@ -1705,7 +1707,14 @@ impl Render for Chat {
             if !handle.is_focused(window) {
                 window.focus(&handle);
             }
-        } else if self.dialog.is_some() {
+        } else if self.dialog.is_some()
+            // overlay::confirm 三槽（文件树删除/项目删除/删除失败）不占
+            // Dialog 枚举，但同样要一打开就持有焦点——Enter 确认 / ESC 取消
+            // 才能立即生效（zed window.prompt 同款，键盘可操作）
+            || self.tree_confirm_del.is_some()
+            || self.confirm_prj_del.is_some()
+            || self.tree_del_error.is_some()
+        {
             if !self.dialog_focus.is_focused(window) {
                 window.focus(&self.dialog_focus);
             }

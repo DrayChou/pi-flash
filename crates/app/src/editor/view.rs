@@ -200,7 +200,10 @@ pub(crate) fn file_view(
             this.save_active_file(cx);
         }));
 
-    if let Some(c) = conflict.as_ref() {
+    // zed 同款：只有「磁盘被改 + 本地有未保存修改」（Changed）才横幅裁决；
+    // Deleted（文件从磁盘消失）不弹横幅——缓冲保留可继续编辑，tab 删除线
+    // 是唯一标记，保存即重建（DiskState::Deleted 语义）
+    if let Some(c @ crate::FileConflict::Changed) = conflict.as_ref() {
         host = host.child(conflict_banner(weak, &path, c));
     }
     // 024: md 源码态装饰幂等对账（装饰 provider 收口；preview 分支不受影响）
@@ -514,9 +517,9 @@ fn crumb_siblings_menu(weak: &gpui::WeakEntity<Chat>, dir: &Path) -> gpui::AnyEl
     col.into_any_element()
 }
 
-/// 冲突横幅（023 外部改动检测的对齐 Zed 裁决 UI）：
-/// Changed = 「文件已在磁盘上被修改」+ 重新加载 / 保留我的版本；
-/// Deleted = 「文件已从磁盘消失」+ 保留缓冲。
+/// 冲突横幅（023 外部改动检测的对齐 Zed 裁决 UI）：仅 Changed 挂载——
+/// 「文件已在磁盘上被修改」+ 重新加载 / 保留我的版本。（Deleted 不再走
+/// 横幅：zed 的 DiskState::Deleted 语义 = 缓冲保留 + tab 删除线，无横幅。）
 fn conflict_banner(
     weak: &gpui::WeakEntity<Chat>,
     path: &Path,
@@ -533,7 +536,7 @@ fn conflict_banner(
             tr("重新加载"),
             tr("保留我的版本"),
         ),
-        crate::FileConflict::Deleted => (tr("文件已从磁盘消失"), "", tr("保留缓冲")),
+        crate::FileConflict::Deleted => unreachable!("Deleted 不再渲染横幅（zed parity）"),
     };
     let mut row = div()
         .flex_shrink_0()

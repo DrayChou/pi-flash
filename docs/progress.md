@@ -144,22 +144,3 @@
   三轮失败定案绕行）；主题持久化只写 app_settings.json；模型弹窗短名/思考
   off = 预期（非推理模型）；新会话页判据 = isEmptyNew。
 
-## 陷阱
-
-已迁 `docs/agents/`（pi-rpc.md / gpui.md / engineering.md），随踩随补去那边。
-
-## 截图索引（tmp/屏幕截图/）
-
-| 文件 | 内容 |
-|---|---|
-| 图标版-全貌.png | SVG 图标版主界面（当前）|
-| 冒烟-hello-gpui.png | GPUI 首窗口（150% DPI）|
-| spike-pi桥接.png | spike 端到端首轮对话 |
-| 布局改版-全貌.png | pi-web 化布局全貌 |
-| 斜杠菜单.png | 42 命令菜单 |
-| 模型切换-ok.png | set_model ok 状态栏 |
-| 模型弹窗.png | select model 弹窗（过滤+ctx 窗口宽）|
-| 用户气泡-mist主题.png | 用户气泡+thinking 卡片 |
-| 会话行-hover按钮.png | 单行截断+hover ✏/🗑 |
-| 图片选择器.png | 🖼 attach_images 文件选择器 |
-| 文件预览.png | Cargo.toml 预览弹窗 |

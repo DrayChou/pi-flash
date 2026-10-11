@@ -67,8 +67,9 @@ pub fn stop_click(el: gpui::Div) -> gpui::Div {
 }
 
 /// 统一确认弹层（040 定稿）：**自动居中**、标准【取消/确认】两键、内容
-/// 可设。取消 = 点外/ESC 同语义（都走 `on_cancel`），调用方把「真正要做
-/// 的事」放进 `on_confirm`。返回整层，调用方挂 root 即可。
+/// 可设。取消 = 点外/ESC 同语义（都走 `on_cancel`），Enter = 确认（zed
+/// window.prompt 同款：弹窗键盘可操作），调用方把「真正要做的事」放进
+/// `on_confirm`。返回整层，调用方挂 root 即可。
 pub fn confirm(
     focus: &FocusHandle,
     message: impl Into<SharedString>,
@@ -88,7 +89,7 @@ pub fn confirm(
         )
     };
     let confirm_btn = {
-        let on = on_confirm;
+        let on = on_confirm.clone();
         crate::ui::button(
             "confirm-ok",
             crate::i18n::tr("确认"),
@@ -100,6 +101,11 @@ pub fn confirm(
     };
     let t = crate::theme::theme();
     layer(false, Some(focus), on_cancel)
+        .on_key_down(move |ev: &gpui::KeyDownEvent, w, cx| {
+            if ev.keystroke.key == "enter" {
+                on_confirm(w, cx);
+            }
+        })
         .flex()
         .items_center()
         .justify_center()

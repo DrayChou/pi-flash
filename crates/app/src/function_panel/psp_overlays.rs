@@ -55,13 +55,20 @@ pub(crate) fn psp_overlays(
         el = el.child(confirm_project_del(&path, x, y, vp, t, &chat.dialog_focus, cx));
     }
     if let Some(path) = chat.tree_confirm_del.clone() {
-        // zed 同款：删除打开中的文件时，未保存修改并入删除确认（一次确认
-        // = 删文件 + 弃缓冲）
-        let dirty = chat
+        // zed build_removal_prompt 同款：删除打开中的文件时未保存修改并入
+        // 删除确认（一次确认 = 删文件 + 弃缓冲）；目录删除统计其子树内
+        // 全部打开中的脏 tab（zed 对整个待删集合数 dirty_buffers）
+        let dirty_count = chat
             .file_cache
-            .get(&path)
-            .is_some_and(|f| f.dirty);
-        el = el.child(tree_delete_confirm(&path, dirty, &chat.dialog_focus, cx));
+            .iter()
+            .filter(|(p, f)| f.dirty && (same_path(p, &path) || p.starts_with(&path)))
+            .count();
+        el = el.child(tree_delete_confirm(
+            &path,
+            dirty_count,
+            &chat.dialog_focus,
+            cx,
+        ));
     }
     if chat.tree_del_error.is_some() {
         el = el.child(tree_del_error_layer(chat, t, cx));
@@ -1231,7 +1238,7 @@ fn tree_del_error_layer(
 /// 删除确认：统一 overlay::confirm（自动居中 + 取消/确认两键）。
 fn tree_delete_confirm(
     path: &std::path::PathBuf,
-    dirty: bool,
+    dirty_count: usize,
     focus: &gpui::FocusHandle,
     cx: &mut gpui::Context<Chat>,
 ) -> gpui::AnyElement {
@@ -1242,11 +1249,12 @@ fn tree_delete_confirm(
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
     // zed 同款：打开中的脏文件删除时明确「未保存更改将丢失」，一次确认
-    // = 删文件 + 弃缓冲（discard_file_tab 强关，不再二次确认）
-    let message = if dirty {
+    // = 删文件 + 弃缓冲（discard_file_tab 强关，不再二次确认）；目录删除
+    // 报其子树内全部受影响的脏 tab 数
+    let message = if dirty_count > 0 {
         crate::i18n::tf(
-            "删除 {name}？未保存的更改将丢失（移入回收站）",
-            &[("name", name)],
+            "删除 {name}？{n} 个打开文件的未保存更改将丢失（移入回收站）",
+            &[("name", name), ("n", dirty_count.to_string())],
         )
     } else {
         crate::i18n::tf("删除 {name}？（移入回收站）", &[("name", name)])
@@ -1260,11 +1268,10 @@ fn tree_delete_confirm(
                 cx.notify();
             });
         },
+        // 确认走统一方法（取槽→清槽→commit），自动化 op file.delete_confirm
+        // 也调它——回调里不再自持路径副本
         move |_w, cx| {
-            let _ = weak.update(cx, |c, cx| {
-                c.tree_confirm_del = None;
-                c.tree_delete_commit(cx);
-            });
+            let _ = weak.update(cx, |c, cx| c.tree_delete_confirm_commit(cx));
         },
     )
 }

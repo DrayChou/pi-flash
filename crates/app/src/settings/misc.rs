@@ -11,17 +11,6 @@ pub(crate) fn mc_misc_view(
     let t = T();
     let mut col = div().id("mc-misc").flex().flex_col();
 
-    // pi 版本（vendored）
-    col = col.child(set_row(
-        tr("pi 版本"),
-        tr("vendored pi-coding-agent"),
-        mono_value(&format!(
-            "v{}",
-            pi_link::vendor::vendored_version().unwrap_or_default()
-        )),
-        t,
-    ));
-
     // 启动恢复 switch
     let restore_on = crate::services::workspace::startup_restore();
     col = col.child(set_row(

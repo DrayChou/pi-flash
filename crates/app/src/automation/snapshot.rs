@@ -570,6 +570,10 @@ fn dialogs_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
         "project_hits": project_hits,
         "project_filter": chat.project_filter,
         "confirm_delete": opt_path(chat.confirm_delete.as_ref()),
+        // 021 文件树删除确认浮层（Some=开着，值为待删路径；file.delete /
+        // file.delete_confirm 两段式 op 断言开合用）+ trash 失败持久弹层
+        "tree_confirm_del": opt_path(chat.tree_confirm_del.as_ref()),
+        "tree_del_error": chat.tree_del_error.clone(),
         // 040 扩展页卸载确认浮层（Some=开着，值为待卸载来源）
         "pkg_confirm_remove": chat.pkg_confirm_remove.clone(),
         "renaming": opt_path(chat.renaming.as_ref()),

@@ -348,24 +348,34 @@ impl Chat {
         cx.notify();
     }
 
+    /// 删除确认的「确认」键（UI 按钮与 file.delete_confirm 自动化 op 同一
+    /// 方法）：取槽内路径、清槽、再 commit——取/清都在这一个方法里做，
+    /// 杜绝「回调先清槽、commit 再 take 取到空」的时序（文件树删除从未
+    /// 生效过的根因）。
+    pub(crate) fn tree_delete_confirm_commit(&mut self, cx: &mut Context<Self>) {
+        let Some(path) = self.tree_confirm_del.clone() else { return };
+        self.tree_confirm_del = None;
+        self.tree_delete_commit(&path, cx);
+    }
+
     /// 确认后真删：trash crate 送回收站（Windows 回收站 / macOS 废纸篓，
-    /// 可恢复）。打开中的 tab 丢弃、展开集合清枝，git 随刷。
-    pub(crate) fn tree_delete_commit(&mut self, cx: &mut Context<Self>) {
-        let Some(path) = self.tree_confirm_del.take() else { return };
+    /// 可恢复）。打开中的 tab 丢弃、展开集合清枝，git 随刷。路径作参数
+    /// 传入（对齐 delete_project 范式），不读 UI 状态槽。
+    pub(crate) fn tree_delete_commit(&mut self, path: &Path, cx: &mut Context<Self>) {
         // 兜底护栏：项目根不可删（操作栏右键菜单已豁免该入口，这里防
         // 其他调用路径误投递）
-        if same_path(&path, &self.cwd) {
+        if same_path(path, &self.cwd) {
             self.set_status(tr("不能删除项目根目录").to_string(), cx);
             cx.notify();
             return;
         }
-        match trash::delete(&path) {
+        match trash::delete(path) {
             Ok(_) => {
                 let stale: Vec<PathBuf> = self
                     .panel_tabs
                     .iter()
                     .filter_map(|t| match t {
-                        PanelTab::File(p) if same_path(p, &path) || p.starts_with(&path) => {
+                        PanelTab::File(p) if same_path(p, path) || p.starts_with(path) => {
                             Some(p.clone())
                         }
                         _ => None,
@@ -377,8 +387,8 @@ impl Chat {
                 // 兕底：file_cache 可能残留无 tab 的 FileTab（历史关闭路径
                 // 只摘 tab 没清缓存），按路径一并清，防编辑器还渲染已删文件
                 self.file_cache
-                    .retain(|k, _| !(same_path(k, &path) || k.starts_with(&path)));
-                self.expanded_dirs.retain(|d| !(same_path(d, &path) || d.starts_with(&path)));
+                    .retain(|k, _| !(same_path(k, path) || k.starts_with(path)));
+                self.expanded_dirs.retain(|d| !(same_path(d, path) || d.starts_with(path)));
                 self.refresh_git();
                 // 删除成功静默（同创建：成功不提示，失败才弹）
                 cx.notify();

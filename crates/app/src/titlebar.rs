@@ -202,11 +202,17 @@ fn tab_strip(
                 ContentView::Changelog,
             ),
         };
-        // 文件 tab 行尾标记（023）：冲突 ! > 脏点；终端无
+        // 文件 tab 行尾标记（023）：冲突 ! > 脏点。zed parity（DiskState::
+        // Deleted）：文件已从磁盘消失不标 !——删除线是唯一标记，脏点照常
+        // （脏的已删缓冲仍显示为已修改）
+        let deleted = path
+            .as_ref()
+            .and_then(|p| chat.file_cache.get(p))
+            .is_some_and(|f| f.conflict == Some(crate::FileConflict::Deleted));
         let badge: Option<gpui::AnyElement> = path.as_ref().and_then(|p| {
             let f = chat.file_cache.get(p)?;
             Some(
-                if f.conflict.is_some() {
+                if f.conflict == Some(crate::FileConflict::Changed) {
                     div()
                         .flex_shrink_0()
                         .text_size(crate::appearance::ui_size(11.))
@@ -231,6 +237,7 @@ fn tab_strip(
             path,
             tab_icon,
             badge,
+            deleted,
             tab_view,
             cx,
         ));
@@ -261,6 +268,7 @@ fn session_tab(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyElemen
         switch,
         None,
         None,
+        false,
     )
     .into_any_element()
 }
@@ -275,6 +283,7 @@ fn content_tab(
     path: Option<PathBuf>,
     tab_icon: Option<&'static str>,
     badge: Option<gpui::AnyElement>,
+    strike: bool,
     view: ContentView,
     cx: &mut gpui::Context<Chat>,
 ) -> impl gpui::IntoElement {
@@ -352,6 +361,7 @@ fn content_tab(
         switch,
         Some(close_x),
         badge,
+        strike,
     )
 }
 
@@ -366,6 +376,7 @@ fn tab_shell(
     switch: impl Fn(&gpui::MouseDownEvent, &mut Window, &mut gpui::App) + 'static,
     trailing: Option<gpui::AnyElement>,
     badge: Option<gpui::AnyElement>,
+    strike: bool,
 ) -> impl gpui::IntoElement {
     let mut tab = div()
         .id(id)
@@ -419,6 +430,8 @@ fn tab_shell(
                 .overflow_hidden()
                 .whitespace_nowrap()
                 .text_ellipsis()
+                // zed tab parity：文件已从磁盘消失（DiskState::Deleted）标删除线
+                .when(strike, |d| d.line_through())
                 .child(label),
         )
         // 行尾标记（023 文件 tab：脏点/冲突!）；行尾交互钮（文件/终端 tab

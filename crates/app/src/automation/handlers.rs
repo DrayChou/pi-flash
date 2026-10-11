@@ -350,6 +350,24 @@ pub(super) fn dispatch(
             cx.notify();
             ok()
         }
+        // 文件树删除流（自动化验证入口）：与右键菜单「删除」同槽同方法——
+        // 弹确认浮层（真删在 file.delete_confirm 应答后）
+        method::FILE_DELETE => {
+            let path = params_path(params, "path")?;
+            if !path.exists() {
+                return Err(not_found(format!("文件不存在: {}", path.display())));
+            }
+            chat.confirm_tree_delete(path, cx);
+            ok()
+        }
+        // 删除确认浮层的「确认」（与确认按钮同一方法）：清槽 + trash 真删
+        method::FILE_DELETE_CONFIRM => {
+            if chat.tree_confirm_del.is_none() {
+                return Err(bad("没有待确认的删除（tree_confirm_del 为空）"));
+            }
+            chat.tree_delete_confirm_commit(cx);
+            ok()
+        }
         method::FILES_TOGGLE_DIR => {
             let path = params_path(params, "path")?;
             if !chat.expanded_dirs.remove(&path) {
