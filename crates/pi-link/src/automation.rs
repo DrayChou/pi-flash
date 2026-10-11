@@ -91,6 +91,10 @@ pub mod method {
     /// 非 OS 抢屏；窗口被遮挡/最小化也能截）。params: {path?}，缺省写
     /// <配置目录>/automation/shots/。返回 {path,width,height,bytes}。
     pub const UI_SCREENSHOT: &str = "ui.screenshot";
+    /// 调试专用：直置 psp 项目行 hover/收起态（绕过鼠标合成，供像素级
+    /// 布局对比）。params: {project?: i64（缺省清除 hover）, collapse?:
+    /// bool（切该项目 collapsed_keys）}
+    pub const UI_DEBUG_HOVER: &str = "ui.debug_hover";
 }
 
 #[derive(Debug, Clone, PartialEq)]
