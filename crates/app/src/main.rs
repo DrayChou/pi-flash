@@ -1537,6 +1537,34 @@ impl Focusable for Chat {
 // rendering
 // ---------------------------------------------------------------------------
 
+/// toast 手工阴影层：gpui 的 box_shadow 在 DirectX 下高斯模糊过淡（用户
+/// 实测「和没有一样」），改用两层黑色圆角贴片垫在 pill 后（先 children 先
+/// 画 = 下层；外层宽而轻、内层窄而重，带轻微下坠偏移）。深色主题 halo
+/// 必须加重——深底上淡黑不可见。
+fn toast_halo(t: &'static crate::theme::Theme) -> [gpui::AnyElement; 2] {
+    let (far_a, near_a): (u32, u32) = if t.dark { (0x40, 0x59) } else { (0x14, 0x1f) };
+    [
+        div()
+            .absolute()
+            .top(px(-8.))
+            .left(px(-10.))
+            .right(px(-10.))
+            .bottom(px(-14.))
+            .rounded(px(18.))
+            .bg(gpui::rgba(0x00000000 | far_a))
+            .into_any_element(),
+        div()
+            .absolute()
+            .top(px(-3.))
+            .left(px(-4.))
+            .right(px(-4.))
+            .bottom(px(-8.))
+            .rounded(px(12.))
+            .bg(gpui::rgba(0x00000000 | near_a))
+            .into_any_element(),
+    ]
+}
+
 impl Render for Chat {
     fn render(&mut self, window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
         // 焦点快照（给「agent 结束时窗口没焦点就给点」用）：平台层在每次
@@ -1989,8 +2017,9 @@ impl Render for Chat {
             root = root.child(el);
         }
         // status toast（v54: statusbar 无状态文本，改瞬时提示）。2026-10-10
-        // 定夺：配色并入主题系（与 ext notice 同族 bg_panel+border+text），
-        // 尺寸自适应——内容撑宽、max 600×200、超高滚动、自动换行、左右 padding 20
+        // 定夺：配色随主题（bg_panel+border+text）；阴影不用 gpui box_shadow
+        //（DirectX 下高斯模糊过淡，实测「和没有一样」）——手工双层 halo
+        // 贴片（[`toast_halo`]），尺寸自适应 max 600×200、超高滚动、自动换行
         if let Some((msg, _)) = &self.status_toast {
             let text: SharedString = msg.clone().into();
             root = root.child(
@@ -2003,28 +2032,32 @@ impl Render for Chat {
                     .justify_center()
                     .child(
                         div()
-                            .id("status-toast")
-                            .max_w(px(600.))
-                            .max_h(px(200.))
-                            .overflow_y_scroll()
-                            .px(px(20.))
-                            .py(px(7.))
-                            .rounded(px(8.))
-                            // 2px 边框 + 加大阴影：与内容区拉开（2026-10-10 定夺）
-                            .border_2()
-                            .border_color(rgb(t.border))
-                            .bg(rgb(t.bg_panel))
-                            .shadow_2xl()
-                            .text_size(crate::appearance::ui_size(12.))
-                            .text_color(rgb(t.text))
-                            // 非 flex 块级容器：文本按容器宽度自动换行
-                            //（flex 会让文本 item 按最大内容宽撑开不换行）
-                            .child(text),
+                            .relative()
+                            .children(toast_halo(t))
+                            .child(
+                                div()
+                                    .id("status-toast")
+                                    .max_w(px(600.))
+                                    .max_h(px(200.))
+                                    .overflow_y_scroll()
+                                    .px(px(20.))
+                                    .py(px(7.))
+                                    .rounded(px(8.))
+                                    .border_2()
+                                    .border_color(rgb(t.border))
+                                    .bg(rgb(t.bg_panel))
+                                    .text_size(crate::appearance::ui_size(12.))
+                                    .text_color(rgb(t.text))
+                                    // 非 flex 块级容器：文本按容器宽度自动换行
+                                    //（flex 会让文本 item 按最大内容宽撑开不换行）
+                                    .child(text),
+                            ),
                     ),
             );
         }
         // extension notify toast (top-right)。上限与 status toast 对齐
-        // （max 600×200、超高滚动、自动换行；2026-10-10 定夺）
+        // （max 600×200、超高滚动、自动换行；2026-10-10 定夺）；阴影同走
+        // 手工 halo（gpui box_shadow DirectX 下不可见）
         if let Some((message, ty)) = &self.ext_notice {
             let color = match ty {
                 1 => 0xfacc15,
@@ -2034,25 +2067,32 @@ impl Render for Chat {
             let text: SharedString = message.clone().into();
             root = root.child(
                 div()
-                    .id("ext-notice")
                     .absolute()
                     .top(px(12.))
                     .right(px(12.))
-                    .max_w(px(600.))
-                    .max_h(px(200.))
-                    .overflow_y_scroll()
-                    .px(px(20.))
-                    .py(px(8.))
-                    .rounded(px(8.))
-                    .border_1()
-                    .border_color(rgb(color))
-                    .bg(rgb(t.bg_panel))
-                    .shadow_lg()
-                    .flex()
-                    .items_start()
-                    .gap_2()
-                    .child(div().size(px(7.)).rounded_full().mt(px(4.)).bg(rgb(color)))
-                    .child(div().text_size(crate::appearance::ui_size(12.)).text_color(rgb(t.text)).child(text)),
+                    .child(
+                        div()
+                            .relative()
+                            .children(toast_halo(t))
+                            .child(
+                                div()
+                                    .id("ext-notice")
+                                    .max_w(px(600.))
+                                    .max_h(px(200.))
+                                    .overflow_y_scroll()
+                                    .px(px(20.))
+                                    .py(px(8.))
+                                    .rounded(px(8.))
+                                    .border_1()
+                                    .border_color(rgb(color))
+                                    .bg(rgb(t.bg_panel))
+                                    .flex()
+                                    .items_start()
+                                    .gap_2()
+                                    .child(div().size(px(7.)).rounded_full().mt(px(4.)).bg(rgb(color)))
+                                    .child(div().text_size(crate::appearance::ui_size(12.)).text_color(rgb(t.text)).child(text)),
+                            ),
+                    ),
             );
         }
         // blocking extension dialog (select/confirm/input/editor)
