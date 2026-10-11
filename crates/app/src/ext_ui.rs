@@ -1,6 +1,6 @@
 //! Extension UI surface (pi-web ExtensionWidgets + blocking dialog
-//! parity). Free functions over Chat state; entity split lands in phase E
-//! (ARCHITECTURE.md §2).
+//! parity)：SetWidget 渲染 + 阻塞式 Select/Confirm/Input/Editor 弹窗，
+//! 含协议动作 on_ext_ui / ext_respond（P2 自 ext_ui_actions.rs 并入）。
 use crate::*;
 
 use gpui::{MouseButton, SharedString, div, px, rgb};

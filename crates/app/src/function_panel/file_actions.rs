@@ -1,9 +1,7 @@
 //! 021 文件树操作栏 + 右键菜单的文件动作：切换显示变更 / 搜索文件弹窗 /
 //! 新建文件·目录 / 改名 / 删除至回收站（trash crate）/ 复制路径 /
-//! @ 插入会话输入框 / 资源管理器定位。
-
-//! Split out of main.rs for the file-size budget. Child module of the
-//! crate root: Chat's root-private fields stay accessible here.
+//! @ 插入会话输入框（资源管理器定位在 services::shell_open）。
+//! （P2 自根 actions_files.rs 归并入 function_panel 域。）
 
 use crate::*;
 

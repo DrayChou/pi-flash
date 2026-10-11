@@ -1,7 +1,5 @@
-//! Slash/@ completion menu.
-
-//! Split out of main.rs for the file-size budget. Child module of the
-//! crate root: Chat's root-private fields stay accessible here.
+//! Slash/@ 补全菜单（031 对齐 pi-web；P2 自根 actions_menu.rs 归并入
+//! session 域）。
 //!
 //! @ 菜单（031 对齐 pi-web）：触发/token 提取在 services::at_file
 //! （extract_at_query 正则语义），候选用 TUI scoreEntry 阶梯打分，数据源

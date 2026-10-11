@@ -65,7 +65,7 @@ $PUI snapshot settings                           # 读 JSON 断言字段
 
 ```bash
 pif-ui list                        # 本机实例（探活标注，不删）
-pif-ui snapshot [surface] [--only k]   # 8 面：app/sessions/session/composer/files/git/settings/dialogs
+pif-ui snapshot [surface] [--only k]   # 9 面：app/sessions/session/composer/files/git/settings/dialogs/term
 pif-ui exec <method> [--arg k=v]... [--params-file f.json]   # 任意 op
 pif-ui keys "ctrl-s"               # 合成按键，走真实键位表
 pif-ui type <text>                 # composer.set_text 的糖

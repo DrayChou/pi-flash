@@ -35,7 +35,7 @@ RUST_MIN_STACK=33554432 cargo test -p pi-link   # 协议/路径测试都在 pi-l
 # 架构
 - workspace：`crates/pi-link`（钉版 pi RPC 协议层，测试在此）+ `crates/app`（GPUI 界面）
 - gpui 0.2.2 / gpui-component **vendored**：`[patch.crates-io]` → `vendor/gpui`、`vendor/gpui-component`（workspace exclude；debug profile 保留行号表）
-- 主题：`theme.rs`（mist 默认；`PI_FLASH_THEME` 可切 default/dark/rose）
+- 主题：`appearance/theme.rs`（mist 默认；`PI_FLASH_THEME` 可切 default/dark/rose；`appearance::registry` 从 `theme::ALL` 派生）
 
 # File Map
 
@@ -65,36 +65,42 @@ crates/pi-link/src/     钉版 pi RPC 协议层（typed bridge，测试在此）
   session_ext.rs          会话级插件清单（031/034）
   paths.rs                PF 自有文件路径（不污染 pi，010）
   automation.rs           pif-ui 自动化协议（NDJSON over TCP 127.0.0.1）
-  bin/                    附属可执行
+  bin/                    附属可执行（pif-ui CLI 等）
 
-crates/app/src/         GPUI 界面
-  main.rs / startup.rs    壳 / 启动唯一入口（010）
+crates/app/src/         GPUI 界面（Chat = 全应用状态实体，域方法以 impl Chat
+                        块形式住在各领域文件——这是本仓的核心组织方式）
+  main.rs                 只剩 mod 树 + 根 re-export（shell::{Chat,types::*}）+ main()
+  shell/                  应用壳域（P3 自 main.rs 拆出）：types 界面类型簇
+                          （Dialog/PanelTab/FileTab/HoverCard/Pill*）/ chat Chat
+                          实体本体+构造器 / render 渲染根（焦点仲裁+overlay 叠放）
+  startup.rs              启动唯一入口（010）：Globals/ProjectCtx、boot 泵、splash
   agent_session.rs        AgentSession：RPC 进程所有权、事件泵、状态机
   content.rs              内容区状态机 chat / term / md（v54）
-  actions_*.rs            动作层：sessions 会话池、runtime 订阅切换、files 文件树动作、
-                          menu 补全菜单、dialogs 弹窗+搜索、rename 行内改名+provider 弹窗、
-                          panels 预览tab+附件+psp 动作、terminal 终端
-  dialogs.rs              模态弹窗 ModelSelect / GitDiff / SessionSearch / ImagePreview
-  ext_ui.rs / _actions.rs 扩展 UI 面 + 扩展 UI 协议动作（040）
+  dialogs.rs              弹窗域：模态渲染（ModelSelect/GitDiff/SessionSearch/…）+ 打开器
+  ext_ui.rs               扩展 UI 面 + 协议动作 on_ext_ui/ext_respond（040）
+  terminal.rs             内置终端（alacritty+ConPTY）+ Chat 终端方法
   i18n.rs                 三语（zh-CN 为源）
   models_config.rs        enabledModels 白名单编辑（pi-web port）
-  theme.rs                七主题，1:1 翻译 pi-web globals.css
-  appearance/             主题注册表 + 界面/多语言（006/007）
+  assets.rs               图标编入二进制；status_bar.rs 状态栏；titlebar.rs topbar；
+                          top_panels.rs 系统提示词/工具定义面板
+  appearance/             界面域：theme.rs 七主题色板 + 注册表（registry 自 ALL 派生）
+                          + 字体槽位 + 界面/多语言（006/007）
   automation/             pif-ui 自动化服务：snapshot / screenshot / op 分发
-  editor/                 文件编辑器域（023）+ Markdown 渲染与所见即所得（024/025）
-  function_panel/         psp 项目+会话一体列表（015）+ 文件树（021）+ git 面板（022）+ 悬浮层
+  editor/                 文件编辑器域：view 编辑页（023）+ tabs 文件 tab 生命周期 +
+                          markdown/ 渲染与所见即所得（024/025）
+  function_panel/         左 dock 域：psp 一体列表（015）+ psp_actions 项目动作 +
+                          file_tree（021）+ file_actions 树文件动作 + git 面板（022）+ 悬浮层
   remote_control/         微信 ⇄ 会话桥（060）
-  services/               pi-web lib/ parity 的无 UI 助手：file_icons / at_file / file_index /
-                          file_tree / format / git / paths_sort / sound / token_probe /
-                          updater / watcher / workspace
-  session/                会话域：runtime 会话池（030）、messages、chat_list 滚屏、input
-                          composer（031）、fork、diff、model/plugin/mcp picker、new_session（012）、
-                          tools_recipe 档位配方（034）
+  services/               无 UI 助手（pi-web lib/ parity）：file_icons / at_file /
+                          file_index / file_tree / format / git / paths_sort / sound /
+                          token_probe / updater / watcher / workspace / shell_open
+  session/                会话域：runtime 会话池实体（030）+ pool 池 Chat 方法、
+                          messages、chat_list 滚屏、input composer（031）+ menu
+                          补全菜单 + attachments 附件、fork、diff、model/plugin/mcp
+                          picker、new_session（012）、tools_recipe 档位配方（034）
   settings/               设置面板六页（界面/模型/技能/扩展/MCP/其他）+ widgets 公共件
   ui/                     通用件：tokens（UI组件规范唯一代码落点）、button、text_input、
                           composer_input、dropdown、overlay、popup、vlist、psp_scrollbar
-  assets.rs               图标编入二进制；status_bar.rs 状态栏；titlebar.rs topbar；
-                          top_panels.rs 系统提示词/工具定义面板
 ```
 
 # 领域笔记（docs/agents/）
