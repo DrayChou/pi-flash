@@ -153,6 +153,8 @@ const TABLE: &[(&str, &str, &str)] = &[
     ("已移除 {source}", "已移除 {source}", "Removed {source}"),
     ("pi {} 失败: {}", "pi {} 失敗: {}", "pi {} failed: {}"),
     ("删除失败: {e}", "刪除失敗: {e}", "Failed to delete: {e}"),
+    ("删除失败：{msg}", "刪除失敗：{msg}", "Failed to delete: {msg}"),
+    ("知道了", "知道了", "OK"),
     // tools tab
     ("工具选择", "工具選擇", "Tool selection"),
     ("全部", "全部", "All"),

@@ -55,7 +55,16 @@ pub(crate) fn psp_overlays(
         el = el.child(confirm_project_del(&path, x, y, vp, t, &chat.dialog_focus, cx));
     }
     if let Some(path) = chat.tree_confirm_del.clone() {
-        el = el.child(tree_delete_confirm(&path, &chat.dialog_focus, cx));
+        // zed 同款：删除打开中的文件时，未保存修改并入删除确认（一次确认
+        // = 删文件 + 弃缓冲）
+        let dirty = chat
+            .file_cache
+            .get(&path)
+            .is_some_and(|f| f.dirty);
+        el = el.child(tree_delete_confirm(&path, dirty, &chat.dialog_focus, cx));
+    }
+    if chat.tree_del_error.is_some() {
+        el = el.child(tree_del_error_layer(chat, t, cx));
     }
     el.into_any_element()
 }
@@ -946,7 +955,7 @@ fn editor_menu_layer(
         .and_then(|e| e.to_str())
         .is_some_and(|e| matches!(e.to_ascii_lowercase().as_str(), "html" | "htm"));
     if is_html {
-        card = card.child(tree_item(
+        card = card.child(editor_item(
             &weak,
             "edm-browser",
             "globe",
@@ -968,7 +977,7 @@ fn editor_menu_layer(
             .get(&path)
             .is_some_and(|f| f.md_source);
     if md_source {
-        card = card.child(tree_item(
+        card = card.child(editor_item(
             &weak,
             "edm-preview",
             "eye",
@@ -986,7 +995,7 @@ fn editor_menu_layer(
         ));
     }
     card = card
-        .child(tree_item(
+        .child(editor_item(
             &weak,
             "edm-explorer",
             "folder-input",
@@ -999,7 +1008,7 @@ fn editor_menu_layer(
         ))
         .child(editor_terminal_item(&weak, "edm-term", &path))
         .child(menu_sep())
-        .child(tree_item(
+        .child(editor_item(
             &weak,
             "edm-rename",
             "pencil",
@@ -1010,7 +1019,7 @@ fn editor_menu_layer(
                 move |c, cx| c.open_file_rename(path.clone(), false, cx)
             },
         ))
-        .child(tree_item(
+        .child(editor_item(
             &weak,
             "edm-del",
             "trash",
@@ -1022,6 +1031,28 @@ fn editor_menu_layer(
             },
         ));
     layer.child(card).into_any_element()
+}
+
+/// 编辑菜单动作项接线：点击 = 应用动作 + 收**编辑菜单**（tree_item 写死
+/// 收 tree_menu，编辑菜单复用它会导致菜单不消、挡住改名框/删除确认）。
+fn editor_item(
+    weak: &gpui::WeakEntity<Chat>,
+    id: &str,
+    icon_name: &'static str,
+    label: &str,
+    danger: bool,
+    apply: impl Fn(&mut Chat, &mut gpui::Context<Chat>) + 'static,
+) -> gpui::Stateful<gpui::Div> {
+    let weak = weak.clone();
+    menu_item(SharedString::from(id.to_string()), icon_name, label, danger, false)
+        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+            cx.stop_propagation();
+            let _ = weak.update(cx, |c, cx| {
+                apply(c, cx);
+                c.editor_menu = None;
+                cx.notify();
+            });
+        })
 }
 
 /// 编辑动作项（复制/粘贴/剪切/全选）：先归位焦点再派发 Input 动作。
@@ -1138,9 +1169,65 @@ fn menu_sep() -> gpui::Div {
         .bg(gpui::rgba(crate::theme::border_alpha(T(), 0x66)))
 }
 
+/// 删除失败持久弹层：trash Err 必看（状态栏 toast 一闪容易漏）。
+fn tree_del_error_layer(
+    chat: &mut Chat,
+    t: &'static Theme,
+    cx: &mut gpui::Context<Chat>,
+) -> gpui::AnyElement {
+    let weak = cx.entity().downgrade();
+    let msg = chat.tree_del_error.clone().expect("checked by caller");
+    let weak_dismiss = weak.clone();
+    let weak_ok = weak.clone();
+    let layer = crate::ui::overlay::layer(false, Some(&chat.dialog_focus), move |_w, cx| {
+        let _ = weak_dismiss.update(cx, |c, cx| {
+            c.tree_del_error = None;
+            cx.notify();
+        });
+    });
+    let card = crate::ui::overlay::stop_click(
+        div()
+            .min_w(px(320.))
+            .p(px(14.))
+            .bg(rgb(t.bg))
+            .border_1()
+            .border_color(gpui::rgba(crate::theme::danger_alpha(t, 0x73)))
+            .rounded(px(10.))
+            .flex()
+            .flex_col()
+            .gap(px(10.))
+            .child(
+                div()
+                    .text_size(crate::appearance::ui_size(12.5))
+                    .text_color(rgb(t.text))
+                    .child(crate::i18n::tf("删除失败：{msg}", &[("msg", msg)])),
+            )
+            .child(div().flex().justify_end().child(crate::ui::button(
+                "del-err-ok",
+                crate::i18n::tr("知道了"),
+                crate::ui::BtnSize::Md,
+                crate::ui::BtnVariant::Secondary,
+                false,
+                move |_, _, cx| {
+                    let _ = weak_ok.update(cx, |c, cx| {
+                        c.tree_del_error = None;
+                        cx.notify();
+                    });
+                },
+            ))),
+    );
+    layer
+        .flex()
+        .items_center()
+        .justify_center()
+        .child(card)
+        .into_any_element()
+}
+
 /// 删除确认：统一 overlay::confirm（自动居中 + 取消/确认两键）。
 fn tree_delete_confirm(
     path: &std::path::PathBuf,
+    dirty: bool,
     focus: &gpui::FocusHandle,
     cx: &mut gpui::Context<Chat>,
 ) -> gpui::AnyElement {
@@ -1150,9 +1237,19 @@ fn tree_delete_confirm(
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
+    // zed 同款：打开中的脏文件删除时明确「未保存更改将丢失」，一次确认
+    // = 删文件 + 弃缓冲（discard_file_tab 强关，不再二次确认）
+    let message = if dirty {
+        crate::i18n::tf(
+            "删除 {name}？未保存的更改将丢失（移入回收站）",
+            &[("name", name)],
+        )
+    } else {
+        crate::i18n::tf("删除 {name}？（移入回收站）", &[("name", name)])
+    };
     crate::ui::overlay::confirm(
         focus,
-        crate::i18n::tf("删除 {name}？（移入回收站）", &[("name", name)]),
+        message,
         move |_w, cx| {
             let _ = weak_cancel.update(cx, |c, cx| {
                 c.tree_confirm_del = None;

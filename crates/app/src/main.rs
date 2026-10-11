@@ -537,6 +537,9 @@ struct Chat {
     editor_menu: Option<(PathBuf, f32, f32)>,
     /// 021 文件树删除确认（统一 overlay::confirm；待删路径）
     tree_confirm_del: Option<PathBuf>,
+    /// 删除失败持久弹层（trash Err 不再只靠状态栏一闪，用户可直接回报
+    /// 具体错误）
+    tree_del_error: Option<String>,
     /// 021 操作栏「切换显示变更」：只列 git 变更文件（flatten changes_only）
     changes_only: bool,
     /// 021 文件搜索（Dialog::FileSearch）：命中（相对路径清单切片）、
@@ -888,6 +891,7 @@ impl Chat {
             confirm_prj_del: None,
             tree_menu: None,
             editor_menu: None,
+            tree_del_error: None,
             tree_confirm_del: None,
             changes_only: ui.tree_changes_only,
             file_search_hits: Vec::new(),

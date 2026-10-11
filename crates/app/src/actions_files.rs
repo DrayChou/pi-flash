@@ -343,6 +343,7 @@ impl Chat {
     /// 「删除」第一步：挂统一确认浮层（overlay::confirm，居中）。
     pub(crate) fn confirm_tree_delete(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         self.tree_menu = None;
+        self.editor_menu = None;
         self.tree_confirm_del = Some(path);
         cx.notify();
     }
@@ -373,12 +374,19 @@ impl Chat {
                 for p in stale {
                     self.discard_file_tab(&p, cx);
                 }
+                // 兕底：file_cache 可能残留无 tab 的 FileTab（历史关闭路径
+                // 只摘 tab 没清缓存），按路径一并清，防编辑器还渲染已删文件
+                self.file_cache
+                    .retain(|k, _| !(same_path(k, &path) || k.starts_with(&path)));
                 self.expanded_dirs.retain(|d| !(same_path(d, &path) || d.starts_with(&path)));
                 self.refresh_git();
                 self.set_status(tr("已移入回收站").to_string(), cx);
                 cx.notify();
             }
             Err(e) => {
+                // 持久弹层：状态栏 toast 一闪容易漏看，用户回报也拿不到
+                // 具体错误
+                self.tree_del_error = Some(e.to_string());
                 self.set_status(crate::i18n::tf("删除失败: {e}", &[("e", e.to_string())]), cx);
                 cx.notify();
             }
