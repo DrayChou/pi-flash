@@ -1,7 +1,7 @@
 //! sessionView (v54): 聊天列（消息列表 + 悬浮 composer；空会话走 012 新会话页
 //! = `new_session`）+ 会话导航面板（033：右缘 10px 刻度条，75% 高，悬停左弹
 //! 400px 轮次摘要卡片列表）。顶部会话功能栏（2026-10-11，原 topbar ⋯ 菜单
-//! 改条）；无内嵌状态行（v54 按设计删除）。
+//! 改条；仅会话态，新会话页隐藏）；无内嵌状态行（v54 按设计删除）。
 
 pub(crate) mod actions_bar;
 pub(crate) mod chat_list;
@@ -77,7 +77,7 @@ pub(crate) fn main_column(
         .bg(rgb(t.bg))
         .text_color(rgb(t.text))
         .font_family(sf.family.clone())
-        .child(session_fn_bar(chat, cx))
+        .when(!new_session_page, |d| d.child(session_fn_bar(chat, cx)))
         .child(
             div()
                 .id("chat-and-nav")
