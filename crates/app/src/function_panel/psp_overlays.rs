@@ -211,7 +211,9 @@ fn hover_card(
                 .font_weight(gpui::FontWeight::SEMIBOLD)
                 .text_color(rgb(t.text))
                 .overflow_hidden()
-                .whitespace_nowrap()
+                // 标题最多三行（2026-11 定夺）：够放下长会话名，再多就截断
+                // 加省略号；line_clamp 自带 overflow_hidden
+                .line_clamp(3)
                 .text_ellipsis()
                 .cursor_pointer()
                 .px(px(5.))
@@ -264,7 +266,9 @@ fn hover_card(
         .child(info_row("folder-closed", SharedString::from(prj_name), t))
         .child(info_row(
             "icon-clock-solid",
-            SharedString::from(tf("{t}前", &[("t", time_ago(modified))])),
+            // time_ago 已自带「前」后缀（format.rs 的 tf("{n}天前")）——
+            // 这里再拼一次就成「1天前前」
+            SharedString::from(time_ago(modified)),
             t,
         ))
         .child(info_row(
