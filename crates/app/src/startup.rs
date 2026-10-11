@@ -107,10 +107,20 @@ fn adopt_legacy_credentials() {
     }
     // 目录 provider key：auth.json 明文 → 凭据库 + pf-auth.json
     let Some(pf_path) = pi_link::pf_auth::path() else { return };
-    match pi_link::pf_auth::adopt_from_auth_at(&pf_path, &pi_link::config::auth_path(), &vault) {
+    match pi_link::pf_auth::adopt_from_auth_at(
+        &pf_path,
+        &pi_link::config::auth_path(),
+        &vault,
+        &crate::services::workspace::removed_providers(),
+    ) {
         Ok(n) if n > 0 => eprintln!("[startup] adopted {n} legacy key(s) → credential vault + pf-auth.json"),
         Ok(_) => {}
         Err(e) => eprintln!("[startup] pf-auth adoption skipped: {e}"),
+    }
+    // 042 墓碑清算：被【移除】的商既不收编（上方 skip），也把此前复活残留
+    // 的账本条目 + 凭据库密钥清掉（幂等；auth.json 归 pi 不动）
+    for p in crate::services::workspace::removed_providers() {
+        let _ = pi_link::pf_auth::delete_catalog_key(&p, &vault);
     }
 }
 

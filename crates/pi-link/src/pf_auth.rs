@@ -148,6 +148,7 @@ pub fn adopt_from_auth_at(
     pf_path: &Path,
     auth_path: &Path,
     vault: &dyn SecretVault,
+    skip: &[String],
 ) -> Result<usize, String> {
     if !auth_path.exists() {
         return Ok(0);
@@ -156,6 +157,10 @@ pub fn adopt_from_auth_at(
     let mut adopted = 0;
     if let Some(obj) = auth.as_object() {
         for (provider, entry) in obj {
+            if skip.iter().any(|p| p == provider) {
+                continue; // 【移除】墓碑：收编不得复活（否则每次启动都会把
+                          // 刚删的 key 从 auth.json 复制回来）
+            }
             if has_entry_at(pf_path, provider) {
                 continue; // PF 已管理，不覆盖
             }
@@ -324,14 +329,32 @@ mod tests {
         )
         .unwrap();
         let v = MemVault::default();
-        let n = adopt_from_auth_at(&p, &auth, &v).unwrap();
+        let n = adopt_from_auth_at(&p, &auth, &v, &[]).unwrap();
         assert_eq!(n, 1, "只收编明文 api_key（oauth/引用跳过）");
         // 复制不删：auth.json 原文不动
         let raw = std::fs::read_to_string(&auth).unwrap();
         assert!(raw.contains("sk-legacy"), "auth.json 必须保持原样");
         assert_eq!(v.get("PF_KEY_DEEPSEEK").unwrap().as_deref(), Some("sk-legacy"));
         // 幂等：已有账本条目不覆盖
-        assert_eq!(adopt_from_auth_at(&p, &auth, &v).unwrap(), 0);
+        assert_eq!(adopt_from_auth_at(&p, &auth, &v, &[]).unwrap(), 0);
+    }
+
+    #[test]
+    fn adopt_never_resurrects_removed_providers() {
+        let p = tmp("adopt-skip");
+        let auth = tmp("adopt-skip-auth");
+        std::fs::write(
+            &auth,
+            json!({"deepseek": {"type": "api_key", "key": "sk-x"}, "groq": {"type": "api_key", "key": "gsk-y"}})
+                .to_string(),
+        )
+        .unwrap();
+        let v = MemVault::default();
+        // deepseek 在墓碑名单：不收编；groq 正常收编
+        let n = adopt_from_auth_at(&p, &auth, &v, &["deepseek".to_string()]).unwrap();
+        assert_eq!(n, 1);
+        assert_eq!(has_entry_at(&p, "groq"), true);
+        assert_eq!(has_entry_at(&p, "deepseek"), false);
         clean(&p);
         clean(&auth);
     }
