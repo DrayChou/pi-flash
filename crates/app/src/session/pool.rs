@@ -390,6 +390,12 @@ impl Chat {
         match std::fs::remove_file(&path) {
             Ok(_) => {
                 self.sessions.retain(|s| s.path != path);
+                self.session_tail_cache.remove(&path);
+                // refresh_sessions 只重扫当前 cwd，其余项目组沿用各组缓存——
+                // 非当前项目的会话也要在这里摘掉，否则列表一直显示已删会话
+                for g in &mut self.projects {
+                    g.sessions.retain(|s| s.path != path);
+                }
                 self.set_status("session deleted".into(), cx);
             }
             Err(e) => {
