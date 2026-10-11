@@ -535,6 +535,9 @@ fn dialogs_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
         Dialog::SessionInfo { .. } => "session_info",
         Dialog::FileDirty { .. } => "file_dirty",
         Dialog::WxQr => "wx_qr",
+        Dialog::FileSearch { .. } => "file_search",
+        Dialog::FileNew { .. } => "file_new",
+        Dialog::FileRename { .. } => "file_rename",
     });
     // 打开项目菜单：列表数据随弹窗一起上报（扫描是异步回填，UI 测试
     // 据此轮询就绪）
@@ -546,8 +549,18 @@ fn dialogs_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
             .collect(),
         _ => Vec::new(),
     };
+    // 文件搜索命中随弹窗上报（后台扫盘异步回填，UI 测试据此轮询就绪）
+    let file_search_hits: Vec<Value> = match chat.dialog.as_ref() {
+        Some(Dialog::FileSearch { .. }) => chat
+            .file_search_hits
+            .iter()
+            .map(|r| json!(r))
+            .collect(),
+        _ => Vec::new(),
+    };
     json!({
         "dialog": dialog,
+        "file_search_hits": file_search_hits,
         // 模型菜单可见行数（UI 测试断言用：空列表 = 新会话页拉不到目录；
         // 042 起数据源 = pill 化模型菜单的 picker_models）
         "model_rows": match chat.model_picker.as_ref() {

@@ -280,6 +280,8 @@ pub struct UiState {
     pub sort_mode: String,
     /// collapsed project groups (workspace keys)
     pub collapsed: Vec<String>,
+    /// 021 文件树操作栏「切换显示变更」开关（只列 git 变更文件）
+    pub tree_changes_only: bool,
 }
 
 impl Default for UiState {
@@ -291,6 +293,7 @@ impl Default for UiState {
             list_mode: "grouped".into(),
             sort_mode: "time".into(),
             collapsed: Vec::new(),
+            tree_changes_only: false,
         }
     }
 }
@@ -339,6 +342,10 @@ pub fn ui_state() -> UiState {
                     .collect()
             })
             .unwrap_or_default(),
+        tree_changes_only: v
+            .get("tree_changes_only")
+            .and_then(|b| b.as_bool())
+            .unwrap_or(false),
     }
 }
 
@@ -349,6 +356,7 @@ pub fn save_ui_state(s: &UiState) {
         serde_json::json!({
             "panel": s.panel, "slp_w": s.slp_w, "panes_hidden": s.panes_hidden,
             "list_mode": s.list_mode, "sort_mode": s.sort_mode, "collapsed": s.collapsed,
+            "tree_changes_only": s.tree_changes_only,
         }),
     );
     set_memory(&map);

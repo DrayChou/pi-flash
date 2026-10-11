@@ -75,7 +75,252 @@ pub(crate) fn render_dialogs(
             if let Some(Dialog::WxQr) = chat.dialog.as_ref() {
                 root = root.child(render_wx_qr(chat, weak, t));
             }
+            if let Some(Dialog::FileSearch { input, scroll }) = chat.dialog.as_ref() {
+                root = root.child(render_file_search(chat, weak, input, scroll, t, cx));
+            }
+            if let Some(Dialog::FileNew { dir, is_dir, input }) = chat.dialog.as_ref() {
+                let title = if *is_dir { tr("新建目录") } else { tr("新建文件") };
+                root = root.child(render_file_name_dialog(
+                    chat,
+                    weak,
+                    title,
+                    tr("文件名（可含子目录）"),
+                    tr("创建"),
+                    input,
+                    t,
+                    NameDialogKind::New { dir: dir.clone(), is_dir: *is_dir },
+                ));
+            }
+            if let Some(Dialog::FileRename { path, is_dir, input }) = chat.dialog.as_ref() {
+                root = root.child(render_file_name_dialog(
+                    chat,
+                    weak,
+                    tr("重命名"),
+                    &path.to_string_lossy().to_string(),
+                    tr("重命名"),
+                    input,
+                    t,
+                    NameDialogKind::Rename { path: path.clone(), is_dir: *is_dir },
+                ));
+            }
     root
+}
+
+/// 021 文件树右键「新建/改名」的提交目标（两弹窗共用一个渲染器）。
+pub(crate) enum NameDialogKind {
+    New { dir: PathBuf, is_dir: bool },
+    Rename { path: PathBuf, is_dir: bool },
+}
+
+/// 021 文件树操作栏「搜索文件」：500×500 居中（§5.7 中型档 + 项目选择
+/// 同尺寸先例）——顶部文件名输入框，下方命中列表（文件类型图标 + 名字
+/// + 所在目录副文案），点击即打开文件 tab。数据由 open_file_search /
+/// file_search_changed 后台扫盘回填，代际防抖。
+fn render_file_search(
+    chat: &Chat,
+    weak: &gpui::WeakEntity<Chat>,
+    input: &gpui::Entity<TextInput>,
+    scroll: &gpui::ScrollHandle,
+    t: &theme::Theme,
+    _cx: &App,
+) -> Div {
+    let status: SharedString = if chat.file_search_scanning {
+        tr("正在扫描文件…").into()
+    } else if chat.file_search_needle.is_empty() {
+        tr("输入文件名关键词搜索当前项目").into()
+    } else if chat.file_search_hits.is_empty() {
+        tr("没有匹配的文件").into()
+    } else {
+        crate::i18n::tf("{n} 个文件", &[("n", chat.file_search_hits.len().to_string())]).into()
+    };
+    let cwd = chat.cwd.clone();
+    let mut list = div().flex().flex_col();
+    for (ix, rel) in chat.file_search_hits.iter().enumerate() {
+        let abs = cwd.join(rel);
+        let name = rel.rsplit('/').next().unwrap_or(rel);
+        let dir_part = &rel[..rel.len() - name.len()];
+        let dir_label: SharedString = if dir_part.is_empty() {
+            String::new().into()
+        } else {
+            format!("· {}", dir_part.trim_end_matches('/')).into()
+        };
+        let weak_row = weak.clone();
+        let rel_c = rel.clone();
+        list = list.child(
+            div()
+                .id(SharedString::from(format!("fs-hit-{ix}")))
+                .h(px(34.))
+                .px_2()
+                .flex()
+                .items_center()
+                .gap_2()
+                .rounded(px(6.))
+                .cursor_pointer()
+                .hover(|s| s.bg(rgb(t.bg_hover)))
+                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                    let rel = rel_c.clone();
+                    let _ = weak_row.update(cx, |c, cx| c.open_file_search_hit(&rel, cx));
+                })
+                .child(icon(crate::services::file_icons::get_icon(&abs), 14., t.text_dim))
+                .child(
+                    div()
+                        .flex_shrink_0()
+                        .max_w(px(240.))
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_ellipsis()
+                        .text_size(crate::appearance::ui_size(12.5))
+                        .text_color(rgb(t.text))
+                        .child(SharedString::from(name.to_string())),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_ellipsis()
+                        .text_right()
+                        .text_size(crate::appearance::ui_size(10.5))
+                        .text_color(rgb(t.text_faint))
+                        .child(dir_label),
+                ),
+        );
+    }
+    let panel = div()
+        .w(px(500.))
+        .h(px(500.))
+        .bg(rgb(t.bg_panel))
+        .border_1()
+        .border_color(rgb(t.border))
+        .rounded(px(10.))
+        .p_4()
+        .flex()
+        .flex_col()
+        .gap_2()
+        .shadow_lg()
+        .child(input.clone())
+        .child(
+            div()
+                .px_1()
+                .text_size(crate::appearance::ui_size(11.))
+                .text_color(rgb(t.text_dim))
+                .child(status),
+        )
+        .child(
+            div()
+                .relative()
+                .flex_1()
+                .min_h_0()
+                .flex()
+                .child(
+                    div()
+                        .id("file-search-list")
+                        .flex_1()
+                        .min_h_0()
+                        .overflow_y_scroll()
+                        .track_scroll(scroll)
+                        .flex()
+                        .flex_col()
+                        .pr(px(6.))
+                        .child(list),
+                )
+                .child(
+                    div()
+                        .absolute()
+                        .top_0()
+                        .bottom_0()
+                        .right_0()
+                        .w(px(10.))
+                        .child(crate::ui::psp_scrollbar::menu_scrollbar(scroll)),
+                ),
+        );
+    dialog_shell(chat, weak, panel)
+}
+
+/// 021 文件树右键「新建/改名」共用的小表单弹窗（§5.7 表单档 380）：
+/// 标题 + 输入框 + 提示行 + 取消/确认。确认按钮按 kind 分派到
+/// file_new_commit / file_rename_commit；校验失败（重名/非法名）只出
+/// 状态栏提示，弹窗不关。
+fn render_file_name_dialog(
+    chat: &Chat,
+    weak: &gpui::WeakEntity<Chat>,
+    title: &str,
+    hint: &str,
+    ok_label: &str,
+    input: &gpui::Entity<TextInput>,
+    t: &theme::Theme,
+    kind: NameDialogKind,
+) -> Div {
+    let weak_cancel = weak.clone();
+    let weak_ok = weak.clone();
+    let input_ok = input.clone();
+    dialog_shell(
+        chat,
+        weak,
+        div()
+            .w(px(380.))
+            .p(px(16.))
+            .bg(rgb(t.bg))
+            .border_1()
+            .border_color(gpui::rgba(theme::border_alpha(t, 0x8c)))
+            .rounded(px(10.))
+            .shadow_lg()
+            .flex()
+            .flex_col()
+            .gap(px(12.))
+            .child(
+                div()
+                    .text_size(crate::appearance::ui_size(13.5))
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .text_color(rgb(t.text))
+                    .child(SharedString::from(title.to_string())),
+            )
+            .child(input.clone())
+            .child(
+                div()
+                    .text_size(crate::appearance::ui_size(11.))
+                    .text_color(rgb(t.text_faint))
+                    .child(SharedString::from(hint.to_string())),
+            )
+            .child(
+                div()
+                    .flex()
+                    .justify_end()
+                    .gap(px(8.))
+                    .child(crate::ui::button(
+                        "fname-cancel",
+                        tr("取消"),
+                        crate::ui::BtnSize::Md,
+                        crate::ui::BtnVariant::Secondary,
+                        false,
+                        move |_, _, cx| {
+                            let _ = weak_cancel.update(cx, |c, cx| {
+                                c.dialog = None;
+                                cx.notify();
+                            });
+                        },
+                    ))
+                    .child(crate::ui::button(
+                        "fname-ok",
+                        ok_label.to_string(),
+                        crate::ui::BtnSize::Md,
+                        crate::ui::BtnVariant::Primary,
+                        false,
+                        move |_, _, cx| {
+                            let name = input_ok.read(cx).value().trim().to_string();
+                            let _ = weak_ok.update(cx, |c, cx| match &kind {
+                                NameDialogKind::New { dir, is_dir } => {
+                                    c.file_new_commit(dir, *is_dir, name, cx)
+                                }
+                                NameDialogKind::Rename { path, is_dir } => {
+                                    c.file_rename_commit(path, *is_dir, name, cx)
+                                }
+                            });
+                        },
+                    )),
+            ),
+    )
 }
 
 /// 060 远程控制：扫码弹窗（原手机图标入口已隐藏 2026-10-10，自动化

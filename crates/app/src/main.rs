@@ -17,6 +17,7 @@ use pi_link::protocol::Command;
 use pi_link::sessions::{SessionInfo, list_sessions_for_cwd, read_tail_messages};
 
 mod actions_dialogs;
+mod actions_files;
 mod agent_session;
 mod automation;
 mod actions_menu;
@@ -114,6 +115,27 @@ enum Dialog {
     /// 「远程控制」页签入口已隐藏（2026-10-10 定），自动化 WX_QR_OPEN 仍可打开。
     /// 不持数据 —— 内容全从 `chat.remote.qr` 现读，泵更新即重绘。
     WxQr,
+    /// 021 文件树操作栏「搜索文件」：500×500 居中窗，按文件名过滤当前项目
+    /// 清单（load_listing 现扫，命中在 `file_search_hits`）。`scroll` 挂
+    /// 结果列表自绘滚动条（跨帧复用，vlist.rs「血案」注释）。
+    FileSearch {
+        input: gpui::Entity<TextInput>,
+        scroll: gpui::ScrollHandle,
+    },
+    /// 021 文件树右键「新建文件/新建目录」：在 `dir` 下按输入名创建
+    /// （名字可含子目录）。`is_dir` = 建目录。
+    FileNew {
+        dir: PathBuf,
+        is_dir: bool,
+        input: gpui::Entity<TextInput>,
+    },
+    /// 021 文件树右键「改名」：原地改名（文件/目录），打开的 tab 与展开
+    /// 集合随后重映射。`is_dir` 决定提交后的重映射范围。
+    FileRename {
+        path: PathBuf,
+        is_dir: bool,
+        input: gpui::Entity<TextInput>,
+    },
 }
 
 /// ⋯ 菜单的两个面：系统提示词原文 / 已加载工具的声明。各自画在设置弹窗
@@ -211,6 +233,13 @@ pub(crate) enum PspMenu {
     /// sub: 0=列表方式, 1=排序方式
     Sort { sub: Option<u8>, x: f32, y: f32 },
     Project { path: PathBuf, x: f32, y: f32 },
+}
+
+/// 021 文件树右键菜单（目录/文件两套条目）；(x, y) 为事件坐标锚点。
+#[derive(Debug, Clone)]
+pub(crate) enum TreeMenu {
+    Dir { path: PathBuf, x: f32, y: f32 },
+    File { path: PathBuf, x: f32, y: f32 },
 }
 
 #[derive(Debug, Clone)]
@@ -501,6 +530,18 @@ struct Chat {
     hover_card: Option<HoverCard>,
     psp_menu: Option<PspMenu>,
     confirm_prj_del: Option<(PathBuf, f32, f32)>,
+    /// 021 文件树右键菜单状态槽（渲染挂 psp_overlays 同层）
+    tree_menu: Option<TreeMenu>,
+    /// 021 文件树删除确认（统一 overlay::confirm；待删路径）
+    tree_confirm_del: Option<PathBuf>,
+    /// 021 操作栏「切换显示变更」：只列 git 变更文件（flatten changes_only）
+    changes_only: bool,
+    /// 021 文件搜索（Dialog::FileSearch）：命中（相对路径清单切片）、
+    /// 查询词镜像与扫描状态（防抖代际同 search_gen）
+    file_search_hits: Vec<String>,
+    file_search_needle: String,
+    file_search_gen: u64,
+    file_search_scanning: bool,
     status_toast: Option<(String, std::time::Instant)>,
     /// 工具定义弹窗左列表选中的工具名（pi-web ToolDefinitionsPanel 的
     /// selectedToolName）
@@ -842,6 +883,13 @@ impl Chat {
             hover_card: None,
             psp_menu: None,
             confirm_prj_del: None,
+            tree_menu: None,
+            tree_confirm_del: None,
+            changes_only: ui.tree_changes_only,
+            file_search_hits: Vec::new(),
+            file_search_needle: String::new(),
+            file_search_gen: 0,
+            file_search_scanning: false,
             status_toast: None,
             crumb_menu_dir: None,
             crumb_dd: cx.new(|_| crate::ui::DropdownState::new()),
@@ -1045,6 +1093,7 @@ impl Chat {
             &self.cwd,
             &self.expanded_dirs,
             &self.git_files,
+            self.changes_only,
         ));
     }
 
@@ -1628,7 +1677,10 @@ impl Render for Chat {
         // otherwise, which would steal it back every redraw)
         let dialog_input = match &self.dialog {
             Some(Dialog::ProviderPicker { input }) | Some(Dialog::SessionSearch { input })
-            | Some(Dialog::ProjectPicker { input, .. }) => {
+            | Some(Dialog::ProjectPicker { input, .. })
+            | Some(Dialog::FileSearch { input, .. })
+            | Some(Dialog::FileNew { input, .. })
+            | Some(Dialog::FileRename { input, .. }) => {
                 Some(input.clone())
             }
             _ => None,

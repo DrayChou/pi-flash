@@ -45,8 +45,14 @@ pub(crate) fn psp_overlays(
     if chat.psp_menu.is_some() {
         el = el.child(menu_layer(chat, vp, t, cx));
     }
+    if chat.tree_menu.is_some() {
+        el = el.child(tree_menu_layer(chat, vp, t, cx));
+    }
     if let Some((path, x, y)) = chat.confirm_prj_del.clone() {
         el = el.child(confirm_project_del(&path, x, y, vp, t, &chat.dialog_focus, cx));
+    }
+    if let Some(path) = chat.tree_confirm_del.clone() {
+        el = el.child(tree_delete_confirm(&path, &chat.dialog_focus, cx));
     }
     el.into_any_element()
 }
@@ -667,4 +673,291 @@ fn confirm_project_del(
                 ),
         )
         .into_any_element()
+}
+
+// ---------------------------------------------------------------------------
+// 021 文件树右键菜单（目录/文件两套条目）+ 删除确认
+// ---------------------------------------------------------------------------
+
+/// 文件树右键菜单：条目按设计稿 021——目录=新建/资源管理器/终端/复制/
+/// @/改名/删除，文件=资源管理器/终端/浏览器(html)/复制/@/改名/删除。
+/// 复用 psp 菜单的 menu_card/menu_item（同一 theme 样式族），锚点 =
+/// 右键事件坐标，弹出方向走统一算法。
+fn tree_menu_layer(
+    chat: &mut Chat,
+    vp: (f32, f32),
+    t: &'static Theme,
+    cx: &mut gpui::Context<Chat>,
+) -> gpui::AnyElement {
+    let weak = cx.entity().downgrade();
+    let (x, y) = match chat.tree_menu.clone().expect("checked by caller") {
+        crate::TreeMenu::Dir { x, y, .. } | crate::TreeMenu::File { x, y, .. } => (x, y),
+    };
+    // 与 psp 菜单同参：向下弹让 12px，左右象限决定横向方向
+    let edges = PopupEdges::around((x, y), vp, 0., 12.);
+    let weak_layer = weak.clone();
+    let layer = crate::ui::overlay::layer(false, Some(&chat.dialog_focus), move |_w, cx| {
+        let _ = weak_layer.update(cx, |c, cx| {
+            c.tree_menu = None;
+            cx.notify();
+        });
+    });
+    let mut card = menu_card(edges, t);
+    match chat.tree_menu.clone().expect("re-checked") {
+        crate::TreeMenu::Dir { path, .. } => {
+            card = card
+                .child(tree_item(
+                    &weak,
+                    "ftm-new-file",
+                    "file-plus",
+                    tr("新建文件"),
+                    false,
+                    {
+                        let path = path.clone();
+                        move |c, cx| c.open_file_new(path.clone(), false, cx)
+                    },
+                ))
+                .child(tree_item(
+                    &weak,
+                    "ftm-new-dir",
+                    "folder-plus",
+                    tr("新建目录"),
+                    false,
+                    {
+                        let path = path.clone();
+                        move |c, cx| c.open_file_new(path.clone(), true, cx)
+                    },
+                ))
+                .child(menu_sep())
+                .child(tree_item(
+                    &weak,
+                    "ftm-dir-explorer",
+                    "icon-filebrowser",
+                    tr("在资源管理器中打开"),
+                    false,
+                    {
+                        let path = path.clone();
+                        move |_c, _cx| crate::actions_files::reveal_in_explorer(&path)
+                    },
+                ))
+                .child(tree_terminal_item(&weak, "ftm-dir-term", &path))
+                .child(menu_sep())
+                .child(tree_item(
+                    &weak,
+                    "ftm-dir-copy",
+                    "copy",
+                    tr("复制路径"),
+                    false,
+                    {
+                        let path = path.clone();
+                        move |c, cx| c.tree_copy_path(path.clone(), cx)
+                    },
+                ))
+                .child(tree_item(
+                    &weak,
+                    "ftm-dir-at",
+                    "at-sign",
+                    tr("@到会话输入框"),
+                    false,
+                    {
+                        let path = path.clone();
+                        move |c, cx| c.tree_at_insert(path.clone(), true, cx)
+                    },
+                ))
+                .child(menu_sep())
+                .child(tree_item(
+                    &weak,
+                    "ftm-dir-rename",
+                    "pencil",
+                    tr("改名"),
+                    false,
+                    {
+                        let path = path.clone();
+                        move |c, cx| c.open_file_rename(path.clone(), true, cx)
+                    },
+                ))
+                .child(tree_item(
+                    &weak,
+                    "ftm-dir-del",
+                    "trash",
+                    tr("删除"),
+                    true,
+                    {
+                        let path = path.clone();
+                        move |c, cx| c.confirm_tree_delete(path.clone(), cx)
+                    },
+                ));
+        }
+        crate::TreeMenu::File { path, .. } => {
+            card = card
+                .child(tree_item(
+                    &weak,
+                    "ftm-file-explorer",
+                    "icon-filebrowser",
+                    tr("在资源管理器中打开"),
+                    false,
+                    {
+                        let path = path.clone();
+                        move |_c, _cx| crate::actions_files::reveal_in_explorer(&path)
+                    },
+                ))
+                .child(tree_terminal_item(&weak, "ftm-file-term", &path));
+            // 「在浏览器中打开」只对 html 文件出现（设计稿 021）
+            let is_html = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| matches!(e.to_ascii_lowercase().as_str(), "html" | "htm"));
+            if is_html {
+                card = card.child(tree_item(
+                    &weak,
+                    "ftm-file-browser",
+                    "globe",
+                    tr("在浏览器中打开"),
+                    false,
+                    {
+                        let path = path.clone();
+                        move |_c, _cx| crate::actions_panels::open_in_browser(&path)
+                    },
+                ));
+            }
+            card = card
+                .child(menu_sep())
+                .child(tree_item(
+                    &weak,
+                    "ftm-file-copy",
+                    "copy",
+                    tr("复制路径"),
+                    false,
+                    {
+                        let path = path.clone();
+                        move |c, cx| c.tree_copy_path(path.clone(), cx)
+                    },
+                ))
+                .child(tree_item(
+                    &weak,
+                    "ftm-file-at",
+                    "at-sign",
+                    tr("@到会话输入框"),
+                    false,
+                    {
+                        let path = path.clone();
+                        move |c, cx| c.tree_at_insert(path.clone(), false, cx)
+                    },
+                ))
+                .child(menu_sep())
+                .child(tree_item(
+                    &weak,
+                    "ftm-file-rename",
+                    "pencil",
+                    tr("改名"),
+                    false,
+                    {
+                        let path = path.clone();
+                        move |c, cx| c.open_file_rename(path.clone(), false, cx)
+                    },
+                ))
+                .child(tree_item(
+                    &weak,
+                    "ftm-file-del",
+                    "trash",
+                    tr("删除"),
+                    true,
+                    {
+                        let path = path.clone();
+                        move |c, cx| c.confirm_tree_delete(path.clone(), cx)
+                    },
+                ));
+        }
+    }
+    layer.child(card).into_any_element()
+}
+
+/// 菜单项公共接线：点击 = 应用动作 + 收菜单（同 psp 菜单项语义）。
+fn tree_item(
+    weak: &gpui::WeakEntity<Chat>,
+    id: &str,
+    icon_name: &'static str,
+    label: &str,
+    danger: bool,
+    apply: impl Fn(&mut Chat, &mut gpui::Context<Chat>) + 'static,
+) -> gpui::Stateful<gpui::Div> {
+    let weak = weak.clone();
+    menu_item(SharedString::from(id.to_string()), icon_name, label, danger, false)
+        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+            cx.stop_propagation();
+            let _ = weak.update(cx, |c, cx| {
+                apply(c, cx);
+                c.tree_menu = None;
+                cx.notify();
+            });
+        })
+}
+
+/// 「在终端中打开」要走 window（open_terminal_in 建终端 tab），单独接线。
+fn tree_terminal_item(
+    weak: &gpui::WeakEntity<Chat>,
+    id: &str,
+    path: &std::path::PathBuf,
+) -> gpui::Stateful<gpui::Div> {
+    let weak = weak.clone();
+    let path = path.clone();
+    menu_item(
+        SharedString::from(id.to_string()),
+        "icon-terminal-solid",
+        tr("在终端中打开"),
+        false,
+        false,
+    )
+    .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+        cx.stop_propagation();
+        let _ = weak.update(cx, |c, cx| {
+            // 文件 = 其所在目录；目录 = 自身（psp 项目菜单同语义）
+            let cwd = if path.is_dir() {
+                path.clone()
+            } else {
+                path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| path.clone())
+            };
+            c.open_terminal_in(cwd, window, cx);
+            c.tree_menu = None;
+            cx.notify();
+        });
+    })
+}
+
+/// 菜单分组分隔线（§5.6：1px t.border）。
+fn menu_sep() -> gpui::Div {
+    div()
+        .h(px(1.))
+        .my(px(4.))
+        .bg(gpui::rgba(crate::theme::border_alpha(T(), 0x66)))
+}
+
+/// 删除确认：统一 overlay::confirm（自动居中 + 取消/确认两键）。
+fn tree_delete_confirm(
+    path: &std::path::PathBuf,
+    focus: &gpui::FocusHandle,
+    cx: &mut gpui::Context<Chat>,
+) -> gpui::AnyElement {
+    let weak = cx.entity().downgrade();
+    let weak_cancel = weak.clone();
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    crate::ui::overlay::confirm(
+        focus,
+        crate::i18n::tf("删除 {name}？（移入回收站）", &[("name", name)]),
+        move |_w, cx| {
+            let _ = weak_cancel.update(cx, |c, cx| {
+                c.tree_confirm_del = None;
+                cx.notify();
+            });
+        },
+        move |_w, cx| {
+            let _ = weak.update(cx, |c, cx| {
+                c.tree_confirm_del = None;
+                c.tree_delete_commit(cx);
+            });
+        },
+    )
 }

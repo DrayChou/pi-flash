@@ -22,6 +22,7 @@ use gpui::{
 };
 
 use crate::Chat;
+use crate::i18n::tr;
 use crate::services::file_icons;
 use crate::services::file_tree::TreeRow;
 use crate::theme;
@@ -45,6 +46,7 @@ pub(crate) fn files_view(
     _cx: &mut gpui::Context<Chat>,
 ) -> gpui::AnyElement {
     let rows = chat.tree_rows.clone();
+    let changes_only = chat.changes_only;
     let weak = weak.clone();
     let t = theme::theme();
     let sticky = Box::new(StickyAncestors { weak: weak.clone() }) as Box<dyn UniformListDecoration>;
@@ -55,15 +57,26 @@ pub(crate) fn files_view(
         .flex_col()
         .overflow_hidden()
         .bg(rgb(t.nav))
-        .py(px(10.))
-        .child(vlist(
+        // 021 操作栏：项目目录行固定在树顶（高度 40），左侧 4 操作钮
+        // （切换显示变更 / 搜索文件 / 资源管理器 / 终端），不随列表滚动
+        .child(action_bar(chat, &weak, t))
+        .child(
+            div()
+                .flex_1()
+                .min_h_0()
+                .flex()
+                .flex_col()
+                .overflow_hidden()
+                .py(px(10.))
+                .child(vlist(
             FILE_TREE_LIST_ID,
             rows.len(),
             ROW_H,
             VListHeight::Fill,
             false,
             true,
-            "暂无文件",
+            // 变更过滤态的空表 = 「暂无变更」（无 git 变更时根行也被滤掉）
+            if changes_only { tr("暂无变更") } else { "暂无文件" },
             Some(sticky),
             move |ix, _window, _cx| match rows.get(ix) {
                 Some(row) => {
@@ -75,7 +88,123 @@ pub(crate) fn files_view(
                 }
                 None => div().into_any_element(),
             },
+        )),
+        )
+        .into_any_element()
+}
+
+/// 021 操作栏（高 40，固定）：左侧 4 颗图标钮——切换显示变更（开 =
+/// accent 高亮）/ 搜索文件 / 在资源管理器中打开 / 在终端中打开，其后
+/// 是项目目录名（flex_1 ellipsis）。按钮命中区 26px（§5.2 槽位），
+/// 视觉与 psp 标题行同族。
+fn action_bar(
+    chat: &Chat,
+    weak: &gpui::WeakEntity<Chat>,
+    t: &'static crate::theme::Theme,
+) -> gpui::AnyElement {
+    let project: SharedString = chat
+        .cwd
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| chat.cwd.to_string_lossy().to_string())
+        .into();
+    let changes_only = chat.changes_only;
+    let w_toggle = weak.clone();
+    let w_search = weak.clone();
+    let w_term = weak.clone();
+    let cwd_explorer = chat.cwd.clone();
+    let cwd_term = chat.cwd.clone();
+    div()
+        .id("ft-action-bar")
+        .w_full()
+        .h(px(40.))
+        .flex_shrink_0()
+        .flex()
+        .items_center()
+        .pl(px(10.))
+        .pr(px(10.))
+        .gap(px(2.))
+        .border_b_1()
+        .border_color(rgb(t.border))
+        .child(bar_btn(
+            "ft-toggle-changes",
+            "git-commit-horizontal",
+            t,
+            changes_only,
+            move |_, _, cx| {
+                let _ = w_toggle.update(cx, |c, cx| c.toggle_changes_only(cx));
+            },
         ))
+        .child(bar_btn(
+            "ft-search",
+            "search",
+            t,
+            false,
+            move |_, _, cx| {
+                let _ = w_search.update(cx, |c, cx| c.open_file_search(cx));
+            },
+        ))
+        .child(bar_btn(
+            "ft-explorer",
+            "icon-filebrowser",
+            t,
+            false,
+            move |_, _, _cx| {
+                crate::actions_panels::open_in_explorer(&cwd_explorer);
+            },
+        ))
+        .child(bar_btn(
+            "ft-term",
+            "icon-terminal-solid",
+            t,
+            false,
+            move |_, window, cx| {
+                let _ = w_term.update(cx, |c, cx| {
+                    c.open_terminal_in(cwd_term.clone(), window, cx)
+                });
+            },
+        ))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .text_ellipsis()
+                .ml(px(6.))
+                .text_size(crate::appearance::ui_size(12.))
+                .font_weight(gpui::FontWeight::MEDIUM)
+                .text_color(rgb(t.text_soft))
+                .child(project),
+        )
+        .into_any_element()
+}
+
+/// 操作栏图标钮：26px 命中槽 + 16px 图标（icon_hover 悬停变亮；激活态
+/// 用 accent 实色不参与 hover 变亮——开关点亮语义）。
+fn bar_btn(
+    id: &'static str,
+    icon_name: &'static str,
+    t: &'static crate::theme::Theme,
+    active: bool,
+    on_click: impl Fn(&gpui::MouseDownEvent, &mut gpui::Window, &mut gpui::App) + 'static,
+) -> gpui::AnyElement {
+    div()
+        .id(id)
+        .w(px(26.))
+        .h(px(26.))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px(6.))
+        .cursor_pointer()
+        .hover(|s| s.bg(rgb(t.bg_hover)))
+        .on_mouse_down(gpui::MouseButton::Left, on_click)
+        .child(if active {
+            crate::ui::icon(icon_name, 16., t.accent).into_any_element()
+        } else {
+            crate::ui::icon_hover(icon_name, 16., t.text_dim).into_any_element()
+        })
         .into_any_element()
 }
 
@@ -87,6 +216,7 @@ fn tree_row(
     weak: gpui::WeakEntity<Chat>,
 ) -> gpui::AnyElement {
     let t = theme::theme();
+    let weak_menu = weak.clone();
     let mut el = div()
         .id(SharedString::from(format!("tree-{}", row.path.display())))
         .relative()
@@ -144,6 +274,7 @@ fn tree_row(
                 cx.notify();
             });
         });
+        el = el.child(tree_right_click(&weak_menu, &row));
         // 目录圆点：子树有变更（祖先链上浮，services 层已算好）
         if row.changed_dot && crate::services::workspace::git_markers() {
             el = el.child(changed_dot());
@@ -166,6 +297,7 @@ fn tree_row(
                 c.open_file_tab(fp.clone(), cx);
             });
         });
+        el = el.child(tree_right_click(&weak_menu, &row));
         // git badge on files（pi-web 徽标语义：M/A/D/R/U/C；023 默认关）
         if let Some(st) = row.git.filter(|_| crate::services::workspace::git_markers()) {
             el = el.child(
@@ -387,13 +519,49 @@ fn sticky_dir_row(
     // scroll_to_item_strict_with_offset(index, Top, sticky_index)），再
     // +1px 防「刚好落在钉住位上重新参与锚点判定」的抖动
     let target_y = px((slot as f32 - row_ix as f32) * ROW_H + 1.);
+    let weak_menu = weak.clone();
     el.on_mouse_down(MouseButton::Left, move |_, _, cx| {
         let handle = crate::ui::vlist::scroll_handle(FILE_TREE_LIST_ID);
         handle.0.borrow().base_handle.set_offset(point(px(0.), target_y));
         let _ = weak.update(cx, |_, cx| cx.notify());
         cx.stop_propagation();
     })
+    .child(tree_right_click(&weak_menu, row))
     .into_any_element()
+}
+
+/// 行右键：挂文件树右键菜单（目录/文件两套，锚点 = 事件坐标）。
+/// 挂为行尾子元素占位（无视觉），事件在行容器上接。
+fn tree_right_click(weak: &gpui::WeakEntity<Chat>, row: &TreeRow) -> gpui::AnyElement {
+    let weak = weak.clone();
+    let path = row.path.clone();
+    let is_dir = row.is_dir;
+    div()
+        .absolute()
+        .size_full()
+        .top_0()
+        .left_0()
+        .on_mouse_down(MouseButton::Right, move |ev: &gpui::MouseDownEvent, _, cx| {
+            cx.stop_propagation();
+            let path = path.clone();
+            let _ = weak.update(cx, |c, cx| {
+                c.tree_menu = Some(if is_dir {
+                    crate::TreeMenu::Dir {
+                        path,
+                        x: f32::from(ev.position.x),
+                        y: f32::from(ev.position.y),
+                    }
+                } else {
+                    crate::TreeMenu::File {
+                        path,
+                        x: f32::from(ev.position.x),
+                        y: f32::from(ev.position.y),
+                    }
+                });
+                cx.notify();
+            });
+        })
+        .into_any_element()
 }
 
 /// Zed `ui::sticky_items::find_sticky_anchor` 同构：在可见行里找锚点行，

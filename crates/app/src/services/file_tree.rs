@@ -169,12 +169,17 @@ fn changed_ancestor_dirs(cwd: &Path, files: &[GitFile]) -> HashSet<PathBuf> {
 /// semantics: dot files hidden, `.git` skipped, gitignored entries shown
 /// dimmed (`ignored`), directories first, natural sort.
 ///
+/// `changes_only`（021 操作栏「切换显示变更」）：无视展开集合全量下钻，
+/// 只保留 git 变更文件行与其祖先目录行（圆点行）——无变更时仅剩根行，
+/// 根行也无圆点则整个列表为空（渲染层显示「暂无变更」空态）。
+///
 /// 根行的展开态同样读 `expanded`（含 cwd 即展开）；Chat 侧在新建/切项目
 /// 时把 cwd 塞进集合，保证默认展开。
 pub fn flatten(
     cwd: &Path,
     expanded: &HashSet<PathBuf>,
     git_files: &[GitFile],
+    changes_only: bool,
 ) -> Vec<TreeRow> {
     let git_map: HashMap<PathBuf, GitStatus> = git_files
         .iter()
@@ -206,13 +211,32 @@ pub fn flatten(
         name: root_name,
         depth: 0,
         is_dir: true,
-        expanded: expanded.contains(cwd),
+        expanded: changes_only || expanded.contains(cwd),
         git: None,
         changed_dot: changed_dirs.contains(cwd),
         ignored: false,
     });
-    if expanded.contains(cwd) {
-        walk(cwd, 1, expanded, &git_map, &changed_dirs, &stack, false, &mut out);
+    if changes_only || expanded.contains(cwd) {
+        walk(
+            cwd,
+            1,
+            expanded,
+            changes_only,
+            &git_map,
+            &changed_dirs,
+            &stack,
+            false,
+            &mut out,
+        );
+    }
+    if changes_only {
+        out.retain(|r| {
+            if r.depth == 0 {
+                r.changed_dot
+            } else {
+                r.changed_dot || r.git.is_some()
+            }
+        });
     }
     out
 }
@@ -228,10 +252,12 @@ fn build_gitignore_at(dir: &Path, rel: &str) -> Option<Gitignore> {
     Some(builder.build().unwrap_or_else(|_| Gitignore::empty()))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn walk(
     dir: &Path,
     depth: usize,
     expanded: &HashSet<PathBuf>,
+    changes_only: bool,
     git_map: &HashMap<PathBuf, GitStatus>,
     changed_dirs: &HashSet<PathBuf>,
     stack: &IgnoreStack,
@@ -288,7 +314,7 @@ fn walk(
                 chain_paths.push(child_path.clone());
                 cur = child_path;
             }
-            let open = expanded.contains(&cur);
+            let open = changes_only || expanded.contains(&cur);
             out.push(TreeRow {
                 path: cur.clone(),
                 name: chain_names.join("/"),
@@ -318,6 +344,7 @@ fn walk(
                     &cur,
                     depth + 1,
                     expanded,
+                    changes_only,
                     git_map,
                     changed_dirs,
                     &child_stack,
@@ -405,7 +432,7 @@ mod tests {
         let root_name = t.0.file_name().unwrap().to_string_lossy().to_string();
 
         // 未展开任何目录：只有根项目行
-        let rows = flatten(&t.0, &HashSet::new(), &[]);
+        let rows = flatten(&t.0, &HashSet::new(), &[], false);
         assert_eq!(rows.len(), 1);
         assert!(rows[0].is_dir && !rows[0].expanded);
         assert_eq!(rows[0].path, t.0);
@@ -415,7 +442,7 @@ mod tests {
         let mut expanded = HashSet::new();
         expanded.insert(t.0.clone());
         expanded.insert(t.0.join("node_modules"));
-        let rows = flatten(&t.0, &expanded, &[]);
+        let rows = flatten(&t.0, &expanded, &[], false);
         // 先序遍历：pkg 紧跟 node_modules（树形显示顺序）
         let names: Vec<String> = rows.iter().map(|r| r.name.clone()).collect();
         assert_eq!(
@@ -449,7 +476,7 @@ mod tests {
 
         let mut expanded = HashSet::new();
         expanded.insert(t.0.clone());
-        let rows = flatten(&t.0, &expanded, &[]);
+        let rows = flatten(&t.0, &expanded, &[], false);
         let by_name = |n: &str| {
             rows.iter()
                 .find(|r| r.name == n)
@@ -472,7 +499,7 @@ mod tests {
         std::fs::create_dir_all(git_dir.join("info")).unwrap();
         std::fs::write(git_dir.join("info").join("exclude"), "secret.txt\n").unwrap();
         t.file("secret.txt");
-        let rows = flatten(&t.0, &expanded, &[]);
+        let rows = flatten(&t.0, &expanded, &[], false);
         let secret = rows
             .iter()
             .find(|r| r.name == "secret.txt")
@@ -489,7 +516,7 @@ mod tests {
         // 全折叠：a/x/y 折成一行（Zed auto_fold_dirs 语义）
         let mut expanded = HashSet::new();
         expanded.insert(t.0.clone());
-        let rows = flatten(&t.0, &expanded, &[]);
+        let rows = flatten(&t.0, &expanded, &[], false);
         let names: Vec<&str> = rows.iter().skip(1).map(|r| r.name.as_str()).collect();
         assert_eq!(names, vec!["a/x/y", "r.txt"]);
         assert_eq!(rows[1].path, t.0.join("a").join("x").join("y"));
@@ -497,7 +524,7 @@ mod tests {
 
         // 展开链尾：行名不变、行内打开，f.txt 深度 2
         expanded.insert(t.0.join("a").join("x").join("y"));
-        let rows = flatten(&t.0, &expanded, &[]);
+        let rows = flatten(&t.0, &expanded, &[], false);
         assert_eq!(rows[1].name, "a/x/y");
         assert!(rows[1].expanded);
         assert_eq!(rows[2].name, "f.txt");
@@ -505,7 +532,7 @@ mod tests {
 
         // 展开中段：断链成 a/x + y 两行（y 仍保持展开，f.txt 随其下钻）
         expanded.insert(t.0.join("a").join("x"));
-        let rows = flatten(&t.0, &expanded, &[]);
+        let rows = flatten(&t.0, &expanded, &[], false);
         assert_eq!(rows[1].name, "a/x");
         assert!(rows[1].expanded);
         assert_eq!(rows[2].name, "y");
@@ -531,7 +558,7 @@ mod tests {
         expanded.insert(t.0.join("a").join("b"));
         expanded.insert(deep);
 
-        let rows = flatten(&t.0, &expanded, &git_files);
+        let rows = flatten(&t.0, &expanded, &git_files, false);
         // 根行：有任何变更即点亮
         assert!(rows[0].changed_dot);
         let a = rows.iter().find(|r| r.name == "a").unwrap();
@@ -541,5 +568,36 @@ mod tests {
         let m = rows.iter().find(|r| r.name == "mod.rs").unwrap();
         assert!(matches!(m.git, Some(GitStatus::Modified)));
         assert!(!m.changed_dot);
+    }
+
+    #[test]
+    fn changes_only_keeps_changed_files_and_ancestor_dirs() {
+        let t = TempTree::new("chg");
+        let changed = t.file("a/b/mod.rs");
+        t.file("a/clean.txt");
+        t.file("root.txt");
+        t.dir("empty");
+        let git_files = vec![GitFile {
+            path: changed,
+            status: GitStatus::Modified,
+            staged: false,
+        }];
+        // 展开集合为空也要全量下钻：a/b 链上的变更文件必须可见
+        let rows = flatten(&t.0, &HashSet::new(), &git_files, true);
+        let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
+        let root = t.0.file_name().unwrap().to_string_lossy().to_string();
+        assert_eq!(
+            names,
+            vec![root.as_str(), "a", "b", "mod.rs"],
+            "only changed file + its ancestor dirs survive"
+        );
+        assert!(rows[0].changed_dot, "root lit when any change exists");
+        assert!(rows.iter().find(|r| r.name == "a").unwrap().changed_dot);
+        assert!(rows.iter().find(|r| r.name == "b").unwrap().changed_dot);
+        assert!(rows.last().unwrap().git.is_some());
+
+        // 无变更：根行圆点熄灭被过滤，整表为空（渲染层出「暂无变更」空态）
+        let rows = flatten(&t.0, &HashSet::new(), &[], true);
+        assert!(rows.is_empty());
     }
 }

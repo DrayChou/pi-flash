@@ -111,6 +111,11 @@ assets! {
     "icons/smartphone.svg",
     "icons/messages-square.svg",
     "icons/folder-tree.svg",
+    // 021 文件树操作栏/右键菜单（lucide，路径照官方 24x24 stroke-2）
+    "icons/git-commit-horizontal.svg",
+    "icons/at-sign.svg",
+    "icons/globe.svg",
+    "icons/file-plus.svg",
     "icons/clock.svg",
     "icons/arrow-up.svg",
     "icons/arrow-down.svg",

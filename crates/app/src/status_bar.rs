@@ -154,6 +154,7 @@ impl Chat {
             crate::SortMode::Time => "time".to_string(),
         };
         st.collapsed = self.collapsed_keys.iter().cloned().collect();
+        st.tree_changes_only = self.changes_only;
         save_ui_state(&st);
     }
 
