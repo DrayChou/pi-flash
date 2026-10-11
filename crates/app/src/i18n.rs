@@ -27,6 +27,12 @@ pub fn lang_ix() -> usize {
 }
 
 
+/// 关于页信息块文案的唯一落点（009-06）：TABLE 首列（zh-CN key）与 about.rs
+/// 共用这组常量，改文案只动这里，zh-TW/en 在 TABLE 同行跟改。
+pub const ABOUT_AUTHOR: &str = "不正常赛博捅讯社";
+pub const ABOUT_DESC: &str = "windows上Pi的极速Desktop + 文件管理编辑 + markdown增强";
+pub const ABOUT_NOTE: &str = "Pi-Flash内核将保持轻巧，专注速度体验";
+
 /// (source zh-CN, zh-TW, en)
 const TABLE: &[(&str, &str, &str)] = &[
     // chrome / sidebar
@@ -215,12 +221,12 @@ const TABLE: &[(&str, &str, &str)] = &[
     ("暂无更新日志", "暫無更新日誌", "No changelog available"),
     ("关于", "關於", "About"),
     ("作者", "作者", "Author"),
-    ("不正常赛博捅讯社", "不正常賽博捅訊社", "不正常赛博捅讯社"),
+    (ABOUT_AUTHOR, "不正常賽博捅訊社", "不正常赛博捅讯社"),
     ("PF版本", "PF 版本", "Version"),
     ("内核版本", "內核版本", "Kernel"),
     ("说明", "說明", "Description"),
-    ("windows上Pi的极速Desktop + 文件管理编辑 + markdown增强", "windows上Pi的極速Desktop + 檔案管理編輯 + markdown增強", "A lightning-fast Pi desktop for Windows + file management & editing + markdown enhancements"),
-    ("Pi-Flash内核将保持轻巧，专注速度体验", "Pi-Flash內核將保持輕巧，專注速度體驗", "The Pi-Flash kernel stays lean and focused on speed"),
+    (ABOUT_DESC, "windows上Pi的極速Desktop + 檔案管理編輯 + markdown增強", "A lightning-fast Pi desktop for Windows + file management & editing + markdown enhancements"),
+    (ABOUT_NOTE, "Pi-Flash內核將保持輕巧，專注速度體驗", "The Pi-Flash kernel stays lean and focused on speed"),
     // 文件树 git 标识开关（设置-界面）
     ("文件树 Git 标识", "檔案樹 Git 標識", "File tree Git markers"),
     ("文件树显示 git 修改徽标与目录变更点", "檔案樹顯示 git 修改徽標與目錄變更點", "Show git modification badges and directory change dots in the file tree"),
@@ -276,6 +282,7 @@ const TABLE: &[(&str, &str, &str)] = &[
     ("已创建", "已建立", "Created"),
     ("已移入回收站", "已移至資源回收筒", "Moved to the recycle bin"),
     ("删除 {name}？（移入回收站）", "刪除 {name}？（移入回收站）", "Delete {name}? (moves to the recycle bin)"),
+    ("删除 {name}？{n} 个打开文件的未保存更改将丢失（移入回收站）", "刪除 {name}？{n} 個開啟檔案的未保存變更將遺失（移至資源回收筒）", "Delete {name}? Unsaved changes in {n} open file(s) will be lost (moves to the recycle bin)"),
     ("搜索文件…", "搜尋檔案…", "Search files…"),
     ("输入文件名关键词搜索当前项目", "輸入檔名關鍵詞搜尋當前專案", "Type a file-name keyword to search the current project"),
     ("正在扫描文件…", "正在掃描檔案…", "Scanning files…"),

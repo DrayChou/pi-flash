@@ -1,4 +1,5 @@
 use super::*;
+use crate::i18n::{ABOUT_AUTHOR, ABOUT_DESC, ABOUT_NOTE};
 
 const GITHUB_URL: &str = "https://github.com/danielbill/pi-flash";
 
@@ -6,7 +7,7 @@ pub(crate) fn mc_about_view() -> gpui::AnyElement {
     let t = T();
     let mut col = div().id("mc-about").flex().flex_col();
 
-    col = col.child(set_row(tr("作者"), "", value_el(tr("不正常赛博捅讯社").to_string(), true), t));
+    col = col.child(set_row(tr("作者"), "", value_el(tr(ABOUT_AUTHOR).to_string(), true), t));
 
     col = col.child(set_row(
         tr("PF版本"),
@@ -67,10 +68,8 @@ pub(crate) fn mc_about_view() -> gpui::AnyElement {
                     .text_color(rgb(t.text_muted))
                     .child(tr("说明")),
             )
-            .child(note(tr(
-                "windows上Pi的极速Desktop + 文件管理编辑 + markdown增强",
-            )))
-            .child(note(tr("Pi-Flash内核将保持轻巧，专注速度体验"))),
+            .child(note(tr(ABOUT_DESC)))
+            .child(note(tr(ABOUT_NOTE))),
     );
 
     col.into_any_element()
