@@ -205,8 +205,9 @@ pub(crate) fn psp_view(
                 .id("psp-empty")
                 .pl(px(45.))
                 .py(px(5.5))
-                .text_size(crate::appearance::ui_size(12.5))
-                .text_color(rgb(t.text_dim))
+                // 与「显示更多」行同款：placeholder 色 + 面板字号−1（2026-10-10 定夺）
+                .text_size(crate::appearance::ui_size(11.))
+                .text_color(rgb(t.text_faint))
                 .child(tr("无会话"))
                 .into_any_element(),
             PspRow::More { key } => {
