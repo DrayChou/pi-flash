@@ -767,16 +767,17 @@ fn detail_button(
     on_click: impl Fn(&mut Chat, &mut gpui::Context<Chat>) + 'static,
 ) -> gpui::AnyElement {
     let weak = weak.clone();
-    crate::ui::button::button(
-        id,
-        label.to_string(),
-        crate::ui::button::BtnSize::Lg,
-        variant,
-        disabled,
-        move |_, _, cx| {
-            let _ = weak.update(cx, |c, cx| on_click(c, cx));
-        },
-    )
+    // 宽度钉死 84：详情页三钮（移除/保存/获取）同宽右对齐（用户定稿）
+    let el = crate::ui::button::button_base(id, crate::ui::button::BtnSize::Lg, variant)
+        .w(px(84.))
+        .child(SharedString::from(label.to_string()));
+    if disabled {
+        return el.opacity(0.5).into_any_element();
+    }
+    el.on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
+        let _ = weak.update(cx, |c, cx| on_click(c, cx));
+    })
+    .into_any_element()
 }
 
 /// Models detail by section kind (catalog provider / custom editor / add).
@@ -984,16 +985,14 @@ fn mc_enabled_section(
             )))
             .child(div().flex_1())
             .child({
-                // icon + 模型：BTN_LG Secondary（与上方保存钮同档同 padding），
-                // 图标走按钮内 ICON_SM(14) + gap 8（§5.1）
+                // 纯 icon 获取钮：与移除/保存同宽 84 同高 32（右缘对齐）
                 let el = crate::ui::button::button_base(
                     "mc-fetch",
                     crate::ui::button::BtnSize::Lg,
                     crate::ui::button::BtnVariant::Secondary,
                 )
-                .gap(px(8.))
-                .child(crate::ui::icon("rotate-ccw", 14., t.text))
-                .child(SharedString::from(tr("模型")));
+                .w(px(84.))
+                .child(crate::ui::icon("rotate-ccw", 16., t.text));
                 if running {
                     el.opacity(0.5).into_any_element()
                 } else {
