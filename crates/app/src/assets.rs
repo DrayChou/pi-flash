@@ -94,7 +94,6 @@ assets! {
     // 「更多」唯一图标：lucide circle-ellipsis（2026-10-10 统一，
     // 原横/竖 ellipsis 两枚废除）
     "icons/circle-ellipsis.svg",
-    // 009-06 设置-关于：左导航页签 icon（lucide info）
     "icons/info.svg",
     "icons/folder-open.svg",
     "icons/folder-closed.svg",

@@ -204,7 +204,6 @@ const TABLE: &[(&str, &str, &str)] = &[
     ("更新日志", "更新日誌", "Changelog"),
     ("正在获取更新日志…", "正在獲取更新日誌…", "Fetching changelog…"),
     ("暂无更新日志", "暫無更新日誌", "No changelog available"),
-    // 009-06 设置-关于
     ("关于", "關於", "About"),
     ("作者", "作者", "Author"),
     ("出品与维护", "出品與維護", "Created & maintained"),
