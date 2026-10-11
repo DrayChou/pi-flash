@@ -1604,33 +1604,9 @@ impl Focusable for Chat {
 // rendering
 // ---------------------------------------------------------------------------
 
-/// toast 手工阴影层：gpui 的 box_shadow 在 DirectX 下高斯模糊过淡（用户
-/// 实测「和没有一样」），改用两层黑色圆角贴片垫在 pill 后（先 children 先
-/// 画 = 下层；外层宽而轻、内层窄而重，带轻微下坠偏移）。深色主题 halo
-/// 必须加重——深底上淡黑不可见。
-fn toast_halo(t: &'static crate::theme::Theme) -> [gpui::AnyElement; 2] {
-    let (far_a, near_a): (u32, u32) = if t.dark { (0x40, 0x59) } else { (0x14, 0x1f) };
-    [
-        div()
-            .absolute()
-            .top(px(-8.))
-            .left(px(-10.))
-            .right(px(-10.))
-            .bottom(px(-14.))
-            .rounded(px(18.))
-            .bg(gpui::rgba(0x00000000 | far_a))
-            .into_any_element(),
-        div()
-            .absolute()
-            .top(px(-3.))
-            .left(px(-4.))
-            .right(px(-4.))
-            .bottom(px(-8.))
-            .rounded(px(12.))
-            .bg(gpui::rgba(0x00000000 | near_a))
-            .into_any_element(),
-    ]
-}
+// toast 不加阴影：早前的手工双层黑色 halo 贴片（因 gpui box_shadow 在
+// DirectX 下过淡而自绘）在浅色主题下被用户判定为「一圈脏灰边」，已整体
+// 移除——toast 只保留 bg_panel + border 的贴片本体。
 
 impl Render for Chat {
     fn render(&mut self, window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -2087,9 +2063,8 @@ impl Render for Chat {
             root = root.child(el);
         }
         // status toast（v54: statusbar 无状态文本，改瞬时提示）。2026-10-10
-        // 定夺：配色随主题（bg_panel+border+text）；阴影不用 gpui box_shadow
-        //（DirectX 下高斯模糊过淡，实测「和没有一样」）——手工双层 halo
-        // 贴片（[`toast_halo`]），尺寸自适应 max 600×200、超高滚动、自动换行
+        // 定夺：配色随主题（bg_panel+border+text）、不加阴影（2026-11 用户拍
+        // 掉 halo，见上方注释），尺寸自适应 max 600×200、超高滚动、自动换行
         if let Some((msg, _)) = &self.status_toast {
             let text: SharedString = msg.clone().into();
             // 统一弹出定位（2026-10-11）：纵边按锚点象限取自 ui::popup——
@@ -2110,7 +2085,6 @@ impl Render for Chat {
                 slot.child(
                         div()
                             .relative()
-                            .children(toast_halo(t))
                             .child(
                                 div()
                                     .id("status-toast")
@@ -2133,8 +2107,7 @@ impl Render for Chat {
             );
         }
         // extension notify toast (top-right)。上限与 status toast 对齐
-        // （max 600×200、超高滚动、自动换行；2026-10-10 定夺）；阴影同走
-        // 手工 halo（gpui box_shadow DirectX 下不可见）
+        // （max 600×200、超高滚动、自动换行；2026-10-10 定夺）；不加阴影
         if let Some((message, ty)) = &self.ext_notice {
             let color = match ty {
                 1 => 0xfacc15,
@@ -2156,7 +2129,6 @@ impl Render for Chat {
                 edge.apply(div().absolute()).child(
                         div()
                             .relative()
-                            .children(toast_halo(t))
                             .child(
                                 div()
                                     .id("ext-notice")
