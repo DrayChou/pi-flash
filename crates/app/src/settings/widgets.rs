@@ -375,12 +375,36 @@ pub(crate) fn detail_shell(id: &'static str) -> gpui::Stateful<gpui::Div> {
 // ---------------------------------------------------------------------------
 
 /// set-row：标题+描述在左，控件在右，底分隔线（界面/其他两页单列 rows 版式）。
+/// set-row：标题+描述在左，控件在右，底分隔线（界面/其他两页单列 rows 版式）；
+/// desc 传空则只渲染标题。
 pub(crate) fn set_row(
     title: &str,
     desc: &str,
     control: gpui::AnyElement,
     t: &'static crate::theme::Theme,
 ) -> gpui::AnyElement {
+    let mut left = div()
+        .flex_1()
+        .min_w_0()
+        .flex()
+        .flex_col()
+        .gap(px(2.))
+        .child(
+            // 标题与「界面」页 section_label 同款（13 semibold text_muted）
+            div()
+                .text_size(crate::appearance::ui_size(13.))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(rgb(t.text_muted))
+                .child(SharedString::from(title.to_string())),
+        );
+    if !desc.is_empty() {
+        left = left.child(
+            div()
+                .text_size(crate::appearance::ui_size(11.5))
+                .text_color(rgb(t.text_dim))
+                .child(SharedString::from(desc.to_string())),
+        );
+    }
     div()
         .flex()
         .items_center()
@@ -388,28 +412,7 @@ pub(crate) fn set_row(
         .py(px(13.))
         .border_b_1()
         .border_color(gpui::rgba(crate::theme::border_alpha(t, 0x40)))
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .flex()
-                .flex_col()
-                .gap(px(2.))
-                .child(
-                    // 标题与「界面」页 section_label 同款（13 semibold text_muted）
-                    div()
-                        .text_size(crate::appearance::ui_size(13.))
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(rgb(t.text_muted))
-                        .child(SharedString::from(title.to_string())),
-                )
-                .child(
-                    div()
-                        .text_size(crate::appearance::ui_size(11.5))
-                        .text_color(rgb(t.text_dim))
-                        .child(SharedString::from(desc.to_string())),
-                ),
-        )
+        .child(left)
         .child(control)
         .into_any_element()
 }

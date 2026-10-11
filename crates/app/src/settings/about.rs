@@ -6,16 +6,11 @@ pub(crate) fn mc_about_view() -> gpui::AnyElement {
     let t = T();
     let mut col = div().id("mc-about").flex().flex_col();
 
-    col = col.child(set_row(
-        tr("作者"),
-        tr("出品与维护"),
-        value_el(tr("不正常赛博捅讯社").to_string(), true),
-        t,
-    ));
+    col = col.child(set_row(tr("作者"), "", value_el(tr("不正常赛博捅讯社").to_string(), true), t));
 
     col = col.child(set_row(
         tr("PF版本"),
-        tr("当前安装的 Pi-Flash 版本"),
+        "",
         div()
             .flex()
             .items_center()
@@ -28,7 +23,7 @@ pub(crate) fn mc_about_view() -> gpui::AnyElement {
 
     col = col.child(set_row(
         tr("内核版本"),
-        tr("vendored pi-coding-agent"),
+        "",
         value_el(
             format!(
                 "Pi v{}",
@@ -41,7 +36,7 @@ pub(crate) fn mc_about_view() -> gpui::AnyElement {
 
     col = col.child(set_row(
         "GitHub",
-        tr("项目主页（点击打开）"),
+        "",
         div()
             .id("about-github")
             .font_family(crate::editor::markdown::MONO_FAMILY)
