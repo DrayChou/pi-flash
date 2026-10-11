@@ -133,11 +133,7 @@ impl SettingsPanel {
             focus: cx.focus_handle(),
             tab: 0,
             section: String::new(),
-            key_input: cx.new(|cx| {
-                TextInput::new(cx)
-                    .masked(true)
-                    .placeholder(tr("ENV 变量、!命令 或明文 key"))
-            }),
+            key_input: cx.new(|cx| TextInput::new(cx).masked(true)),
             key_visible: false,
             model_filter: panel_live_input("筛选模型…", cx),
             enabled_filter: panel_live_input("筛选启用的模型…", cx),

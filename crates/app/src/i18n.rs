@@ -108,7 +108,6 @@ const TABLE: &[(&str, &str, &str)] = &[
     ("登录凭据存储于 ~/.pi/agent/auth.json（与 pi 共用）", "登入憑證儲存於 ~/.pi/agent/auth.json（與 pi 共用）", "Credentials are stored in ~/.pi/agent/auth.json (shared with pi)"),
     ("显示", "顯示", "Show"),
     ("隐藏", "隱藏", "Hide"),
-    ("ENV 变量、!命令 或明文 key", "ENV 變數、!命令 或明文 key", "env var, !command, or literal key"),
     ("密钥写入 ~/.pi/agent/auth.json（与 pi 共用）；新 provider 的模型需重启 pi-flash 后出现在列表", "密鑰寫入 ~/.pi/agent/auth.json（與 pi 共用）；新 provider 的模型需重啟 pi-flash 後出現在列表", "Key is written to ~/.pi/agent/auth.json (shared with pi); a new provider's models appear after restarting pi-flash"),
     ("未配置", "未配置", "Not configured"),
     ("不能停用最后一个启用的模型", "不能停用最後一個啟用的模型", "Cannot disable the last enabled model"),
