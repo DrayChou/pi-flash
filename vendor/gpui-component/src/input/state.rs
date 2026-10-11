@@ -336,7 +336,11 @@ pub struct InputState {
     /// Popover
     diagnostic_popover: Option<Entity<DiagnosticPopover>>,
     /// Completion/CodeAction context menu
+    #[allow(dead_code)]
     pub(super) context_menu: Option<ContextMenu>,
+    /// pi-flash：内置右键菜单摘除后仅保留实例（见 context_menu.rs
+    /// handle_right_click_menu 的 allow 注释）
+    #[allow(dead_code)]
     pub(super) mouse_context_menu: Entity<MouseContextMenu>,
     /// A flag to indicate if we are currently inserting a completion item.
     pub(super) completion_inserting: bool,
@@ -1614,7 +1618,12 @@ impl InputState {
 
         // Show Mouse context menu
         if event.button == MouseButton::Right {
-            self.handle_right_click_menu(event, offset, window, cx);
+            // pi-flash：右键菜单由宿主实现（编辑器容器监听 RightButton 弹
+            // app 自有菜单，与文件树同款）；内置 MouseContext（英文
+            // PopupMenu）摘除，只保留「无选区时移动光标」语义
+            if !self.selected_range.contains(offset) {
+                self.move_to(offset, cx);
+            }
             return;
         }
 

@@ -21,6 +21,9 @@ pub(crate) struct MouseContextMenu {
 }
 
 impl InputState {
+    /// pi-flash：编辑器右键菜单由宿主实现，内置 MouseContext 菜单不再
+    /// 挂接（保留实现供上游对账/恢复）。
+    #[allow(dead_code)]
     pub(crate) fn handle_right_click_menu(
         &mut self,
         event: &MouseDownEvent,

@@ -45,6 +45,9 @@ pub mod method {
     /// 023 冲突横幅「重新加载」（磁盘为准，丢弃本地未保存修改）：
     /// 与横幅按钮同一条方法（file_reload_from_disk），UI 测试用
     pub const FILE_RELOAD: &str = "file.reload";
+    /// 编辑区右键菜单（自动化验证入口：状态与真右键同槽，触发后
+    /// shot/snapshot 断言菜单渲染与收起）
+    pub const FILE_CONTEXT_MENU: &str = "file.context_menu";
     pub const FILES_TOGGLE_DIR: &str = "files.toggle_dir";
     pub const GIT_STAGE: &str = "git.stage";
     pub const GIT_UNSTAGE: &str = "git.unstage";

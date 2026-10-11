@@ -725,6 +725,8 @@ fn file_editor_body(
     let Some(ed) = ft.editor.clone() else {
         return empty_hint(tr("编辑器初始化中…"), t);
     };
+    let weak_menu = weak.clone();
+    let menu_path = path.to_path_buf();
     div()
         .id("fv-editor")
         .relative()
@@ -736,6 +738,21 @@ fn file_editor_body(
         .bg(rgb(t.bg))
         .font_family(crate::editor::markdown::MONO_FAMILY)
         .text_size(px(crate::appearance::file_font().size))
+        // 右键菜单（zed）：编辑块 + 文件动作块，渲染挂 psp_overlays 同层
+        .on_mouse_down(
+            gpui::MouseButton::Right,
+            move |ev: &gpui::MouseDownEvent, _, cx| {
+                cx.stop_propagation();
+                let _ = weak_menu.update(cx, |c, cx| {
+                    c.editor_menu = Some((
+                        menu_path.clone(),
+                        f32::from(ev.position.x),
+                        f32::from(ev.position.y),
+                    ));
+                    cx.notify();
+                });
+            },
+        )
         .child(
             gpui_component::input::TextInput::new(&ed)
                 .h_full()

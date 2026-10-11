@@ -81,6 +81,7 @@ assets! {
     "icons/case-sensitive.svg",
     "icons/replace.svg",
     "icons/replace-all.svg",
+    "icons/clipboard.svg",
     "icons/chevron-left.svg",
     "icons/close.svg",
     "icons/folder.svg",

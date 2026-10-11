@@ -319,6 +319,19 @@ pub(super) fn dispatch(
             chat.file_reload_from_disk(&path, cx);
             ok()
         }
+        // 编辑区右键菜单（自动化验证入口：状态与真右键同槽，配合 shot
+        // 断言菜单渲染/收起；x/y 缺省给视口中上部）
+        method::FILE_CONTEXT_MENU => {
+            let path = params_path(params, "path")?;
+            if !chat.file_cache.contains_key(&path) {
+                return Err(not_found(format!("文件 tab 未打开: {}", path.display())));
+            }
+            let x = params.get("x").and_then(Value::as_f64).unwrap_or(600.) as f32;
+            let y = params.get("y").and_then(Value::as_f64).unwrap_or(160.) as f32;
+            chat.editor_menu = Some((path, x, y));
+            cx.notify();
+            ok()
+        }
         method::FILE_VIEW_MODE => {
             let path = params_path(params, "path")?;
             let mode = params
