@@ -57,6 +57,8 @@ cp -r vendor/pi dist/pi-flash/vendor/
 # 裁掉非宿主平台 esbuild 二进制（vendor/pi 416MB 里 284MB 是 26 个平台副本，
 # 每包只用 win32-x64 一个 → 下载体积 200MB+ → ≈120MB；见 080 §1.2）
 ESBUILD_DIR="dist/pi-flash/vendor/pi/node_modules/@earendil-works/pi-coding-agent/node_modules/@esbuild"
+# npm 提升（hoist）后 @esbuild 可能落在 vendor/pi/node_modules 顶层，两处都认
+[[ -d "$ESBUILD_DIR/win32-x64" ]] || ESBUILD_DIR="dist/pi-flash/vendor/pi/node_modules/@esbuild"
 [[ -d "$ESBUILD_DIR/win32-x64" ]] || { echo "✗ 找不到 @esbuild/win32-x64"; exit 1; }
 for d in "$ESBUILD_DIR"/*; do
   [[ "$(basename "$d")" == "win32-x64" ]] || rm -rf "$d"
