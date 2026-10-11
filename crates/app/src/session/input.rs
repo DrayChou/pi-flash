@@ -410,14 +410,21 @@ pub(crate) fn input_area(
     // 新会话默认值（pi selectInitialModelScope parity：settings 默认模型
     // 在 scope 内 → 用它，否则 scope 首个；思考档 pin > per-model > 全局）
     // ——草稿态（无 state）的 pill 显示就落在它身上，进程起来后由 pi 的
-    // get_state 接管
-    let (draft_model, draft_thinking) = chat.new_session_default();
+    // get_state 接管。只在 fallback 真会被消费时才算：它每帧全量扫模型
+    // 目录（逐模型 format! 拼键 + 排序键），挂会话后模型/思考都有 state
+    // 答案，扫描是纯浪费（打字每键一帧，最忌每帧 O(目录)）。
     let (model_label, thinking_label, tools_label, ctx_pct, compacting) = {
         let r = chat.rt().read(cx);
-        let model_label = r
-            .state
-            .as_ref()
-            .and_then(|s| s.model_label())
+        let state_model = r.state.as_ref().and_then(|s| s.model_label());
+        let state_thinking = r.state.as_ref().and_then(|s| s.thinking_level.clone());
+        let need_draft = (state_model.is_none() && r.pending_model.is_none())
+            || (state_thinking.is_none() && r.thinking_override.is_none());
+        let (draft_model, draft_thinking) = if need_draft {
+            chat.new_session_default()
+        } else {
+            (None, None)
+        };
+        let model_label = state_model
             .or_else(|| {
                 r.pending_model
                     .as_ref()
@@ -429,10 +436,7 @@ pub(crate) fn input_area(
                     .map(|(p, id)| chat.model_display_name(p, id))
             })
             .unwrap_or_else(|| tr("选择模型").to_string());
-        let thinking_label = r
-            .state
-            .as_ref()
-            .and_then(|s| s.thinking_level.clone())
+        let thinking_label = state_thinking
             .or_else(|| r.thinking_override.clone())
             .or_else(|| draft_thinking.clone())
             .unwrap_or_else(|| "auto".to_string());
@@ -467,11 +471,16 @@ pub(crate) fn input_area(
     // 压缩锁：编辑器组件整块不挂载（无焦点/IME/粘贴），显示 placeholder
     // 样式的压缩提示；草稿保留在 chat.input，解锁即恢复
     composer.update(cx, |f, fcx| f.set_read_only(compacting, fcx));
-    let cur = chat.input.clone();
-    composer.update(cx, |f, fcx| f.set_value(cur, fcx));
-    // 命令名同步给组件：会话进程答案优先，否则启动装载的（项目 skill + 扩展缓存）
-    let names: Vec<String> = chat.slash_commands(cx).iter().map(|c| c.name.clone()).collect();
-    composer.update(cx, |f, fcx| f.set_command_names(names, fcx));
+    // 镜像只传借用：长草稿（粘贴的大段日志）下每键一帧的全量 String 拷贝
+    // 就是打字延迟
+    composer.update(cx, |f, fcx| f.set_value(&chat.input, fcx));
+    // 命令名同步给组件：仅 '/' 前缀输入时需要（chip 派生只消费 '/' 前缀），
+    // 普通打字每键不再克隆整张命令表；会话进程答案优先，否则启动装载的
+    //（项目 skill + 扩展缓存）
+    if chat.input.starts_with('/') {
+        let names: Vec<String> = chat.slash_commands(cx).iter().map(|c| c.name.clone()).collect();
+        composer.update(cx, |f, fcx| f.set_command_names(names, fcx));
+    }
 
     // ---- 胶囊 ----
     let mut capsule = div()
@@ -1243,8 +1252,7 @@ impl Chat {
         self.input = v;
         self.menu_dismissed = false;
         if let Some(c) = &self.composer {
-            let v = self.input.clone();
-            c.update(cx, |f, fcx| f.set_value(v, fcx));
+            c.update(cx, |f, fcx| f.set_value(&self.input, fcx));
         }
         cx.notify();
     }
@@ -1373,10 +1381,16 @@ impl Chat {
     /// `/` 菜单命令清单（010-启动.md §3）：会话进程答过 → 用它（含项目 skill）；
     /// 否则 = 项目 skill 派生（`skill:<name>`）+ 全局扩展命令（内置表 + 缓存）。
     /// 草稿态（无进程）因此也有完整菜单。
-    pub(crate) fn slash_commands(&self, cx: &gpui::App) -> Vec<pi_link::protocol::SlashCommand> {
+    ///
+    /// 返回 Cow：会话进程答过的场景（slash 菜单打开期间每帧调用）直接借用
+    /// rt.commands，不再每帧深克隆整张命令表。
+    pub(crate) fn slash_commands<'a>(
+        &self,
+        cx: &'a gpui::App,
+    ) -> std::borrow::Cow<'a, [pi_link::protocol::SlashCommand]> {
         let rt = self.rt().read(cx);
         if !rt.commands.is_empty() {
-            return rt.commands.clone();
+            return std::borrow::Cow::Borrowed(&rt.commands);
         }
         let mut out: Vec<pi_link::protocol::SlashCommand> = self
             .project_ctx
@@ -1384,7 +1398,7 @@ impl Chat {
             .map(|ctx| ctx.skill_commands.clone())
             .unwrap_or_default();
         out.extend(self.globals.commands.iter().cloned());
-        out
+        std::borrow::Cow::Owned(out)
     }
 
 }

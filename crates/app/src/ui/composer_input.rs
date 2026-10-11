@@ -130,12 +130,19 @@ impl ComposerInput {
     }
 
     /// 外部写入（草稿切换/历史/清空/菜单接受）。与镜像同值时跳过，避免回环。
-    pub fn set_value(&mut self, v: String, cx: &mut Context<Self>) {
-        if self.value == v && self.token == split_token(&v, &self.commands) {
+    /// 收 &str：调用方（input_area 每帧镜像 chat.input）不必先克隆全文，
+    /// 同值跳过路径零分配。
+    pub fn set_value(&mut self, v: &str, cx: &mut Context<Self>) {
+        if self.value == v && self.token == split_token(v, &self.commands) {
             return;
         }
-        self.value = v.clone();
-        self.pending_value = Some(v);
+        let s = v.to_string();
+        // pending_value 只在组件未创建时被 ensure_state 消费；组件已建后
+        // 是死存储，不再每次覆写
+        if self.state.is_none() {
+            self.pending_value = Some(s.clone());
+        }
+        self.value = s;
         cx.notify();
     }
 
@@ -143,7 +150,7 @@ impl ComposerInput {
     /// 而不是 set_value 用的「文本末尾」）。cursor_byte 按新值字节偏移。
     pub fn set_value_with_cursor(&mut self, v: String, cursor_byte: usize, cx: &mut Context<Self>) {
         let clamped = floor_char_boundary(&v, cursor_byte.min(v.len()));
-        self.set_value(v.clone(), cx);
+        self.set_value(&v, cx);
         // set_value 同值短路也要落光标（菜单接受常发生在同值场景外，但
         // 防御性覆盖）：无论哪条路，渲染帧统一应用
         self.pending_cursor = Some(clamped);
@@ -287,14 +294,15 @@ impl Render for ComposerInput {
         let t = T();
         // chip 派生：value = "/名字 参数..."（尾随空格已终止命令词）
         self.token = split_token(&self.value, &self.commands);
-        let editor_value = match &self.token {
-            Some((n, _)) => self.value[1 + n.len() + 1..].to_string(),
-            None => self.value.clone(),
+        // 编辑器值取借用切片：每帧与 Rope 的 memcmp 零分配，只有真变了
+        // 才物化 String（长草稿下每帧一次全文拷贝就是打字延迟）
+        let editor_value: &str = match &self.token {
+            Some((n, _)) => &self.value[1 + n.len() + 1..],
+            None => &self.value,
         };
-        // Rope 直接与 String 比对（ropey PartialEq，零分配 memcmp）——原先
-        // value() 每帧把全文物化成一遍 String，纯比较却付一次全文拷贝
+        // Rope 直接与 &str 比对（ropey PartialEq，零分配 memcmp）
         if *state.read(cx).text() != editor_value {
-            let ev = editor_value.clone();
+            let ev = editor_value.to_string();
             state.update(cx, |st, scx| st.set_value(ev, window, scx));
         }
         // 菜单确认后的光标落点（inner 值就位后应用；set_cursor_offset 不需要 window）
