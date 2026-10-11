@@ -15,7 +15,7 @@ pub(crate) fn mc_about_view() -> gpui::AnyElement {
             .flex()
             .items_center()
             .gap(px(6.))
-            .child(icon("logo-marks", 16., t.accent))
+            .child(icon("logo-marks", 28., t.accent))
             .child(value_el(format!("Pi-Flash v{}", env!("CARGO_PKG_VERSION")), true))
             .into_any_element(),
         t,
