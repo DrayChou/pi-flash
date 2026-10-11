@@ -1152,3 +1152,45 @@ pub(crate) fn remove_provider_confirm_overlay(
         },
     ))
 }
+
+// ---------------------------------------------------------------------------
+// 模型引用与 Provider 选择弹窗（P2 归并自 actions_terminal/actions_rename）
+// ---------------------------------------------------------------------------
+
+impl Chat {
+    /// `provider/modelId` refs of every available model, display order.
+    /// Reads the shared catalog of the current project (models_by_cwd).
+    pub(crate) fn mc_refs(&self) -> Vec<String> {
+        self.catalog_for(&self.cwd)
+            .iter()
+            .map(|m| format!("{}/{}", m.provider, m.id))
+            .collect()
+    }
+
+
+    /// 042 ProviderPicker 弹窗构造：搜索输入每敲一字通知重渲染（清单按值
+    /// 过滤在渲染期读取快照）。ESC 交给浮层公共基座，这里只兜输入框内路径。
+    /// 打开即确保全量注册表在拉（缓存命中则同步可用）。
+    pub(crate) fn provider_picker_dialog(&mut self, cx: &mut Context<Self>) -> Dialog {
+        self.ensure_registry(cx);
+        let weak_esc = cx.entity().downgrade();
+        let input = cx.new(|cx| TextInput::new(cx).placeholder(tr("搜索 Provider...")));
+        input.update(cx, |ti, _| {
+            ti.set_on_escape(Box::new(move |cx| {
+                // same dispatch-lease hazard as submit: closing the dialog
+                // drops the dispatching input — defer the dismissal
+                let weak = weak_esc.clone();
+                cx.defer(move |cx| {
+                    let _ = weak.update(cx, |c, cx| {
+                        c.dialog = None;
+                        cx.notify();
+                    });
+                });
+            }));
+        });
+        Dialog::ProviderPicker {
+            input,
+            scroll: gpui::ScrollHandle::new(),
+        }
+    }
+}

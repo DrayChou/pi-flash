@@ -4,6 +4,9 @@
 //! 改条；仅会话态，新会话页隐藏）；无内嵌状态行（v54 按设计删除）。
 
 pub(crate) mod actions_bar;
+pub(crate) mod attachments;
+pub(crate) mod menu;
+pub(crate) mod pool;
 pub(crate) mod chat_list;
 pub(crate) mod diff;
 pub(crate) mod fork;

@@ -663,29 +663,6 @@ fn wire_tree_edit(
     });
 }
 
-/// 「在资源管理器中打开」的文件语义（与 open_in_explorer 的目录语义分
-/// 开）：文件 = 打开所在目录并选中（explorer /select, / macOS open -R），
-/// 目录 = 直接进入。
-pub(crate) fn reveal_in_explorer(path: &Path) {
-    #[cfg(windows)]
-    {
-        if path.is_dir() {
-            let _ = std::process::Command::new("explorer").arg(path).spawn();
-        } else {
-            let _ = std::process::Command::new("explorer")
-                .arg(format!("/select,{}", path.display()))
-                .spawn();
-        }
-    }
-    #[cfg(target_os = "macos")]
-    {
-        if path.is_dir() {
-            let _ = std::process::Command::new("open").arg(path).spawn();
-        } else {
-            let _ = std::process::Command::new("open").arg("-R").arg(path).spawn();
-        }
-    }
-}
 
 /// 文件名子串过滤 + 排序：名字前缀命中 > 名字包含 >（带 `/` 的查询）
 /// 整路径包含；同档路径短者先。上限 [`FILE_SEARCH_LIMIT`]。

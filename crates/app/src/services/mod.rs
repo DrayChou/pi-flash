@@ -7,6 +7,7 @@ pub mod file_index;
 pub mod file_tree;
 pub mod format;
 pub mod git;
+pub(crate) mod shell_open;
 pub mod paths_sort;
 pub mod sound;
 pub mod token_probe;

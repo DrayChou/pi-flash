@@ -302,7 +302,7 @@ fn dir_row(key: &str, path: &str, t: &'static crate::appearance::theme::Theme) -
                 .child(crate::ui::icon("icon-terminal-solid", 16., t.text_dim))
                 .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                     cx.stop_propagation();
-                    crate::actions_panels::open_in_explorer(&open_path);
+                    crate::services::shell_open::open_in_explorer(&open_path);
                 }),
         )
         .into_any_element()

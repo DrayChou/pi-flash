@@ -16,23 +16,14 @@ use gpui::{
 use pi_link::protocol::Command;
 use pi_link::sessions::{SessionInfo, list_sessions_for_cwd, read_tail_messages};
 
-mod actions_dialogs;
-mod actions_files;
 mod agent_session;
 mod automation;
-mod actions_menu;
-mod actions_panels;
-mod actions_rename;
-mod actions_runtime;
-mod actions_sessions;
-mod actions_terminal;
 mod appearance;
 mod assets;
 mod content;
 mod dialogs;
 mod editor;
 mod ext_ui;
-mod ext_ui_actions;
 mod function_panel;
 mod i18n;
 mod models_config;
@@ -47,7 +38,7 @@ mod terminal;
 mod top_panels;
 mod ui;
 pub(crate) use ui::ComposerInput;
-pub(crate) use actions_menu::slash_menu_view;
+pub(crate) use session::menu::slash_menu_view;
 
 // composer 覆盖动作（注册为 "Input" 上下文绑定，见 run() 里 bind_keys）：
 // ↑/↓ 在菜单态导航补全、空输入态回溯历史，非空多行重新派发组件 MoveUp/

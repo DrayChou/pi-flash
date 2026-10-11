@@ -13,3 +13,4 @@
 
 pub mod markdown;
 pub mod view;
+pub(crate) mod tabs;

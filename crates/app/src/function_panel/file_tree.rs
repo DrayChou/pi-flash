@@ -476,7 +476,7 @@ fn action_bar(
                     t,
                     false,
                     move |_, _, _cx| {
-                        crate::actions_panels::open_in_explorer(&cwd_explorer);
+                        crate::services::shell_open::open_in_explorer(&cwd_explorer);
                     },
                 ))
                 .child(bar_btn(

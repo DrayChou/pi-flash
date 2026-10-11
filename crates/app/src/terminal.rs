@@ -7,6 +7,7 @@
 //! pi-web spawns node-pty (ComSpec on Windows); here `tty::new` provides
 //! ConPTY directly. Reconnect (SSE resume) has no in-process equivalent and is
 //! intentionally dropped; mouse-reporting apps get wheel-as-arrows only.
+use crate::*;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -1559,4 +1560,107 @@ mod tests {
         let _ = notifier.send(Msg::Shutdown);
         assert!(saw_output, "conpty round-trip never produced echo output");
     }
+}
+
+// ---------------------------------------------------------------------------
+// 终端创建/聚焦/按键（P2 归并自 actions_terminal.rs）
+// ---------------------------------------------------------------------------
+
+impl Chat {
+    /// 打开（或聚焦）一个终端；`cwd_override` 为 psp 项目菜单定向打开时
+    /// 的项目目录，None = 当前工作区。v54: 终端在内容区 tab 显示。
+    pub(crate) fn open_terminal(
+        &mut self,
+        cwd_override: Option<PathBuf>,
+        window: &mut gpui::Window,
+        cx: &mut Context<Self>,
+    ) {
+        let term_cwd = cwd_override.unwrap_or_else(|| self.cwd.clone());
+        if let Some(ix) = self.terminals.iter().position(|t| same_path(&t.cwd, &term_cwd)) {
+            self.active_terminal = Some(ix);
+            if let Some(tix) = self.panel_tabs.iter().position(|tab| matches!(tab, PanelTab::Term(id) if *id == self.terminals[ix].id)) {
+                self.activate_panel_tab(tix, cx);
+            }
+            self.set_content_view(ContentView::Term);
+            let focus = self.terminals[ix].focus.clone();
+            window.focus(&focus);
+            cx.notify();
+            return;
+        }
+        let Some(tx) = self.term_events.clone() else { return };
+        let (cell_w, line_h) = terminal::measure_cell(window);
+        let font_size = terminal::font_size();
+        self.term_seq += 1;
+        let id = self.term_seq;
+        let focus = cx.focus_handle();
+        let proxy = terminal::Proxy { tab: id, tx };
+        match terminal::spawn_terminal(
+            id,
+            term_cwd.clone(),
+            cell_w,
+            line_h,
+            font_size,
+            focus,
+            proxy,
+        ) {
+            Ok(tab) => {
+                self.terminals.push(tab);
+                self.active_terminal = Some(self.terminals.len() - 1);
+                self.panel_tabs.push(PanelTab::Term(id));
+                let tix = self.panel_tabs.len() - 1;
+                self.activate_panel_tab(tix, cx);
+                self.set_content_view(ContentView::Term);
+                let focus = self.terminals[self.terminals.len() - 1].focus.clone();
+                window.focus(&focus);
+                cx.notify();
+            }
+            Err(e) => {
+                self.set_status(format!("terminal spawn failed: {e}"), cx);
+                cx.notify();
+            }
+        }
+    }
+
+    /// Active terminal index helper.
+    pub(crate) fn active_term(&mut self) -> Option<&mut TerminalTab> {
+        self.active_terminal
+            .and_then(|ix| self.terminals.get_mut(ix))
+    }
+
+    /// Terminal keyboard input: copy/paste shortcuts first (pi-web
+    /// attachCustomKeyEventHandler parity: Ctrl+C with selection copies and
+    /// never sends ^C; Ctrl+V goes to the PTY, never the browser), then the
+    /// keystroke → escape-sequence table.
+    pub(crate) fn terminal_key(&mut self, ev: &KeyDownEvent, cx: &mut Context<Self>) {
+        use alacritty_terminal::event_loop::Msg;
+        let Some(tab) = self.active_term() else { return };
+        let k = &ev.keystroke;
+        let ctrl = k.modifiers.control;
+        let shift = k.modifiers.shift;
+        let mode = *tab.term.lock().mode();
+
+        if ctrl && k.key == "v" {
+            if let Some(text) = cx.read_from_clipboard().and_then(|i| i.text()) {
+                let bytes = terminal::paste_bytes(&text, &mode);
+                let _ = tab.pty.send(Msg::Input(bytes.into()));
+            }
+            cx.stop_propagation();
+            return;
+        }
+        if ctrl && k.key == "c" && (shift || tab.selection.is_some()) {
+            if let Some(sel) = tab.selection {
+                let text = terminal::selection_text(&tab.term.lock(), sel);
+                cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
+                tab.selection = None;
+                tab.sel_anchor = None;
+            }
+            cx.stop_propagation();
+            return;
+        }
+        if let Some(bytes) = terminal::keystroke_to_pty(k, &mode) {
+            let _ = tab.pty.send(Msg::Input(bytes.into()));
+            cx.stop_propagation();
+        }
+    }
+
 }

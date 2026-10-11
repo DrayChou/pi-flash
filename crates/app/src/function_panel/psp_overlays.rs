@@ -519,7 +519,7 @@ fn menu_layer(
                         move |_, _, cx| {
                             cx.stop_propagation();
                             let _ = weak.update(cx, |c, cx| {
-                                crate::actions_panels::open_in_explorer(&path);
+                                crate::services::shell_open::open_in_explorer(&path);
                                 c.psp_menu = None;
                                 cx.notify();
                             });
@@ -761,7 +761,7 @@ fn tree_menu_layer(
                     false,
                     {
                         let path = path.clone();
-                        move |_c, _cx| crate::actions_files::reveal_in_explorer(&path)
+                        move |_c, _cx| crate::services::shell_open::reveal_in_explorer(&path)
                     },
                 ))
                 .child(tree_terminal_item(&weak, "ftm-dir-term", &path))
@@ -864,7 +864,7 @@ fn tree_menu_layer(
                     false,
                     {
                         let path = path.clone();
-                        move |_c, _cx| crate::actions_files::reveal_in_explorer(&path)
+                        move |_c, _cx| crate::services::shell_open::reveal_in_explorer(&path)
                     },
                 ))
                 .child(tree_terminal_item(&weak, "ftm-file-term", &path));
@@ -882,7 +882,7 @@ fn tree_menu_layer(
                     false,
                     {
                         let path = path.clone();
-                        move |_c, _cx| crate::actions_panels::open_in_browser(&path)
+                        move |_c, _cx| crate::services::shell_open::open_in_browser(&path)
                     },
                 ));
             }
@@ -1012,7 +1012,7 @@ fn editor_menu_layer(
             false,
             {
                 let path = path.clone();
-                move |_c, _cx| crate::actions_panels::open_in_browser(&path)
+                move |_c, _cx| crate::services::shell_open::open_in_browser(&path)
             },
         ));
     }
@@ -1052,7 +1052,7 @@ fn editor_menu_layer(
             false,
             {
                 let path = path.clone();
-                move |_c, _cx| crate::actions_files::reveal_in_explorer(&path)
+                move |_c, _cx| crate::services::shell_open::reveal_in_explorer(&path)
             },
         ))
         .child(editor_terminal_item(&weak, "edm-term", &path))
