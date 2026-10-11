@@ -143,7 +143,7 @@ impl Chat {
 pub(crate) fn slash_menu_view(
     chat: &Chat,
     weak: &gpui::WeakEntity<Chat>,
-    t: &'static crate::theme::Theme,
+    t: &'static crate::appearance::theme::Theme,
     cx: &gpui::App,
 ) -> gpui::AnyElement {
     let is_at = chat.active_menu(cx) == Some(MenuKind::At);

@@ -12,7 +12,7 @@ use crate::TextInput;
 use crate::i18n::tr;
 use crate::session::model_picker::RegistryState;
 use crate::services::format::time_ago;
-use crate::theme;
+use crate::appearance::theme;
 use crate::ui::{icon, icon_hover};
 
 /// 弹窗公共外壳 = `ui::overlay::layer`（遮挡/外点关闭/ESC 关闭三条全局规则
@@ -965,7 +965,7 @@ fn render_project_picker(
         .child(input.clone())
         .child(open_folder)
         // 打开文件夹与项目列表之间的分隔线（用户 2026-10-07 定稿）
-        .child(div().h(px(1.)).w_full().bg(gpui::rgba(crate::theme::border_alpha(t, 0x66))))
+        .child(div().h(px(1.)).w_full().bg(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x66))))
         // 列表吃满剩余高度：flex_1 + min_h_0 才会真的收缩滚动（工具定义
         // 列表同款）；滚动条 = ZED Regular 移植（可滚动即常显），absolute
         // 盖在滚动容器右缘、不随内容滚

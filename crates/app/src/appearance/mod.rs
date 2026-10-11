@@ -9,10 +9,12 @@
 //! without that remap the widget-library surfaces (inputs, modals) keep
 //! the previous theme's colors after a switch.
 
+pub mod theme;
+
 use gpui::App;
 
 use crate::services::workspace::{self, AppSettings, FontSpec};
-use crate::theme::{self, Theme};
+use theme::Theme;
 
 
 /// One catalog entry of the theme registry.
@@ -24,16 +26,31 @@ pub struct ThemeEntry {
 
 /// The built-in catalog (006): pi-web 浅色雾青/蔷薇 + zed One Light/One Dark、
 /// nord light/dark、ayu light。调色板源数据在 `assets/themes/`（含 LICENSE）。
+///
+/// id 清单的唯一来源是 [`theme::ALL`]（顺序即此处顺序，新增调色板自动进
+/// 注册表）；本函数只挂显示名，未收录的 id 兜底显示 id 本身。
+static REGISTRY: std::sync::OnceLock<Vec<ThemeEntry>> = std::sync::OnceLock::new();
+
 pub fn registry() -> &'static [ThemeEntry] {
-    &[
-        ThemeEntry { id: "mist", name: "雾青" },
-        ThemeEntry { id: "rose", name: "蔷薇" },
-        ThemeEntry { id: "one-light", name: "One Light" },
-        ThemeEntry { id: "nord-light", name: "Nord Light" },
-        ThemeEntry { id: "nord-dark", name: "Nord Dark" },
-        ThemeEntry { id: "ayu-light", name: "Ayu Light" },
-        ThemeEntry { id: "one-dark", name: "One Dark" },
-    ]
+    REGISTRY.get_or_init(|| {
+        theme::ALL
+            .iter()
+            .map(|(id, _)| ThemeEntry { id, name: theme_display_name(id) })
+            .collect()
+    })
+}
+
+fn theme_display_name(id: &'static str) -> &'static str {
+    match id {
+        "mist" => "雾青",
+        "rose" => "蔷薇",
+        "one-light" => "One Light",
+        "nord-light" => "Nord Light",
+        "nord-dark" => "Nord Dark",
+        "ayu-light" => "Ayu Light",
+        "one-dark" => "One Dark",
+        _ => id,
+    }
 }
 
 /// Map the active app theme into gpui-component's global theme (extracted

@@ -16,7 +16,7 @@ use gpui::WindowControlArea;
 use crate::Chat;
 use crate::ContentView;
 use crate::i18n::tr;
-use crate::theme::theme as T;
+use crate::appearance::theme::theme as T;
 
 /// topbar 高（两段同高；窗口控制钮高度跟随；2026-10-10 定夺 36→38）。
 pub(crate) const HEIGHT: f32 = 38.;
@@ -87,7 +87,7 @@ pub(crate) fn topbar_r(
                         }),
                     )),
             )
-            .child(div().w(px(1.)).h(px(18.)).bg(gpui::rgba(crate::theme::border_alpha(t, 0x8c))).mx(px(4.)));
+            .child(div().w(px(1.)).h(px(18.)).bg(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x8c))).mx(px(4.)));
     }
 
     // 016 中段标签栏：置顶会话 tab + 自由标签区（终端/文件），激活 tab
@@ -372,7 +372,7 @@ fn tab_shell(
     label: SharedString,
     active: bool,
     ml: f32,
-    t: &'static crate::theme::Theme,
+    t: &'static crate::appearance::theme::Theme,
     switch: impl Fn(&gpui::MouseDownEvent, &mut Window, &mut gpui::App) + 'static,
     trailing: Option<gpui::AnyElement>,
     badge: Option<gpui::AnyElement>,
@@ -397,7 +397,7 @@ fn tab_shell(
                 // 上沿不画线（2026-10-10 定夺）：只留左右两道与内容区分隔
                 .border_l_1()
                 .border_r_1()
-                .border_color(gpui::rgba(crate::theme::border_alpha(t, 0x8c)))
+                .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x8c)))
                 .rounded_tl(px(9.))
                 .rounded_tr(px(9.))
                 .pl(px(12.))
@@ -444,7 +444,7 @@ fn tab_shell(
 fn caption_button(
     area: WindowControlArea,
     icon_name: &'static str,
-    t: &crate::theme::Theme,
+    t: &crate::appearance::theme::Theme,
 ) -> impl gpui::IntoElement {
     // 关闭钮豁免：红底白字（v54 语义，glyph 渲染）；min/max 走 HoverIcon
     // 统一动效（无底色，图标自身上抬+放大，v55 全局规格）

@@ -12,7 +12,7 @@
 use gpui::{AnyElement, MouseButton, SharedString, div, prelude::*, px, rgb};
 
 use super::Chat;
-use crate::theme::theme as T;
+use crate::appearance::theme::theme as T;
 
 /// 行高（10 行限高 = `ROW_H × 10`，与 plugin_picker 一致）。
 const ROW_H: f32 = 30.;
@@ -197,7 +197,7 @@ fn mcp_row(
     name: &str,
     checked: bool,
     transport: &str,
-    t: &'static crate::theme::Theme,
+    t: &'static crate::appearance::theme::Theme,
 ) -> AnyElement {
     let ui = crate::appearance::ui_size;
     let row_weak = weak.clone();

@@ -11,7 +11,7 @@ use gpui::{Context, Focusable, MouseButton, SharedString, div, img, prelude::*, 
 use crate::Chat;
 use crate::content::empty_hint;
 use crate::i18n::tr;
-use crate::theme::theme as T;
+use crate::appearance::theme::theme as T;
 use crate::ui::icon;
 use std::path::Path;
 
@@ -431,7 +431,7 @@ fn file_nav_bar(
         .flex()
         .flex_col()
         .border_b_1()
-        .border_color(gpui::rgba(crate::theme::border_alpha(t, 0x66)))
+        .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x66)))
         .child(
             div()
                 .h(px(32.))
@@ -471,7 +471,7 @@ fn crumb_siblings_menu(weak: &gpui::WeakEntity<Chat>, dir: &Path) -> gpui::AnyEl
         .p(px(4.))
         .bg(rgb(t.bg))
         .border_1()
-        .border_color(gpui::rgba(crate::theme::border_alpha(t, 0x8c)))
+        .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x8c)))
         .rounded(px(9.))
         .shadow_lg()
         .flex()
@@ -545,9 +545,9 @@ fn conflict_banner(
         .gap(px(10.))
         .px(px(12.))
         .py(px(6.))
-        .bg(rgb(crate::theme::mix_rgb(0xe0a562, t.bg, 0.82)))
+        .bg(rgb(crate::appearance::theme::mix_rgb(0xe0a562, t.bg, 0.82)))
         .border_b_1()
-        .border_color(gpui::rgba(crate::theme::border_alpha(t, 0x66)))
+        .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x66)))
         .text_size(crate::appearance::ui_size(11.5))
         .text_color(rgb(t.text))
         .child(SharedString::from(msg.to_string()))
@@ -579,7 +579,7 @@ fn banner_btn(
         .py(px(3.))
         .rounded(px(6.))
         .border_1()
-        .border_color(gpui::rgba(crate::theme::border_alpha(t, 0x8c)))
+        .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x8c)))
         .text_size(crate::appearance::ui_size(11.))
         .text_color(rgb(t.text))
         .cursor_pointer()

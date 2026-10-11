@@ -10,7 +10,7 @@ use gpui::{MouseButton, SharedString, div, prelude::*, px, relative, rgb};
 use crate::Chat;
 use crate::i18n::tr;
 use crate::services::git;
-use crate::theme::{Theme, theme as T};
+use crate::appearance::theme::{Theme, theme as T};
 use crate::ui::{icon, icon_hover};
 
 /// Active git panel tab.
@@ -50,7 +50,7 @@ pub(crate) fn view(
                 .items_center()
                 .flex_shrink_0()
                 .border_b_1()
-                .border_color(gpui::rgba(crate::theme::border_alpha(t, 0x66)))
+                .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x66)))
                 .child(
                     div()
                         .min_w(px(100.))
@@ -115,7 +115,7 @@ fn git_tab(
             d.bg(rgb(t.bg))
                 .border_1()
                 .border_b_0()
-                .border_color(gpui::rgba(crate::theme::border_alpha(t, 0x66)))
+                .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x66)))
                 .rounded_tl(px(7.))
                 .rounded_tr(px(7.))
                 .text_color(rgb(t.text))
@@ -279,7 +279,7 @@ fn changes_body(
             div()
                 .flex_shrink_0()
                 .border_t_1()
-                .border_color(gpui::rgba(crate::theme::border_alpha(t, 0x66)))
+                .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x66)))
                 .px(px(10.))
                 .pt(px(8.))
                 .pb(px(7.))
@@ -348,7 +348,7 @@ fn changes_body(
                         .items_center()
                         .gap(px(8.))
                         .border_t_1()
-                        .border_color(gpui::rgba(crate::theme::border_alpha(t, 0x66)))
+                        .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x66)))
                         .pt(px(7.))
                         .child(
                             div()
@@ -474,7 +474,7 @@ fn collect_rows(
                         })
                         .child(if untracked {
                             // 未跟踪：绿 + 徽标
-                            icon("plus", 15., crate::theme::UNREAD)
+                            icon("plus", 15., crate::appearance::theme::UNREAD)
                         } else {
                             icon("file", 15., t.text_muted)
                         })
@@ -556,7 +556,7 @@ fn history_body(
                 .pt(px(8.))
                 .pb(px(9.))
                 .border_b_1()
-                .border_color(gpui::rgba(crate::theme::border_alpha(t, 0x4d)))
+                .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x4d)))
                 .cursor_pointer()
                 .hover(|s| s.bg(rgb(t.bg_hover)))
                 .child(

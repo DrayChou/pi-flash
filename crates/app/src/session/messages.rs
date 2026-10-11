@@ -12,7 +12,7 @@ use super::fork::ForkAnchor;
 use crate::Chat;
 use crate::i18n::{tf, tr};
 use crate::editor::markdown;
-use crate::theme;
+use crate::appearance::theme;
 use crate::ui::icon;
 
 #[derive(Clone, Copy, PartialEq, Debug)]

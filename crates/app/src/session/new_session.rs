@@ -24,7 +24,7 @@ use gpui::{AnyElement, MouseButton, SharedString, div, prelude::*, px, relative,
 use crate::Chat;
 use crate::i18n::tr;
 use crate::session::input;
-use crate::theme::theme as T;
+use crate::appearance::theme::theme as T;
 use crate::ui::{icon, icon_alpha};
 
 /// 背景 logo「墨迹」目标高 = 51% 聊天区高（zcode 参考实测：Z 墨迹跨度
@@ -124,7 +124,7 @@ pub(crate) fn page(
 /// 会盖住 45%+ 以下的部分）。text 色低 alpha（深 ~10%、浅 ~6%）。纯装饰层：
 /// 无 id/无 handler，不参与命中。越界裁剪由调用方的 inset_0 容器承担
 /// （根节点不能裁——会切掉上浮的 / @ 菜单，见 page 注释）。
-fn logo_backdrop(t: &'static crate::theme::Theme, size: f32) -> AnyElement {
+fn logo_backdrop(t: &'static crate::appearance::theme::Theme, size: f32) -> AnyElement {
     let a = if t.dark { 0x1a } else { 0x10 };
     div()
         .absolute()
@@ -143,7 +143,7 @@ fn logo_backdrop(t: &'static crate::theme::Theme, size: f32) -> AnyElement {
 /// 欢迎语「Hi，打算让我做点什么？」——zcode 参考图问候语同款关系（中心
 /// 37%，压水印下半部）：加大字号、斜体、内置 JetBrains Mono（中文回退
 /// 系统字体，italic 由回退链合成）。
-fn heading(t: &'static crate::theme::Theme) -> AnyElement {
+fn heading(t: &'static crate::appearance::theme::Theme) -> AnyElement {
     div()
         .text_size(crate::appearance::ui_size(40.))
         .font_family(crate::editor::markdown::MONO_FAMILY)
@@ -162,7 +162,7 @@ fn heading(t: &'static crate::theme::Theme) -> AnyElement {
 fn action_bar(
     chat: &Chat,
     weak: &gpui::WeakEntity<Chat>,
-    t: &'static crate::theme::Theme,
+    t: &'static crate::appearance::theme::Theme,
 ) -> AnyElement {
     let project: SharedString = chat
         .cwd
@@ -231,7 +231,7 @@ fn action_bar(
                     .gap(px(3.))
                     .cursor_pointer()
                     .child(SharedString::from(format!("v{ver}")))
-                    .child(crate::ui::icon("arrow-up", 11., crate::theme::NOTICE))
+                    .child(crate::ui::icon("arrow-up", 11., crate::appearance::theme::NOTICE))
                     .hover(|s| s.text_color(rgb(t.text)))
                     .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                         cx.stop_propagation();
@@ -246,7 +246,7 @@ fn action_bar(
         let version_color = match &chat.update {
             // 下载中保持淡色（设计文档：下载信息仍为 faint 字体颜色）；
             // 就绪/有新版 = 青蓝（NOTICE，通知点三色之「完成通知」）
-            UpdateState::Ready { .. } | UpdateState::Available { .. } => crate::theme::NOTICE,
+            UpdateState::Ready { .. } | UpdateState::Available { .. } => crate::appearance::theme::NOTICE,
             _ => t.text_faint,
         };
         bar = bar.child(

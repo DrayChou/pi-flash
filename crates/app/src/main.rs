@@ -38,7 +38,6 @@ mod i18n;
 mod models_config;
 mod remote_control;
 mod startup;
-mod theme;
 mod services;
 mod session;
 mod settings;
@@ -57,7 +56,7 @@ pub(crate) use actions_menu::slash_menu_view;
 actions!(app, [ComposerUp, ComposerDown, ComposerTab, ComposerPaste, FileSave]);
 use i18n::tr;
 use models_config::EnabledState;
-use theme::theme as T;
+use crate::appearance::theme::theme as T;
 use services::format::*;
 use services::git::*;
 use services::workspace::*;
@@ -2026,14 +2025,14 @@ impl Render for Chat {
                     !panes_hidden && !slp_dragging && !self.slp_hover,
                     |d| {
                         d.border_l_1()
-                            .border_color(gpui::rgba(crate::theme::border_alpha(t, 0x99)))
+                            .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x99)))
                     },
                 )
                 // hover/拖拽：2px 深色线替换 1px 常驻线（画在左缘 = 交界，
                 // content-col 在 panel-col 之后渲染，z 序安全）
                 .when(slp_hovered || slp_dragging, |d| {
                     d.border_l_2()
-                        .border_color(gpui::rgba(crate::theme::border_alpha(t, 0xc8)))
+                        .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0xc8)))
                 })
                 .child(titlebar::topbar_r(self, window, cx))
                 .child(content::content_main(
@@ -2220,9 +2219,9 @@ fn main() {
     // theme: PI_FLASH_THEME (dev override) > app_settings.json（pi-flash 专
     // 属配置，绝不碰 pi 的 settings.json——pi 的 settings schema 有自己的
     // theme 键，写入未知主题名会让 pi 每次启动报错）
-    if std::env::var("PI_FLASH_THEME").ok().and_then(|n| theme::set_by_name(&n).then_some(())).is_none() {
+    if std::env::var("PI_FLASH_THEME").ok().and_then(|n| crate::appearance::theme::set_by_name(&n).then_some(())).is_none() {
         if let Some(name) = app_settings().theme {
-            theme::set_by_name(&name);
+            crate::appearance::theme::set_by_name(&name);
         }
     }
     // language: persisted workspace-memory preference；无偏好默认 zh-CN。

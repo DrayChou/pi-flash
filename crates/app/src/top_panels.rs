@@ -19,7 +19,7 @@ use gpui::{App, MouseButton, SharedString, div, prelude::*, px, relative, rgb};
 use crate::Chat;
 use crate::TopPanel;
 use crate::i18n::{tf, tr};
-use crate::theme::Theme;
+use crate::appearance::theme::Theme;
 
 /// ⋯ 菜单入口：把两个面画进设置弹窗同款窗体（遮挡/外点/ESC = 浮层基座）。
 pub(crate) fn session_info_dialog(
@@ -123,7 +123,7 @@ fn system_prompt_panel(
             let n = segs.len();
             div().flex().flex_col().children(
                 segs.into_iter().enumerate().map(move |(i, (bucket, text))| {
-                    let color = crate::theme::bucket_color(bucket);
+                    let color = crate::appearance::theme::bucket_color(bucket);
                     let bucket_decl = decls
                         .iter()
                         .find(|(b, _)| *b == bucket)
@@ -218,7 +218,7 @@ fn stats_block(sys: &pi_link::transcript::TranscriptSystem, t: &Theme) -> gpui::
             bucket_label(*bucket),
             tokens[i],
             total,
-            crate::theme::bucket_color(*bucket),
+            crate::appearance::theme::bucket_color(*bucket),
             t,
             false,
         ));
@@ -249,7 +249,7 @@ fn decl_block(
     weak: &gpui::WeakEntity<Chat>,
     t: &Theme,
 ) -> gpui::AnyElement {
-    let color = crate::theme::bucket_color(pi_link::transcript::SYSTEM_BUCKETS[idx]);
+    let color = crate::appearance::theme::bucket_color(pi_link::transcript::SYSTEM_BUCKETS[idx]);
     let tokens = pi_link::estimate::estimate_tokens(&pi_link::transcript::tools_wire_text(decls));
     let title = format!(
         "{} {} · {} · {} tokens",
@@ -391,7 +391,7 @@ fn ratio_bar(tokens: &[u64; 7], total: u64) -> gpui::AnyElement {
                 div()
                     .w(relative(*v as f32 / total as f32))
                     .h_full()
-                    .bg(rgb(crate::theme::bucket_color(
+                    .bg(rgb(crate::appearance::theme::bucket_color(
                         pi_link::transcript::SYSTEM_BUCKETS[i],
                     )))
                     .when(i + 1 < tokens.len(), |d| d.mr(px(1.)))
@@ -582,7 +582,7 @@ fn tool_list(
         // 左导航贴弹窗左下角，同理自己倒左下角
         .rounded_bl(px(10.))
         .border_r_1()
-        .border_color(gpui::rgba(crate::theme::border_alpha(t, 0x66)))
+        .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x66)))
         .flex()
         .flex_col()
         .p(px(8.))

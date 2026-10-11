@@ -171,7 +171,7 @@ pub fn provider_icon(id: &str, size: f32, color: u32) -> gpui::AnyElement {
         .flat_map(|c| c.to_uppercase())
         .collect();
     let label = if label.is_empty() { "?".to_string() } else { label };
-    let t = crate::theme::theme();
+    let t = crate::appearance::theme::theme();
     gpui::div()
         .w(gpui::px(size))
         .h(gpui::px(size))

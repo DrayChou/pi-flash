@@ -26,7 +26,7 @@ use crate::MenuKind;
 use crate::{ComposerDown, ComposerTab, ComposerUp, ComposerPaste};
 use crate::i18n::tr;
 use crate::services::format::fmt_thousand;
-use crate::theme::theme as T;
+use crate::appearance::theme::theme as T;
 use crate::ui::{icon, icon_hover};
 
 /// 操作栏字体大小（工具预设/模型/思考统一；单点改这里）。
@@ -80,7 +80,7 @@ fn ctx_tip_hover(
 /// 下方 12px 隐形尾迹压住环顶 2px，环→面板悬停交接无死区。
 fn ctx_tip_element(
     chat: &mut Chat,
-    t: &'static crate::theme::Theme,
+    t: &'static crate::appearance::theme::Theme,
     cx: &mut Context<Chat>,
 ) -> Option<gpui::AnyElement> {
     let visible =
@@ -138,7 +138,7 @@ fn ctx_usage_panel(
     stats: Option<pi_link::protocol::SessionStats>,
     compacting: bool,
     can_compact: bool,
-    t: &'static crate::theme::Theme,
+    t: &'static crate::appearance::theme::Theme,
     cx: &mut Context<Chat>,
 ) -> gpui::Div {
     // 上下文用量弹窗：全部文字 = 面板设置值，title 与正文同号
@@ -287,7 +287,7 @@ fn ctx_usage_panel(
 /// 点击开合扩展菜单（勾选即生效，无确认按钮）；非 full+ 档置灰不可点。
 fn plugin_button(
     chat: &mut Chat,
-    t: &'static crate::theme::Theme,
+    t: &'static crate::appearance::theme::Theme,
     cx: &mut Context<Chat>,
 ) -> gpui::AnyElement {
     let ui = crate::appearance::ui_size;
@@ -346,7 +346,7 @@ fn plugin_button(
 /// 不渲染。点击开合 MCP 勾选菜单（勾选即生效，写盘 + 运行中标记重绑）。
 fn mcp_button(
     chat: &mut Chat,
-    t: &'static crate::theme::Theme,
+    t: &'static crate::appearance::theme::Theme,
     cx: &mut Context<Chat>,
 ) -> gpui::AnyElement {
     let ui = crate::appearance::ui_size;
@@ -786,7 +786,7 @@ fn composer_wrap(
     hero: bool,
     show_scroll_btn: bool,
     weak: &gpui::WeakEntity<Chat>,
-    t: &'static crate::theme::Theme,
+    t: &'static crate::appearance::theme::Theme,
 ) -> gpui::AnyElement {
     if hero {
         return div()
@@ -915,7 +915,7 @@ fn composer_bar(
     thinking_label: &str,
     tools_label: &str,
     ctx_pct: Option<f64>,
-    t: &'static crate::theme::Theme,
+    t: &'static crate::appearance::theme::Theme,
     cx: &mut Context<Chat>,
 ) -> gpui::Div {
     // `!` bash 执行中与模型流共用停止按钮形态（031）

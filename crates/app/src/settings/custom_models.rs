@@ -264,7 +264,7 @@ pub(crate) fn mj_provider_editor(
     mj_key: &gpui::Entity<crate::TextInput>,
     mj_api: u8,
     error: &Option<String>,
-    t: &crate::theme::Theme,
+    t: &crate::appearance::theme::Theme,
 ) -> gpui::AnyElement {
     // 043 表单头同款：title 左、【保存】右，编辑态加【移除】；整商开关已
     // 上移到侧栏行，编辑器不再重复
@@ -370,7 +370,7 @@ pub(crate) fn mj_provider_editor(
                 .text_color(rgb(t.text_dim))
                 .hover(|s| {
                     s.bg(rgb(t.bg_hover))
-                        .text_color(rgb(crate::theme::theme().accent))
+                        .text_color(rgb(crate::appearance::theme::theme().accent))
                 })
                 .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                     let _ = weak_add.update(cx, |c, cx| c.mj_add_model(pname.clone(), cx));
@@ -391,7 +391,7 @@ pub(crate) fn mj_model_editor(
     mj_ctx: &gpui::Entity<crate::TextInput>,
     mj_reasoning: bool,
     error: &Option<String>,
-    t: &crate::theme::Theme,
+    t: &crate::appearance::theme::Theme,
 ) -> gpui::AnyElement {
     let detail = detail_shell("mc-detail")
         .p(px(15.))
@@ -463,7 +463,7 @@ pub(crate) fn mj_add_panel(
     mj_base: &gpui::Entity<crate::TextInput>,
     mj_key: &gpui::Entity<crate::TextInput>,
     mj_api: u8,
-    _t: &crate::theme::Theme,
+    _t: &crate::appearance::theme::Theme,
 ) -> gpui::AnyElement {
     // 详情内边距与列表 15px 统一（040 扩展页定稿；detail_shell 默认 p20）
     detail_shell("mc-detail")

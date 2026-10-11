@@ -17,7 +17,7 @@ use crate::i18n::tr;
 use crate::services::workspace::{same_ws, same_ws_key};
 use crate::ListMode;
 use crate::SortMode;
-use crate::theme::{Theme, theme as T};
+use crate::appearance::theme::{Theme, theme as T};
 use crate::ui::{icon, icon_hover, spinner};
 
 /// Flattened psp row model (one virtual list over all rows).
@@ -633,7 +633,7 @@ fn session_row_view(
     // 须同色 a=0，透明黑会在 HSL 插值中段产生暗带。
     let row_sel = gpui::rgba((t.text << 8) | 0x1a); // 10%（悬停与选中同色）
     let row_base = if is_active {
-        gpui::rgb(crate::theme::mix_rgb(t.text, t.nav, 0.1))
+        gpui::rgb(crate::appearance::theme::mix_rgb(t.text, t.nav, 0.1))
     } else {
         gpui::rgb(t.nav)
     };
@@ -645,7 +645,7 @@ fn session_row_view(
     );
     // 悬停态行底变成 10% 白纱（over nav），渐隐尾色必须跟着换白纱的合成
     // 视觉色——否则纯 nav 的 overlay 盖在白纱底上就是一块深色（黑块回归）
-    let fade_hover_to = gpui::Hsla::from(gpui::rgb(crate::theme::mix_rgb(t.text, t.nav, 0.1)));
+    let fade_hover_to = gpui::Hsla::from(gpui::rgb(crate::appearance::theme::mix_rgb(t.text, t.nav, 0.1)));
     let fade_hover = gpui::linear_gradient(
         90.,
         gpui::linear_color_stop(gpui::Hsla { a: 0., ..fade_hover_to }, 0.),
@@ -799,14 +799,14 @@ fn session_row_view(
                     div()
                         .size(px(7.))
                         .rounded_full()
-                        .bg(rgb(crate::theme::WARN))
+                        .bg(rgb(crate::appearance::theme::WARN))
                         .into_any_element()
                 } else if chat.unread.contains(&info.path) {
                     // 青蓝 = 完成通知（绿色退出通知语义，仅表达正确性）
                     div()
                         .size(px(7.))
                         .rounded_full()
-                        .bg(rgb(crate::theme::NOTICE))
+                        .bg(rgb(crate::appearance::theme::NOTICE))
                         .into_any_element()
                 } else {
                     div().into_any_element()

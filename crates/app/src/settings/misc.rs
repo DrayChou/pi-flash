@@ -139,7 +139,7 @@ pub(crate) fn mc_misc_view(
 fn window_row(
     days: u64,
     weak: &gpui::WeakEntity<Chat>,
-    t: &'static crate::theme::Theme,
+    t: &'static crate::appearance::theme::Theme,
 ) -> gpui::AnyElement {
     const CHOICES: [(u64, &str); 3] = [(7, "7 天"), (14, "14 天"), (30, "30 天")];
     div()
@@ -193,7 +193,7 @@ fn stepper(
     min: u64,
     max: u64,
     weak: &gpui::WeakEntity<Chat>,
-    t: &'static crate::theme::Theme,
+    t: &'static crate::appearance::theme::Theme,
 ) -> gpui::AnyElement {
     div()
         .flex()
@@ -243,7 +243,7 @@ fn step_btn(
     min: u64,
     max: u64,
     weak: &gpui::WeakEntity<Chat>,
-    t: &'static crate::theme::Theme,
+    t: &'static crate::appearance::theme::Theme,
 ) -> gpui::AnyElement {
     let base = div()
         .id(id)
@@ -281,7 +281,7 @@ fn step_btn(
 }
 
 /// 目录行：mono 路径占满左侧，「打开」按钮右对齐（系统文件浏览器打开）。
-fn dir_row(key: &str, path: &str, t: &'static crate::theme::Theme) -> gpui::AnyElement {
+fn dir_row(key: &str, path: &str, t: &'static crate::appearance::theme::Theme) -> gpui::AnyElement {
     let open_path = std::path::PathBuf::from(path);
     div()
         .flex()
@@ -323,7 +323,7 @@ fn switch(
     id: &'static str,
     on: bool,
     apply: impl Fn(bool, &mut gpui::App) + 'static,
-    t: &'static crate::theme::Theme,
+    t: &'static crate::appearance::theme::Theme,
 ) -> gpui::AnyElement {
     let _ = t; // 配色统一走 theme 语义，入参保留兼容既有调用点
     switch_base(id, on, false, apply)

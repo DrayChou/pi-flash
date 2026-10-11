@@ -12,7 +12,7 @@ use crate::Chat;
 use crate::i18n::{tr, tf};
 use crate::services::format::time_ago;
 use crate::services::workspace::same_path;
-use crate::theme::{Theme, danger_wash, theme as T};
+use crate::appearance::theme::{Theme, danger_wash, theme as T};
 use crate::ui::icon;
 use crate::ui::popup::PopupEdges;
 
@@ -84,7 +84,7 @@ fn proj_tip(
     x: f32,
     y: f32,
     vp: (f32, f32),
-    t: &'static crate::theme::Theme,
+    t: &'static crate::appearance::theme::Theme,
 ) -> impl gpui::IntoElement {
     let name = path
         .file_name()
@@ -170,7 +170,7 @@ fn hover_card(
         .w(px(258.))
         .bg(rgb(t.bg))
         .border_1()
-        .border_color(gpui::rgba(crate::theme::border_alpha(t, 0x8c)))
+        .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x8c)))
         .rounded(px(12.))
         .shadow_lg()
         // 遮挡只作用于卡片自身 bounds（父层 occlude 会断全窗口 hit-test）
@@ -286,7 +286,7 @@ fn hover_card(
         .child(
             div()
                 .h(px(1.))
-                .bg(gpui::rgba(crate::theme::border_alpha(t, 0x66)))
+                .bg(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x66)))
                 .mx(px(-13.))
                 .mt(px(9.))
                 .mb(px(7.)),
@@ -579,7 +579,7 @@ fn menu_card(edges: PopupEdges, t: &'static Theme) -> gpui::Div {
             .p(px(4.))
             .bg(rgb(t.bg))
             .border_1()
-            .border_color(gpui::rgba(crate::theme::border_alpha(t, 0x8c)))
+            .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x8c)))
             .rounded(px(8.))
             .shadow_lg()
             .flex()
@@ -656,7 +656,7 @@ fn confirm_project_del(
                     .p(px(16.))
                     .bg(rgb(t.bg))
                     .border_1()
-                    .border_color(gpui::rgba(crate::theme::danger_alpha(t, 0x73)))
+                    .border_color(gpui::rgba(crate::appearance::theme::danger_alpha(t, 0x73)))
                     .rounded(px(10.))
                     .shadow_lg()
                     .flex()
@@ -1215,7 +1215,7 @@ fn menu_sep() -> gpui::Div {
     div()
         .h(px(1.))
         .my(px(4.))
-        .bg(gpui::rgba(crate::theme::border_alpha(T(), 0x66)))
+        .bg(gpui::rgba(crate::appearance::theme::border_alpha(T(), 0x66)))
 }
 
 /// 删除失败持久弹层：trash Err 必看（状态栏 toast 一闪容易漏）。
@@ -1240,7 +1240,7 @@ fn tree_del_error_layer(
             .p(px(14.))
             .bg(rgb(t.bg))
             .border_1()
-            .border_color(gpui::rgba(crate::theme::danger_alpha(t, 0x73)))
+            .border_color(gpui::rgba(crate::appearance::theme::danger_alpha(t, 0x73)))
             .rounded(px(10.))
             .flex()
             .flex_col()

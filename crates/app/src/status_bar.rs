@@ -9,7 +9,7 @@ use gpui::{MouseButton, SharedString, div, prelude::*, px, rgb};
 use crate::Chat;
 use crate::DockPanel;
 use crate::services::workspace::{save_ui_state, ui_state};
-use crate::theme::theme as T;
+use crate::appearance::theme::theme as T;
 
 const HEIGHT: f32 = 36.;
 
@@ -61,7 +61,7 @@ pub(crate) fn control_bar(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> impl
 
 fn tabs(
     active: DockPanel,
-    t: &'static crate::theme::Theme,
+    t: &'static crate::appearance::theme::Theme,
     cx: &mut gpui::Context<Chat>,
 ) -> Vec<impl gpui::IntoElement> {
     [
@@ -89,7 +89,7 @@ fn tabs(
                 d.bg(rgb(t.nav))
                     .border_1()
                     .border_t_0()
-                    .border_color(gpui::rgba(crate::theme::border_alpha(t, 0x8c)))
+                    .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x8c)))
                     .rounded_bl(px(9.))
                     .rounded_br(px(9.))
                     .mt(px(-1.))

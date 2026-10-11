@@ -18,7 +18,7 @@ use ratex_layout::layout_options::LayoutOptions;
 use ratex_types::color::Color;
 use ratex_types::math_style::MathStyle;
 
-use crate::theme::Theme;
+use crate::appearance::theme::Theme;
 
 /// 逻辑字号（px）：正文 14 × KaTeX 默认 1.21 ≈ 17。
 const FONT_SIZE: f32 = 17.0;
@@ -146,7 +146,7 @@ fn fallback(latex: &str, t: &Theme) -> gpui::AnyElement {
         .px(px(10.))
         .py(px(6.))
         .rounded(px(6.))
-        .bg(gpui::rgba(crate::theme::border_alpha(t, 0x33)))
+        .bg(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x33)))
         .font_family(crate::editor::markdown::MONO_FAMILY)
         .text_size(px(12.5))
         .text_color(rgb_color(t.text_muted))

@@ -424,7 +424,7 @@ pub(crate) fn render_settings(
                     // 左导航贴弹窗左下角，同理自己倒左下角
                     .rounded_bl(px(10.))
                     .border_r_1()
-                    .border_color(gpui::rgba(crate::theme::border_alpha(t, 0x66)))
+                    .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x66)))
                     .flex()
                     .flex_col()
                     .p(px(8.))

@@ -25,7 +25,7 @@ use gpui::{
 use crate::{Chat, i18n::tr, same_path};
 use crate::services::file_icons;
 use crate::services::file_tree::TreeRow;
-use crate::theme;
+use crate::appearance::theme;
 use crate::ui::{VListHeight, icon_path, vlist};
 
 /// 行高（pi-web FileExplorer 24px 行）。
@@ -386,7 +386,7 @@ fn changes_row(
 fn action_bar(
     chat: &Chat,
     weak: &gpui::WeakEntity<Chat>,
-    t: &'static crate::theme::Theme,
+    t: &'static crate::appearance::theme::Theme,
 ) -> gpui::AnyElement {
     let project: SharedString = chat
         .cwd
@@ -503,7 +503,7 @@ fn bar_btn(
     id: &'static str,
     icon_name: &'static str,
     tip: &'static str,
-    t: &'static crate::theme::Theme,
+    t: &'static crate::appearance::theme::Theme,
     active: bool,
     on_click: impl Fn(&gpui::MouseDownEvent, &mut gpui::Window, &mut gpui::App) + 'static,
 ) -> gpui::AnyElement {
@@ -671,7 +671,7 @@ fn name_label(name: &str) -> gpui::AnyElement {
 }
 
 /// 编辑态 chrome：边框色（校验错误红 / 警告黄 / 常态 accent）+ 校验消息。
-fn edit_chrome(e: &crate::TreeEdit, t: &'static crate::theme::Theme) -> (u32, Option<SharedString>) {
+fn edit_chrome(e: &crate::TreeEdit, t: &'static crate::appearance::theme::Theme) -> (u32, Option<SharedString>) {
     match &e.validation {
         crate::TreeValidation::Error(m) => (t.danger, Some(SharedString::from(m.clone()))),
         crate::TreeValidation::Warning(m) => (theme::WARN, Some(SharedString::from(m.clone()))),

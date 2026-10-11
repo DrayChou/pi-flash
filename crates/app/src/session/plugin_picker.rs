@@ -15,7 +15,7 @@
 use gpui::{AnyElement, MouseButton, SharedString, div, prelude::*, px, rgb};
 
 use crate::Chat;
-use crate::theme::theme as T;
+use crate::appearance::theme::theme as T;
 
 /// 勾选集 + 滚动位（勾选当即落地，不存在「取消丢弃」）。
 pub(crate) struct PluginPicker {
@@ -272,7 +272,7 @@ fn plugin_row(
     checked: bool,
     project: bool,
     tokens: Option<u64>,
-    t: &'static crate::theme::Theme,
+    t: &'static crate::appearance::theme::Theme,
 ) -> AnyElement {
     let ui = crate::appearance::ui_size;
     let row_weak = weak.clone();

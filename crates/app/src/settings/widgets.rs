@@ -381,7 +381,7 @@ pub(crate) fn set_row(
     title: &str,
     desc: &str,
     control: gpui::AnyElement,
-    t: &'static crate::theme::Theme,
+    t: &'static crate::appearance::theme::Theme,
 ) -> gpui::AnyElement {
     let mut left = div()
         .flex_1()
@@ -411,7 +411,7 @@ pub(crate) fn set_row(
         .gap(px(14.))
         .py(px(13.))
         .border_b_1()
-        .border_color(gpui::rgba(crate::theme::border_alpha(t, 0x40)))
+        .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x40)))
         .child(left)
         .child(control)
         .into_any_element()

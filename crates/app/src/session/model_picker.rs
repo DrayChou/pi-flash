@@ -11,7 +11,7 @@
 use gpui::{AnyElement, MouseButton, SharedString, div, prelude::*, px, rgb};
 
 use super::Chat;
-use crate::theme::theme as T;
+use crate::appearance::theme::theme as T;
 use crate::TextInput;
 
 /// 菜单行高（限高 = `ROW_H × 10`，与 mcp_picker 一致）。
@@ -244,7 +244,7 @@ pub(crate) fn group_header_row(
     provider: &str,
     pad_x: f32,
     h: f32,
-    t: &'static crate::theme::Theme,
+    t: &'static crate::appearance::theme::Theme,
 ) -> AnyElement {
     div()
         .h(px(h))
@@ -278,7 +278,7 @@ pub(crate) fn group_model_row(
     pad_x: f32,
     pin: Option<String>,
     on_row: Option<ModelRowAction>,
-    t: &'static crate::theme::Theme,
+    t: &'static crate::appearance::theme::Theme,
 ) -> AnyElement {
     let ui = crate::appearance::ui_size;
     let row_weak = weak.clone();

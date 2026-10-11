@@ -78,7 +78,7 @@ pub(super) fn dispatch(
         }
         method::THEME_SET => {
             let name = params.get("name").and_then(Value::as_str).ok_or_else(|| bad("需要 {\"name\": \"mist|default|dark|rose\"}"))?;
-            if !crate::theme::set_by_name(name) {
+            if !crate::appearance::theme::set_by_name(name) {
                 return Err(bad(format!("未知主题: {name:?}")));
             }
             crate::appearance::sync_gpui_tokens(cx);

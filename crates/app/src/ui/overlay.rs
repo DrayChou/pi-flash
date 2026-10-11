@@ -26,7 +26,7 @@ use gpui::{
     px, rgba, rgb,
 };
 
-use crate::theme::Theme;
+use crate::appearance::theme::Theme;
 
 /// 浮层外壳：遮挡 + 外点关闭 + ESC 关闭。
 ///
@@ -99,7 +99,7 @@ pub fn confirm(
             move |_, w, cx| on(w, cx),
         )
     };
-    let t = crate::theme::theme();
+    let t = crate::appearance::theme::theme();
     layer(false, Some(focus), on_cancel)
         .on_key_down(move |ev: &gpui::KeyDownEvent, w, cx| {
             if ev.keystroke.key == "enter" {
@@ -115,7 +115,7 @@ pub fn confirm(
                 .p(px(14.))
                 .bg(rgb(t.bg))
                 .border_1()
-                .border_color(rgba(crate::theme::danger_alpha(t, 0x73)))
+                .border_color(rgba(crate::appearance::theme::danger_alpha(t, 0x73)))
                 .rounded(px(10.))
                 .shadow_lg()
                 .flex()
@@ -190,7 +190,7 @@ pub fn big_card(
         // 会从弹窗圆角外露出来（四角尖尖角）；R_SHEET 12 = 大卡语义
         .rounded_t(px(12.))
         .border_b_1()
-        .border_color(gpui::rgba(crate::theme::border_alpha(t, 0x73)));
+        .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x73)));
     if !title.is_empty() {
         head = head.child(
             div()

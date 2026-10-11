@@ -7,6 +7,7 @@
 
 use super::*;
 use crate::appearance::{FontSlot, ThemeEntry};
+use crate::appearance::theme;
 
 /// 槽位序号 → FontSlot（族/字号下拉共用）。
 fn slot_of(ix: usize) -> FontSlot {
@@ -250,7 +251,7 @@ fn font_row(
     open: bool,
     size_open: bool,
     size_dd: &gpui::Entity<DropdownState>,
-    t: &'static crate::theme::Theme,
+    t: &'static crate::appearance::theme::Theme,
 ) -> gpui::AnyElement {
     let spec = slot_font(ix);
     let fam_display = spec.family.clone();
@@ -293,7 +294,7 @@ fn size_trigger(
     open: bool,
     weak: &gpui::WeakEntity<Chat>,
     size_dd: &gpui::Entity<DropdownState>,
-    t: &'static crate::theme::Theme,
+    t: &'static crate::appearance::theme::Theme,
 ) -> gpui::AnyElement {
     let sizes: &[(f32, &'static str)] = &[
         (15., tr("小")),
@@ -446,7 +447,7 @@ fn font_trigger(
     weak: &gpui::WeakEntity<Chat>,
     font_filter: &gpui::Entity<TextInput>,
     font_filter_value: &str,
-    t: &'static crate::theme::Theme,
+    t: &'static crate::appearance::theme::Theme,
 ) -> gpui::AnyElement {
     let fam = family.to_string();
     let weak_toggle = weak.clone();
@@ -523,7 +524,7 @@ fn font_popup_card(
     filter_input: &gpui::Entity<TextInput>,
     filter_value: &str,
     weak: &gpui::WeakEntity<Chat>,
-    t: &'static crate::theme::Theme,
+    t: &'static crate::appearance::theme::Theme,
 ) -> gpui::AnyElement {
     let weak = weak.clone();
     // 过滤后的字体索引（字母序目录，大小写不敏感子串匹配）
@@ -618,7 +619,7 @@ fn font_popup_card(
 
 /// 语言：三个 radio（14px 圆圈，无边框无底色）。文字统一 text_muted，
 /// 选中只加粗（SEMIBOLD）不变色；圆圈 accent 描边 + 内点。
-fn lang_row(weak: &gpui::WeakEntity<Chat>, t: &'static crate::theme::Theme) -> gpui::AnyElement {
+fn lang_row(weak: &gpui::WeakEntity<Chat>, t: &'static crate::appearance::theme::Theme) -> gpui::AnyElement {
     let lang_current = i18n::lang_ix();
     div()
         .flex()

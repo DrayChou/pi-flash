@@ -18,7 +18,7 @@ use gpui_component::input::{InputEvent, InputState, SelectAll, TextInput as GpIn
 
 use std::ops::Range;
 
-use crate::theme::theme as T;
+use crate::appearance::theme::theme as T;
 
 /// fires after every user value mutation; receives the new value so callers
 /// never need to re-read the entity (re-entrant reads from inside the

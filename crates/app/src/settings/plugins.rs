@@ -184,7 +184,7 @@ fn pl_install_bar(
     install_input: &gpui::Entity<TextInput>,
     error: &Option<String>,
     busy: bool,
-    t: &crate::theme::Theme,
+    t: &crate::appearance::theme::Theme,
 ) -> gpui::AnyElement {
     div()
         .flex_shrink_0()
@@ -277,7 +277,7 @@ fn pl_sidebar(
     weak: &gpui::WeakEntity<Chat>,
     section: &str,
     entries: &[(usize, &serde_json::Value)],
-    t: &crate::theme::Theme,
+    t: &crate::appearance::theme::Theme,
 ) -> gpui::AnyElement {
     let mut list = sidebar_list().px(px(7.));
     let enabled = entries
@@ -371,7 +371,7 @@ fn pl_detail(
     weak: &gpui::WeakEntity<Chat>,
     section: &str,
     entries: &[(usize, &serde_json::Value)],
-    t: &crate::theme::Theme,
+    t: &crate::appearance::theme::Theme,
 ) -> gpui::AnyElement {
     let Some((_, v)) = entries
         .iter()
@@ -404,21 +404,21 @@ fn pl_detail(
         .justify_center()
         .rounded(px(5.))
         .border_1()
-        .border_color(gpui::rgba(crate::theme::danger_alpha(
-            crate::theme::theme(),
+        .border_color(gpui::rgba(crate::appearance::theme::danger_alpha(
+            crate::appearance::theme::theme(),
             0x59,
         )))
-        .bg(gpui::rgba(crate::theme::danger_alpha(
-            crate::theme::theme(),
+        .bg(gpui::rgba(crate::appearance::theme::danger_alpha(
+            crate::appearance::theme::theme(),
             0x0f,
         )));
     if removing_this {
-        trash = trash.child(crate::ui::spinner(12., crate::theme::theme().danger));
+        trash = trash.child(crate::ui::spinner(12., crate::appearance::theme::theme().danger));
     } else {
         trash = trash.child(crate::ui::icon(
             "icon-trash-solid",
             14.,
-            crate::theme::theme().danger,
+            crate::appearance::theme::theme().danger,
         ));
     }
     if removing_this || chat.pkg_op.is_some() {
@@ -426,7 +426,7 @@ fn pl_detail(
     } else {
         trash = trash
             .cursor_pointer()
-            .hover(|s| s.bg(gpui::rgba(crate::theme::danger_wash(crate::theme::theme()))))
+            .hover(|s| s.bg(gpui::rgba(crate::appearance::theme::danger_wash(crate::appearance::theme::theme()))))
             .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                 let _ = weak_trash.update(cx, |c, cx| {
                     c.mc_ask_remove_package(trash_src.clone(), cx)

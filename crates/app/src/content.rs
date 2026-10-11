@@ -7,7 +7,7 @@ use gpui::{Context, Entity, KeyDownEvent, MouseButton, SharedString, div, prelud
 use crate::Chat;
 use crate::ContentView;
 use crate::i18n::tr;
-use crate::theme::theme as T;
+use crate::appearance::theme::theme as T;
 use crate::ui::ScrollAxisExt;
 
 /// 内容主视图：按 content_view 切换（flex-1，占满 topbar-r 以下）。
@@ -40,7 +40,7 @@ pub(crate) fn content_main(
         .into_any_element()
 }
 
-pub(crate) fn empty_hint(text: &str, t: &'static crate::theme::Theme) -> gpui::AnyElement {    div()
+pub(crate) fn empty_hint(text: &str, t: &'static crate::appearance::theme::Theme) -> gpui::AnyElement {    div()
         .flex_1()
         .flex()
         .items_center()

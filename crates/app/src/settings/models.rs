@@ -517,7 +517,7 @@ fn mc_models_sidebar(
     enabled_set: &std::collections::HashSet<String>,
     enabled_filter: &gpui::Entity<crate::TextInput>,
     enabled_filter_value: &str,
-    t: &'static crate::theme::Theme,
+    t: &'static crate::appearance::theme::Theme,
 ) -> gpui::AnyElement {
     // ---- Provider 全集（内置目录 + models.json 自定义）与计数 -------------
     let custom: Vec<(String, &serde_json::Value)> =
@@ -797,7 +797,7 @@ fn mc_models_detail(
     mj_reasoning: bool,
     error: &Option<String>,
     enabled_set: &std::collections::HashSet<String>,
-    t: &crate::theme::Theme,
+    t: &crate::appearance::theme::Theme,
 ) -> gpui::AnyElement {
     // custom provider / model editors
     if let Some(name) = selected.strip_prefix("mj:p:") {
@@ -930,7 +930,7 @@ fn mc_models_detail(
             div()
                 .h(px(1.))
                 .w_full()
-                .bg(gpui::rgba(crate::theme::border_alpha(t, 0x66))),
+                .bg(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x66))),
         );
 
     // 可用模型区 + 底部（detail_shell 收尾）

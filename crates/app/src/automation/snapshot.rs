@@ -167,7 +167,7 @@ fn app_surface(chat: &Chat, window: &gpui::Window, cx: &Context<Chat>) -> Value 
     json!({
         "app": "pi-flash",
         "version": env!("CARGO_PKG_VERSION"),
-        "theme": crate::theme::theme_name(),
+        "theme": crate::appearance::theme::theme_name(),
         "lang": crate::i18n::LANG_LABELS[crate::i18n::lang_ix()],
         "cwd": chat.cwd.display().to_string(),
         "branch": chat.branch,

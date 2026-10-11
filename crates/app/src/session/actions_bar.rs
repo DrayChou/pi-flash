@@ -8,7 +8,7 @@ use gpui::prelude::*;
 use gpui::{MouseButton, SharedString, div, px, rgb};
 
 use crate::i18n::tr;
-use crate::theme;
+use crate::appearance::theme;
 use crate::ui::icon;
 use crate::Chat;
 use crate::session::fork::ForkAnchor;

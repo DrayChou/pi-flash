@@ -71,7 +71,7 @@ impl DecorationProvider for MdLiveProvider {
         let total = fold::doc_to_vis(&folds, slice_end).saturating_sub(base0);
 
         // span → 折叠坐标系（可见切片为原点）→ 全覆盖分区 run
-        let t = crate::theme::theme();
+        let t = crate::appearance::theme::theme();
         let mut overlaps = Vec::with_capacity(spans.len());
         for s in &spans {
             let Some(hl) = crate::editor::markdown::highlight(s.style, t) else {

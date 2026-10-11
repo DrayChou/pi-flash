@@ -55,7 +55,7 @@ pub fn vlist(
     decoration: Option<Box<dyn UniformListDecoration>>,
     rows: impl 'static + Fn(usize, &mut Window, &mut App) -> AnyElement,
 ) -> AnyElement {
-    let t = crate::theme::theme();
+    let t = crate::appearance::theme::theme();
 
     // ---- 空态：Fill = 填满父容器居中；Capped = 44px 行 + 壳 ----------
     if count == 0 {

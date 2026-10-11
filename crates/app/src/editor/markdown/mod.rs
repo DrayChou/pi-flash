@@ -805,7 +805,7 @@ fn parse_table_cells(
 // rendering — pi-web globals.css `.markdown-body` spec
 // ---------------------------------------------------------------------------
 
-use crate::theme::Theme;
+use crate::appearance::theme::Theme;
 
 /// markdown 基准字号（pi-web: 14px + chat-font-size-offset；本项目以
 /// 会话/文件槽位字号为基准做绝对像素差换算）
@@ -851,7 +851,7 @@ pub(crate) fn highlight(style: Style, t: &Theme) -> Option<HighlightStyle> {
         // pi-web strong: 700 字重 + color-mix(text 88%, accent)
         Style::Bold => HighlightStyle {
             font_weight: Some(FontWeight::BOLD),
-            color: Some(rgb(crate::theme::mix_rgb(t.text, t.accent, 0.88)).into()),
+            color: Some(rgb(crate::appearance::theme::mix_rgb(t.text, t.accent, 0.88)).into()),
             ..Default::default()
         },
         // pi-web em: var(--text-muted)
@@ -863,7 +863,7 @@ pub(crate) fn highlight(style: Style, t: &Theme) -> Option<HighlightStyle> {
         Style::BoldItalic => HighlightStyle {
             font_weight: Some(FontWeight::BOLD),
             font_style: Some(FontStyle::Italic),
-            color: Some(rgb(crate::theme::mix_rgb(t.text, t.accent, 0.88)).into()),
+            color: Some(rgb(crate::appearance::theme::mix_rgb(t.text, t.accent, 0.88)).into()),
             ..Default::default()
         },
         // note: gpui 0.2.2 highlights cannot change font family; 正文的行内 code
@@ -1240,7 +1240,7 @@ fn code_scroll(hash: u64) -> std::rc::Rc<CodeScroll> {
 /// 圆角框 + 语法高亮 + 横向滚动。
 fn render_code_block_doc(lang: &str, code: &str, t: &Theme) -> gpui::AnyElement {
     let code = code.trim_end_matches('\n');
-    let body_bg = crate::theme::mix_rgb(t.bg, t.bg_panel, 0.92);
+    let body_bg = crate::appearance::theme::mix_rgb(t.bg, t.bg_panel, 0.92);
     let mut text = String::new();
     let mut highlights: Vec<(std::ops::Range<usize>, HighlightStyle)> = Vec::new();
     for (seg, c) in cached_highlight_segments(code, lang, t.dark).iter() {
@@ -1312,7 +1312,7 @@ fn render_code_block_doc(lang: &str, code: &str, t: &Theme) -> gpui::AnyElement 
 
 fn render_code_block(lang: &str, code: &str, t: &Theme, streaming: bool) -> gpui::Div {
     let code = code.trim_end_matches('\n');
-    let body_bg = crate::theme::mix_rgb(t.bg, t.bg_panel, 0.92);
+    let body_bg = crate::appearance::theme::mix_rgb(t.bg, t.bg_panel, 0.92);
 
     // header
     let copy_code = code.to_string();
@@ -1431,7 +1431,7 @@ fn render_code_block(lang: &str, code: &str, t: &Theme, streaming: bool) -> gpui
         .bg(rgb(body_bg))
         // pi-web box-shadow: 0 1px 0 border 42%（块底一条更深的细线）
         .shadow(vec![gpui::BoxShadow {
-            color: gpui::rgba(crate::theme::border_alpha(t, 0x6b)).into(),
+            color: gpui::rgba(crate::appearance::theme::border_alpha(t, 0x6b)).into(),
             offset: gpui::point(px(0.), px(1.)),
             blur_radius: px(0.),
             spread_radius: px(0.),
@@ -1541,8 +1541,8 @@ fn render_table(head: &[Vec<Run>], rows: &[Vec<Vec<Run>>], t: &Theme) -> gpui::D
         .map(|(ci, cell)| {
             cell_div(fracs[ci])
                 .font_weight(FontWeight::SEMIBOLD)
-                .text_color(rgb(crate::theme::mix_rgb(t.text, t.text_muted, 0.88)))
-                .child(sized_text(cell, t, BASE, 1.7, crate::theme::mix_rgb(t.text, t.text_muted, 0.88), FontWeight::SEMIBOLD))
+                .text_color(rgb(crate::appearance::theme::mix_rgb(t.text, t.text_muted, 0.88)))
+                .child(sized_text(cell, t, BASE, 1.7, crate::appearance::theme::mix_rgb(t.text, t.text_muted, 0.88), FontWeight::SEMIBOLD))
                 .into_any_element()
         })
         .collect();
@@ -1727,7 +1727,7 @@ fn render_block(b: &MdBlock, depth: usize, t: &Theme, streaming: bool, color: u3
             // pi-web 标题规则：h1/h2/h4-h6 = var(--text)（引用块内也是），
             // h3 = color-mix(text 88%, muted)
             let color = if *level == 3 {
-                crate::theme::mix_rgb(t.text, t.text_muted, 0.88)
+                crate::appearance::theme::mix_rgb(t.text, t.text_muted, 0.88)
             } else {
                 t.text
             };
@@ -1741,7 +1741,7 @@ fn render_block(b: &MdBlock, depth: usize, t: &Theme, streaming: bool, color: u3
                 .when(underlined, |d| {
                     d.pb(px(if *level == 1 { 7. } else { 5. }))
                         .border_b_1()
-                        .border_color(gpui::rgba(crate::theme::border_alpha(t, 0x55)))
+                        .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x55)))
                 })
                 .child(runs_element(runs, t, size, 1.35, color, FontWeight::SEMIBOLD))
                 .into_any_element()
@@ -1757,7 +1757,7 @@ fn render_block(b: &MdBlock, depth: usize, t: &Theme, streaming: bool, color: u3
         MdBlock::Quote { blocks } => div()
             .w_full()
             .border_l_3()
-            .border_color(rgb(crate::theme::mix_rgb(t.border, t.text_muted, 0.75)))
+            .border_color(rgb(crate::appearance::theme::mix_rgb(t.border, t.text_muted, 0.75)))
             .rounded_r(px(6.))
             .bg(rgba(t.bg_subtle))
             .px(px(11.))
@@ -1787,7 +1787,7 @@ fn render_block(b: &MdBlock, depth: usize, t: &Theme, streaming: bool, color: u3
                 .text_size(px(active_md_spec().size))
                 .line_height(relative(1.7))
                 .font_weight(FontWeight::SEMIBOLD)
-                .text_color(rgb(crate::theme::mix_rgb(t.accent, t.text_muted, 0.72)));
+                .text_color(rgb(crate::appearance::theme::mix_rgb(t.accent, t.text_muted, 0.72)));
             let marker_el: AnyElement = match task {
                 // c12: 任务项 marker = 14px 复选框（选中 = accent 10% 淡底 +
                 // 55% 边框 + accent 对勾，pi-web :checked 规则）；top:0.35em
@@ -1802,12 +1802,12 @@ fn render_block(b: &MdBlock, depth: usize, t: &Theme, streaming: bool, color: u3
                             .rounded(px(4.))
                             .border_1()
                             .border_color(rgb(if checked {
-                                crate::theme::mix_rgb(t.accent, t.border, 0.55)
+                                crate::appearance::theme::mix_rgb(t.accent, t.border, 0.55)
                             } else {
                                 t.border
                             }))
                             .bg(rgb(if checked {
-                                crate::theme::mix_rgb(t.accent, t.bg, 0.10)
+                                crate::appearance::theme::mix_rgb(t.accent, t.bg, 0.10)
                             } else {
                                 t.bg
                             }))
@@ -1836,7 +1836,7 @@ fn render_block(b: &MdBlock, depth: usize, t: &Theme, streaming: bool, color: u3
                             .mt(px(((first_line - dot) / 2.).max(0.)))
                             .size(px(dot))
                             .rounded(px(dot / 2.))
-                            .bg(rgb(crate::theme::mix_rgb(t.accent, t.text_muted, 0.72))),
+                            .bg(rgb(crate::appearance::theme::mix_rgb(t.accent, t.text_muted, 0.72))),
                     )
                     .into_any_element()
                 }
@@ -2271,7 +2271,7 @@ pub fn render_doc_item(
     set_md_spec(spec);
     set_doc_mode(true);
     *IMG_BASE.lock().unwrap_or_else(|e| e.into_inner()) = base_dir.map(|p| p.to_path_buf());
-    let el = render_doc_item_inner(blocks, ix, crate::theme::theme());
+    let el = render_doc_item_inner(blocks, ix, crate::appearance::theme::theme());
     set_doc_mode(false);
     el
 }
@@ -2796,7 +2796,7 @@ hello");
     #[test]
     fn render_smoke_all_paths_both_modes() {
         let src = "# 标题\n\n正文 **bold** `code` [link](https://x.y) $E=mc^2$\n\n```rust\nfn a() {}\n```\n\n> 引用 **内粗**\n\n- [x] done\n- [ ] todo\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n---\n";
-        for t in crate::theme::ALL {
+        for t in crate::appearance::theme::ALL {
             let el = render(src, &t.1, false);
             let _ = el.into_any_element();
         }

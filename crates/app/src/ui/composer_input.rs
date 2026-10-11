@@ -20,7 +20,7 @@ use std::rc::Rc;
 use gpui::{App, Context, Entity, FocusHandle, ParentElement, Render, SharedString, Styled, Window, div, prelude::*};
 use gpui_component::input::{InputEvent, InputState, TextInput as GpInput};
 
-use crate::theme::theme as T;
+use crate::appearance::theme::theme as T;
 use gpui::{px, rgb};
 
 /// 从完整输入中拆出命令/技能 chip：`/名字 ` 或 `/名字 参数...`（命令词

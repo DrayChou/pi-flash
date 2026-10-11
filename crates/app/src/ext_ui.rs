@@ -6,10 +6,10 @@ use gpui::{MouseButton, SharedString, div, prelude::*, px, rgb};
 
 use crate::Chat;
 use crate::i18n::tr;
-use crate::theme::theme as T;
+use crate::appearance::theme::theme as T;
 
 /// One extension widget block (mono lines, pi-web widget rendering).
-pub(crate) fn render_ext_widget(lines: &[String], t: &crate::theme::Theme) -> gpui::AnyElement {
+pub(crate) fn render_ext_widget(lines: &[String], t: &crate::appearance::theme::Theme) -> gpui::AnyElement {
     let text: String = lines.join("\n");
     div()
         .w_full()

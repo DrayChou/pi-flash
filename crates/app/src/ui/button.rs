@@ -35,7 +35,7 @@ pub fn button_base(
     size: BtnSize,
     variant: BtnVariant,
 ) -> gpui::Stateful<gpui::Div> {
-    let t = crate::theme::theme();
+    let t = crate::appearance::theme::theme();
     let (h, hpad, ts) = match size {
         BtnSize::Sm => (btn::SM_H, btn::SM_PX, 11.),
         BtnSize::Md => (btn::MD_H, btn::MD_PX, 12.),
@@ -63,12 +63,12 @@ pub fn button_base(
             .text_color(rgb(t.text)),
         BtnVariant::Danger => el
             .border_1()
-            .border_color(gpui::rgba(crate::theme::danger_alpha(t, 0x59)))
+            .border_color(gpui::rgba(crate::appearance::theme::danger_alpha(t, 0x59)))
             .text_color(rgb(t.danger)),
     };
     el.cursor_pointer().hover(move |s| match variant {
         BtnVariant::Primary => s.bg(rgb(t.accent_hover)),
-        BtnVariant::Danger => s.bg(gpui::rgba(crate::theme::danger_wash(t))),
+        BtnVariant::Danger => s.bg(gpui::rgba(crate::appearance::theme::danger_wash(t))),
         BtnVariant::Secondary => s.bg(rgb(t.bg_hover)),
     })
 }

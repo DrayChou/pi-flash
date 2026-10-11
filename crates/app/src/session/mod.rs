@@ -28,7 +28,7 @@ use crate::ext_ui::render_ext_widget;
 
 use crate::Chat;
 use crate::services::format::*;
-use crate::theme::theme as T;
+use crate::appearance::theme::theme as T;
 
 pub(crate) fn main_column(
     chat: &mut Chat,
@@ -152,7 +152,7 @@ fn session_fn_bar(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyEle
         .pl(px(12.))
         .pr(px(8.))
         .border_b_1()
-        .border_color(gpui::rgba(crate::theme::border_alpha(t, 0x66)))
+        .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x66)))
         .child(fn_bar_btn(
             "sfbar-prompt",
             "file-sliders",
@@ -216,7 +216,7 @@ fn fn_bar_btn(
 }
 
 /// 功能栏钮间淡化分隔（文字竖线，text_faint 档）。
-fn fn_bar_sep(t: &'static crate::theme::Theme) -> gpui::AnyElement {
+fn fn_bar_sep(t: &'static crate::appearance::theme::Theme) -> gpui::AnyElement {
     div()
         .text_size(crate::appearance::ui_size(11.))
         .text_color(rgb(t.text_faint))
@@ -229,7 +229,7 @@ fn fn_bar_sep(t: &'static crate::theme::Theme) -> gpui::AnyElement {
 /// 永不叠进面板）；常显 0.28 透明、hover 全亮；点击滚到末条并置位贴底。
 pub(crate) fn scroll_to_bottom_button(
     weak: &gpui::WeakEntity<Chat>,
-    t: &'static crate::theme::Theme,
+    t: &'static crate::appearance::theme::Theme,
 ) -> gpui::AnyElement {
     let weak = weak.clone();
     div()
@@ -271,7 +271,7 @@ fn session_list(
     weak_for_msg: gpui::WeakEntity<Chat>,
     rt_list: gpui::ListState,
     rt_entity: gpui::Entity<crate::session::runtime::SessionRuntime>,
-    t: &'static crate::theme::Theme,
+    t: &'static crate::appearance::theme::Theme,
 ) -> gpui::AnyElement {
     // 水平边距必须挂外层容器：gpui List 的 prepaint 只应用 padding.top/
     // bottom（item_origin = bounds.origin + (0, padding.top)），左右 padding
@@ -492,7 +492,7 @@ fn nav_gutter(
     chat: &mut Chat,
     rt_entity: gpui::Entity<crate::session::runtime::SessionRuntime>,
     weak: gpui::WeakEntity<Chat>,
-    t: &'static crate::theme::Theme,
+    t: &'static crate::appearance::theme::Theme,
     cx: &mut gpui::Context<Chat>,
 ) -> gpui::AnyElement {
     // 摘要读 runtime 缓存（v63-3：notify_list 置脏、惰性重建，渲染帧
@@ -597,7 +597,7 @@ fn nav_gutter(
             .px(px(14.))
             .border_b_1()
             // 分隔线与面板左边框同档（0x40 太淡看不出）
-            .border_color(gpui::rgba(crate::theme::border_alpha(t, 0x80)))
+            .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x80)))
             .bg(rgb(t.bg))
             .text_size(crate::appearance::ui_size(11.))
             .text_color(rgb(t.text_dim))
@@ -623,7 +623,7 @@ fn nav_gutter(
             .flex_col()
             .bg(rgb(t.bg))
             .border_l_1()
-            .border_color(gpui::rgba(crate::theme::border_alpha(t, 0x80)))
+            .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x80)))
             // 水平 padding 必须挂外层容器：gpui List 的 prepaint 只应用
             // 条目的 padding.top/bottom，左右 padding 对条目完全无效
             //（session_list 同款结论）
@@ -784,7 +784,7 @@ fn nav_card(
     on: bool,
     weak: &gpui::WeakEntity<Chat>,
     rt_entity: &gpui::Entity<crate::session::runtime::SessionRuntime>,
-    t: &'static crate::theme::Theme,
+    t: &'static crate::appearance::theme::Theme,
 ) -> gpui::AnyElement {
     let no = format!("{:02}", ti + 1);
     let chars = s.user_prefix.clone();
@@ -896,7 +896,7 @@ fn nav_card(
 }
 
 /// Extension setWidget rows above/below the composer (ext protocol surface).
-fn ext_widget_rows(chat: &Chat, t: &'static crate::theme::Theme, above: bool) -> Option<gpui::AnyElement> {
+fn ext_widget_rows(chat: &Chat, t: &'static crate::appearance::theme::Theme, above: bool) -> Option<gpui::AnyElement> {
     let rows: Vec<gpui::AnyElement> = chat
         .ext_widgets
         .iter()
@@ -916,7 +916,7 @@ fn ext_widget_rows(chat: &Chat, t: &'static crate::theme::Theme, above: bool) ->
 }
 
 /// 相位行文本（pi-web：13px text_muted，1.5s 透明度脉冲）。
-fn phase_pulse(label: String, t: &crate::theme::Theme) -> gpui::AnyElement {
+fn phase_pulse(label: String, t: &crate::appearance::theme::Theme) -> gpui::AnyElement {
     div()
         .text_size(crate::appearance::ui_size(13.))
         .text_color(rgb(t.text_muted))

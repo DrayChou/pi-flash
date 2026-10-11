@@ -191,7 +191,7 @@ impl Element for ScrollbarElement {
         let Some(layout) = prepaint.take() else {
             return;
         };
-        let t = crate::theme::theme();
+        let t = crate::appearance::theme::theme();
         let parent_hovered = self.always_visible
             || (self.state.parent_hovered.get() && layout.parent_hitbox.is_hovered(window));
 
