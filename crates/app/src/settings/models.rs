@@ -1194,3 +1194,98 @@ impl Chat {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// 目录与可用模型方法（P3 自 main.rs impl Chat 拆入）
+// ---------------------------------------------------------------------------
+
+impl Chat {
+    /// 一个项目的模型目录（010-启动.md §7）：**进程答案优先**（`models_by_cwd`
+    /// 有该 cwd 的非空条目 → 用它），否则回落启动装载的全局清单（磁盘 ∪ 自有缓存）——
+    /// 于是 lazy draft / 冷启动也有清单，不再出现「选择模型」「no models match」。
+    /// 042【移除】墓碑在此统一过滤（composer 模型菜单 / 设置列表 / 新会话
+    /// 默认回落 / remote /模型 全走本口）——移除只删 PF 账本与凭据，pi 侧
+    /// 目录缓存与 auth.json 不归 PF 管，数据面原样保留、展示层除名。
+    pub(crate) fn catalog_for(&self, cwd: &std::path::Path) -> Vec<pi_link::protocol::ModelInfo> {
+        let raw = self
+            .models_by_cwd
+            .get(&cwd.to_string_lossy().to_string())
+            .map(|v| v.as_slice())
+            .filter(|v| !v.is_empty())
+            .unwrap_or(self.globals.models.as_slice());
+        let removed = crate::services::workspace::removed_providers();
+        raw.iter()
+            .filter(|m| !removed.iter().any(|p| p == &m.provider))
+            .cloned()
+            .collect()
+    }
+
+    /// 「获取模型」落盘后刷新内存目录：该 provider 的条目整体以磁盘现读为
+    /// 准（实拉目录替换 models-store 陈旧缓存），其余 provider 不动；其他
+    /// 商的进程答案/RPC 清单原样保留。
+    pub(crate) fn refresh_provider_catalog(&mut self, provider: &str) {
+        let fresh = pi_link::catalog::disk_models();
+        let mut g: Vec<_> = self
+            .globals
+            .models
+            .iter()
+            .filter(|m| m.provider != provider)
+            .cloned()
+            .collect();
+        g.extend(fresh.iter().cloned());
+        self.globals.models = pi_link::catalog::dedupe(g);
+        let cwd_key = self.cwd.to_string_lossy().to_string();
+        let mut m: Vec<_> = self
+            .models_by_cwd
+            .remove(&cwd_key)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|x| x.provider != provider)
+            .collect();
+        m.extend(fresh);
+        self.models_by_cwd.insert(cwd_key, pi_link::catalog::dedupe(m));
+    }
+
+    /// Picker fallback: catalog entry for the active session's cwd is empty →
+    /// ask once through a live runtime of the SAME cwd (the response flows
+    /// back via its pump into models_by_cwd). Never spawns a process for
+    /// this — model selection must not conjure session processes.
+    pub(crate) fn ensure_models_requested(&mut self, cx: &mut Context<Self>) {
+        let active = self.rt();
+        let (cwd_key, has_session) = {
+            let r = active.read(cx);
+            (
+                r.cwd.to_string_lossy().to_string(),
+                r.agent.session.is_some(),
+            )
+        };
+        if self
+            .models_by_cwd
+            .get(&cwd_key)
+            .is_some_and(|v| !v.is_empty())
+        {
+            return;
+        }
+        if has_session {
+            active.update(cx, |r, _| {
+                if let Some(s) = r.agent.session.as_ref() {
+                    let _ = s.send(&pi_link::protocol::Command::GetAvailableModels);
+                }
+            });
+            return;
+        }
+        // active is a draft: any other live runtime of the same cwd answers too
+        for (_, rt) in &self.runtimes {
+            let r = rt.read(cx);
+            if r.cwd.to_string_lossy().to_string() == cwd_key
+                && r.agent.session.is_some()
+            {
+                if let Some(s) = r.agent.session.as_ref() {
+                    let _ = s.send(&pi_link::protocol::Command::GetAvailableModels);
+                }
+                return;
+            }
+        }
+    }
+
+}

@@ -54,6 +54,7 @@
 //!   （否则用户关掉的 MCP 会被这一档强行打开）。
 
 use std::path::{Path, PathBuf};
+use crate::*;
 
 /// app 随包分发的激活脚本（编译进二进制；dev 直接读工作区源文件）。
 const FULL_ACTIVATE_TS: &str = include_str!("../../assets/full_activate.ts");
@@ -282,6 +283,37 @@ mod tests {
         assert_eq!(out[3], "git:github.com/x/y@v1");
         assert_eq!(out[4], "C:/u/.pi/agent/extensions/pi-notify.ts");
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+}
+
+impl Chat {
+    pub(crate) fn mc_set_tools_preset(&mut self, key: &str, cx: &mut Context<Self>) {
+        // 工具预设是 spawn 参数（`--tools` / `--no-tools`），换它必须重绑会话
+        // 进程（kill + 新开）+ 整表重读：运行中换会把正在跑的这一轮直接掐掉，
+        // 顺便让「等待模型响应」掉回屏底。UI 已置灰，这里是绕过 UI 的兜底。
+        if self.rt().read(cx).agent_running {
+            self.set_status(crate::i18n::tr("运行中不能更换工具预设").to_string(), cx);
+            return;
+        }
+        let rt = self.rt();
+        rt.update(cx, |r, cx| {
+            r.tools_preset = key.to_string();
+            if let Some(rx) = r.spawn() {
+                let epoch = r.agent.epoch;
+                session::runtime::SessionRuntime::attach_pump(&rt, rx, epoch, cx);
+            }
+            if let Some(s) = &r.agent.session {
+                let _ = s.send(&Command::GetMessages);
+            }
+            r.refresh_anchors();
+            r.refresh_state();
+            // 状态行与胶囊同文案（full+）
+            let label = r.tool_preset_label();
+            r.status = crate::i18n::tf("工具预设: {k} (会话进程已重绑)", &[("k", label)]);
+            cx.emit(session::runtime::SessionEvent::Changed);
+        });
+        cx.notify();
     }
 
 }

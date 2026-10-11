@@ -1664,3 +1664,61 @@ impl Chat {
     }
 
 }
+
+impl Chat {
+    pub(crate) fn on_term_event(
+        &mut self,
+        tab_id: usize,
+        event: alacritty_terminal::event::Event,
+        cx: &mut Context<Self>,
+    ) {
+        use alacritty_terminal::event_loop::Msg;
+        let Some(tab) = self.terminals.iter_mut().find(|t| t.id == tab_id) else {
+            return;
+        };
+        match event {
+            alacritty_terminal::event::Event::Wakeup => {
+                cx.notify();
+            }
+            alacritty_terminal::event::Event::PtyWrite(s) => {
+                let _ = tab.pty.send(Msg::Input(s.into_bytes().into()));
+            }
+            alacritty_terminal::event::Event::ClipboardStore(_, text) => {
+                cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
+            }
+            alacritty_terminal::event::Event::ClipboardLoad(_, fmt) => {
+                let text = cx
+                    .read_from_clipboard()
+                    .and_then(|i| i.text())
+                    .unwrap_or_default();
+                let _ = tab.pty.send(Msg::Input(fmt(&text).into_bytes().into()));
+            }
+            alacritty_terminal::event::Event::ColorRequest(i, fmt) => {
+                let _ = tab
+                    .pty
+                    .send(Msg::Input(fmt(terminal::term_rgb(i)).into_bytes().into()));
+            }
+            alacritty_terminal::event::Event::TextAreaSizeRequest(fmt) => {
+                let ws = alacritty_terminal::event::WindowSize {
+                    num_cols: tab.cols as u16,
+                    num_lines: tab.rows as u16,
+                    cell_width: tab.cell_w as u16,
+                    cell_height: tab.line_h as u16,
+                };
+                let _ = tab.pty.send(Msg::Input(fmt(ws).into_bytes().into()));
+            }
+            alacritty_terminal::event::Event::ChildExit(status) => {
+                tab.status = TermStatus::Exited(status.code());
+                cx.notify();
+            }
+            alacritty_terminal::event::Event::Exit => {
+                if tab.status == TermStatus::Ready {
+                    tab.status = TermStatus::Exited(None);
+                }
+                cx.notify();
+            }
+            _ => {}
+        }
+    }
+
+}

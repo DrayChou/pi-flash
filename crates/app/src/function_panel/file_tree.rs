@@ -27,6 +27,7 @@ use crate::services::file_icons;
 use crate::services::file_tree::TreeRow;
 use crate::appearance::theme;
 use crate::ui::{VListHeight, icon_path, vlist};
+use crate::*;
 
 /// 行高（pi-web FileExplorer 24px 行）。
 const ROW_H: f32 = 24.;
@@ -1174,4 +1175,67 @@ mod sticky_tests {
         assert_eq!(ancestor_chain(&rows, 5), vec![0, 4]);
         assert_eq!(ancestor_chain(&rows, 3), vec![0, 1, 2]);
     }
+}
+
+// ---------------------------------------------------------------------------
+// 文件树与 fs 监听方法（P3 自 main.rs impl Chat 拆入）
+// ---------------------------------------------------------------------------
+
+impl Chat {
+    /// 文件树展平缓存重建（services::file_tree::flatten：每展开目录读一次
+    /// 盘 + gitignore 过滤 + Zed 语义排序 + git 徽标回填）。展开/折叠、
+    /// git 刷新、fs 事件、切项目后都走这里。
+    pub(crate) fn rebuild_tree(&mut self) {
+        self.tree_rows = std::sync::Arc::new(if self.changes_only {
+            // 「只看变更」= 扁平表直接吃 git status 结果（不扫盘）
+            services::file_tree::flatten_changes(&self.cwd, &self.git_files)
+        } else {
+            services::file_tree::flatten(&self.cwd, &self.expanded_dirs, &self.git_files)
+        });
+    }
+
+    /// 挂上 fs watcher（递归 watch cwd；旧句柄 drop 即解除）。切项目时
+    /// 重挂。事件由 startup::spawn_fs_watch_pump 合批后驱动 refresh_git。
+    pub(crate) fn attach_fs_watch(&mut self) {
+        self.fs_watch = services::watcher::watch(&self.cwd, self.fs_watch_tx.clone()).ok();
+    }
+
+    /// 023 外部改动检测的监听面维护（对齐 Zed 的 worktree 监听面）：
+    /// - cwd 内文件：cwd 的**递归** watch 已覆盖；
+    /// - cwd 外文件（Obsidian 库 / pick_open_files / 远程 FILE_OPEN）：此前
+    ///   完全没监听——磁盘怎么改都没有信号，编辑器不跟随。现按**所在目录**
+    ///   挂非递归 watch（Zed single-file worktree 同款），事件与 cwd 事件
+    ///   走同一条通道合批，`check_external_file_changes` 按 disk_sig 复查。
+    ///
+    /// 打开/关闭文件 tab、切项目后调用；不再被任何打开文件需要的目录卸掉
+    /// （句柄 drop = 停止监听），避免长期持有无关目录的监听。
+    pub(crate) fn retain_file_watches(&mut self) {
+        let mut wanted: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+        for t in &self.panel_tabs {
+            if let PanelTab::File(p) = t
+                && let Some(dir) = p.parent()
+                && !services::workspace::is_under(dir, &self.cwd)
+            {
+                wanted.insert(dir.to_path_buf());
+            }
+        }
+        self.file_watches.retain(|dir, _| wanted.contains(dir));
+        for dir in wanted {
+            if self.file_watches.contains_key(&dir) {
+                continue;
+            }
+            if let Ok(w) = services::watcher::watch_dir(&dir, self.fs_watch_tx.clone()) {
+                self.file_watches.insert(dir, w);
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // built-in terminal (pi-web TerminalPanel parity)
+    // -----------------------------------------------------------------------
+
+    pub(crate) fn load_project_files(&mut self) {
+        self.project_files = walk_files(&self.cwd, 3, 400);
+    }
+
 }

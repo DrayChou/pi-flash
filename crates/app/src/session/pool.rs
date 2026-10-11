@@ -444,3 +444,140 @@ impl Chat {
     }
 
 }
+
+// ---------------------------------------------------------------------------
+// 会话池方法：刷新/切换/活跃态/上下文/标题（P3 自 main.rs impl Chat 拆入）
+// ---------------------------------------------------------------------------
+
+impl Chat {
+    pub(crate) fn refresh_state(&self, cx: &mut gpui::App) {
+        self.rt().update(cx, |r, _| r.refresh_state());
+    }
+
+    pub(crate) fn refresh_sessions(&mut self) {
+        let cwd = self.cwd.to_string_lossy().to_string();
+        let full = list_sessions_for_cwd(&cwd, 500)
+            .into_iter()
+            .filter(|s| same_ws(&s.cwd, &cwd))
+            .collect::<Vec<_>>();
+        // v60: 加载语义 = 时间窗口（设置.加载时间窗口）——当前项目只保留
+        // 窗口内活跃的会话（mtime 近似清单 last_active）+ 当前激活会话
+        // 兜底（保证改名/打开的旧会话始终可见）；显示量由 psp 分页控制
+        let cutoff = std::time::SystemTime::now()
+            - std::time::Duration::from_secs(load_window_days() * 86_400);
+        let mut sessions: Vec<SessionInfo> = full
+            .iter()
+            .filter(|s| s.modified >= cutoff)
+            .cloned()
+            .collect();
+        if let Some(active) = &self.active_file {
+            if !sessions.iter().any(|s| &s.path == active) {
+                if let Some(info) = full.iter().find(|s| &s.path == active) {
+                    sessions.push(info.clone());
+                }
+            }
+        }
+        self.sessions = sessions;
+        // sync the current project's group, then re-pin project order
+        let all: Vec<SessionInfo> = self
+            .projects
+            .iter()
+            .flat_map(|g| {
+                if same_ws(&g.path.to_string_lossy(), &cwd) {
+                    self.sessions.clone()
+                } else {
+                    g.sessions.clone()
+                }
+            })
+            .collect();
+        self.rebuild_projects(all);
+    }
+
+    pub(crate) fn switch_project(&mut self, cwd: PathBuf, cx: &mut Context<Self>) {
+        self.cwd = cwd;
+        // mark as the globally-last active workspace for startup restore
+        set_last_workspace(&self.cwd.to_string_lossy());
+        self.branch = read_branch(&self.cwd);
+        self.refresh_sessions();
+        self.dialog = None;
+        self.expanded_dirs.clear();
+        // 文件树：根项目行默认展开
+        self.expanded_dirs.insert(self.cwd.clone());
+        self.refresh_git();
+        self.load_project_files();
+        self.attach_fs_watch();
+        // cwd 变了：cwd 外单文件监听面跟着重算（旧 cwd 下的文件现在要单挂）
+        self.retain_file_watches();
+        if let Some(p) = get_last_open(&self.cwd.to_string_lossy()) {
+            let path = PathBuf::from(&p);
+            if path.exists() {
+                self.open_session(path, false, cx);
+                cx.notify();
+                return;
+            }
+        }
+        self.new_session(cx);
+        cx.notify();
+    }
+
+    pub(crate) fn rt(&self) -> gpui::Entity<session::runtime::SessionRuntime> {
+        self.runtimes
+            .get(&self.active_key)
+            .expect("active runtime exists")
+            .clone()
+    }
+
+    /// 「其他」页提示音开关 → 全池广播。轮末提示音归 runtime 职责，每个常驻
+    /// runtime 各持一份副本，所以新开关必须扇出到**所有** runtime 而不只是活跃
+    /// 那个——后台会话同样会跑 agent、同样需要提示。
+    pub(crate) fn broadcast_sound_on(&self, on: bool, cx: &mut Context<Self>) {
+        for (_, rt) in &self.runtimes {
+            rt.update(cx, |r, _| r.sound_on = on);
+        }
+    }
+
+    /// 当前项目的上下文（010-启动.md §5）：命中启动装载的集合就直接返回，
+    /// 未命中（新打开的项目）用同一个装载函数现算一次并纳入集合。
+    pub(crate) fn project_ctx_now(&mut self) -> startup::ProjectCtx {
+        let key = self.cwd.to_string_lossy().to_string();
+        if let Some(ctx) = self.project_ctx.get(&key) {
+            return ctx.clone();
+        }
+        let ctx = startup::load_project(&self.cwd.clone());
+        self.project_ctx.insert(key, ctx.clone());
+        ctx
+    }
+
+    /// 当前会话标题（topbar 会话视图展示；≤30 字截断）。优先 pi 会话名，
+    /// 回落首条用户消息。
+    pub(crate) fn session_title(&self, cx: &gpui::App) -> String {
+        let file = self
+            .runtimes
+            .get(&self.active_key)
+            .and_then(|rt| rt.read(cx).file.clone());
+        let raw = file
+            .and_then(|f| {
+                self.projects
+                    .iter()
+                    .flat_map(|g| &g.sessions)
+                    .find(|s| same_path(&s.path, &f))
+                    .and_then(|s| {
+                        s.name
+                            .clone()
+                            .filter(|n| !n.trim().is_empty())
+                            .or_else(|| {
+                                Some(s.preview.clone()).filter(|p| !p.trim().is_empty())
+                            })
+                    })
+            })
+            .unwrap_or_else(|| tr("新会话").to_string());
+        // 首行 + ≤30 字
+        let first_line = raw.lines().next().unwrap_or("").trim().to_string();
+        let mut out: String = first_line.chars().take(30).collect();
+        if first_line.chars().count() > 30 {
+            out.push('…');
+        }
+        out
+    }
+
+}

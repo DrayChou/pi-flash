@@ -1,0 +1,685 @@
+//! Chat 实体本体（P3 自 main.rs 拆出）：155 字段的全应用状态 + 构造器
+//! （new 含全部字段初始化与各泵启动）+ 跨域小 setter（set_status/
+//! set_content_view）+ 焦点仲裁辅助（file_editor_focus）与 Focusable。
+//! 域方法住各领域文件（session/pool、session/input、editor/tabs……共
+//! 28 个外部 impl Chat 块）。
+
+use crate::*;
+
+
+pub(crate) struct Chat {
+    pub(crate) focus: FocusHandle,
+    pub(crate) dialog_focus: FocusHandle,
+    pub(crate) dialog: Option<Dialog>,
+    pub(crate) dock_panel: DockPanel,
+    pub(crate) input: String,
+    pub(crate) pending_images: Vec<AttachedImage>,
+    pub(crate) history: Vec<String>,
+    pub(crate) history_ix: Option<usize>,
+    pub(crate) session_tail_cache: std::collections::HashMap<PathBuf, Vec<Msg>>,
+    pub(crate) sessions: Vec<SessionInfo>,
+    pub(crate) cwd: PathBuf,
+    pub(crate) branch: String,
+    /// model catalog keyed by cwd — **进程答案覆盖层**（010-启动.md §7）：活着的
+    /// runtime 的 RPC `get_available_models` 答复写这里（项目级差异），无进程时
+    /// 消费方回落 `globals.models`（启动时从磁盘 ∪ 自有缓存装载）。
+    pub(crate) models_by_cwd: std::collections::HashMap<String, Vec<pi_link::protocol::ModelInfo>>,
+    /// 启动装载的全局态（模型清单 / 命令 / 默认项 / 插件 / 全局 mcp）：渲染只读，
+    /// 不再扫盘也不发 RPC（010-启动.md §1、§7）。
+    pub(crate) globals: startup::Globals,
+    /// 项目上下文（启动集合内逐项目装载；切项目命中即零扫盘，见 §5）。
+    pub(crate) project_ctx: std::collections::HashMap<String, startup::ProjectCtx>,
+    pub(crate) runtimes: std::collections::HashMap<String, gpui::Entity<session::runtime::SessionRuntime>>,
+    pub(crate) active_key: String,
+    /// 010-启动：启动页闸门；揭幕帧由 pending_zoom 补 §4 最大化
+    pub(crate) booted: bool,
+    pub(crate) pending_zoom: bool,
+    /// 040 延迟加载：扩展/技能说明 token 数（source → 测量值；启动时读缓存，
+    /// 揭幕后后台探针刷新）。source 缺项 = 尚未测得（UI 显示「—」）
+    pub(crate) ext_tokens: std::collections::HashMap<String, services::token_probe::TokenEntry>,
+    pub(crate) draft_seq: usize,
+    pub(crate) menu_ix: usize,
+    /// / 菜单滚动句柄（按键选中 scroll_to_item 行跟随；输入变化回顶）
+    pub(crate) menu_scroll: gpui::ScrollHandle,
+    /// 斜杠/@ 菜单被点外收起（active_menu 据此返回 None；改输入即复位）
+    pub(crate) menu_dismissed: bool,
+    pub(crate) term_events: Option<futures::channel::mpsc::UnboundedSender<(usize, alacritty_terminal::event::Event)>>,
+    pub(crate) op_tx: Option<futures::channel::mpsc::UnboundedSender<String>>,
+    // editor view state（输入组件实体在 composer 首次渲染时惰性创建；
+    // 真输入框 = gpui-component InputState，光标/选区/IME/滚动条全内置）
+    pub(crate) composer: Option<gpui::Entity<ComposerInput>>,
+    /// 技能展开消息的展开态（key = entry_id 或序号键）
+    pub(crate) expanded_skills: std::collections::HashSet<String>,
+    /// 消息气泡滚动句柄（key 同 expanded_skills；跨帧保持滚动位置并供
+    /// gpui-component Scrollbar 读取）
+    pub(crate) bubble_scrolls: std::rc::Rc<std::cell::RefCell<
+        std::collections::HashMap<String, gpui::ScrollHandle>,
+    >>,
+    /// 操作栏悬停态（pi-web onMouseEnter/Leave parity，状态驱动而非
+    /// group_hover）：用户消息行与 agent 轮块**共用**这一个字段，值是行在
+    /// 列表里的索引（用户行 = msg_ix，agent 轮 = 轮首 msg_ix；角色不同故
+    /// 永不撞车）。唯一写入点 = messages::bar_hover_wired。
+    pub bar_hover: Option<usize>,
+    pub(crate) input_focused: bool,
+    // inline rename (active session)
+    pub(crate) renaming: Option<PathBuf>,
+    pub(crate) rename_input: Option<gpui::Entity<TextInput>>,
+    pub(crate) confirm_delete: Option<PathBuf>,
+    // session content search (013): dialog query input + background results
+    pub(crate) search_hits: Vec<pi_link::sessions::SearchHit>,
+    pub(crate) search_truncated: bool,
+    pub(crate) search_running: bool,
+    pub(crate) search_needle: String,
+    pub(crate) search_gen: u64,
+    pub(crate) pending_locate: Option<(PathBuf, Option<i64>, String)>,
+    // shell surfaces
+    pub(crate) pill_menu: Option<PillMenu>,
+    /// 「full+」档的扩展选择面板（勾选即生效；滚动位跨帧复用）
+    pub(crate) plugin_picker: Option<crate::session::plugin_picker::PluginPicker>,
+    /// MCP 勾选菜单（043：全局 mcp.json 无条目时按钮不渲染，菜单自然不开）
+    pub(crate) mcp_picker: Option<crate::session::mcp_picker::McpPicker>,
+    /// 打开弹窗的那个按钮的锚点（水平中点 + 顶缘）——inputpanel 全部弹窗
+    /// 统一定位：与按钮居中、距 5px、不遮按钮（用户定稿）
+    pub(crate) pill_anchor: Option<PillAnchor>,
+    /// 三个胶囊按钮的 paint 期 bounds（canvas 捕获，跨帧槽位）
+    pub(crate) pill_btn: PillBtns,
+    /// ctx-ring 悬浮详情（v58 响应式）：环/面板两面悬停标志 + 淡出起始
+    /// 时刻（input.rs ctx_tip_hover 状态机持有）
+    pub(crate) ctx_tip_ring_hover: bool,
+    pub(crate) ctx_tip_panel_hover: bool,
+    pub(crate) ctx_tip_closing: Option<std::time::Instant>,
+    // git panel
+    pub(crate) git_files: Vec<GitFile>,
+    pub(crate) git_add_del: (u64, u64),
+    pub(crate) git_selected: Option<PathBuf>,
+    pub(crate) git_tab: function_panel::git_panel::GitTab,
+    pub(crate) git_log: Vec<GitCommit>,
+    pub(crate) git_error: Option<String>,
+    pub(crate) git_commit_input: gpui::Entity<TextInput>,
+    // workspace / project files
+    pub(crate) project_files: Vec<String>,
+    /// @ 文件索引缓存（key = cwd 字符串；031 输入面板）
+    pub(crate) at_index: std::collections::HashMap<String, AtIndexState>,
+    /// @ 菜单过滤结果记忆化（menu_items 渲染期是 &self，走 RefCell 内部
+    /// 可变性，先例 bubble_scrolls；见 AtFilterCache）
+    pub(crate) at_filter_cache: std::cell::RefCell<Option<AtFilterCache>>,
+    pub(crate) expanded_dirs: HashSet<PathBuf>,
+    /// 文件树展平缓存（services::file_tree::flatten；渲染只读这份，
+    /// 重建点 = 展开/折叠、git 刷新、fs 事件、切项目）。
+    pub(crate) tree_rows: std::sync::Arc<Vec<services::file_tree::TreeRow>>,
+    pub(crate) file_cache: std::collections::HashMap<PathBuf, FileTab>,
+    // fs watch（services::watcher）：tx 永驻（每次挂 watch clone 一份），
+    // rx 被 startup 的泵取走；watcher 句柄 drop 即解除监听。
+    pub(crate) fs_watch_tx: std::sync::mpsc::Sender<()>,
+    pub(crate) fs_watch_rx: Option<std::sync::mpsc::Receiver<()>>,
+    pub(crate) fs_watch: Option<services::watcher::FsWatcher>,
+    /// 023：**cwd 外**打开文件的单文件监听（key = 文件所在目录，非递归）。
+    /// Zed 对不在任何 worktree 里的文件建 single-file worktree（只监听其
+    /// 所在目录）同款；事件走同一条 fs 通道。打开/关闭/切项目后由
+    /// `retain_file_watches` 重算，不再被需要的目录即卸载。
+    pub(crate) file_watches: std::collections::HashMap<PathBuf, services::watcher::FsWatcher>,
+    // terminals (content-area tabs)
+    pub(crate) terminals: Vec<TerminalTab>,
+    pub(crate) active_terminal: Option<usize>,
+    pub(crate) term_seq: usize,
+    /// caret-blink heartbeat phase (1Hz, term_cursor task) + paint-time
+    /// "a focused terminal is on screen" flag that gates the heartbeat
+    pub(crate) term_cursor_on: bool,
+    pub(crate) term_cursor_focused: bool,
+    pub(crate) panel_tabs: Vec<PanelTab>,
+    pub(crate) active_panel_tab: Option<usize>,
+    // 023 fileView：菜单与面包屑兄弟菜单的弹层状态
+    pub(crate) crumb_menu_dir: Option<PathBuf>,
+    pub(crate) crumb_dd: gpui::Entity<crate::ui::DropdownState>,
+    // TEMP 探针（023 调试）：外部改动检测 运行数/命中数
+    pub(crate) ext_probe: (u32, u32),
+    /// 023：打开文件后待聚焦的编辑器（Zed 行为：开文件即聚焦；渲染帧
+    /// 编辑器实体就绪后消费）
+    pub(crate) pending_focus_file: Option<PathBuf>,
+    // settings panel data
+    pub(crate) mc_patterns: Option<Vec<String>>,
+    pub(crate) mc_state: EnabledState,
+    pub(crate) mc_creds: Vec<(String, pi_link::config::CredentialKind)>,
+    pub(crate) mc_project_scope: bool,
+    /// settings.json defaults a new session starts with (pi-web /api/models
+    /// `defaultModel` + `defaultThinkingLevel`; selectInitialModelScope inputs)
+    pub(crate) mc_default_model: Option<(String, String)>,
+    pub(crate) mc_default_thinking: Option<String>,
+    /// settings.modelThinkingLevels — per-`provider/modelId` recorded levels
+    pub(crate) mc_model_thinking: Vec<(String, String)>,
+    pub(crate) mc_skills: Vec<pi_link::skills::SkillEntry>,
+    pub(crate) mc_pkgs_global: Vec<serde_json::Value>,
+    pub(crate) mc_pkgs_project: Vec<serde_json::Value>,
+    /// 扩展页 CLI op（install/remove）进行中：转圈按 op 种类落按钮；op 泵
+    /// 收到完成消息即清零（泵同时重读 globals + 刷新列表面板）
+    pub(crate) pkg_op: Option<PkgOp>,
+    /// 卸载确认浮层（040：点垃圾桶先确认）：待卸载来源
+    pub(crate) pkg_confirm_remove: Option<String>,
+    pub(crate) mc_default_tools: Option<Vec<String>>,
+    /// models.json 编辑缓冲（设置·模型页；表单头保存即写盘，无页面级 footer）
+    pub(crate) mc_models_json: serde_json::Value,
+    pub(crate) mc_mj_error: Option<String>,
+    /// 042：provider 通路探查状态（保存 key 后自动一次 + 详情页手动重试）
+    pub(crate) mc_probe: std::collections::HashMap<String, McProbe>,
+    /// 042 新增 Provider 弹窗的全量注册表（registry.rs dump；None = 未加载）
+    pub(crate) provider_registry: Option<std::sync::Arc<pi_link::registry::RegistryDump>>,
+    /// dump 拉取状态（Idle = 待拉/可拉，Loading = 后台进行中，Failed = 上次失败）
+    pub(crate) registry_state: crate::session::model_picker::RegistryState,
+    /// 042：【移除】内置商的确认弹窗（provider id；None = 没开）
+    pub(crate) mc_remove_confirm: Option<String>,
+    /// 042：inputpanel 模型菜单（锚定 pill 卡片，替代原居中 ModelSelect 弹窗）
+    pub(crate) model_picker: Option<crate::session::model_picker::ModelPicker>,
+    /// mcp.json 全局 + 项目服务器（设置·MCP 页）
+    pub(crate) mcp_servers: Vec<pi_link::mcp::ServerEntry>,
+    pub(crate) mcp_errors: Vec<String>,
+    // extension UI surface (active session)
+    pub(crate) ext_status: Vec<(String, String)>,
+    pub(crate) ext_widgets: Vec<(String, Vec<String>, bool)>,
+    pub(crate) ext_dialog: Option<pi_link::protocol::ExtensionUiRequest>,
+    pub(crate) ext_input: gpui::Entity<TextInput>,
+    pub(crate) ext_notice: Option<(String, u8)>,
+    pub(crate) settings: Option<gpui::Entity<settings::SettingsPanel>>,
+    /// 081 自动更新状态（新会话页 inputpanel 右下版本号位消费）
+    pub(crate) update: services::updater::UpdateState,
+    /// 081 更新日志 tab 数据（新版本首启自动打开；None = 无页）
+    pub(crate) changelog: Option<services::updater::ChangelogPage>,
+    /// 更新日志页滚动句柄
+    pub(crate) changelog_scroll: gpui::ScrollHandle,
+    // ---- v54 shell state ----
+    /// psp 项目组（当前项目钉顶，其余按最近会话倒序；启动只加载
+    /// 设置.默认加载会话数 N 个会话，组由这批会话的 cwd 自然形成）
+    pub(crate) projects: Vec<ProjectGroup>,
+    /// 004 打开项目菜单：最近 30 天活动项目（弹窗打开时后台扫描回填）
+    pub(crate) project_hits: Vec<ProjectEntry>,
+    /// 004 打开项目菜单的搜索词（输入框 on_change 镜像）
+    pub(crate) project_filter: String,
+    /// 当前活跃会话文件（psp 选中态；switch_to 时更新）
+    pub(crate) active_file: Option<PathBuf>,
+    pub(crate) list_mode: ListMode,
+    pub(crate) sort_mode: SortMode,
+    pub(crate) collapsed_keys: HashSet<String>,
+    /// psp 分页：每组已展开的会话数（「显示更多」每次 +10；
+    /// key = 组 ws_key，Flat 模式 = "__flat__"）
+    pub(crate) psp_shown: std::collections::HashMap<String, usize>,
+    pub(crate) slp_w: f32,
+    pub(crate) panes_hidden: bool,
+    pub(crate) slp_drag: Option<(f32, f32)>,
+    /// 分隔线响应区悬停（线加深加粗 + col_resize 光标已由 resizer 承担）
+    pub(crate) slp_hover: bool,
+    pub(crate) content_view: ContentView,
+    /// 浏览操作区的最后视图（Term/File）：文件树标签点击时恢复
+    pub(crate) browse_last: ContentView,
+    pub(crate) file_scrollbar: gpui_component::scroll::ScrollbarState,
+    /// 文件视图块级虚拟化（抄 zed thread_view 的 list 架构）：md 渲染预览用，
+    /// ListState 每帧只建可视块；path 记当前文件，换文件时 reset 归零滚动
+    pub(crate) file_view_list: gpui::ListState,
+    pub(crate) file_view_list_path: Option<PathBuf>,
+    /// psp 会话列表滚动（滚动条数据源）
+    pub(crate) psp_scroll: gpui::ScrollHandle,
+    pub(crate) psp_sb_state: crate::ui::psp_scrollbar::PspScrollbarState,
+    pub(crate) nav_open: bool,
+    pub(crate) nav_hide_at: Option<std::time::Instant>,
+    pub(crate) nav_flyout_hovered: bool,
+    /// flyout 内鼠标所在轮（选择框/比例尺亮点跟随鼠标）
+    pub(crate) nav_hover_turn: Option<usize>,
+    /// 导航 flyout 卡片列表虚拟化句柄（v63-6：只建可视卡片；跨开合保持
+    /// 滚动位）
+    pub(crate) nav_flyout_list: gpui::ListState,
+    /// composer 胶囊实时高度（ui::measure_height 每帧写、读到的是上一帧
+    /// 值；导航刻度条「屏高 − inputpanel/2」居中用，033）
+    pub(crate) composer_h: std::rc::Rc<std::cell::Cell<f32>>,
+    pub(crate) unread: HashSet<PathBuf>,
+    /// 出错红点（agent 结束时窗口无焦点就点亮，重新获得焦点后切入清除）——
+    /// 与 unread 同生命周期管理，区别只是颜色语义
+    pub(crate) turn_errors: HashSet<PathBuf>,
+    /// 内部中断黄点（stopReason = length/aborted：上限截断、中止）
+    pub(crate) turn_warnings: HashSet<PathBuf>,
+    /// 窗口焦点快照（render 每帧写；焦点变化本身会触发重绘所以不陈旧）。
+    /// 「agent 结束时窗口没焦点就给点」的判定依据（2026-10-10 定夺）
+    pub(crate) window_active: bool,
+    /// 微信远程控制桥（060）：transport + 待答 ExtUi 请求
+    pub(crate) remote: remote_control::RemoteControl,
+    pub(crate) hovered_project: Option<usize>,
+    pub(crate) proj_tip: Option<(PathBuf, f32, f32)>,
+    pub(crate) hover_card: Option<HoverCard>,
+    pub(crate) psp_menu: Option<PspMenu>,
+    pub(crate) confirm_prj_del: Option<(PathBuf, f32, f32)>,
+    /// 021 文件树右键菜单状态槽（渲染挂 psp_overlays 同层）
+    pub(crate) tree_menu: Option<TreeMenu>,
+    /// 021 行内新建/改名（Zed EditState 移植）：非空 = 树里有一行编辑器
+    /// （渲染挂 file_tree；焦点走主 render 焦点保持链）
+    pub(crate) tree_edit: Option<TreeEdit>,
+    /// 编辑区右键菜单（zed 式：编辑块 + 文件动作块；渲染挂 psp_overlays
+    /// 同层）。(文件路径, 鼠标 x, y)
+    pub(crate) editor_menu: Option<(PathBuf, f32, f32)>,
+    /// 021 文件树删除确认（统一 overlay::confirm；待删路径）
+    pub(crate) tree_confirm_del: Option<PathBuf>,
+    /// 删除失败持久弹层（trash Err 不再只靠状态栏一闪，用户可直接回报
+    /// 具体错误）
+    pub(crate) tree_del_error: Option<String>,
+    /// 021 操作栏「切换显示变更」：只列 git 变更文件（flatten changes_only）
+    pub(crate) changes_only: bool,
+    /// 021 文件搜索（Dialog::FileSearch）：命中（相对路径清单切片）、
+    /// 查询词镜像与扫描状态（防抖代际同 search_gen）
+    pub(crate) file_search_hits: Vec<String>,
+    pub(crate) file_search_needle: String,
+    pub(crate) file_search_gen: u64,
+    pub(crate) file_search_scanning: bool,
+    pub(crate) status_toast: Option<(String, std::time::Instant)>,
+    /// 工具定义弹窗左列表选中的工具名（pi-web ToolDefinitionsPanel 的
+    /// selectedToolName）
+    pub(crate) tool_sel: Option<String>,
+    /// 系统提示词弹窗的滚动 handle（psp 滚动条要跨渲染读同一份滚动位）
+    pub(crate) sysprompt_scroll: gpui::ScrollHandle,
+    /// 系统提示词面板各桶「调用声明」折叠块的展开态（按 SYSTEM_BUCKETS 下标）
+    pub(crate) decl_open: [bool; 7],
+}
+
+
+impl Chat {
+    pub(crate) fn new(cx: &mut Context<Self>) -> Self {
+        let focus = cx.focus_handle();
+        let dialog_focus = cx.focus_handle();
+        // PI_FLASH_CWD 显式指定优先；否则用进程 cwd——但**双击 exe 启动**
+        // （资源管理器/任务栏）时进程 cwd = exe 所在目录，构建产物目录
+        // （如 target\debug）不是项目：rebuild_projects 会把工作区钉成
+        // 常驻项目组（0 会话也显示），于是每次这样启动都凭空多出一个
+        // 「debug」空项目、删了下次启动又回来。此场景不采纳进程 cwd，
+        // 回退上次工作区（startup_restore 只管恢复上次会话，工作区仍要
+        // 有合理起点；memory 的 __last 一直有记），再兜底用户主目录。
+        let raw_cwd = std::env::var("PI_FLASH_CWD")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+        let cwd_is_exe_dir = std::env::current_exe()
+            .ok()
+            .and_then(|e| e.parent().map(|p| p.to_path_buf()))
+            .is_some_and(|exe_dir| {
+                // Windows 路径大小写不敏感（workspace.json 里 __last 就是小写盘符）
+                exe_dir.to_string_lossy().to_lowercase()
+                    == raw_cwd.to_string_lossy().to_lowercase()
+            });
+        let cwd = if cwd_is_exe_dir {
+            get_last_workspace()
+                .map(PathBuf::from)
+                .filter(|p| p.is_dir())
+                .or_else(|| {
+                    std::env::var("USERPROFILE")
+                        .or_else(|_| std::env::var("HOME"))
+                        .map(PathBuf::from)
+                        .ok()
+                })
+                .unwrap_or(raw_cwd)
+        } else {
+            raw_cwd
+        };
+        // startup restore decides workspace + last session BEFORE the first
+        // spawn — exactly one pi process (ARCHITECTURE.md §4, was two)
+        let last_ws = if startup_restore() { get_last_workspace() } else { None };
+        let target_ws = last_ws.unwrap_or_else(|| cwd.to_string_lossy().to_string());
+        let cwd = if !same_ws(&target_ws, &cwd.to_string_lossy()) {
+            let ws_path = PathBuf::from(&target_ws);
+            if ws_path.is_dir() { ws_path } else { cwd }
+        } else {
+            cwd
+        };
+        let branch = read_branch(&cwd);
+        let last_open = if startup_restore() {
+            get_last_open(&cwd.to_string_lossy())
+                .map(PathBuf::from)
+                .filter(|p| p.exists())
+        } else {
+            None
+        };
+        let ui = ui_state();
+        // fs watch 通道：tx 永驻 Chat，rx 交给 startup 的泵任务
+        let (fs_watch_tx, fs_watch_rx_ch) = std::sync::mpsc::channel::<()>();
+
+        let mut chat = Self {
+            focus,
+            dialog_focus,
+            dialog: None,
+            input: String::new(),
+            pending_images: Vec::new(),
+            session_tail_cache: std::collections::HashMap::new(),
+            sessions: Vec::new(),
+            search_hits: Vec::new(),
+            search_truncated: false,
+            search_running: false,
+            search_needle: String::new(),
+            search_gen: 0,
+            pending_locate: None,
+            // v54.4 定案：启动固定会话界面（面板/内容区绑定关系见
+            // status_bar；不恢复上次离开时的面板）
+            dock_panel: DockPanel::Sessions,
+            cwd: cwd.clone(),
+            branch,
+            runtimes: std::collections::HashMap::new(),
+            active_key: String::new(),
+            booted: false,
+            pending_zoom: false,
+            draft_seq: 0,
+            models_by_cwd: std::collections::HashMap::new(),
+            globals: startup::Globals::default(),
+            project_ctx: std::collections::HashMap::new(),
+            expanded_dirs: HashSet::new(),
+            tree_rows: std::sync::Arc::new(Vec::new()),
+            git_files: Vec::new(),
+            git_selected: None,
+            git_tab: function_panel::git_panel::GitTab::Changes,
+            git_log: Vec::new(),
+            git_error: None,
+            git_commit_input: {
+                let input = cx.new(|cx| TextInput::new(cx).placeholder(tr("提交信息（提交已暂存更改）")));
+                input
+            },
+            git_add_del: (0, 0),
+            project_files: Vec::new(),
+            at_index: std::collections::HashMap::new(),
+            at_filter_cache: std::cell::RefCell::new(None),
+            history: Vec::new(),
+            history_ix: None,
+            menu_ix: 0,
+            menu_scroll: gpui::ScrollHandle::new(),
+            menu_dismissed: false,
+            terminals: Vec::new(),
+            active_terminal: None,
+            term_seq: 0,
+            term_cursor_on: true,
+            term_cursor_focused: false,
+            term_events: None,
+            mc_patterns: None,
+            mc_state: EnabledState::default(),
+            mc_creds: Vec::new(),
+            mc_project_scope: false,
+            mc_default_model: None,
+            mc_default_thinking: None,
+            mc_model_thinking: Vec::new(),
+            mc_skills: Vec::new(),
+            mc_pkgs_global: Vec::new(),
+            mc_pkgs_project: Vec::new(),
+            pkg_op: None,
+            pkg_confirm_remove: None,
+            mc_default_tools: None,
+            mc_models_json: serde_json::json!({}),
+            mc_mj_error: None,
+            mc_probe: std::collections::HashMap::new(),
+            provider_registry: None,
+            registry_state: crate::session::model_picker::RegistryState::Idle,
+            mc_remove_confirm: None,
+            model_picker: None,
+            mcp_servers: Vec::new(),
+            mcp_errors: Vec::new(),
+            op_tx: None,
+            ext_status: Vec::new(),
+            ext_widgets: Vec::new(),
+            ext_dialog: None,
+            ext_input: cx.new(|cx| TextInput::new(cx)),
+            ext_notice: None,
+            panel_tabs: Vec::new(),
+            active_panel_tab: None,
+            file_cache: std::collections::HashMap::new(),
+            fs_watch_tx,
+            fs_watch_rx: Some(fs_watch_rx_ch),
+            fs_watch: None,
+            file_watches: std::collections::HashMap::new(),
+            composer: None,
+            expanded_skills: std::collections::HashSet::new(),
+            bubble_scrolls: std::rc::Rc::new(std::cell::RefCell::new(
+                std::collections::HashMap::new(),
+            )),
+            bar_hover: None,
+            input_focused: false,
+            pill_menu: None,
+            plugin_picker: None,
+            mcp_picker: None,
+            pill_anchor: None,
+            pill_btn: PillBtns::default(),
+            ext_tokens: services::token_probe::read_cache(),
+            ctx_tip_ring_hover: false,
+            ctx_tip_panel_hover: false,
+            ctx_tip_closing: None,
+            settings: None,
+            // 081：已有合法 staging = Ready（不花网络），否则 Idle
+            update: services::updater::initial_state(),
+            changelog: None,
+            changelog_scroll: gpui::ScrollHandle::new(),
+            renaming: None,
+            rename_input: None,
+            confirm_delete: None,
+            projects: Vec::new(),
+            project_hits: Vec::new(),
+            project_filter: String::new(),
+            active_file: last_open.clone(),
+            list_mode: if ui.list_mode == "flat" { ListMode::Flat } else { ListMode::Grouped },
+            sort_mode: if ui.sort_mode == "manual" { SortMode::Manual } else { SortMode::Time },
+            collapsed_keys: ui.collapsed.iter().cloned().collect(),
+            psp_shown: std::collections::HashMap::new(),
+            slp_w: ui.slp_w,
+            panes_hidden: ui.panes_hidden,
+            slp_drag: None,
+            slp_hover: false,
+            content_view: ContentView::Chat,
+            browse_last: ContentView::Term,
+            file_scrollbar: gpui_component::scroll::ScrollbarState::default(),
+            file_view_list: gpui::ListState::new(0, gpui::ListAlignment::Top, px(1000.)),
+            file_view_list_path: None,
+            psp_scroll: gpui::ScrollHandle::new(),
+            psp_sb_state: crate::ui::psp_scrollbar::PspScrollbarState::new(),
+            nav_open: false,
+            nav_hide_at: None,
+            nav_flyout_hovered: false,
+            nav_hover_turn: None,
+            nav_flyout_list: gpui::ListState::new(0, gpui::ListAlignment::Top, px(1000.)),
+            composer_h: std::rc::Rc::new(std::cell::Cell::new(0.)),
+            unread: HashSet::new(),
+            turn_errors: HashSet::new(),
+            turn_warnings: HashSet::new(),
+            window_active: true,
+            remote: remote_control::RemoteControl::new(),
+            hovered_project: None,
+            proj_tip: None,
+            hover_card: None,
+            psp_menu: None,
+            confirm_prj_del: None,
+            tree_menu: None,
+            tree_edit: None,
+            editor_menu: None,
+            tree_del_error: None,
+            tree_confirm_del: None,
+            changes_only: ui.tree_changes_only,
+            file_search_hits: Vec::new(),
+            file_search_needle: String::new(),
+            file_search_gen: 0,
+            file_search_scanning: false,
+            status_toast: None,
+            crumb_menu_dir: None,
+            crumb_dd: cx.new(|_| crate::ui::DropdownState::new()),
+            ext_probe: (0, 0),
+            pending_focus_file: None,
+            tool_sel: None,
+            sysprompt_scroll: gpui::ScrollHandle::new(),
+            decl_open: [false; 7],
+        };
+        // 启动阶段：全局态一次性装载（010-启动.md §1/§6）——模型清单（磁盘 ∪ 自有
+        // 缓存）、命令、默认项、插件、全局 mcp，全部先于第一帧进内存，**不 spawn 进程**。
+        chat.globals = startup::load_globals();
+        let cwd_key = chat.cwd.to_string_lossy().to_string();
+        chat.project_ctx
+            .insert(cwd_key, startup::load_project(&chat.cwd.clone()));
+        // new-session defaults (default model / thinking / enabledModels
+        // scope) before the first frame — the draft pills render from them
+        chat.reload_model_defaults();
+        // wire input callbacks that need the root entity handle
+        let weak_ext = cx.entity().downgrade();
+        chat.ext_input.update(cx, |ti, _| {
+            ti.set_on_submit(Box::new(move |v, cx| {
+                let _ = weak_ext.update(cx, |c, cx| {
+                    c.ext_respond(Some(v.to_string()), None, false, cx);
+                });
+            }));
+        });
+        chat.load_project_files();
+        // 文件树：根项目行默认展开
+        chat.expanded_dirs.insert(chat.cwd.clone());
+        chat.refresh_git();
+
+        // settings panel CLI op pump (pi install/remove runs in background)
+        let (op_tx, mut op_rx) = futures::channel::mpsc::unbounded::<String>();
+        chat.op_tx = Some(op_tx);
+        cx.spawn(async move |this, cx| {
+            while let Some(msg) = op_rx.next().await {
+                if this
+                    .update(cx, |chat, cx| {
+                        chat.pkg_op = None;
+                        chat.set_status(msg, cx);
+                        // CLI op 改的是盘上的 settings.json；globals 是启动时
+                        // 的内存副本，不重读则 reload_settings_panel 只会拷到
+                        // 旧列表（040：安装后列表不刷新的根因）
+                        chat.globals = startup::load_globals();
+                        chat.reload_settings_panel();
+                        cx.notify();
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
+        // terminal event pump: alacritty EventListener -> Chat (single channel)
+        let (term_tx, term_rx) =
+            futures::channel::mpsc::unbounded::<(usize, alacritty_terminal::event::Event)>();
+        chat.term_events = Some(term_tx);
+        cx.spawn(async move |this, cx| {
+            let mut rx = term_rx;
+            while let Some((tab_id, event)) = rx.next().await {
+                if this
+                    .update(cx, |chat, cx| chat.on_term_event(tab_id, event, cx))
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
+        // terminal caret blink (~1Hz): 500ms heartbeat flips the phase and
+        // repaints only while a focused terminal is on screen (paint writes
+        // term_cursor_focused); phase lives on Chat so repaints stay
+        // tick-aligned instead of drifting against the wall clock
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(500))
+                    .await;
+                let focused = this.update(cx, |chat, cx| {
+                    if chat.term_cursor_focused {
+                        chat.term_cursor_on = !chat.term_cursor_on;
+                        cx.notify();
+                    }
+                    chat.term_cursor_focused
+                });
+                if focused.is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
+        // models panel state (enabledModels whitelist + credentials) for the
+        // picker filter — loaded once at startup, refreshed when opened
+        chat.reload_settings_panel();
+        // initial runtime: restore the last session (disk-direct tail) or a
+        // lazy draft. The process spawns AFTER first paint.
+        let rt_key = last_open
+            .as_deref()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| "draft-0".to_string());
+        let rt = cx.new(|_| {
+            let mut r = session::runtime::SessionRuntime::new(
+                rt_key.clone(),
+                cwd.clone(),
+                last_open.clone(),
+            );
+            r.default_model = services::workspace::default_model_pref();
+            if let Some(path) = &last_open {
+                r.messages = msgs_from_tail(read_tail_messages(path, 256 * 1024, 100));
+                r.disk_msg_count = pi_link::sessions::count_message_entries(path) as usize;
+                r.pager.reload(r.messages.len());
+                r.status = "resuming".into();
+            }
+            r
+        });
+        chat.draft_seq = 1; // "draft-0" is taken by the initial runtime above
+        chat.runtimes.insert(rt_key.clone(), rt.clone());
+        chat.active_key = rt_key.clone();
+        chat.subscribe_runtime(&rt, cx);
+        // 010-启动.md §9：启动期的一切（首帧附着 / 120ms 泵 / 3s 外部追加观察 /
+        // 60s 空闲回收 / 30s recents 对账 / 启动页闸门 / 会话清单与项目集装载）
+        // 都由 startup 发起——启动阶段做了什么全在 startup.rs 里可见。
+        startup::spawn_boot_tasks(rt.clone(), cx);
+        startup::spawn_session_list_load(
+            chat.cwd.to_string_lossy().to_string(),
+            last_open.clone(),
+            cx,
+        );
+        if PERF.load(std::sync::atomic::Ordering::Relaxed) {
+            if let Some(t0) = T0.get() {
+                eprintln!("[perf] last-session tail rendered: {:?}", t0.elapsed());
+            }
+        }
+        // git panel: Enter in the commit box commits staged changes
+        let entity_for_git = cx.entity();
+        chat.git_commit_input.update(cx, |ti, _| {
+            let weak_git = entity_for_git.downgrade();
+            ti.set_on_submit(Box::new(move |_, cx| {
+                let _ = weak_git.update(cx, |c, cx| c.git_commit_staged(cx));
+            }));
+        });
+        chat
+    }
+
+
+    pub(crate) fn set_status(&mut self, msg: String, cx: &mut Context<Self>) {
+        self.status_toast = Some((msg, std::time::Instant::now()));
+        self.rt().update(cx, |r, _| r.status = String::new());
+        let _ = cx;
+    }
+
+
+    pub(crate) fn set_content_view(&mut self, v: ContentView) {
+        self.content_view = v;
+        if matches!(v, ContentView::Term | ContentView::File) {
+            self.browse_last = v;
+        }
+    }
+}
+
+
+impl Chat {
+    /// 当前文件 tab 编辑器的焦点句柄（持焦时 Some）——render 帧级焦点回收
+    /// 的白名单，与终端/对话框同级（023）。
+    pub(crate) fn file_editor_focus(&self, window: &gpui::Window, cx: &App) -> Option<gpui::FocusHandle> {
+        if self.content_view != ContentView::File {
+            return None;
+        }
+        let path = self.active_file_path()?;
+        let ed = self.file_cache.get(&path)?.editor.clone()?;
+        let st = ed.read(cx);
+        let handle = st.focus_handle(cx);
+        // 搜索面板（Ctrl+F）输入框持焦同样不回收——它不是编辑器本体的
+        // focus_handle，漏判会被下方仲裁抢回 composer，面板打不了字
+        (handle.is_focused(window) || st.search_panel_focused(window, cx)).then_some(handle)
+    }
+}
+
+
+impl Focusable for Chat {
+    fn focus_handle(&self, cx: &App) -> FocusHandle {
+        // composer 就绪后，"聚焦聊天"即落到输入组件（真输入框：光标/
+        // 选区/IME 全可用），chat.focus 仅作组件创建前的回退
+        self.composer
+            .as_ref()
+            .map(|c| c.read(cx).focus_handle_in(cx))
+            .unwrap_or_else(|| self.focus.clone())
+    }
+}
+

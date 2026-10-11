@@ -28,6 +28,7 @@ use crate::i18n::tr;
 use crate::services::format::fmt_thousand;
 use crate::appearance::theme::theme as T;
 use crate::ui::{icon, icon_hover};
+use crate::*;
 
 /// 操作栏字体大小（工具预设/模型/思考统一；单点改这里）。
 /// inputpanel 操作栏文字 = 面板设置值（字体大小设置.md §1）
@@ -1229,4 +1230,161 @@ fn composer_bar(
     );
     bar = bar.child(right);
     bar
+}
+
+// ---------------------------------------------------------------------------
+// composer 方法：输入写入/@ 索引/发送与中止（P3 自 main.rs impl Chat 拆入）
+// ---------------------------------------------------------------------------
+
+impl Chat {
+    /// chat.input 唯一写入口：同步镜像进输入组件（组件是渲染真值源，
+    /// 手写 input 不再存在）。历史/草稿/清空/补全改写都走这里。
+    pub(crate) fn set_input(&mut self, v: String, cx: &mut Context<Self>) {
+        self.input = v;
+        self.menu_dismissed = false;
+        if let Some(c) = &self.composer {
+            let v = self.input.clone();
+            c.update(cx, |f, fcx| f.set_value(v, fcx));
+        }
+        cx.notify();
+    }
+
+    /// set_input 的光标落点版（031 @ 补全：确认后光标停在插入 token 之后）。
+    /// cursor_byte = 新值的字节偏移。
+    pub(crate) fn set_input_with_cursor(
+        &mut self,
+        v: String,
+        cursor_byte: usize,
+        cx: &mut Context<Self>,
+    ) {
+        self.input = v;
+        self.menu_dismissed = false;
+        if let Some(c) = &self.composer {
+            let v = self.input.clone();
+            c.update(cx, |f, fcx| f.set_value_with_cursor(v, cursor_byte, fcx));
+        }
+        cx.notify();
+    }
+
+    /// @ 文件索引惰性构建（031 对齐 pi-web file-index：TTL 内复用，过期/
+    /// 缺失在后台线程重建；旧清单在重建期间先顶上。TTL/容量读
+    /// app-settings.json，默认 60s / 10 项目）。
+    pub(crate) fn ensure_at_index(&mut self, cx: &mut Context<Self>) {
+        let ttl = std::time::Duration::from_secs(services::workspace::at_index_ttl_secs());
+        let key = self.cwd.to_string_lossy().to_string();
+        let fresh = match self.at_index.get(&key) {
+            Some(e) => {
+                e.building || e.built.is_some_and(|t| t.elapsed() < ttl)
+            }
+            None => false,
+        };
+        if fresh {
+            return;
+        }
+        let entry = self.at_index.entry(key).or_default();
+        entry.building = true;
+        entry.built = None;
+        // 缓存上限（pi-web：超限整表清空——每 cwd 一份，重建很便宜）
+        if self.at_index.len() >= services::workspace::at_index_max_projects() {
+            self.at_index.clear();
+        }
+        let cwd = self.cwd.clone();
+        let key = cwd.to_string_lossy().to_string();
+        cx.spawn(async move |this, cx| {
+            // entries 派生也在后台：大仓库（20 万条）下主线程只做 Arc 换手
+            let (files, entries) = cx
+                .background_executor()
+                .spawn(async move {
+                    let listing = crate::services::file_index::load_listing(&cwd);
+                    let entries =
+                        crate::services::at_file::build_entries_from_files(&listing.files);
+                    (listing.files, entries)
+                })
+                .await;
+            let _ = this.update(cx, |chat, cx| {
+                // key = 构建时的 cwd（期间切项目也不会写错条目）
+                let e = chat.at_index.entry(key).or_default();
+                e.files = std::sync::Arc::new(files);
+                e.entries = std::sync::Arc::new(entries);
+                e.built = Some(std::time::Instant::now());
+                e.building = false;
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    pub(crate) fn with_active_editor<Act: FnOnce(&mut SessionRuntime, &mut Context<SessionRuntime>)>(
+        &mut self,
+        cx: &mut Context<Self>,
+        act: Act,
+    ) {
+        let rt = self.rt();
+        let (input, images, history) = (
+            self.input.clone(),
+            self.pending_images.clone(),
+            self.history.clone(),
+        );
+        rt.update(cx, |r, cx| {
+            r.input = input;
+            r.pending_images = images;
+            r.history = history;
+            act(r, cx);
+        });
+        // pull post-action state back (history push, input clear)
+        let (input, images, history) = {
+            let r = rt.read(cx);
+            (r.input.clone(), r.pending_images.clone(), r.history.clone())
+        };
+        self.set_input(input, cx);
+        self.pending_images = images;
+        self.history = history;
+        self.history_ix = None;
+        cx.notify();
+    }
+
+    pub(crate) fn send_input(&mut self, cx: &mut Context<Self>) {
+        self.with_active_editor(cx, |r, cx| r.send_input(cx));
+    }
+
+    pub(crate) fn steer_input(&mut self, cx: &mut Context<Self>) {
+        self.with_active_editor(cx, |r, cx| r.steer_input(cx));
+    }
+
+    pub(crate) fn follow_up_input(&mut self, cx: &mut Context<Self>) {
+        self.with_active_editor(cx, |r, cx| r.follow_up_input(cx));
+    }
+
+    pub(crate) fn abort_stream(&mut self, cx: &mut Context<Self>) {
+        self.rt().update(cx, |r, cx| r.abort_stream(cx));
+        cx.notify();
+    }
+
+    /// `!` bash 执行中 Esc / 停止按钮（031）：rpc abort_bash
+    pub(crate) fn abort_bash(&mut self, cx: &mut Context<Self>) {
+        self.rt().update(cx, |r, cx| r.abort_bash(cx));
+        cx.notify();
+    }
+
+    pub(crate) fn set_thinking_level(&mut self, key: &str, cx: &mut Context<Self>) {
+        self.rt().update(cx, |r, cx| r.set_thinking_level(key, cx));
+    }
+
+    /// `/` 菜单命令清单（010-启动.md §3）：会话进程答过 → 用它（含项目 skill）；
+    /// 否则 = 项目 skill 派生（`skill:<name>`）+ 全局扩展命令（内置表 + 缓存）。
+    /// 草稿态（无进程）因此也有完整菜单。
+    pub(crate) fn slash_commands(&self, cx: &gpui::App) -> Vec<pi_link::protocol::SlashCommand> {
+        let rt = self.rt().read(cx);
+        if !rt.commands.is_empty() {
+            return rt.commands.clone();
+        }
+        let mut out: Vec<pi_link::protocol::SlashCommand> = self
+            .project_ctx
+            .get(&self.cwd.to_string_lossy().to_string())
+            .map(|ctx| ctx.skill_commands.clone())
+            .unwrap_or_default();
+        out.extend(self.globals.commands.iter().cloned());
+        out
+    }
+
 }

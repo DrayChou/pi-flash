@@ -358,3 +358,8 @@ impl FileTab {
     }
 }
 
+#[derive(Debug, Clone)]
+pub(crate) enum McProbe {
+    Running,
+    Done,
+}

@@ -12,6 +12,7 @@ use crate::i18n::tr;
 use crate::services::git;
 use crate::appearance::theme::{Theme, theme as T};
 use crate::ui::{icon, icon_hover};
+use crate::*;
 
 /// Active git panel tab.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -672,4 +673,13 @@ impl Chat {
         })
         .detach();
     }
+}
+
+impl Chat {
+    pub(crate) fn refresh_git(&mut self) {
+        self.git_files = git_status_files(&self.cwd);
+        self.git_add_del = git_numstat(&self.cwd);
+        self.rebuild_tree();
+    }
+
 }
