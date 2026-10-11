@@ -98,6 +98,8 @@ pub(crate) fn files_view(
             col = col.child(head);
         }
         let weak_c = weak.clone();
+        let weak_bg = weak.clone();
+        let cwd_bg = chat.cwd.clone();
         col = col.child(
             div()
                 .flex_1()
@@ -106,6 +108,22 @@ pub(crate) fn files_view(
                 .flex_col()
                 .overflow_hidden()
                 .py(px(6.))
+                // 空白处右键 = 根目录菜单（021 四改：根行已移除，根下的
+                // 新建/改名等入口由这里兜底；行内右键自己 stop_propagation
+                // 不会漏到这层）
+                .on_mouse_down(gpui::MouseButton::Right,
+                    move |ev: &gpui::MouseDownEvent, _, cx| {
+                        cx.stop_propagation();
+                        let _ = weak_bg.update(cx, |c, cx| {
+                            c.tree_menu = Some(crate::TreeMenu::Dir {
+                                path: cwd_bg.clone(),
+                                x: f32::from(ev.position.x),
+                                y: f32::from(ev.position.y),
+                            });
+                            cx.notify();
+                        });
+                    },
+                )
                 .child(vlist(
                     FILE_TREE_LIST_ID,
                     rows.len(),
@@ -124,6 +142,8 @@ pub(crate) fn files_view(
     } else {
         let sticky =
             Box::new(StickyAncestors { weak: weak.clone() }) as Box<dyn UniformListDecoration>;
+        let weak_bg = weak.clone();
+        let cwd_bg = chat.cwd.clone();
         col = col.child(
             div()
                 .flex_1()
@@ -132,6 +152,20 @@ pub(crate) fn files_view(
                 .flex_col()
                 .overflow_hidden()
                 .py(px(10.))
+                // 空白处右键 = 根目录菜单（同变更分支，根行入口兜底）
+                .on_mouse_down(gpui::MouseButton::Right,
+                    move |ev: &gpui::MouseDownEvent, _, cx| {
+                        cx.stop_propagation();
+                        let _ = weak_bg.update(cx, |c, cx| {
+                            c.tree_menu = Some(crate::TreeMenu::Dir {
+                                path: cwd_bg.clone(),
+                                x: f32::from(ev.position.x),
+                                y: f32::from(ev.position.y),
+                            });
+                            cx.notify();
+                        });
+                    },
+                )
                 .child(vlist(
                     FILE_TREE_LIST_ID,
                     rows.len(),
