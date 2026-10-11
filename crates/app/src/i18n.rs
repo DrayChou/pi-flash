@@ -279,8 +279,6 @@ const TABLE: &[(&str, &str, &str)] = &[
     ("名称不能为空", "名稱不能為空", "Name cannot be empty"),
     ("名称不能包含路径分隔符", "名稱不能包含路徑分隔符", "Name cannot contain path separators"),
     ("已存在", "已存在", "Already exists"),
-    ("已创建", "已建立", "Created"),
-    ("已移入回收站", "已移至資源回收筒", "Moved to the recycle bin"),
     ("删除 {name}？（移入回收站）", "刪除 {name}？（移入回收站）", "Delete {name}? (moves to the recycle bin)"),
     ("删除 {name}？{n} 个打开文件的未保存更改将丢失（移入回收站）", "刪除 {name}？{n} 個開啟檔案的未保存變更將遺失（移至資源回收筒）", "Delete {name}? Unsaved changes in {n} open file(s) will be lost (moves to the recycle bin)"),
     ("搜索文件…", "搜尋檔案…", "Search files…"),

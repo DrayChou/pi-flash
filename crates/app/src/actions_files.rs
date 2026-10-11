@@ -229,7 +229,7 @@ impl Chat {
                 }
                 self.dialog = None;
                 self.refresh_git();
-                self.set_status(format!("{}：{}", tr("已创建"), name), cx);
+                // 创建成功静默（文件菜单不弹成功提示，错误才提示）
                 cx.notify();
             }
             Err(e) => {
@@ -380,7 +380,7 @@ impl Chat {
                     .retain(|k, _| !(same_path(k, &path) || k.starts_with(&path)));
                 self.expanded_dirs.retain(|d| !(same_path(d, &path) || d.starts_with(&path)));
                 self.refresh_git();
-                self.set_status(tr("已移入回收站").to_string(), cx);
+                // 删除成功静默（同创建：成功不提示，失败才弹）
                 cx.notify();
             }
             Err(e) => {
