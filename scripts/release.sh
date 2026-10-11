@@ -93,6 +93,10 @@ fi
 
 echo "==> 4/8 包内烟测（独立目录启动）"
 SMOKE_LOG="$ROOT/dist/smoke.log"
+# 烟测只验「启动无输出」，更新探查不属于启动门禁：release 构建默认跑更新检查，而
+# GitHub Release 尚未创建时 /releases/latest 必404 → eprintln 污染日志（首发鸡生蛋）。
+PI_FLASH_UPDATE_CHECK=0
+export PI_FLASH_UPDATE_CHECK
 (cd / && "$ROOT/dist/pi-flash/pi-flash.exe" > "$SMOKE_LOG" 2>&1 &)
 sleep 6
 if ! tasklist //FI "IMAGENAME eq pi-flash.exe" 2>/dev/null | grep -qi pi-flash; then
