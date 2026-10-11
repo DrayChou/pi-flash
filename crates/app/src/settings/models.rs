@@ -755,6 +755,30 @@ fn mc_add_action(weak: &gpui::WeakEntity<Chat>) -> gpui::AnyElement {
         .into_any_element()
 }
 
+/// 详情页文字按钮：统一 [`ui::button`] 规范样式（BTN_LG 32 高，设置页表单
+/// 主按钮档；Danger/Primary/Secondary 三变体），回调签名为 Chat 动作的糖。
+#[allow(clippy::too_many_arguments)]
+fn detail_button(
+    id: &'static str,
+    weak: &gpui::WeakEntity<Chat>,
+    label: &str,
+    variant: crate::ui::button::BtnVariant,
+    disabled: bool,
+    on_click: impl Fn(&mut Chat, &mut gpui::Context<Chat>) + 'static,
+) -> gpui::AnyElement {
+    let weak = weak.clone();
+    crate::ui::button::button(
+        id,
+        label.to_string(),
+        crate::ui::button::BtnSize::Lg,
+        variant,
+        disabled,
+        move |_, _, cx| {
+            let _ = weak.update(cx, |c, cx| on_click(c, cx));
+        },
+    )
+}
+
 /// Models detail by section kind (catalog provider / custom editor / add).
 #[allow(clippy::too_many_arguments)]
 fn mc_models_detail(
@@ -829,12 +853,11 @@ fn mc_models_detail(
                     )),
             )
             .child(div().flex_1())
-            .child(config_button(
+            .child(detail_button(
                 "mc-remove",
                 weak,
                 &tr("移除"),
-                Btn::Danger,
-                true,
+                crate::ui::button::BtnVariant::Danger,
                 false,
                 move |c, cx| c.mc_ask_remove_provider(remove_provider.clone(), cx),
             )),
@@ -887,15 +910,29 @@ fn mc_models_detail(
                                 )),
                         ),
                 )
-                .child(config_button("mc-key-save", weak, &tr("保存"), Btn::Primary, false, false, move |c, cx| {
-                    let key = c
-                        .settings
-                        .as_ref()
-                        .map(|st| st.read(cx).key_input.clone())
-                        .map(|input| input.read(cx).value().to_string())
-                        .unwrap_or_default();
-                    c.mc_save_key(save_provider.clone(), key, cx);
-                })),
+                .child(detail_button(
+                    "mc-key-save",
+                    weak,
+                    &tr("保存"),
+                    crate::ui::button::BtnVariant::Primary,
+                    false,
+                    move |c, cx| {
+                        let key = c
+                            .settings
+                            .as_ref()
+                            .map(|st| st.read(cx).key_input.clone())
+                            .map(|input| input.read(cx).value().to_string())
+                            .unwrap_or_default();
+                        c.mc_save_key(save_provider.clone(), key, cx);
+                    },
+                )),
+        )
+        // API Key 与可用模型之间的分隔线
+        .child(
+            div()
+                .h(px(1.))
+                .w_full()
+                .bg(gpui::rgba(crate::theme::border_alpha(t, 0x66))),
         );
 
     // 可用模型区 + 底部（detail_shell 收尾）
@@ -945,12 +982,11 @@ fn mc_enabled_section(
                 &[("enabled", enabled_count.to_string()), ("total", models.len().to_string())],
             )))
             .child(div().flex_1())
-            .child(config_button(
+            .child(detail_button(
                 "mc-fetch",
                 weak,
                 if running { tr("获取中…") } else { tr("获取模型") },
-                Btn::Secondary,
-                true,
+                crate::ui::button::BtnVariant::Secondary,
                 running,
                 move |c, cx| c.mc_fetch_models(fetch_provider.clone(), cx),
             )),
@@ -1011,7 +1047,9 @@ fn mc_enabled_section(
                 // 不写 w_full 分隔线只有内容宽、开关贴在文字右边
                 .w_full()
                 .h(px(row_h))
-                .px(px(10.))
+                // 左 12 内容留白；右 24 = 12 内容 + 12 滚动条让位（不压 switch）
+                .pl(px(12.))
+                .pr(px(24.))
                 .flex()
                 .items_center()
                 .gap(px(8.))
