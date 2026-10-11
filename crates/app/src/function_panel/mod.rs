@@ -387,10 +387,12 @@ fn title_row(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> g
                         .on_mouse_down(MouseButton::Left, move |ev: &gpui::MouseDownEvent, _, cx| {
                             cx.stop_propagation();
                             let _ = w_sort.update(cx, |c, cx| {
+                                // 存原始点击点；方向与间距由渲染期统一弹出
+                                // 算法（ui::popup）决定，此处不再手工偏移
                                 c.psp_menu = Some(crate::PspMenu::Sort {
                                     sub: None,
-                                    x: (f32::from(ev.position.x) - 20.).max(8.),
-                                    y: f32::from(ev.position.y) + 12.,
+                                    x: f32::from(ev.position.x),
+                                    y: f32::from(ev.position.y),
                                 });
                                 cx.notify();
                             });
@@ -531,12 +533,12 @@ fn project_row(
                                 MouseButton::Left,
                                 move |ev: &gpui::MouseDownEvent, _, cx| {
                                     cx.stop_propagation();
-                                    let (x, y) = (f32::from(ev.position.x), f32::from(ev.position.y));
                                     let _ = w_menu.update(cx, |c, cx| {
+                                        // 同排序菜单：存原始点击点，定向交统一算法
                                         c.psp_menu = Some(crate::PspMenu::Project {
                                             path: path_menu.clone(),
-                                            x: (x - 16.).max(8.),
-                                            y: y + 12.,
+                                            x: f32::from(ev.position.x),
+                                            y: f32::from(ev.position.y),
                                         });
                                         cx.notify();
                                     });

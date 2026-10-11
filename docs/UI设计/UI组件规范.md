@@ -201,7 +201,8 @@ composer 胶囊（rounded16、pt10 pb12、AutoGrow 3–10 行）为既有特例�
 | 行文字 | ui(12)；副行/描述 ui(11) text_faint |
 | 快捷键/右注 | ui(11) text_faint，`ml_auto` 右对齐 |
 | 分隔线 | 1px t.border，上下留白 6 |
-| 子菜单 | 沿父容器右侧 +4 偏移，行对行 |
+| 子菜单 | 沿父容器右侧 +4 偏移，行对行；父卡向上弹时行位按卡底缘折算 |
+| 弹出方向（统一算法） | 锚点在视口**上半 → 向下弹，反之向上弹；左半 → 向右弹，反之向左弹**（两轴独立判定，恰在中线按「反之」）。唯一实现 `ui::popup::PopupEdges`（边锚定制：向上/向左弹给 bottom/right，免量内容尺寸）；toast 与会话栏（psp）全套浮层已接入，新锚定浮层一律走它（2026-10-11 定夺） |
 
 锚定与防抖沿用 `ui/dropdown.rs`（弹层 mt4、窗口收口 margin 8、防抖 300ms），不在本文重复。
 
@@ -275,7 +276,7 @@ composer 胶囊（rounded16、pt10 pb12、AutoGrow 3–10 行）为既有特例�
 | focus | accent 1px 边框（仅输入框类）；按钮不做 focus ring，键盘焦点走 hover 同款底 |
 | disabled | opacity 0.5，去掉 hover 响应 |
 | 图标 hover | scale 1.06 + 上抬 1px（v55 规格，paint 期矩阵实现） |
-| toast | 全项目两处（status 居中 / ext notice 右上）统一主题配色：`bg_panel` 底 + 1px 边框（status 用 `t.border`，ext 用类型色）+ `t.text` 文字；尺寸自适应内容，max 600×200，超高滚动，自动换行，左右 padding 20（2026-10-10 定夺） |
+| toast | 全项目两处（status 居中 / ext notice 右上）统一主题配色：`bg_panel` 底 + 1px 边框（status 用 `t.border`，ext 用类型色）+ `t.text` 文字；尺寸自适应内容，max 600×200，超高滚动，自动换行，左右 padding 20（2026-10-10 定夺）；定位纵边走 §5.6 统一弹出算法（status 只取纵向判定、水平居中独立保留；ext 右上槽 = 上半向下+右半向左，输出与原写死值等价）（2026-10-11） |
 | 会话状态槽 | 15px 槽：运行 = spinner(accent)；agent 结束时**窗口无焦点或本会话已转后台** → 通知点三色（2026-10-10 定夺）：**外部错误/崩溃 = 7px 红 `t.danger`**、**内部中断（stopReason length/aborted，超时/上限停止）= 7px 黄 `WARN`**、**正常完成 = 7px 青蓝 `NOTICE`**（只是"跑完了回来看"，不承载对错）；绿色不作通知点（绿色只表达正确性）；点径统一 7px，切入会话即清 |
 | psp 会话行局部字号 | 标题 = 面板设置值（ui12 基准）；时间 = **面板−2** `ui(10)` text_faint 右对齐列；「显示更多」= **面板−1** `ui(11)` **text_faint（placeholder 色）**，hover 回正文（2026-10-10 定夺） |
 

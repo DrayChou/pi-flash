@@ -1,6 +1,10 @@
 //! psp 悬浮层 (v54): 项目路径 tooltip（深色，跟随鼠标）、会话 hover 详情卡
 //! （侧栏右缘外 8px 锚定，改名/删除流）、⋯ 两级菜单（列表方式/排序方式带
 //! 子菜单勾选态）、项目菜单、删除项目确认。全部挂在根渲染，事件坐标定位。
+//!
+//! 定位统一走 `ui::popup::PopupEdges`（2026-10-11 用户算法：锚点在视口
+//! 上半 → 向下弹，反之向上；左半 → 向右弹，反之向左）——列表拉到底时
+//! 菜单/详情卡不再溢出下缘，窄窗时不再溢出右缘。
 
 use gpui::{MouseButton, SharedString, div, prelude::*, px, rgb};
 
@@ -10,13 +14,17 @@ use crate::services::format::time_ago;
 use crate::services::workspace::same_path;
 use crate::theme::{Theme, danger_wash, theme as T};
 use crate::ui::icon;
+use crate::ui::popup::PopupEdges;
 
 /// 根渲染挂载的 psp 悬浮层合集（tooltip / 详情卡 / 菜单 / 确认）。
 pub(crate) fn psp_overlays(
     chat: &mut Chat,
+    window: &gpui::Window,
     cx: &mut gpui::Context<Chat>,
 ) -> gpui::AnyElement {
     let t = T();
+    let vp = window.viewport_size();
+    let vp = (f32::from(vp.width), f32::from(vp.height));
     // 全窗口定位层：absolute inset_0 铺满 root，悬浮子元素相对它定位，
     // 且不参与流布局（0 高容器会把 absolute 子元素裁掉——菜单曾因此不可见）。
     // **父层不得 occlude**：inset_0 的层一挡全窗口 hit-test 都断（行悬停
@@ -26,44 +34,46 @@ pub(crate) fn psp_overlays(
         .absolute()
         .inset_0();
     if let Some((path, x, y)) = &chat.proj_tip {
-        el = el.child(proj_tip(path, *x, *y));
+        el = el.child(proj_tip(path, *x, *y, vp));
     }
     if let Some(card) = &chat.hover_card {
         // 延迟显示（0.3s）：快速滑过会话列表时不创建视觉，不干扰行悬停
         if card.shown {
-            el = el.child(hover_card(chat, t, cx));
+            el = el.child(hover_card(chat, vp, t, cx));
         }
     }
     if chat.psp_menu.is_some() {
-        el = el.child(menu_layer(chat, t, cx));
+        el = el.child(menu_layer(chat, vp, t, cx));
     }
     if let Some((path, x, y)) = chat.confirm_prj_del.clone() {
-        el = el.child(confirm_project_del(&path, x, y, t, &chat.dialog_focus, cx));
+        el = el.child(confirm_project_del(&path, x, y, vp, t, &chat.dialog_focus, cx));
     }
     el.into_any_element()
 }
 
-/// 项目行 tooltip：短名 + 全路径（mono），深色底，跟随鼠标。
-fn proj_tip(path: &std::path::PathBuf, x: f32, y: f32) -> impl gpui::IntoElement {
+/// 项目行 tooltip：短名 + 全路径（mono），深色底，跟随鼠标。锚点 = 光标，
+/// 统一算法：光标在右半 → 贴光标左侧弹，下半 → 贴光标上方弹。
+fn proj_tip(path: &std::path::PathBuf, x: f32, y: f32, vp: (f32, f32)) -> impl gpui::IntoElement {
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
     let full = path.to_string_lossy().to_string();
-    div()
-        .id("psp-proj-tip")
-        .absolute()
-        .left(px(x + 14.))
-        .top(px(y + 16.))
-        .max_w(px(300.))
-        .px(px(11.))
-        .py(px(8.))
-        .rounded(px(8.))
-        .bg(rgb(0x22312d))
-        .shadow_lg()
-        .flex()
-        .flex_col()
-        .gap(px(1.))
+    PopupEdges::around((x, y), vp, 14., 16.)
+        .apply(
+            div()
+                .id("psp-proj-tip")
+                .absolute()
+                .max_w(px(300.))
+                .px(px(11.))
+                .py(px(8.))
+                .rounded(px(8.))
+                .bg(rgb(0x22312d))
+                .shadow_lg()
+                .flex()
+                .flex_col()
+                .gap(px(1.)),
+        )
         .child(
             div()
                 .text_size(crate::appearance::ui_size(11.5))
@@ -82,7 +92,13 @@ fn proj_tip(path: &std::path::PathBuf, x: f32, y: f32) -> impl gpui::IntoElement
 
 /// 会话 hover 详情卡：258px 浅色浮层，标题（点击=打开并改名）、项目/
 /// 最后活动/消息数信息行、删除确认流。300ms 离行宽限 + 进卡取消。
-fn hover_card(chat: &mut Chat, t: &'static Theme, cx: &mut gpui::Context<Chat>) -> gpui::AnyElement {
+/// 锚点 = 侧栏右缘外 8px + 行顶；统一算法决定纵边（行在下半 → 向上弹）。
+fn hover_card(
+    chat: &mut Chat,
+    vp: (f32, f32),
+    t: &'static Theme,
+    cx: &mut gpui::Context<Chat>,
+) -> gpui::AnyElement {
     let card = chat.hover_card.clone().expect("hover_card checked by caller");
     let mut found: Option<(String, u64, std::time::SystemTime, String)> = None;
     for g in &chat.projects {
@@ -110,37 +126,36 @@ fn hover_card(chat: &mut Chat, t: &'static Theme, cx: &mut gpui::Context<Chat>) 
     let anchor_x = chat.slp_w + 8.;
     let title_for_rename = title.clone();
 
-    let mut el = div()
-        .id("psp-hcard")
-        .absolute()
-        .left(px(anchor_x))
-        // card.y = 悬停行的真实顶部（prepaint bounds 校正），卡与行对齐
-        .top(px(card.y))
-        .w(px(258.))
-        .bg(rgb(t.bg))
-        .border_1()
-        .border_color(gpui::rgba(crate::theme::border_alpha(t, 0x8c)))
-        .rounded(px(12.))
-        .shadow_lg()
-        // 遮挡只作用于卡片自身 bounds（父层 occlude 会断全窗口 hit-test）
-        .occlude()
-        .px(px(13.))
-        .pt(px(11.))
-        .pb(px(9.))
-        .flex()
-        .flex_col()
-        // 卡内点击不落穿（改名/删除按钮依赖）
-        .on_mouse_down(MouseButton::Left, |_, _, cx| {
-            cx.stop_propagation();
-        })
-        // 进卡取消隐藏 / 离卡进入宽限
-        .on_hover(cx.listener(|this, h: &bool, _w, cx| {
-            if let Some(card) = this.hover_card.as_mut() {
-                card.card_hovered = *h;
-                card.hide_at = (!*h).then(std::time::Instant::now);
-            }
-            cx.notify();
-        }))
+    let mut el = PopupEdges::around((anchor_x, card.y), vp, 0., 0.).apply(
+        div()
+            .id("psp-hcard")
+            .absolute()
+            .w(px(258.))
+            .bg(rgb(t.bg))
+            .border_1()
+            .border_color(gpui::rgba(crate::theme::border_alpha(t, 0x8c)))
+            .rounded(px(12.))
+            .shadow_lg()
+            // 遮挡只作用于卡片自身 bounds（父层 occlude 会断全窗口 hit-test）
+            .occlude()
+            .px(px(13.))
+            .pt(px(11.))
+            .pb(px(9.))
+            .flex()
+            .flex_col()
+            // 卡内点击不落穿（改名/删除按钮依赖）
+            .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                cx.stop_propagation();
+            })
+            // 进卡取消隐藏 / 离卡进入宽限
+            .on_hover(cx.listener(|this, h: &bool, _w, cx| {
+                if let Some(card) = this.hover_card.as_mut() {
+                    card.card_hovered = *h;
+                    card.hide_at = (!*h).then(std::time::Instant::now);
+                }
+                cx.notify();
+            })),
+    )
         .children(if card.renaming {
             // 设计稿：标题原地变输入框（Enter 提交 / Esc 取消）
             card.rename_input.clone().map(|inp| {
@@ -319,12 +334,25 @@ fn solid_danger_btn(
 
 type ApplyFn = Box<dyn Fn(&mut Chat, &mut gpui::Context<Chat>)>;
 
-fn menu_layer(chat: &mut Chat, t: &'static Theme, cx: &mut gpui::Context<Chat>) -> gpui::AnyElement {
+/// menu_item 行距约定（py7×2 + 文本行高），二级菜单行锚定与父卡高度估算
+/// 都基于它——与既有实现的 34px 间距一致。
+const MENU_ROW: f32 = 34.;
+
+fn menu_layer(
+    chat: &mut Chat,
+    vp: (f32, f32),
+    t: &'static Theme,
+    cx: &mut gpui::Context<Chat>,
+) -> gpui::AnyElement {
     let weak = cx.entity().downgrade();
     let (x, y) = match chat.psp_menu.clone().expect("checked by caller") {
         crate::PspMenu::Sort { x, y, .. } => (x, y),
         crate::PspMenu::Project { x, y, .. } => (x, y),
     };
+    // 统一弹出定位（2026-10-11）：锚点 = ⋯ 按钮点击点，向下弹距 12px、
+    // 向上弹同样让 12px；左右象限决定横向展开方向。
+    let parent_edges = PopupEdges::around((x, y), vp, 0., 12.);
+    let pop_up = parent_edges.top.is_none();
     // 浮层公共基座（遮挡不穿透 + 点外关闭 + ESC 关闭）
     let weak_layer = weak.clone();
     let mut layer = crate::ui::overlay::layer(false, Some(&chat.dialog_focus), move |_w, cx| {
@@ -333,7 +361,7 @@ fn menu_layer(chat: &mut Chat, t: &'static Theme, cx: &mut gpui::Context<Chat>) 
             cx.notify();
         });
     });
-    let mut card = menu_card(x, y, t);
+    let mut card = menu_card(parent_edges, t);
     match chat.psp_menu.clone().expect("re-checked") {
         crate::PspMenu::Sort { sub, .. } => {
             let mut view = menu_item("m-list", "icon-organize", tr("列表方式"), false, false);
@@ -357,9 +385,17 @@ fn menu_layer(chat: &mut Chat, t: &'static Theme, cx: &mut gpui::Context<Chat>) 
             card = card
                 .child(view.child(menu_chev(t)))
                 .child(sort.child(menu_chev(t)));
-            // 二级菜单（右侧弹出，锚定父项）
+            // 二级菜单：锚定父项所在行（行屏幕 y 按父卡贴边方向折算——
+            // 向上弹时卡底缘已知，行位 = 卡顶缘 + 4 + ix×行距），展开方向
+            // 仍由统一算法按该行所在象限决定。
             if let Some(sub_ix) = sub {
-                let mut sub_card = menu_card(x + 218., y + 4. + sub_ix as f32 * 34., t);
+                let card_h = 8. + 2. * MENU_ROW; // 排序菜单固定两行
+                let row_y = if pop_up {
+                    vp.1 - y + 12. - card_h + 4. + sub_ix as f32 * MENU_ROW
+                } else {
+                    y + 12. + 4. + sub_ix as f32 * MENU_ROW
+                };
+                let mut sub_card = menu_card(PopupEdges::around((x + 218., row_y), vp, 0., 0.), t);
                 let items: Vec<(&'static str, &str, bool, ApplyFn)> = if sub_ix == 0 {
                     vec![
                         (
@@ -481,23 +517,24 @@ fn menu_layer(chat: &mut Chat, t: &'static Theme, cx: &mut gpui::Context<Chat>) 
     layer.child(card).into_any_element()
 }
 
-fn menu_card(x: f32, y: f32, t: &'static Theme) -> gpui::Div {
-    div()
-        .absolute()
-        .left(px(x))
-        .top(px(y))
-        .min_w(px(200.))
-        .p(px(4.))
-        .bg(rgb(t.bg))
-        .border_1()
-        .border_color(gpui::rgba(crate::theme::border_alpha(t, 0x8c)))
-        .rounded(px(8.))
-        .shadow_lg()
-        .flex()
-        .flex_col()
-        .on_mouse_down(MouseButton::Left, |_, _, cx| {
-            cx.stop_propagation();
-        })
+/// 统一菜单卡座：absolute 弹层基座，贴边由统一算法的 [`PopupEdges`] 决定。
+fn menu_card(edges: PopupEdges, t: &'static Theme) -> gpui::Div {
+    edges.apply(
+        div()
+            .absolute()
+            .min_w(px(200.))
+            .p(px(4.))
+            .bg(rgb(t.bg))
+            .border_1()
+            .border_color(gpui::rgba(crate::theme::border_alpha(t, 0x8c)))
+            .rounded(px(8.))
+            .shadow_lg()
+            .flex()
+            .flex_col()
+            .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                cx.stop_propagation();
+            }),
+    )
 }
 
 fn menu_item<S: Into<SharedString>>(
@@ -535,11 +572,12 @@ fn menu_chev(t: &'static Theme) -> impl gpui::IntoElement {
     icon("chevron-right", 12., t.text_dim)
 }
 
-/// 删除项目确认浮层（锚定菜单点击处）。
+/// 删除项目确认浮层（锚定菜单点击处，统一算法定向）。
 fn confirm_project_del(
     path: &std::path::PathBuf,
     x: f32,
     y: f32,
+    vp: (f32, f32),
     t: &'static Theme,
     focus: &gpui::FocusHandle,
     cx: &mut gpui::Context<Chat>,
@@ -558,23 +596,23 @@ fn confirm_project_del(
         });
     })
         .child(
-            div()
-                .absolute()
-                .left(px(x))
-                .top(px(y))
-                .min_w(px(380.))
-                .p(px(16.))
-                .bg(rgb(t.bg))
-                .border_1()
-                .border_color(gpui::rgba(crate::theme::danger_alpha(t, 0x73)))
-                .rounded(px(10.))
-                .shadow_lg()
-                .flex()
-                .flex_col()
-                .gap(px(8.))
-                .on_mouse_down(MouseButton::Left, |_, _, cx| {
-                    cx.stop_propagation();
-                })
+            PopupEdges::around((x, y), vp, 0., 0.).apply(
+                div()
+                    .absolute()
+                    .min_w(px(380.))
+                    .p(px(16.))
+                    .bg(rgb(t.bg))
+                    .border_1()
+                    .border_color(gpui::rgba(crate::theme::danger_alpha(t, 0x73)))
+                    .rounded(px(10.))
+                    .shadow_lg()
+                    .flex()
+                    .flex_col()
+                    .gap(px(8.))
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                        cx.stop_propagation();
+                    }),
+            )
                 .child(
                     div()
                         .text_size(crate::appearance::ui_size(12.5))

@@ -1998,7 +1998,7 @@ impl Render for Chat {
             root = root.child(el);
         }
         // psp 悬浮层（tooltip / 详情卡 / 菜单 / 确认）
-        root = root.child(function_panel::psp_overlays::psp_overlays(self, cx));
+        root = root.child(function_panel::psp_overlays::psp_overlays(self, window, cx));
         // toolbar pill popup menus
         if let Some(el) = pill_menu_el {
             root = root.child(el);
@@ -2022,15 +2022,22 @@ impl Render for Chat {
         // 贴片（[`toast_halo`]），尺寸自适应 max 600×200、超高滚动、自动换行
         if let Some((msg, _)) = &self.status_toast {
             let text: SharedString = msg.clone().into();
+            // 统一弹出定位（2026-10-11）：纵边按锚点象限取自 ui::popup——
+            // 顶槽锚点 (y=0) 恒判「上半」向下弹；水平居中是 2026-10-10 定夺
+            //（left_0+right_0+justify_center），不走横向象限规则
+            let ve = crate::ui::popup::PopupEdges::vertical(
+                0.,
+                f32::from(window.viewport_size().height),
+                44.,
+            );
+            let mut slot = div().absolute().left_0().right_0().flex().justify_center();
+            slot = match (ve.top, ve.bottom) {
+                (Some(tp), _) => slot.top(tp),
+                (_, Some(bt)) => slot.bottom(bt),
+                _ => slot,
+            };
             root = root.child(
-                div()
-                    .absolute()
-                    .top(px(44.))
-                    .left_0()
-                    .right_0()
-                    .flex()
-                    .justify_center()
-                    .child(
+                slot.child(
                         div()
                             .relative()
                             .children(toast_halo(t))
@@ -2052,7 +2059,7 @@ impl Render for Chat {
                                     //（flex 会让文本 item 按最大内容宽撑开不换行）
                                     .child(text),
                             ),
-                    ),
+                ),
             );
         }
         // extension notify toast (top-right)。上限与 status toast 对齐
@@ -2065,12 +2072,18 @@ impl Render for Chat {
                 _ => 0x4ade80,
             };
             let text: SharedString = message.clone().into();
+            // 统一弹出定位（2026-10-11）：右上槽锚点 (w, 0) → 上半向下弹、
+            // 右半向左弹（right 贴边），输出与原 .top(12).right(12) 等价，
+            // 但方向由同一算法给出（槽位挪到下方时自动向上弹）
+            let vp = window.viewport_size();
+            let edge = crate::ui::popup::PopupEdges::around(
+                (f32::from(vp.width), 0.),
+                (f32::from(vp.width), f32::from(vp.height)),
+                12.,
+                12.,
+            );
             root = root.child(
-                div()
-                    .absolute()
-                    .top(px(12.))
-                    .right(px(12.))
-                    .child(
+                edge.apply(div().absolute()).child(
                         div()
                             .relative()
                             .children(toast_halo(t))
@@ -2092,7 +2105,7 @@ impl Render for Chat {
                                     .child(div().size(px(7.)).rounded_full().mt(px(4.)).bg(rgb(color)))
                                     .child(div().text_size(crate::appearance::ui_size(12.)).text_color(rgb(t.text)).child(text)),
                             ),
-                    ),
+                ),
             );
         }
         // blocking extension dialog (select/confirm/input/editor)

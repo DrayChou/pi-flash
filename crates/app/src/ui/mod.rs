@@ -6,6 +6,7 @@ pub mod composer_input;
 pub mod dropdown;
 pub mod list_handle;
 pub mod overlay;
+pub mod popup;
 pub mod psp_scrollbar;
 pub mod text_input;
 pub mod tokens;
