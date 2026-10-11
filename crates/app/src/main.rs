@@ -89,7 +89,7 @@ pub(crate) enum PkgOp {
 #[derive(Debug, Clone)]
 enum Dialog {
     /// 042：新增 Provider 清单弹窗（两组：自定义 / API KEY；订阅组缓行）
-    ProviderPicker { input: gpui::Entity<TextInput> },
+    ProviderPicker { input: gpui::Entity<TextInput>, scroll: gpui::ScrollHandle },
     GitDiff { path: PathBuf, patch: String },
     SessionSearch { input: gpui::Entity<TextInput> },
     /// 004 projectManager 打开项目菜单：搜索框 + 打开文件夹 + 最近 30 天
@@ -532,6 +532,9 @@ struct Chat {
     confirm_prj_del: Option<(PathBuf, f32, f32)>,
     /// 021 文件树右键菜单状态槽（渲染挂 psp_overlays 同层）
     tree_menu: Option<TreeMenu>,
+    /// 编辑区右键菜单（zed 式：编辑块 + 文件动作块；渲染挂 psp_overlays
+    /// 同层）。(文件路径, 鼠标 x, y)
+    editor_menu: Option<(PathBuf, f32, f32)>,
     /// 021 文件树删除确认（统一 overlay::confirm；待删路径）
     tree_confirm_del: Option<PathBuf>,
     /// 021 操作栏「切换显示变更」：只列 git 变更文件（flatten changes_only）
@@ -884,6 +887,7 @@ impl Chat {
             psp_menu: None,
             confirm_prj_del: None,
             tree_menu: None,
+            editor_menu: None,
             tree_confirm_del: None,
             changes_only: ui.tree_changes_only,
             file_search_hits: Vec::new(),
@@ -1676,7 +1680,7 @@ impl Render for Chat {
         // keep terminal focus alive across frames (render focuses chat input
         // otherwise, which would steal it back every redraw)
         let dialog_input = match &self.dialog {
-            Some(Dialog::ProviderPicker { input }) | Some(Dialog::SessionSearch { input })
+            Some(Dialog::ProviderPicker { input, .. }) | Some(Dialog::SessionSearch { input })
             | Some(Dialog::ProjectPicker { input, .. })
             | Some(Dialog::FileSearch { input, .. })
             | Some(Dialog::FileNew { input, .. })

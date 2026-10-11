@@ -53,7 +53,10 @@ impl Chat {
                 });
             }));
         });
-        Dialog::ProviderPicker { input }
+        Dialog::ProviderPicker {
+            input,
+            scroll: gpui::ScrollHandle::new(),
+        }
     }
 
     /// Rename commit path that never reads the input entity (called from

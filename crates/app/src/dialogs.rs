@@ -45,8 +45,8 @@ pub(crate) fn render_dialogs(
         // dialogs mount as a CHILD of the chat root — on top of the content,
         // never replacing it (replacing the root blanks the whole UI behind
         // the dialog; settings parity = content stays visible beneath)
-            if let Some(Dialog::ProviderPicker { input }) = chat.dialog.as_ref() {
-                root = root.child(render_provider_picker(chat, weak, input, t, cx));
+            if let Some(Dialog::ProviderPicker { input, scroll }) = chat.dialog.as_ref() {
+                root = root.child(render_provider_picker(chat, weak, input, scroll, t, cx));
             }
             if let Some(Dialog::GitDiff { path, patch }) = chat.dialog.as_ref() {
                 root = root.child(render_git_diff(chat, weak, path, patch, t, cx));
@@ -619,7 +619,7 @@ fn render_file_dirty(
 /// 服务（自定义组已移除：PF 只提供内置 + 订阅，存量自定义商走左栏合并
 /// 列表既有编辑器）；组内保持 registry 原始顺序不排序，已配置的 provider
 /// 不列（pi-web !configured / !loggedIn 同款）。
-fn render_provider_picker(chat: &Chat, weak: &gpui::WeakEntity<Chat>, input: &gpui::Entity<TextInput>, t: &theme::Theme, cx: &App) -> Div {
+fn render_provider_picker(chat: &Chat, weak: &gpui::WeakEntity<Chat>, input: &gpui::Entity<TextInput>, scroll: &gpui::ScrollHandle, t: &theme::Theme, cx: &App) -> Div {
     let q = input.read(cx).value().trim().to_lowercase();
 
     let dump = chat.provider_registry.clone();
@@ -752,7 +752,7 @@ fn render_provider_picker(chat: &Chat, weak: &gpui::WeakEntity<Chat>, input: &gp
     // 组序（2026-10-10 用户定稿）：API KEY → 订阅服务（自定义组已移除）
     if !api_cards.is_empty() {
         body = body.child(group_header("API KEY", 0.));
-        let mut grid = div().flex().flex_wrap().gap(px(10.));
+        let mut grid = div().flex().flex_wrap().justify_center().gap(px(10.));
         for (p, name, total) in &api_cards {
             let weak_card = weak.clone();
             let pid = p.clone();
@@ -779,7 +779,7 @@ fn render_provider_picker(chat: &Chat, weak: &gpui::WeakEntity<Chat>, input: &gp
     }
     if !oauth_cards.is_empty() {
         body = body.child(group_header("订阅服务", 14.));
-        let mut grid = div().flex().flex_wrap().gap(px(10.));
+        let mut grid = div().flex().flex_wrap().justify_center().gap(px(10.));
         for (p, name) in &oauth_cards {
             let weak_card = weak.clone();
             let el = card(format!("pp-oauth-{p}"))
@@ -827,15 +827,25 @@ fn render_provider_picker(chat: &Chat, weak: &gpui::WeakEntity<Chat>, input: &gp
                 .child(input.clone()),
         )
         .child(
+            // 滚动区 + 常显滚动条（vlist fill_wrapper 同款：relative 壳挂兄弟滚动条）
             div()
-                .id("pp-body")
                 .flex_1()
                 .min_h_0()
-                .overflow_y_scroll()
-                .px(px(20.))
-                .pt(px(12.))
-                .pb(px(16.))
-                .child(body),
+                .relative()
+                .child(
+                    div()
+                        .id("pp-body")
+                        .flex_1()
+                        .min_h_0()
+                        .h_full()
+                        .overflow_y_scroll()
+                        .track_scroll(scroll)
+                        .px(px(20.))
+                        .pt(px(12.))
+                        .pb(px(16.))
+                        .child(body),
+                )
+                .child(crate::ui::psp_scrollbar::menu_scrollbar(scroll)),
         );
     dialog_shell(chat, weak, panel)
 }
