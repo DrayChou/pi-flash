@@ -263,6 +263,7 @@ pub(crate) const LIST_W: f32 = 350.;
 /// ConfigSidebar 基座（240px 列，bg_panel + 右边框）。
 pub(crate) fn sidebar_shell(id: &'static str) -> gpui::Stateful<gpui::Div> {
     let t = T();
+    // 不刷底色：列表区与详情区同底（2026-10-10 用户定稿），只留右分隔线
     div()
         .id(id)
         .w(px(240.))
@@ -270,7 +271,6 @@ pub(crate) fn sidebar_shell(id: &'static str) -> gpui::Stateful<gpui::Div> {
         .h_full()
         .flex()
         .flex_col()
-        .bg(rgb(t.bg_panel))
         .border_r_1()
         .border_color(rgb(t.border))
 }
