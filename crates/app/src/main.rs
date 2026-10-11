@@ -257,7 +257,7 @@ type AtFilterCache = (
 #[derive(Debug, Clone)]
 pub(crate) enum McProbe {
     Running,
-    Done(pi_link::probe::ProbeOutcome),
+    Done,
 }
 
 struct Chat {
@@ -418,6 +418,8 @@ struct Chat {
     provider_registry: Option<std::sync::Arc<pi_link::registry::RegistryDump>>,
     /// dump 拉取状态（Idle = 待拉/可拉，Loading = 后台进行中，Failed = 上次失败）
     registry_state: crate::session::model_picker::RegistryState,
+    /// 042：【移除】内置商的确认弹窗（provider id；None = 没开）
+    mc_remove_confirm: Option<String>,
     /// 042：inputpanel 模型菜单（锚定 pill 卡片，替代原居中 ModelSelect 弹窗）
     model_picker: Option<crate::session::model_picker::ModelPicker>,
     /// mcp.json 全局 + 项目服务器（设置·MCP 页）
@@ -764,6 +766,7 @@ impl Chat {
             mc_probe: std::collections::HashMap::new(),
             provider_registry: None,
             registry_state: crate::session::model_picker::RegistryState::Idle,
+            mc_remove_confirm: None,
             model_picker: None,
             mcp_servers: Vec::new(),
             mcp_errors: Vec::new(),
@@ -1357,6 +1360,32 @@ impl Chat {
             .unwrap_or(self.globals.models.as_slice())
     }
 
+    /// 「获取模型」落盘后刷新内存目录：该 provider 的条目整体以磁盘现读为
+    /// 准（实拉目录替换 models-store 陈旧缓存），其余 provider 不动；其他
+    /// 商的进程答案/RPC 清单原样保留。
+    pub(crate) fn refresh_provider_catalog(&mut self, provider: &str) {
+        let fresh = pi_link::catalog::disk_models();
+        let mut g: Vec<_> = self
+            .globals
+            .models
+            .iter()
+            .filter(|m| m.provider != provider)
+            .cloned()
+            .collect();
+        g.extend(fresh.iter().cloned());
+        self.globals.models = pi_link::catalog::dedupe(g);
+        let cwd_key = self.cwd.to_string_lossy().to_string();
+        let mut m: Vec<_> = self
+            .models_by_cwd
+            .remove(&cwd_key)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|x| x.provider != provider)
+            .collect();
+        m.extend(fresh);
+        self.models_by_cwd.insert(cwd_key, pi_link::catalog::dedupe(m));
+    }
+
     /// 当前项目的上下文（010-启动.md §5）：命中启动装载的集合就直接返回，
     /// 未命中（新打开的项目）用同一个装载函数现算一次并纳入集合。
     pub(crate) fn project_ctx_now(&mut self) -> startup::ProjectCtx {
@@ -1934,6 +1963,10 @@ impl Render for Chat {
         root = dialogs::render_dialogs(root, self, &weak_for_dialog, t, cx);
         // 040 卸载扩展确认浮层（叠在设置弹窗之上）
         if let Some(el) = settings::plugins::remove_confirm_overlay(self, cx) {
+            root = root.child(el);
+        }
+        // 042 移除内置商确认浮层（同款机制，叠在设置弹窗之上）
+        if let Some(el) = settings::models::remove_provider_confirm_overlay(self, cx) {
             root = root.child(el);
         }
         // psp 悬浮层（tooltip / 详情卡 / 菜单 / 确认）

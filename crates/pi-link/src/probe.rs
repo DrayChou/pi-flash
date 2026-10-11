@@ -26,10 +26,15 @@ pub enum Auth {
 }
 
 /// 探查结果三态。
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ProbeOutcome {
-    /// 2xx：通路与 key 均有效。
-    Ok { models: usize, latency_ms: u64 },
+    /// 2xx：通路与 key 均有效；`catalog` = 响应体里 best-effort 解出的模型
+    /// 目录（字段缺失尽量回填，解不出为空）。
+    Ok {
+        models: usize,
+        latency_ms: u64,
+        catalog: Vec<crate::protocol::ModelInfo>,
+    },
     /// 401/403：key 被拒（网络通）。
     AuthRejected { status: u16 },
     /// 超时/DNS/其他 HTTP 状态：不可达或端点不符。
@@ -121,8 +126,10 @@ pub fn custom_probe_key(api_key: &str, vault: &dyn SecretVault) -> Option<String
 }
 
 /// 发一次列模型 GET（阻塞，20s 超时）并按三态分类。2xx 响应体里的
-/// `data[]`（openai/anthropic 形状）或 `models[]`（google 形状）计模型数，
-/// 解不出按 0 计——探查只管通路，不接管目录。
+/// `data[]`（openai/anthropic 形状）或 `models[]`（google 形状）解析模型
+/// 目录：id 缺失回退 `name`（google 形状剥 `models/` 前缀）、显示名取
+/// `displayName`/`display_name`、上下文窗口取 `context_length`/
+/// `context_window`/`inputTokenLimit`；解不出按空目录计。
 pub fn probe(url: &str, auth: Auth, key: &str) -> ProbeOutcome {
     let started = std::time::Instant::now();
     let agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(20)).build();
@@ -153,17 +160,52 @@ pub fn probe(url: &str, auth: Auth, key: &str) -> ProbeOutcome {
             s.chars().take(1024 * 1024).collect::<String>()
         })
         .unwrap_or_default();
-    let models = serde_json::from_str::<serde_json::Value>(&body)
+    let entries = serde_json::from_str::<serde_json::Value>(&body)
         .ok()
-        .map(|v| {
+        .and_then(|v| {
             v.get("data")
                 .or_else(|| v.get("models"))
                 .and_then(|a| a.as_array())
-                .map(|a| a.len())
-                .unwrap_or(0)
+                .cloned()
         })
-        .unwrap_or(0);
-    ProbeOutcome::Ok { models, latency_ms }
+        .unwrap_or_default();
+    let models = entries.len();
+    let catalog = entries.iter().filter_map(parse_entry).collect();
+    ProbeOutcome::Ok { models, latency_ms, catalog }
+}
+
+/// 单条模型目录项的 best-effort 解析（各家 /models 字段形状不一）。
+fn parse_entry(e: &serde_json::Value) -> Option<crate::protocol::ModelInfo> {
+    let raw_id = e
+        .get("id")
+        .and_then(|v| v.as_str())
+        .or_else(|| e.get("name").and_then(|v| v.as_str()))?;
+    let id = raw_id.strip_prefix("models/").unwrap_or(raw_id);
+    if id.is_empty() {
+        return None;
+    }
+    let display = e
+        .get("displayName")
+        .and_then(|v| v.as_str())
+        .or_else(|| e.get("display_name").and_then(|v| v.as_str()))
+        .or_else(|| e.get("name").and_then(|v| v.as_str()))
+        .unwrap_or("");
+    let name = if display.is_empty() || display == raw_id {
+        String::new()
+    } else {
+        display.to_string()
+    };
+    let context_window = e
+        .get("context_length")
+        .and_then(|v| v.as_u64())
+        .or_else(|| e.get("context_window").and_then(|v| v.as_u64()))
+        .or_else(|| e.get("inputTokenLimit").and_then(|v| v.as_u64()));
+    Some(crate::protocol::ModelInfo {
+        id: id.to_string(),
+        name,
+        provider: String::new(),
+        context_window,
+    })
 }
 
 #[cfg(test)]
@@ -214,5 +256,36 @@ mod tests {
         assert_eq!(custom_probe_key("sk-plain", &vault), Some("sk-plain".into()));
         assert_eq!(custom_probe_key("$OTHER_VAR", &vault), None);
         assert_eq!(custom_probe_key("!cmd", &vault), None);
+    }
+
+    #[test]
+    fn entry_parse_maps_each_provider_shape() {
+        // openrouter：name/id/context_length
+        let m = parse_entry(&serde_json::json!({
+            "id": "deepseek/deepseek-r1", "name": "DeepSeek R1", "context_length": 128000
+        }))
+        .unwrap();
+        assert_eq!(m.id, "deepseek/deepseek-r1");
+        assert_eq!(m.name, "DeepSeek R1");
+        assert_eq!(m.context_window, Some(128000));
+        // google：name 带 models/ 前缀 + displayName + inputTokenLimit
+        let m = parse_entry(&serde_json::json!({
+            "name": "models/gemini-2.0-flash", "displayName": "Gemini 2.0 Flash",
+            "inputTokenLimit": 1048576
+        }))
+        .unwrap();
+        assert_eq!(m.id, "gemini-2.0-flash");
+        assert_eq!(m.name, "Gemini 2.0 Flash");
+        assert_eq!(m.context_window, Some(1048576));
+        // openai：只有 id（name=owned_by 字符串时回落空显示名）
+        let m = parse_entry(&serde_json::json!({ "id": "gpt-4o", "object": "model" })).unwrap();
+        assert_eq!(m.id, "gpt-4o");
+        assert_eq!(m.name, "");
+        assert_eq!(m.context_window, None);
+        assert!(parse_entry(&serde_json::json!({ "object": "model" })).is_none());
+        assert_eq!(
+            parse_entry(&serde_json::json!({ "id": "x", "name": "x" })).unwrap().name,
+            ""
+        );
     }
 }

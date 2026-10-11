@@ -1,13 +1,10 @@
 //! 设置面板公共件 —— pi-web `SettingsUi.tsx` 的 GPUI 复刻（Config* 系列）。
 //! 尺寸走 `crate::ui::tokens`（UI 组件规范）；颜色走主题语义色
-//! （danger 系见 theme.rs；状态色绿 0x4ade80 / 警 0xd97706 / 靛蓝徽标 hsla）。
+//! （danger 系见 theme.rs；靛蓝徽标 hsla）。
 
 use gpui::{AnyElement, SharedString, FontWeight, MouseButton, Window, div, px, rgb};
 
 use super::*;
-
-pub(crate) const GREEN: u32 = 0x4ade80;
-pub(crate) const WARN: u32 = 0xd97706;
 
 /// 靛蓝小徽标（reasoning "T"、项目 scope）——pi-web rgba(99,102,241,…)。
 pub(crate) fn indigo_bg() -> gpui::Hsla {

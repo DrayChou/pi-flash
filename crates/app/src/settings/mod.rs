@@ -1,10 +1,11 @@
-//! Settings panel：左导航页签（界面/模型/技能/扩展/MCP/其他；「远程控制」
+//! Settings panel：左导航页签（界面/模型/技能/扩展/MCP/其他/关于；「远程控制」
 //! 页代码保留、导航入口已隐藏——2026-10-10 用户定夺），
 //! 内部页面按 pi-web 最新版重构（路径条/分组侧栏/详情表单/底栏）。表单
 //! 状态由 SettingsPanel entity 持有；mc_*/mcp_* 动作仍在 Chat 上（单一
 //! RPC 属主）。子代理页已移除——社区子代理扩展经「扩展」页安装即用，
 //! 不再建模任何 subagent 配置。
 
+pub(crate) mod about;
 pub(crate) mod custom_models;
 pub(crate) mod general;
 pub(crate) mod mcp;
@@ -23,12 +24,11 @@ pub(crate) use crate::ui::{VListHeight, DropdownState, icon, vlist};
 pub(crate) use widgets::{
     config_button, config_switch, detail_shell, error_note, field,
     group_header, group_switch, mono_text, note, scope_tag,
-    section_title, set_row, sidebar_list, sidebar_shell, switch_base, status_dot, Btn, GREEN,
-    LIST_W, WARN,
+    section_title, set_row, sidebar_list, sidebar_shell, switch_base, status_dot, Btn, LIST_W,
 };
 
-/// 页签序：0 界面 · 1 模型 · 2 技能 · 3 扩展 · 4 MCP · 5 其他（6 远程控制
-/// 的 match 分支保留，导航入口已隐藏——2026-10-10 定）。
+/// 页签序：0 界面 · 1 模型 · 2 技能 · 3 扩展 · 4 MCP · 5 其他 · 7 关于
+/// （6 远程控制的 match 分支保留，导航入口已隐藏——2026-10-10 定）。
 pub(crate) const TAB_GENERAL: u8 = 0;
 pub(crate) const TAB_MODELS: u8 = 1;
 pub(crate) const TAB_SKILLS: u8 = 2;
@@ -36,6 +36,7 @@ pub(crate) const TAB_PLUGINS: u8 = 3;
 pub(crate) const TAB_MCP: u8 = 4;
 pub(crate) const TAB_MISC: u8 = 5;
 pub(crate) const TAB_REMOTE: u8 = 6;
+pub(crate) const TAB_ABOUT: u8 = 7;
 
 /// The settings modal's form state (pi-web SettingsPanel own-state parity).
 pub(crate) struct SettingsPanel {
@@ -353,15 +354,16 @@ pub(crate) fn render_settings(
         ),
         TAB_MISC => mc_misc_view(chat, weak),
         TAB_REMOTE => crate::settings::remote::mc_remote_view(chat, weak),
+        TAB_ABOUT => crate::settings::about::mc_about_view(),
         _ => mc_general_view(
             chat, weak, font_popup, &font_dd, &font_filter, &font_filter_value,
             size_popup, &size_dd,
         ),
     };
 
-    // 界面/其他页保持旧行为：body 滚动 + 大内边距；分栏页 body 不滚动、
+    // 界面/其他/关于页保持旧行为：body 滚动 + 大内边距；分栏页 body 不滚动、
     // pane 自身 h_full（顶条/底栏/侧栏滚动各自管理）
-    let single_column = tab == TAB_GENERAL || tab == TAB_MISC;
+    let single_column = tab == TAB_GENERAL || tab == TAB_MISC || tab == TAB_ABOUT;
     let body = if single_column {
         div()
             .id("mc-body")
@@ -459,7 +461,7 @@ fn two_pane(sidebar: gpui::AnyElement, detail: gpui::AnyElement) -> gpui::AnyEle
         .into_any_element()
 }
 
-/// 左导航六项（icon + label；激活 = bg_selected + 600 + icon accent）。
+/// 左导航七项（icon + label；激活 = bg_selected + 600 + icon accent）。
 /// 原第七项「远程控制」（TAB_REMOTE）入口已隐藏——2026-10-10 用户定夺；
 /// 页面渲染分支仍在，重开只需往数组加回
 /// `(TAB_REMOTE, "远程控制", "message-square")`。
@@ -472,6 +474,7 @@ fn nav_items(tab: u8, weak_close: gpui::WeakEntity<Chat>) -> Vec<gpui::AnyElemen
         (TAB_PLUGINS, "扩展", "plug"),
         (TAB_MCP, "MCP", "server"),
         (TAB_MISC, "其他", "circle-ellipsis"),
+        (TAB_ABOUT, "关于", "info"),
     ]
     .iter()
     .map(|(ix, label, icon_name)| {

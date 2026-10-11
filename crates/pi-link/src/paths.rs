@@ -88,6 +88,14 @@ pub fn session_recents_file() -> Option<PathBuf> {
     file("session-recents.json")
 }
 
+/// `~/.pi-flash/provider-catalog.json` — 「获取模型」落盘的 provider 目录
+/// （probe 成功响应的 best-effort 解析；disk_models 优先读取，覆盖
+/// models-store 的陈旧缓存）。与 010 的 catalog-cache.json（进程答案缓存）
+/// 是两个文件。
+pub fn provider_catalog_file() -> Option<PathBuf> {
+    file("provider-catalog.json")
+}
+
 /// `~/.pi-flash/session-ext.json` — 会话级插件清单（自定义档：每个对话保存一份）。
 pub fn session_ext_file() -> Option<PathBuf> {
     file("session-ext.json")

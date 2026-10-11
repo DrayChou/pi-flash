@@ -43,6 +43,9 @@ impl Chat {
                 out.push(p.clone());
             }
         }
+        // 【移除】过的内置商不再出现在列表（重新配置 key 时自动除名）
+        let removed = crate::services::workspace::removed_providers();
+        out.retain(|p| !removed.contains(p));
         out
     }
 
@@ -302,26 +305,16 @@ impl Chat {
             }
         }
         // 换 key 注入的是子进程环境，重启会话才生效（051 §8）
-        self.reload_settings_panel();
-        if let Some(st) = self.settings.clone() {
-            let input = st.read(cx).key_input.clone();
-            input.update(cx, |ti, cx| ti.set_value(String::new(), cx));
+        // 保存 = （重新）注册：从【移除】清单除名，合并列表恢复显示
+        let mut removed = crate::services::workspace::removed_providers();
+        if removed.iter().any(|p| p == &provider) {
+            removed.retain(|p| p != &provider);
+            crate::services::workspace::set_removed_providers(&removed);
         }
-        // 042 决策 3：保存后自动探查通路（表外商跳过——探查行不渲染）
+        self.reload_settings_panel();
+        // 输入框保留刚保存的 key（掩码态），眼睛可复核
+        // 042 决策 3：保存后自动探查 + 实拉该商模型目录落盘
         self.mc_probe_start(provider, cx);
-        cx.notify();
-    }
-
-    pub(crate) fn mc_delete_key(&mut self, provider: String, cx: &mut Context<Self>) {
-        self.mc_clear_error(cx);
-        if let Err(e) =
-            pi_link::pf_auth::delete_catalog_key(&provider, &pi_link::credentials::KeyringVault)
-        {
-            self.mc_set_error(&e, cx);
-            return;
-        }
-        self.mc_probe.remove(&provider);
-        self.reload_settings_panel();
         cx.notify();
     }
 
@@ -335,11 +328,12 @@ impl Chat {
         cx.notify();
         cx.spawn(async move |this, cx| {
             let provider_bg = provider.clone();
+            let provider_probe = provider.clone();
             let outcome = cx
                 .background_executor()
                 .spawn(async move {
                     let Some(key) = pi_link::probe::catalog_probe_key(
-                        &provider_bg,
+                        &provider_probe,
                         &pi_link::credentials::KeyringVault,
                     ) else {
                         return pi_link::probe::ProbeOutcome::Unreachable {
@@ -351,7 +345,27 @@ impl Chat {
                 })
                 .await;
             let _ = this.update(cx, |c, cx| {
-                c.mc_probe.insert(provider, McProbe::Done(outcome));
+                if let pi_link::probe::ProbeOutcome::Ok { catalog, .. } = &outcome {
+                    if !catalog.is_empty() {
+                        if let Err(e) = pi_link::catalog::save_catalog(&provider_bg, catalog) {
+                            c.mc_set_error(&e, cx);
+                        }
+                        c.refresh_provider_catalog(&provider_bg);
+                    }
+                }
+                // 失败原因走详情错误条（错误条在保存/获取后短暂可见）
+                match &outcome {
+                    pi_link::probe::ProbeOutcome::AuthRejected { status } => c.mc_set_error(
+                        &crate::i18n::tf("获取失败：key 被拒（HTTP {s}）", &[("s", status.to_string())]),
+                        cx,
+                    ),
+                    pi_link::probe::ProbeOutcome::Unreachable { error } => c.mc_set_error(
+                        &crate::i18n::tf("获取失败：{e}", &[("e", error.clone())]),
+                        cx,
+                    ),
+                    pi_link::probe::ProbeOutcome::Ok { .. } => {}
+                }
+                c.mc_probe.insert(provider, McProbe::Done);
                 cx.notify();
             });
         })
@@ -366,31 +380,65 @@ impl Chat {
             .any(|(p, k)| p == provider && *k == pi_link::config::CredentialKind::ApiKey)
     }
 
-    /// 「已配置」状态文案：自有账本的落点（凭据库 / 文件存储 / 高级引用）。
-    pub(crate) fn mc_store_label(&self, provider: &str) -> Option<String> {
-        match pi_link::pf_auth::store_mode(provider) {
-            Some(pi_link::credentials::StoreMode::Vault) => {
-                Some(tr("已配置 · 系统凭据库").to_string())
-            }
-            Some(pi_link::credentials::StoreMode::Ref) => Some(tr("已配置").to_string()),
-            Some(pi_link::credentials::StoreMode::File) => {
-                Some(tr("已配置 · 文件存储").to_string())
-            }
-            None => None,
-        }
-    }
-
-    /// 选中一个 catalog provider：清 key 输入与筛选（pi-web 换 provider 重置表单）。
+    /// 选中一个 catalog provider：已配置的把已存 key 解出预填进输入框
+    /// （掩码态，眼睛展开）；未配置清空。筛选同步重置（换 provider 重置表单）。
     pub(crate) fn mc_select_provider(&mut self, id: String, cx: &mut Context<Self>) {
+        let saved = if self.mc_configured(&id) {
+            pi_link::probe::catalog_probe_key(&id, &pi_link::credentials::KeyringVault)
+        } else {
+            None
+        };
         if let Some(st) = self.settings.clone() {
             st.update(cx, |s, cx| {
                 s.section = id;
                 s.error = None;
-                s.key_input.update(cx, |ti, cx| ti.set_value(String::new(), cx));
+                s.key_input.update(cx, |ti, cx| {
+                    ti.set_value(saved.unwrap_or_default(), cx);
+                    ti.set_masked(true, cx);
+                });
                 s.model_filter.update(cx, |ti, cx| ti.set_value(String::new(), cx));
                 cx.notify();
             });
         }
+    }
+
+    /// 042 详情头【移除】：确认后删 key + 合并列表除名。仅内置商走这里
+    /// （自定义商的【移除】在表单头，删整条账本）。
+    pub(crate) fn mc_ask_remove_provider(&mut self, provider: String, cx: &mut Context<Self>) {
+        self.mc_remove_confirm = Some(provider);
+        cx.notify();
+    }
+
+    pub(crate) fn mc_remove_provider_close(&mut self, ok: bool, cx: &mut Context<Self>) {
+        let Some(provider) = self.mc_remove_confirm.take() else {
+            return;
+        };
+        if !ok {
+            cx.notify();
+            return;
+        }
+        if let Err(e) =
+            pi_link::pf_auth::delete_catalog_key(&provider, &pi_link::credentials::KeyringVault)
+        {
+            self.mc_set_error(&e, cx);
+            return;
+        }
+        self.mc_probe.remove(&provider);
+        let mut removed = crate::services::workspace::removed_providers();
+        if !removed.contains(&provider) {
+            removed.push(provider.clone());
+            crate::services::workspace::set_removed_providers(&removed);
+        }
+        self.reload_settings_panel();
+        let first = self.mc_provider_ids().first().cloned().unwrap_or_default();
+        self.mc_select_provider(first, cx);
+        cx.notify();
+    }
+
+    /// 042 详情【获取模型】：与保存后自动探查同一条链路——成功即把响应里
+    /// best-effort 解出的目录落盘并刷新内存（详情计数随之更新）。
+    pub(crate) fn mc_fetch_models(&mut self, provider: String, cx: &mut Context<Self>) {
+        self.mc_probe_start(provider, cx);
     }
 }
 
@@ -750,14 +798,12 @@ fn mc_models_detail(
 
     // catalog provider detail（API Key；OAuth 归 pi，PF 只管自有账本）
     let provider = selected.to_string();
-    let dc_provider = provider.clone();
     let models: Vec<pi_link::protocol::ModelInfo> = chat
         .catalog_for(&chat.cwd)
         .iter()
         .filter(|m| m.provider == provider)
         .cloned()
         .collect();
-    let configured = chat.mc_configured(&provider);
     // 详情内边距与列表 15px 统一（040 扩展页定稿；detail_shell 默认 p20）
     let detail = detail_shell("mc-detail")
         .p(px(15.))
@@ -765,90 +811,81 @@ fn mc_models_detail(
             d.child(error_note(error.as_deref().unwrap_or("")))
         });
 
-    // header：API Key + 状态（落点）+ 断开连接
-    let mut head = div()
-        .flex()
-        .items_center()
-        .gap(px(8.))
-        .min_h(px(28.))
+    // header：Provider 名称 +【移除】（删 key + 从合并列表除名，确认后执行）
+    let remove_provider = provider.clone();
+    let detail = detail.child(
+        div()
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .min_h(px(28.))
+            .child(
+                div()
+                    .text_size(crate::appearance::ui_size(13.))
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .text_color(rgb(t.text))
+                    .child(SharedString::from(
+                        crate::ui::provider_display_name(&provider).to_string(),
+                    )),
+            )
+            .child(div().flex_1())
+            .child(config_button(
+                "mc-remove",
+                weak,
+                &tr("移除"),
+                Btn::Danger,
+                true,
+                false,
+                move |c, cx| c.mc_ask_remove_provider(remove_provider.clone(), cx),
+            )),
+    );
+
+    // API Key 段：标题 + 输入（右缘内置眼睛，掩码显隐已存 key）+【保存】
+    let weak_eye = weak.clone();
+    let save_provider = provider.clone();
+    let detail = detail
         .child(section_title("API Key"))
-        .child(div().flex_1())
         .child(
             div()
                 .flex()
                 .items_center()
                 .gap(px(6.))
-                .child(status_dot(if configured { GREEN } else { t.border }))
                 .child(
                     div()
-                        .text_size(crate::appearance::ui_size(11.))
-                        .text_color(rgb(if configured { GREEN } else { t.text_dim }))
-                        .child(if configured {
-                            SharedString::from(
-                                chat.mc_store_label(&provider)
-                                    .unwrap_or_else(|| tr("已配置").to_string()),
-                            )
-                        } else {
-                            SharedString::from(tr("未配置").to_string())
-                        }),
-                ),
-        );
-    if configured {
-        head = head.child(config_button(
-            "mc-disconnect",
-            weak,
-            &tr("断开连接"),
-            Btn::Danger,
-            true,
-            false,
-            move |c, cx| c.mc_delete_key(dc_provider.clone(), cx),
-        ));
-    }
-    let detail = detail.child(head);
-
-    // 凭据输入区（API key：输入+眼睛+保存）
-    let weak_eye = weak.clone();
-    let save_provider = provider.clone();
-    let detail = detail
-        .child(
-            div()
-                .flex()
-                .gap(px(6.))
-                .child(
-                    div()
+                        .relative()
                         .flex_1()
                         .min_w_0()
-                        .child(key_input.clone()),
-                )
-                .child(
-                    div()
-                        .id("mc-key-eye")
-                        .w(px(36.))
-                        .h(px(36.))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .rounded(px(5.))
-                        .border_1()
-                        .border_color(rgb(t.border))
-                        .text_size(crate::appearance::ui_size(11.))
-                        .text_color(rgb(t.text_muted))
-                        .cursor_pointer()
-                        .hover(|s| s.bg(rgb(t.bg_hover)))
-                        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                            let _ = weak_eye.update(cx, |c, cx| {
-                                if let Some(st) = c.settings.clone() {
-                                    let input = st.read(cx).key_input.clone();
-                                    let visible = st.update(cx, |s, cx| {
-                                        s.key_visible = !s.key_visible;
-                                        cx.notify();
-                                        s.key_visible
+                        .child(key_input.clone())
+                        .child(
+                            div()
+                                .id("mc-key-eye")
+                                .absolute()
+                                .top_0()
+                                .bottom_0()
+                                .right(px(8.))
+                                .flex()
+                                .items_center()
+                                .cursor_pointer()
+                                .hover(|s| s.opacity(0.7))
+                                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                                    let _ = weak_eye.update(cx, |c, cx| {
+                                        if let Some(st) = c.settings.clone() {
+                                            let input = st.read(cx).key_input.clone();
+                                            let visible = st.update(cx, |s, cx| {
+                                                s.key_visible = !s.key_visible;
+                                                cx.notify();
+                                                s.key_visible
+                                            });
+                                            input.update(cx, |ti, cx| ti.set_masked(!visible, cx));
+                                        }
                                     });
-                                    input.update(cx, |ti, cx| ti.set_masked(!visible, cx));
-                                }
-                            });
-                        })
-                        .child(if key_visible { tr("隐藏") } else { tr("显示") }),
+                                })
+                                .child(crate::ui::icon(
+                                    if key_visible { "eye-off" } else { "eye" },
+                                    14.,
+                                    t.text_muted,
+                                )),
+                        ),
                 )
                 .child(config_button("mc-key-save", weak, &tr("保存"), Btn::Primary, false, false, move |c, cx| {
                     let key = c
@@ -859,82 +896,13 @@ fn mc_models_detail(
                         .unwrap_or_default();
                     c.mc_save_key(save_provider.clone(), key, cx);
                 })),
-        )
-        .child(note(
-            "密钥存入系统凭据库（Windows 凭据管理器 / macOS 钥匙串）；pf-auth.json 只留变量名，auth.json 归 pi",
-        ));
-
-    // 通路探查行（042 决策 3；表外商整行不渲染）
-    let detail = match mc_probe_row(chat, weak, &provider, t) {
-        Some(row) => detail.child(row),
-        None => detail,
-    };
+        );
 
     // 可用模型区 + 底部（detail_shell 收尾）
     mc_enabled_section(
         chat, weak, &provider, &models, enabled_set, model_filter, model_filter_value, detail,
     )
         .into_any_element()
-}
-
-/// 通路探查行：状态点 + 三态文案 +【重新探查】（保存后自动跑过一次）。
-fn mc_probe_row(
-    chat: &Chat,
-    weak: &gpui::WeakEntity<Chat>,
-    provider: &str,
-    t: &crate::theme::Theme,
-) -> Option<gpui::AnyElement> {
-    pi_link::probe::catalog_target(provider)?;
-    let running = matches!(chat.mc_probe.get(provider), Some(McProbe::Running));
-    let (color, text) = match chat.mc_probe.get(provider) {
-        None => (None, tr("保存后自动探查通路").to_string()),
-        Some(McProbe::Running) => (None, tr("探查中…").to_string()),
-        Some(McProbe::Done(pi_link::probe::ProbeOutcome::Ok { models, latency_ms })) => (
-            Some(GREEN),
-            crate::i18n::tf(
-                "通路正常 · {ms}ms · {n} 个模型 · 新会话生效；运行中会话需重启后可用",
-                &[("ms", latency_ms.to_string()), ("n", models.to_string())],
-            ),
-        ),
-        Some(McProbe::Done(pi_link::probe::ProbeOutcome::AuthRejected { status })) => (
-            // 0xef4444 = widgets::RED 同值（widgets 正被 UI 规范重构，不引它的语义色）
-            Some(0xef4444),
-            crate::i18n::tf("key 被拒（HTTP {s}）", &[("s", status.to_string())]),
-        ),
-        Some(McProbe::Done(pi_link::probe::ProbeOutcome::Unreachable { error })) => (
-            Some(WARN),
-            crate::i18n::tf("网络不可达：{e}", &[("e", error.clone())]),
-        ),
-    };
-    let pid = provider.to_string();
-    let row = div()
-        .flex()
-        .items_center()
-        .gap(px(8.))
-        .min_h(px(28.))
-        .child(section_title(&tr("通路")))
-        .children(color.map(|c| status_dot(c)))
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .overflow_hidden()
-                .whitespace_nowrap()
-                .text_ellipsis()
-                .text_size(crate::appearance::ui_size(11.))
-                .text_color(rgb(color.unwrap_or(t.text_dim)))
-                .child(SharedString::from(text)),
-        )
-        .child(config_button(
-            "mc-probe",
-            weak,
-            if running { tr("探查中…") } else { tr("重新探查") },
-            Btn::Secondary,
-            true,
-            running,
-            move |c, cx| c.mc_probe_start(pid.clone(), cx),
-        ));
-    Some(row.into_any_element())
 }
 
 /// 可用模型区（EnabledModelsSection parity）：标题+计数+批量钮+筛选+行开关。
@@ -964,33 +932,28 @@ fn mc_enabled_section(
             enabled_set.contains(&r)
         })
         .count();
-    let bulk_provider = provider.to_string();
-
+    // 标题行：可用模型 N/总数（左） + 【获取模型】（右，实拉该商目录）
+    let running = matches!(chat.mc_probe.get(provider), Some(McProbe::Running));
+    let fetch_provider = provider.to_string();
     let mut section = div().flex().flex_col().gap(px(8.)).pt(px(10.)).child(
         div()
             .flex()
             .items_center()
             .gap(px(8.))
-            .child(section_title(&tr("可用模型")))
-            .child(
-                div()
-                    .font_family(crate::editor::markdown::MONO_FAMILY)
-                    .text_size(crate::appearance::ui_size(10.))
-                    .text_color(rgb(t.text_dim))
-                    .child(SharedString::from(crate::i18n::tf(
-                        "已启用 {enabled}/{total}",
-                        &[("enabled", enabled_count.to_string()), ("total", models.len().to_string())],
-                    ))),
-            )
+            .child(section_title(&crate::i18n::tf(
+                "可用模型 {enabled}/{total}",
+                &[("enabled", enabled_count.to_string()), ("total", models.len().to_string())],
+            )))
             .child(div().flex_1())
-            .child(config_button("mc-bulk-on", weak, &tr("全部开启"), Btn::Secondary, true, chat.mc_project_scope, {
-                let bp = bulk_provider.clone();
-                move |c, cx| c.mc_toggle_provider(&bp, true, cx)
-            }))
-            .child(config_button("mc-bulk-off", weak, &tr("全部关闭"), Btn::Secondary, true, false, {
-                let bp = bulk_provider.clone();
-                move |c, cx| c.mc_toggle_provider(&bp, false, cx)
-            })),
+            .child(config_button(
+                "mc-fetch",
+                weak,
+                if running { tr("获取中…") } else { tr("获取模型") },
+                Btn::Secondary,
+                true,
+                running,
+                move |c, cx| c.mc_fetch_models(fetch_provider.clone(), cx),
+            )),
     );
     if chat.mc_project_scope {
         section = section.child(note(
@@ -1048,7 +1011,7 @@ fn mc_enabled_section(
                 // 不写 w_full 分隔线只有内容宽、开关贴在文字右边
                 .w_full()
                 .h(px(row_h))
-                .px(px(9.))
+                .px(px(10.))
                 .flex()
                 .items_center()
                 .gap(px(8.))
@@ -1112,4 +1075,31 @@ fn mc_enabled_section(
     );
     let section = section.child(list);
     detail.child(section)
+}
+
+/// 042 详情头【移除】的确认浮层（与扩展卸载确认同款机制，叠在设置弹窗之上）。
+pub(crate) fn remove_provider_confirm_overlay(
+    chat: &Chat,
+    cx: &mut Context<Chat>,
+) -> Option<gpui::AnyElement> {
+    let provider = chat.mc_remove_confirm.clone()?;
+    let name = crate::ui::provider_display_name(&provider).to_string();
+    let weak = cx.entity().downgrade();
+    let message = crate::i18n::tf(
+        "删除 {name} 的 API Key，并不再显示？",
+        &[("name", name)],
+    );
+    Some(crate::ui::overlay::confirm(
+        &chat.dialog_focus,
+        message,
+        {
+            let weak = weak.clone();
+            move |_, cx| {
+                let _ = weak.update(cx, |c, cx| c.mc_remove_provider_close(false, cx));
+            }
+        },
+        move |_, cx| {
+            let _ = weak.update(cx, |c, cx| c.mc_remove_provider_close(true, cx));
+        },
+    ))
 }
