@@ -969,9 +969,10 @@ fn mc_enabled_section(
             enabled_set.contains(&r)
         })
         .count();
-    // 标题行：可用模型 N/总数（左） + 【获取模型】（右，实拉该商目录）
+    // 标题行：可用模型 N/总数（左） + rotate-ccw 图标钮（右，实拉该商目录）
     let running = matches!(chat.mc_probe.get(provider), Some(McProbe::Running));
     let fetch_provider = provider.to_string();
+    let fetch_weak = weak.clone();
     let mut section = div().flex().flex_col().gap(px(8.)).pt(px(10.)).child(
         div()
             .flex()
@@ -982,13 +983,15 @@ fn mc_enabled_section(
                 &[("enabled", enabled_count.to_string()), ("total", models.len().to_string())],
             )))
             .child(div().flex_1())
-            .child(detail_button(
+            .child(crate::ui::button::icon_button(
                 "mc-fetch",
-                weak,
-                if running { tr("获取中…") } else { tr("获取模型") },
-                crate::ui::button::BtnVariant::Secondary,
+                "rotate-ccw",
+                crate::ui::button::IconBtnSize::Md,
                 running,
-                move |c, cx| c.mc_fetch_models(fetch_provider.clone(), cx),
+                move |_, _, cx| {
+                    let _ =
+                        fetch_weak.update(cx, |c, cx| c.mc_fetch_models(fetch_provider.clone(), cx));
+                },
             )),
     );
     if chat.mc_project_scope {

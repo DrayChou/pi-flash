@@ -88,6 +88,8 @@ assets! {
     // 042 模型管理：默认模型五角星（空心/实心）
     "icons/star.svg",
     "icons/star-filled.svg",
+    // 042 可用模型【获取模型】图标钮：lucide rotate-ccw（逆时针刷新）
+    "icons/rotate-ccw.svg",
     "icons/terminal.svg",
     // v54 UI: lucide additions
     "icons/sliders-horizontal.svg",

@@ -91,3 +91,47 @@ pub fn button(
     el.on_mouse_down(MouseButton::Left, on_click)
         .into_any_element()
 }
+
+/// §5.2 图标按钮尺寸：方形槽 Sm22/Md28/Lg32，内图标 14/16/18。
+/// Sm/Lg 为规范预留档（存量收敛时启用），当前只有 Md 有消费方。
+#[allow(dead_code)]
+pub enum IconBtnSize {
+    /// 22 槽 · 14 图标：tab 关闭 ×、行内 ⋯ 触发钮
+    Sm,
+    /// 28 槽 · 16 图标：行操作钮、弹窗关闭 ×
+    Md,
+    /// 32 槽 · 18 图标：topbar、psp 标题行操作
+    Lg,
+}
+
+/// §5.2 图标按钮：方形、无边框、圆角 6（R_CTRL），hover bg_hover，
+/// 禁用整体 opacity 0.5 且不挂点击。
+pub fn icon_button(
+    id: impl Into<SharedString>,
+    icon: &'static str,
+    size: IconBtnSize,
+    disabled: bool,
+    on_click: impl Fn(&gpui::MouseDownEvent, &mut gpui::Window, &mut gpui::App) + 'static,
+) -> AnyElement {
+    let t = crate::theme::theme();
+    let (slot, ix) = match size {
+        IconBtnSize::Sm => (22., 14.),
+        IconBtnSize::Md => (28., 16.),
+        IconBtnSize::Lg => (32., 18.),
+    };
+    let el = div()
+        .id(id.into())
+        .size(px(slot))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px(radius::CTRL))
+        .hover(|s| s.bg(rgb(t.bg_hover)))
+        .child(crate::ui::icon(icon, ix, t.text));
+    if disabled {
+        return el.opacity(0.5).into_any_element();
+    }
+    el.cursor_pointer()
+        .on_mouse_down(MouseButton::Left, on_click)
+        .into_any_element()
+}
