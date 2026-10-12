@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <title>pi-flash v5-scale（整体放大变体：字标高+12% 宽+10%，形状与 v3 完全一致）</title>
+  <!-- v5 实验变体：v3 字标原样放大（kx=1.10, ky=1.12），闪电不变形。母版仍是 ../tile-256.svg -->
+  <rect x="8" y="8" width="240" height="240" rx="60" fill="#000"/>
+  <g transform="translate(41.75 0) skewX(-15)">
+    <g transform="translate(-5.98 39.55) scale(0.682 0.6944)" fill="#fff">
+      <path fill-rule="evenodd" d="M64 48H150A56 56 0 0 1 150 158H100V208H64ZM100 78H126A24 24 0 0 1 126 126H100Z"/>
+      <path transform="translate(187.364 13.6) scale(7 9.5)" d="M15.914 4a1.5 1.5 0 0 0-2.474-1.561l-9 9A1.5 1.5 0 0 0 5.5 14h4.002a.5.5 0 0 1 .471.666L8.086 20a1.5 1.5 0 0 0 2.475 1.56l9-9A1.5 1.5 0 0 0 18.5 10h-3.997a.5.5 0 0 1-.472-.667z"/>
+    </g>
+  </g>
+</svg>
