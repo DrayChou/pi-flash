@@ -10,8 +10,9 @@
 # → 包内烟测 → 更新 CHANGELOG.md / CHANGELOG_EN.md → 压缩 dist/pi-flash-<版本>-win32-x64.zip
 # → 生成 SHA256SUMS 与 <资产>.sha256（npm 薄壳下载校验用，080-软件分发 §4）。
 #
-# 结束后执行尾部「后续（手动执行）」块：提交 → tag 推送（触发 macOS CI）
-# → gh release create 挂资产 → npm publish 发布薄壳包。
+# 结束后跑 scripts/ship.sh <版本> <说明文件> 收尾（发版提交 → tag 推送触发
+# publish-npm.yml 自动发薄壳 → gh release create 挂资产）。
+# macOS 不发布（RELEASE.md §1，2026-10-12 所有者定夺）。
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -164,13 +165,7 @@ echo "==> 8/8 完成"
 ls -lh "dist/$ZIP_NAME" "dist/${ZIP_NAME}.sha256" dist/SHA256SUMS
 cat <<EOF
 
-后续（按序手动执行；gh release 紧跟 tag 推送、别等 CI——CI 遇到无 release 会自建）：
-  git add crates/app/Cargo.toml npm/package.json Cargo.lock docs/CHANGELOG.md docs/CHANGELOG_EN.md
-  git commit -m "release v${VERSION}" -- crates/app/Cargo.toml npm/package.json Cargo.lock docs/CHANGELOG.md docs/CHANGELOG_EN.md
-  git tag v${VERSION}
-  git push && git push --tags   # 推送 tag 触发 macOS CI（darwin-arm64 资产 + .sha256 自动挂载）
-  gh release create "v${VERSION}" --verify-tag --title "v${VERSION}" \\
-    --notes-file "${NOTES_FILE}" \\
-    "dist/${ZIP_NAME}" "dist/${ZIP_NAME}.sha256" "dist/SHA256SUMS"
-  cd npm && npm publish         # 仅首发/回退需要（浏览器 2FA 一次性）；配好 trusted publisher 后由 publish-npm.yml 自动发，无需再跑
+后续（一条命令收尾；等价手动序列见 RELEASE.md §3.2）：
+  scripts/ship.sh ${VERSION} "${NOTES_FILE}"
+npm 薄壳无需手动发——publish-npm.yml 随 tag 推送自动 OIDC 发布（RELEASE.md §4）。
 EOF

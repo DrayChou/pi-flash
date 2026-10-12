@@ -36,7 +36,8 @@
 
 - [ ] 所有者已拍板本次版本号（见 §0，唯一来源）
 - [ ] git 工作区干净（release.sh 门禁拒绝 tracked 改动；**并行会话的活必须先由其本人提交**，
-      勿 stash、勿代提交）
+      勿 stash、勿代提交；若按规范流程**预写**了 CHANGELOG 新版本段，同样要先提交——
+      收编幂等，内容一致则零改动）
 - [ ] 门禁测试全绿：`cargo check --workspace`、`cargo test -p pi-link`、`node npm/test/e2e.js`（19 项）
 - [ ] `pi-flash.exe` 未运行（烟测会 `taskkill` 全部实例；且 debug 实例正在运行会让 debug 构建撞 exe 锁）
 - [ ] 发布说明就绪：`tmp/release-notes-<v>.md`（安装/更新命令 + 本版要点；**双语**：中文段在上、
@@ -67,7 +68,14 @@ scripts/release.sh <v> tmp/release-notes-<v>.md
 7. 生成 `SHA256SUMS` + `<资产>.sha256`（薄壳校验取用顺序：sidecar → SHA256SUMS）
 8. 完成，打印尾部块
 
-### 3.2 按脚本尾部块依序执行（顺序敏感）
+### 3.2 发版收尾（一条命令；排查时按手动序列逐步走）
+
+```bash
+scripts/ship.sh <v> tmp/release-notes-<v>.md
+```
+
+前置校验（版本三处一致、dist 三资产在位、tag 未占用）→ 发版提交（pathspec 限六文件）→
+tag → 推 main + tags → `gh release create` 挂三资产。等价手动序列（顺序敏感）：
 
 ```bash
 git add crates/app/Cargo.toml npm/package.json Cargo.lock docs/CHANGELOG.md docs/CHANGELOG_EN.md
@@ -106,7 +114,8 @@ tag 推送后 `publish-npm.yml` 自动 OIDC 发薄壳（分钟级），无需干
 - [ ] `gh release view v<v>` 正文双语（`<!-- EN -->` 为 HTML 注释不渲染；纯中文发版的用
       `gh release edit v<v> --notes-file <双语文件>` 补挂英文）
 - [ ] `npm view pi-flash version --registry=https://registry.npmjs.org/` == `<v>`
-      （OIDC 自动发时另看 Actions `publish-npm` 绿）
+      （OIDC 自动发时另看 Actions `publish-npm` 绿。CI 绿 ≠ registry 立即可查：
+      npm "being processed" 有 **1–2 分钟**传播延迟，日志见 `+ pi-flash@<v>` 即发成功，稍等再核）
 - [ ] 真机：`npm install -g pi-flash@latest --registry=https://registry.npmjs.org/`
       → 载荷下载/校验/落位成功 → `pi-flash` 启动正常
       （**本机 github.com 不通时用镜像验**：`PI_FLASH_MIRROR=http://127.0.0.1:<port>` +
@@ -119,7 +128,8 @@ tag 推送后 `publish-npm.yml` 自动 OIDC 发薄壳（分钟级），无需干
 | 症状 | 处置 |
 |---|---|
 | 烟测 ✗ 启动有输出 | 看 `dist/smoke.log`；perf 行 = `PI_FLASH_PERF` 门控回归，修码重跑 |
-| 门禁 ✗ 工作区不干净 | 等并行会话自行提交；勿 stash / 勿代提交 |
+| 门禁 ✗ 工作区不干净 | 等并行会话自行提交；勿 stash / 勿代提交。预写的 CHANGELOG 段自行提交后再整脚重跑 |
+| ship.sh ✗ tag 已存在 / push 断网 / release 撞名 | 分别见 §0 永不复用、§6 git push 断网、§6 release 撞名；脚本各步失败信息已带对应处置 |
 | git push 断网 | 网络恢复重推，本地提交不丢；勿强推 |
 | 资产漏挂 / 传坏 | `gh release upload v<v> <文件> --clobber` |
 | `gh release create` 撞名 | 多半是同名 release 已存在 → `gh release upload v<v> <资产> --clobber` 补挂 |
