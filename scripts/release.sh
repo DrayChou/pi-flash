@@ -138,12 +138,15 @@ upsert_section() {
 }
 
 ZH_SEC=$(mktemp)
-{ echo "## [$VERSION] - $TODAY"; echo; sed '/^<!-- EN -->\r\?$/,$d' "$NOTES_FILE"; } > "$ZH_SEC"
+# 去段首空行（说明文件里 <!-- EN --> 前后常带空行，收编后会多出空行）
+{ echo "## [$VERSION] - $TODAY"; echo; sed '/^<!-- EN -->\r\?$/,$d' "$NOTES_FILE" \
+  | awk 'BEGIN{seen=0} { if (seen==0 && $0 ~ /^[[:space:]]*$/) next; seen=1; print }'; } > "$ZH_SEC"
 upsert_section docs/CHANGELOG.md "$ZH_SEC"
 rm -f "$ZH_SEC"
 if grep -q '^<!-- EN -->\r\?$' "$NOTES_FILE"; then
   EN_SEC=$(mktemp)
-  { echo "## [$VERSION] - $TODAY"; echo; sed -n '/^<!-- EN -->\r\?$/,$p' "$NOTES_FILE" | tail -n +2; } > "$EN_SEC"
+  { echo "## [$VERSION] - $TODAY"; echo; sed -n '/^<!-- EN -->\r\?$/,$p' "$NOTES_FILE" | tail -n +2 \
+    | awk 'BEGIN{seen=0} { if (seen==0 && $0 ~ /^[[:space:]]*$/) next; seen=1; print }'; } > "$EN_SEC"
   upsert_section docs/CHANGELOG_EN.md "$EN_SEC"
   rm -f "$EN_SEC"
   echo "    英文段已收编 CHANGELOG_EN.md"
