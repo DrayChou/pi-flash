@@ -13,6 +13,7 @@
 - `set_model` 字段是 `modelId`，且**异步**：立刻 `get_state` 拿旧值，响应 data 里才有切换后的完整模型对象。
 - client 不得硬编码 `--no-session`（会压掉 `--session`）。
 - `get_messages` 快照携带 bashExecution——与乐观卡并轨会出双卡。
+- **`agent_end{willRetry:true}` 不是轮末**（pi-flash-7ep）：可重试错误（429/5xx/网络断，默认 maxRetries=3、退避 2s/4s/8s 上限 60s）后 pi 在**同一轮内**退避并重发 `agent_start`。轮的真正终点是 `agent_end{willRetry:false}` + `agent_settled`；pi 语义 `isStreaming=_isAgentRunActive` 持续到 settled（`isIdle` 明列 retry 不算 idle）。伴随事件 `auto_retry_start{attempt,maxAttempts,delayMs,errorMessage}` / `auto_retry_end{success,attempt,finalError?}`（success=true 不带 finalError）。注意 `FreeUsageLimitError` 类账号限额在 pi 的 NON-RETRYABLE 名单里，不会重试（`@earendil-works/pi-ai` utils/retry.js）。
 
 ## 方法存在性（1.0.0 / 1.1.0 实测，vendor 升级时复核）
 

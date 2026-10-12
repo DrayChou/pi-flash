@@ -375,6 +375,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("composer.shell_busy", "会话忙，无法执行 shell 命令", "會話忙碌，無法執行 shell 命令", "Session is busy — can't run a shell command"),
     ("composer.shell_empty", "命令为空：! 后面接 shell 命令", "命令為空：! 後面接 shell 命令", "Empty command — type a shell command after !"),
     ("status.compacting", "压缩中…", "壓縮中…", "Compacting…"),
+    ("status.auto_retry", "出错，{secs}s 后自动重试（第 {attempt}/{max} 次）", "出錯，{secs}s 後自動重試（第 {attempt}/{max} 次）", "Error — retrying in {secs}s (attempt {attempt}/{max})"),
     ("composer.compacting_wait", "上下文压缩中，请稍等……", "上下文壓縮中，請稍等……", "Compacting context, please wait…"),
     ("composer.generating_title", "生成标题…", "生成標題…", "Generating title…"),
     ("composer.title_set", "已生成标题: {title}", "已生成標題: {title}", "Title set: {title}"),

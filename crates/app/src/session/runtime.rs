@@ -1036,26 +1036,64 @@ impl SessionRuntime {
                 // 轮不到记点
                 cx.emit(SessionEvent::TurnSettled);
             }
-            Event::AgentEnd { will_retry: _ } => {
-                self.agent_running = false;
+            Event::AgentEnd { will_retry } => {
                 // willRetry 只说明 pi「打算」重试（乐观预判）——结局旗标不在这里
                 // 清：重试真跑起来后由它的 assistant 消息覆盖，没跑起来就保留
                 // 上一跳的错误结局（见 AgentStart / MessageEnd 注释）。
-                self.phase_waiting = false;
-                self.pending_echo = None;
-                self.streaming_content = false;
-                // 同上：轮末不退役锚点（短回复继续钉在屏顶）
-                self.settle_turn();
-                // our own writer advanced the file — re-baseline so the
-                // external-append tick doesn't re-read our own turn
-                self.sync_disk_baseline();
-                // the session file exists now — make the new session show up
-                // in the sidebar (pi-web refreshKey-on-agent_end parity)
-                cx.emit(SessionEvent::ListDirty);
-                // refresh fork anchors so newly-sent user messages gain entry ids
-                self.refresh_anchors();
-                // agent may have written files: refresh git status
-                            }
+                if will_retry {
+                    // 重试退避：轮**没**结束（pi 退避后重发 agent_start 接着跑），
+                    // agent_running 必须保持 true——composer 停止按钮/输入框提示/
+                    // 等待行都读它，就地复位会在退避的 2-8s 里把「停止」翻回
+                    // 「发送」、界面假装空闲（pi 语义：isStreaming=_isAgentRunActive
+                    // 持续到 settled，isIdle 明列 retry 不算 idle；pi-web 全程
+                    // 显示运行中）。轮末收尾（响铃/落盘基线/列表/锚点）一并推迟
+                    // 到真轮末；退避倒计时文案由 auto_retry_start 负责。用户此时
+                    // 点停止仍走 abort_stream：pi abortRetry 取消退避，乐观复位
+                    // 语义不变。
+                    self.phase_waiting = false;
+                    self.pending_echo = None;
+                    self.streaming_content = false;
+                    cx.emit(SessionEvent::Changed);
+                } else {
+                    self.agent_running = false;
+                    self.phase_waiting = false;
+                    self.pending_echo = None;
+                    self.streaming_content = false;
+                    // 同上：轮末不退役锚点（短回复继续钉在屏顶）
+                    self.settle_turn();
+                    // our own writer advanced the file — re-baseline so the
+                    // external-append tick doesn't re-read our own turn
+                    self.sync_disk_baseline();
+                    // the session file exists now — make the new session show up
+                    // in the sidebar (pi-web refreshKey-on-agent_end parity)
+                    cx.emit(SessionEvent::ListDirty);
+                    // refresh fork anchors so newly-sent user messages gain entry ids
+                    self.refresh_anchors();
+                    // agent may have written files: refresh git status
+                }
+            }
+            Event::AutoRetryStart { attempt, max_attempts, delay_ms, error_message: _ } => {
+                // 状态行（快照/微信端消费）报倒计时与次数；错误原文可能很长，
+                // 不进一行状态。桌面端此时按钮保持停止态、等待行照常转。
+                let secs = (delay_ms / 1000).max(1);
+                self.status = crate::i18n::tf(
+                    "status.auto_retry",
+                    &[
+                        ("secs", secs.to_string()),
+                        ("attempt", attempt.to_string()),
+                        ("max", max_attempts.to_string()),
+                    ],
+                );
+                cx.emit(SessionEvent::Changed);
+            }
+            Event::AutoRetryEnd { success, attempt: _, final_error: _ } => {
+                // success=true：重试尝试已通过，轮继续（随后的 AgentStart 会把
+                // 状态行拨回 running）；false：耗尽/被中止，真轮末的
+                // agent_end{willRetry:false}+agent_settled 马上到，收尾归它们。
+                if success {
+                    self.status = "running".into();
+                }
+            }
             Event::ExtensionUi(req) => cx.emit(SessionEvent::ExtUi(req)),
             // `!` 执行的流式输出增量：就地追加进乐观卡片（pi-web 不消费这个
             // 事件、靠会话重载——这里直接流式渲染，严格更好）
@@ -2160,6 +2198,43 @@ mod turn_outcome_tests {
         feed(&rt, cx, Event::AgentSettled);
         assert!(!rt.read_with(cx, |r, _| r.turn_error));
         assert!(!rt.read_with(cx, |r, _| r.turn_interrupted));
+    }
+
+    /// pi-flash-7ep 回归：退避窗口轮**未**结束——agent_end{willRetry:true}
+    /// 不得复位 agent_running（composer 停止按钮/输入框提示/等待行同源，
+    /// 就地复位会在退避的 2-8s 里把「停止」翻回「发送」）；auto_retry_start
+    /// 报倒计时；真轮末（willRetry=false + settled）才回落 idle。
+    #[gpui::test]
+    fn retry_backoff_keeps_running_state(cx: &mut TestAppContext) {
+        let rt = runtime(cx);
+        feed(&rt, cx, Event::AgentStart);
+        feed(&rt, cx, ev_start("assistant", false));
+        feed(&rt, cx, ev_end("assistant", "error", Some("429: too many requests")));
+        feed(&rt, cx, Event::AgentEnd { will_retry: true });
+        assert!(
+            rt.read_with(cx, |r, _| r.agent_running),
+            "退避窗口必须保持运行态，否则停止按钮翻回发送"
+        );
+        feed(&rt, cx, Event::AutoRetryStart {
+            attempt: 1,
+            max_attempts: 3,
+            delay_ms: 2000,
+            error_message: Some("429".into()),
+        });
+        assert!(rt.read_with(cx, |r, _| r.agent_running));
+        assert!(
+            rt.read_with(cx, |r, _| r.status.contains("2s")),
+            "状态行报退避倒计时，实际：{}",
+            rt.read_with(cx, |r, _| r.status.clone())
+        );
+        // 重试跑起来并成功收尾
+        feed(&rt, cx, Event::AgentStart);
+        feed(&rt, cx, ev_start("assistant", false));
+        feed(&rt, cx, ev_end("assistant", "stop", None));
+        feed(&rt, cx, Event::AutoRetryEnd { success: true, attempt: 1, final_error: None });
+        feed(&rt, cx, Event::AgentEnd { will_retry: false });
+        feed(&rt, cx, Event::AgentSettled);
+        assert!(!rt.read_with(cx, |r, _| r.agent_running), "真轮末回落 idle");
     }
 
     /// 真机回归 2：工具报错（isError）是工作过程，不是轮末结局。

@@ -553,6 +553,22 @@ pub enum Event {
     AgentEnd { will_retry: bool },
     /// pi will not continue automatically (retries/queue drained).
     AgentSettled,
+    /// `auto_retry_start`：可重试错误（429/5xx/网络断）后 pi 计划自动重试，
+    /// 退避 sleep 中——轮**未**结束，agent 语义上仍在跑（isStreaming 持续）。
+    AutoRetryStart {
+        attempt: u32,
+        max_attempts: u32,
+        delay_ms: u64,
+        error_message: Option<String>,
+    },
+    /// `auto_retry_end`：重试序列收尾。success=true = 某次重试尝试的助手
+    /// 响应已通过（轮内继续）；false = 重试耗尽/被中止，真轮末事件
+    /// （agent_end{willRetry:false} + agent_settled）随后就到。
+    AutoRetryEnd {
+        success: bool,
+        attempt: u32,
+        final_error: Option<String>,
+    },
     /// `bash_execution_update`（rpc `bash` 执行中的流式输出增量；id 关联发起
     /// 的命令，delta 追加到已显示的输出尾部）
     BashExecutionUpdate {
@@ -920,6 +936,17 @@ pub fn parse_record(v: &Value) -> Event {
             will_retry: v["willRetry"].as_bool().unwrap_or(false),
         },
         Some("agent_settled") => Event::AgentSettled,
+        Some("auto_retry_start") => Event::AutoRetryStart {
+            attempt: v["attempt"].as_u64().unwrap_or(0) as u32,
+            max_attempts: v["maxAttempts"].as_u64().unwrap_or(0) as u32,
+            delay_ms: v["delayMs"].as_u64().unwrap_or(0),
+            error_message: v["errorMessage"].as_str().map(str::to_string),
+        },
+        Some("auto_retry_end") => Event::AutoRetryEnd {
+            success: v["success"].as_bool().unwrap_or(false),
+            attempt: v["attempt"].as_u64().unwrap_or(0) as u32,
+            final_error: v["finalError"].as_str().map(str::to_string),
+        },
         Some("bash_execution_update") => Event::BashExecutionUpdate {
             id: v["id"].as_str().map(str::to_string),
             delta: v["delta"].as_str().unwrap_or("").to_string(),
@@ -1432,6 +1459,41 @@ mod tests {
             Some(Event::AgentEnd { will_retry: false })
         ));
         assert!(matches!(parse_line(r#"{"type":"agent_settled"}"#), Some(Event::AgentSettled)));
+    }
+
+    #[test]
+    fn auto_retry_events_are_typed() {
+        let e = parse_line(
+            r#"{"type":"auto_retry_start","attempt":2,"maxAttempts":3,"delayMs":4000,"errorMessage":"429: too many requests"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            e,
+            Event::AutoRetryStart {
+                attempt: 2,
+                max_attempts: 3,
+                delay_ms: 4000,
+                error_message: Some("429: too many requests".into()),
+            }
+        );
+        // success=true 的收尾不带 finalError（重试后的尝试已通过）
+        let e = parse_line(r#"{"type":"auto_retry_end","success":true,"attempt":1}"#).unwrap();
+        assert_eq!(
+            e,
+            Event::AutoRetryEnd { success: true, attempt: 1, final_error: None }
+        );
+        let e = parse_line(
+            r#"{"type":"auto_retry_end","success":false,"attempt":3,"finalError":"Retry cancelled"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            e,
+            Event::AutoRetryEnd {
+                success: false,
+                attempt: 3,
+                final_error: Some("Retry cancelled".into()),
+            }
+        );
     }
 
     #[test]
