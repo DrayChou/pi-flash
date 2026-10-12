@@ -15,7 +15,8 @@ use std::sync::Arc;
 use alacritty_terminal::event::{Event, EventListener, WindowSize};
 use alacritty_terminal::event_loop::{EventLoop, EventLoopSender, Msg};
 use alacritty_terminal::grid::{Dimensions, Scroll};
-use alacritty_terminal::index::{Column, Line};
+use alacritty_terminal::index::{Column, Line, Side};
+use alacritty_terminal::selection::{Selection, SelectionType};
 use alacritty_terminal::sync::FairMutex;
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::{Config, Term, TermMode};
@@ -24,8 +25,8 @@ use alacritty_terminal::vte::ansi::{Color, CursorShape, NamedColor, Rgb};
 use futures::channel::mpsc::UnboundedSender;
 use gpui::{
     px, Font, FontStyle, FontWeight, Hsla, Keystroke, MouseButton, MouseDownEvent,
-    MouseMoveEvent, Pixels, Point, ScrollDelta, ScrollWheelEvent, SharedString, UnderlineStyle,
-    UTF16Selection, WeakEntity, Window,
+    MouseMoveEvent, MouseUpEvent, Pixels, Point, ScrollDelta, ScrollWheelEvent, SharedString,
+    UnderlineStyle, UTF16Selection, WeakEntity, Window,
 };
 
 use crate::Chat;
@@ -770,23 +771,36 @@ impl gpui::Element for TerminalElement {
                 // mouse: selection drag + wheel scroll (hit-tested manually)
                 let this = shared.clone();
                 window.on_mouse_event(move |ev: &MouseDownEvent, phase, window, cx| {
-                    if phase != gpui::DispatchPhase::Bubble
-                        || ev.button != MouseButton::Left
-                        || !bounds.contains(&ev.position)
-                    {
+                    if phase != gpui::DispatchPhase::Bubble || ev.button != MouseButton::Left {
                         return;
                     }
-                    this.start_selection(ev.position, bounds, window, cx);
+                    if !bounds.contains(&ev.position) {
+                        // 点别处 = 上一轮拖选收场（鼠标在窗口外松开时收不到
+                        // MouseUp，锚点会残留）
+                        this.end_selection(cx);
+                        return;
+                    }
+                    this.start_selection(ev.position, bounds, ev.click_count, window, cx);
                 });
+                // drag 不要求命中 bounds：拖出终端区（顶/底）正是「越界自动
+                // 滚动」的场景；「是不是在拖本次选区」由 sel_anchor 判定
                 let this = shared.clone();
                 window.on_mouse_event(move |ev: &MouseMoveEvent, phase, window, cx| {
                     if phase != gpui::DispatchPhase::Bubble
                         || ev.pressed_button != Some(MouseButton::Left)
-                        || !bounds.contains(&ev.position)
                     {
                         return;
                     }
                     this.drag_selection(ev.position, bounds, window, cx);
+                });
+                // 松开左键 = 拖动结束：清锚点、保留选区。不清的话锚点会残留，
+                // 之后在别处拖动会莫名改到终端选区
+                let this = shared.clone();
+                window.on_mouse_event(move |ev: &MouseUpEvent, phase, _window, cx| {
+                    if phase != gpui::DispatchPhase::Bubble || ev.button != MouseButton::Left {
+                        return;
+                    }
+                    this.end_selection(cx);
                 });
                 // right-click: terminal context menu (copy / paste / select
                 // all) — 终端没有右键菜单的话，鼠标用户无从复制粘贴
@@ -848,32 +862,70 @@ struct TermShared {
 }
 
 impl TermShared {
-    /// Mouse down: record the drag anchor and clear any previous selection
-    /// (xterm clears on a plain click).
+    /// Mouse down: 双击 = 选词，三击 = 选整（逻辑）行，单击 = 清选区+落锚点
+    /// （xterm 语义：单击清掉上一次选中）。
     fn start_selection(
         &self,
         pos: Point<Pixels>,
         bounds: gpui::Bounds<Pixels>,
+        click_count: usize,
         _window: &mut Window,
         cx: &mut gpui::App,
     ) {
-        let anchor = self.cell_at_shared(bounds, pos);
+        let cell = self.cell_at_shared(bounds, pos);
+        // 选词/选行走 alacritty 自己的语义边界（zed/终端家族同口径）
+        let ranged = match click_count {
+            2 => self.semantic_range(cell, SelectionType::Semantic),
+            3 => self.semantic_range(cell, SelectionType::Lines),
+            _ => None,
+        };
         let _ = self.weak.update(cx, |chat, cx| {
             if let Some(tab) = chat.terminals.iter_mut().find(|t| t.id == self.tab_id) {
-                tab.sel_anchor = Some(anchor);
-                tab.selection = None;
+                match ranged {
+                    Some((a, b)) => {
+                        tab.selection = Some((a, b));
+                        // 锚在词/行起点：双击后接着拖可继续扩选
+                        tab.sel_anchor = Some(a);
+                    }
+                    None => {
+                        tab.sel_anchor = Some(cell);
+                        tab.selection = None;
+                    }
+                }
                 cx.notify();
             }
         });
     }
 
+    /// 拖动中：越界（拖到终端区上下之外）自动滚动，朝鼠标方向滚，越远滚
+    /// 越多（每 1 行高 1 行，单次事件封顶 4 行）；鼠标事件驱动，拖出区外
+    /// 后仍持续移鼠标就持续滚。alt screen 无回滚缓冲，不滚（否则等于给
+    /// 应用狂发方向键），只把选点钳在首/末行。
     fn drag_selection(
         &self,
         pos: Point<Pixels>,
         bounds: gpui::Bounds<Pixels>,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut gpui::App,
     ) {
+        let top = bounds.origin.y;
+        let bottom = bounds.origin.y + bounds.size.height;
+        let out = if pos.y < top {
+            Some(top - pos.y)
+        } else if pos.y > bottom {
+            Some(bottom - pos.y)
+        } else {
+            None
+        };
+        if let Some(d) = out {
+            let alt = self.term.lock().mode().contains(TermMode::ALT_SCREEN);
+            if !alt {
+                let steps = (f32::from(d) / self.line_h).ceil().clamp(1., 4.);
+                // 正 = 往历史滚（同 scroll() 的 delta 约定）
+                let dir = if pos.y < top { 1. } else { -1. };
+                self.scroll(ScrollDelta::Lines(Point::new(0., dir * steps)), window, cx);
+            }
+        }
         let head = self.cell_at_shared(bounds, pos);
         let _ = self.weak.update(cx, |chat, cx| {
             if let Some(tab) = chat.terminals.iter_mut().find(|t| t.id == self.tab_id) {
@@ -886,6 +938,24 @@ impl TermShared {
                 }
             }
         });
+    }
+
+    /// 松开左键 = 拖动结束：清锚点（选区保留）。
+    fn end_selection(&self, cx: &mut gpui::App) {
+        let _ = self.weak.update(cx, |chat, cx| {
+            if let Some(tab) = chat.terminals.iter_mut().find(|t| t.id == self.tab_id)
+                && tab.sel_anchor.take().is_some()
+            {
+                cx.notify();
+            }
+        });
+    }
+
+    /// 语义选区（双击选词 / 三击选逻辑行）：直接用 alacritty 的
+    /// `semantic_search_left/right` 与 `line_search_left/right` 算边界，
+    /// 口径与 alacritty/zed 一致（三击的「行」会跟随折行取整条逻辑行）。
+    fn semantic_range(&self, cell: SelPt, ty: SelectionType) -> Option<(SelPt, SelPt)> {
+        semantic_range_of(&self.term.lock(), cell, ty)
     }
 
     fn cell_at_shared(&self, bounds: gpui::Bounds<Pixels>, pos: Point<Pixels>) -> SelPt {
@@ -927,6 +997,23 @@ impl TermShared {
         self.term.lock().scroll_display(Scroll::Delta(scroll));
         let _ = self.weak.update(cx, |_, cx| cx.notify());
     }
+}
+
+/// 语义选区（双击选词 / 三击选整逻辑行）：边界全交给 alacritty 的
+/// `Selection`（Semantic = `semantic_search_left/right`，Lines =
+/// `line_search_left/right`，后者会跟随折行取整条逻辑行）。返回的
+/// 端点即 grid 坐标（与 [`SelPt`] 口径一致，含历史行负数）。
+pub fn semantic_range_of(
+    term: &Term<Proxy>,
+    cell: SelPt,
+    ty: SelectionType,
+) -> Option<(SelPt, SelPt)> {
+    let point = alacritty_terminal::index::Point::new(Line(cell.line), Column(cell.col));
+    let range = Selection::new(ty, point, Side::Left).to_range(term)?;
+    Some((
+        SelPt { line: range.start.line.0, col: range.start.column.0 },
+        SelPt { line: range.end.line.0, col: range.end.column.0 },
+    ))
 }
 
 /// Merge per-cell styles into gpui TextRuns (bytes length = utf8 len).
@@ -1513,6 +1600,55 @@ mod tests {
         assert_eq!(ime_commit_bytes("你好"), "你好".as_bytes().to_vec());
         assert_eq!(ime_commit_bytes("a\nb\r\nc"), b"a\rb\rc".to_vec());
         assert_eq!(ime_commit_bytes("x\x1by"), b"xy".to_vec());
+    }
+
+    /// 双击选词 / 三击选行：alacritty semantic / line 边界，含标点归组
+    /// 与折行逻辑行两种情形。
+    #[test]
+    fn semantic_selection_word_and_line() {
+        // 30 列、不折行：断言列边界。这些数值就是 alacritty
+        // `semantic_search_left/right` 与 `line_search_left/right` 的原样
+        // 输出（zed 双击/三击走的就是这两个函数）——包括两个“看上去偏
+        // 一位”的既有语义：① 点的若是分隔符（空格），会把两侧的词一起
+        // 含进来；② 右边界在词末之后多含一格（span 语义）。多出的那格
+        // （空白）在拷贝时由 selection_text 去尾，不影响取出的文本。
+        let t30 = test_term(30, 3, b"ls -l /tmp/foo_bar.txt");
+        let sel = |term: &Term<Proxy>, col: usize, ty| {
+            semantic_range_of(term, SelPt { line: 0, col }, ty)
+        };
+        let word = |col: usize| sel(&t30, col, SelectionType::Semantic);
+        let line = |col: usize| sel(&t30, col, SelectionType::Lines);
+        // `ls`：词首/词尾都归同一个词
+        assert_eq!(word(0), Some((SelPt { line: 0, col: 0 }, SelPt { line: 0, col: 1 })));
+        assert_eq!(word(1), Some((SelPt { line: 0, col: 0 }, SelPt { line: 0, col: 1 })));
+        // 空格：分隔符扩到相邻词（alacritty 原样语义）
+        assert_eq!(word(2), Some((SelPt { line: 0, col: 0 }, SelPt { line: 0, col: 4 })));
+        // 路径整串（`/` `_` `.` 都是词字符）
+        assert_eq!(word(10), Some((SelPt { line: 0, col: 6 }, SelPt { line: 0, col: 21 })));
+        // 三击 = 整条屏幕行（到末列；尾部空白拷贝时去尾）
+        assert_eq!(line(5), Some((SelPt { line: 0, col: 0 }, SelPt { line: 0, col: 29 })));
+
+        // 折行：逻辑行跨屏幕行（20 列下 21 字符必然折行）
+        let t20 = test_term(20, 3, b"ls -l /tmp/foo_bar.txt");
+        assert_eq!(
+            sel(&t20, 10, SelectionType::Semantic),
+            Some((SelPt { line: 0, col: 6 }, SelPt { line: 1, col: 1 }))
+        );
+        assert_eq!(
+            sel(&t20, 5, SelectionType::Lines),
+            Some((SelPt { line: 0, col: 0 }, SelPt { line: 1, col: 19 }))
+        );
+
+        // 宽字符（CJK）：整串汉字 + 尾部 spacer 都在区内
+        let cjk = test_term(20, 3, "中文 测试".as_bytes());
+        assert_eq!(
+            sel(&cjk, 0, SelectionType::Semantic),
+            Some((SelPt { line: 0, col: 0 }, SelPt { line: 0, col: 3 }))
+        );
+        // 选取范围拷出的文本（宽字符 spacer 不重复、不丢字）
+        if let Some(range) = sel(&cjk, 0, SelectionType::Semantic) {
+            assert_eq!(selection_text(&cjk, range), "中文");
+        }
     }
 
     /// Real ConPTY smoke test (no gpui): spawn cmd.exe through the same
