@@ -291,6 +291,74 @@ fn color_to_rgb(c: &Color) -> u32 {
 
 // ---------------------------------------------------------------------------
 // grid snapshot: (cells, styles) per visible row
+/// 选区删除计划：删掉选区需要在 shell 的行编辑里按几次「左移」与
+/// 「前向删除」。终端的事件缓冲区在 shell 手里，没有「直接删某段文本」的
+/// 接口，只能像 xterm 的 `delete-selection` 一样自己算键：
+///
+/// 光标（PTY 的光标 = 行尾）左移 `left` 次落到选区首字符上，再前向删除
+/// `del` 次，后面的内容会左移填补——删完光标停在接缝处（与 GUI 文本框
+/// 语义一致）。
+///
+/// 以下情况返回 `None`（调用方按原语义把键交给 shell）：
+/// - alt screen（vim/less 那类全屏程序的行模型由应用自己管）；
+/// - 选区跨屏幕行，或不在光标所在行；
+/// - 选区整体落在光标右侧/与光标重叠（键数无法定义）；
+/// - 选区裁掉尾部空白后没有可删字符（比如只选了空格）；
+/// - 需要按的键数超过 512（保守门槛，避免对奇怪的屏内容狂发键）。
+pub fn deletion_plan(term: &Term<Proxy>, sel: (SelPt, SelPt)) -> Option<(usize, usize)> {
+    // alt screen：行模型由全屏应用自己管，别去猜它的光标语义
+    if term.mode().contains(TermMode::ALT_SCREEN) {
+        return None;
+    }
+    let (a, b) = if sel.0 <= sel.1 { sel } else { (sel.1, sel.0) };
+    if a.line != b.line {
+        return None;
+    }
+    let (cursor_line, cursor_col) = {
+        let content = term.renderable_content();
+        (content.cursor.point.line.0, content.cursor.point.column.0)
+    };
+    if cursor_line != a.line || cursor_col <= a.col {
+        return None;
+    }
+    // 收集 [选区左端, 光标) 这段格子：选区部分用来算删几个，选区右端到
+    // 光标之间用来算左移几次（光标指在「待写格」上，本身不算字符）
+    let cells: Vec<(usize, char, bool)> = {
+        let grid = term.grid();
+        let cols = grid.columns();
+        let hi = cursor_col.min(cols);
+        let lo = a.col.min(hi);
+        let row = &grid[Line(a.line)];
+        (lo..hi)
+            .map(|c| {
+                let cell = &row[Column(c)];
+                (c, cell.c, cell.flags.contains(Flags::WIDE_CHAR_SPACER))
+            })
+            .collect()
+    };
+    let sel_count = cells.iter().take_while(|(c, _, _)| *c <= b.col).count();
+    let sel_cells = &cells[..sel_count];
+    // 选区尾部常带 alacritty 多给的一格空白（词尾/行尾）；只删到最后一段
+    // 可见字符，免得把后面的真实字符一起吃掉
+    let last_ix = sel_cells
+        .iter()
+        .rposition(|(_, ch, spacer)| !*spacer && *ch != ' ' && *ch != '\0')?;
+    let last_col = sel_cells[last_ix].0;
+    let del = sel_cells[..=last_ix]
+        .iter()
+        .filter(|(_, _, spacer)| !*spacer)
+        .count();
+    // 选区右端到光标之间的字符数（折行的行尾、宽字符的 spacer 都不算）
+    let after = cells
+        .iter()
+        .filter(|(c, _, spacer)| *c > last_col && !*spacer)
+        .count();
+    if del == 0 || del + after > 512 {
+        return None;
+    }
+    Some((del + after, del))
+}
+
 // ---------------------------------------------------------------------------
 
 #[derive(Clone, PartialEq)]
@@ -1651,6 +1719,45 @@ mod tests {
         }
     }
 
+    /// 选区删除计划：中段选区（含 alacritty 多给的一格空白）、行尾选区、
+    /// 不可删的几种情形（只选空白/跨行/选区在光标右侧/alt screen）。
+    #[test]
+    fn deletion_plan_cases() {
+        // 光标停在行尾（col 11）："abc def ghi"
+        let term = test_term(30, 3, b"abc def ghi");
+        let p = |a: usize, b: usize| {
+            deletion_plan(
+                &term,
+                (SelPt { line: 0, col: a }, SelPt { line: 0, col: b }),
+            )
+        };
+        // 中段 "def"：左移 3（选区字符）+ 4（"> ghi" 四个字符），删 3
+        assert_eq!(p(4, 6), Some((7, 3)));
+        // 中段 "def "（尾部那格空白是词边界，不当字符删）——同上
+        assert_eq!(p(4, 7), Some((7, 3)));
+        // 行尾 "ghi"：左移就是 3，不用右移
+        assert_eq!(p(8, 10), Some((3, 3)));
+        // 端点顺序反过来同样成立
+        assert_eq!(p(6, 4), Some((7, 3)));
+        // 只选空白 → 没有可删字符
+        assert_eq!(p(3, 3), None);
+        // 跨屏幕行 → 行编辑做不了
+        assert_eq!(
+            deletion_plan(
+                &term,
+                (SelPt { line: 0, col: 4 }, SelPt { line: 1, col: 2 }),
+            ),
+            None
+        );
+
+        // alt screen：全屏程序的行模型由应用自己管，不动
+        let alt = test_term(30, 3, b"\x1b[?1049habc def ghi");
+        assert_eq!(
+            deletion_plan(&alt, (SelPt { line: 0, col: 4 }, SelPt { line: 0, col: 6 })),
+            None
+        );
+    }
+
     /// Real ConPTY smoke test (no gpui): spawn cmd.exe through the same
     /// tty::new + EventLoop bridge the terminal tabs use, echo a marker, and
     /// read it back off the grid.
@@ -1787,6 +1894,35 @@ impl Chat {
             .map(|t| t.focus.clone())
     }
 
+    /// 终端 tab 的选区删除（Backspace/Delete，以及「粘贴替换」先删选区）：
+    /// 按 [`deletion_plan`] 算出的键数给 shell 发「左移 + 前向删除」。返回
+    /// 是否真的删了（false = 这个选区删不了，调用方按原语义处理）。
+    pub(crate) fn term_delete_selection(&mut self, tab_id: usize, cx: &mut Context<Self>) -> bool {
+        use alacritty_terminal::event_loop::Msg;
+        let Some(tab) = self.terminals.iter_mut().find(|t| t.id == tab_id) else {
+            return false;
+        };
+        let Some(sel) = tab.selection else { return false };
+        let Some((left, del)) = deletion_plan(&tab.term.lock(), sel) else {
+            return false;
+        };
+        let mode = *tab.term.lock().mode();
+        let left_seq = special_key("left", 1, &mode).unwrap_or_else(|| b"[D".to_vec());
+        let del_seq = special_key("delete", 1, &mode).unwrap_or_else(|| b"[3~".to_vec());
+        let mut bytes = Vec::with_capacity((left + del) * 4);
+        for _ in 0..left {
+            bytes.extend_from_slice(&left_seq);
+        }
+        for _ in 0..del {
+            bytes.extend_from_slice(&del_seq);
+        }
+        let _ = tab.pty.send(Msg::Input(bytes.into()));
+        tab.selection = None;
+        tab.sel_anchor = None;
+        cx.notify();
+        true
+    }
+
     /// 该终端 tab 的选区文本 → 系统剪贴板。返回是否真的复制了东西
     /// （无选区 = false，调用方据此决定 Ctrl+C 是否回落为 ^C）。
     /// 选区**不**清掉（xterm/浏览器语义：复制后还能看到选中的东西）。
@@ -1810,6 +1946,19 @@ impl Chat {
         let Some(text) = cx.read_from_clipboard().and_then(|i| i.text()) else {
             return false;
         };
+        // 有选区 = 粘贴替换：先删选区（删不掉就只清选区），再写入
+        let had_sel = self
+            .terminals
+            .iter()
+            .find(|t| t.id == tab_id)
+            .is_some_and(|t| t.selection.is_some());
+        if had_sel && !self.term_delete_selection(tab_id, cx) {
+            if let Some(tab) = self.terminals.iter_mut().find(|t| t.id == tab_id) {
+                tab.selection = None;
+                tab.sel_anchor = None;
+                cx.notify();
+            }
+        }
         let Some(tab) = self.terminals.iter().find(|t| t.id == tab_id) else {
             return false;
         };
@@ -1865,6 +2014,21 @@ impl Chat {
             return;
         }
         let mode = *tab.term.lock().mode();
+
+        // 有选区时 Backspace/Delete = 删掉选中的内容（GUI 直觉）。删不了
+        // （跨屏幕行/在滚回区/alt screen）就只把选区清掉，键照旧交给 shell。
+        if k.key == "backspace" || k.key == "delete" {
+            if self.term_delete_selection(tab_id, cx) {
+                cx.stop_propagation();
+                return;
+            }
+            if let Some(tab) = self.terminals.iter_mut().find(|t| t.id == tab_id)
+                && tab.selection.take().is_some()
+            {
+                tab.sel_anchor = None;
+                cx.notify();
+            }
+        }
 
         // 粘贴：Ctrl+V（pi-web parity）/ Shift+Insert（Windows 习惯）
         if (ctrl && k.key == "v") || (shift && k.key == "insert") {
