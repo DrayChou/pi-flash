@@ -966,6 +966,28 @@ impl SessionRuntime {
                             }
                         }
                     }
+                } else if role == "user" {
+                    // 新会话首条消息落盘（pi session-manager `_persist`：会话有
+                    // user/assistant 消息那一刻才建文件，见 `_hasConversation`）。
+                    // 此刻文件刚出现在磁盘上，但 shell 侧的会话清单此前只在轮末
+                    // （AgentEnd 的 ListDirty）重扫——新会话标签要等整轮回复跑完
+                    // 才出现。首条用户消息一到就刷一次侧栏（pi-web
+                    // 「running 会话未列入 → loadSessions」parity），再补一次
+                    // 300ms 后的刷新兜住写盘 / 指纹扫描的滞后。
+                    if self.messages.iter().filter(|m| m.role == Role::User).count() == 1 {
+                        cx.emit(SessionEvent::ListDirty);
+                        cx.notify();
+                        cx.spawn(async move |this, cx| {
+                            cx.background_executor()
+                                .timer(std::time::Duration::from_millis(300))
+                                .await;
+                            let _ = this.update(cx, |_c, cx| {
+                                cx.emit(SessionEvent::ListDirty);
+                                cx.notify();
+                            });
+                        })
+                        .detach();
+                    }
                 }
             }
             Event::AgentStart => {
