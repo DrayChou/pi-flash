@@ -343,11 +343,37 @@ fn fetch_text(url: &str) -> Result<String, String> {
     resp.into_string().map_err(|e| format!("{e}"))
 }
 
+/// 清残留（080 §3.3）：`update.tmp-<pid>` 超过 1 小时未更新即删——活跃下载
+/// 持续写盘 mtime 常新，停更 1 小时 = 进程已死；`payload.old-*` 为 swap 中断
+/// 遗留，无条件删。npm 薄壳侧另有按 pid 精确判断的清理，这里只做兜底。
+fn cleanup_stale_staging(pkg: &Path) {
+    const STALE: Duration = Duration::from_secs(3600);
+    let Ok(entries) = std::fs::read_dir(pkg) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let file_name = entry.file_name();
+        let Some(name) = file_name.to_str() else {
+            continue;
+        };
+        let stale_tmp = name.starts_with("update.tmp-")
+            && entry
+                .metadata()
+                .and_then(|m| m.modified())
+                .map(|mtime| mtime.elapsed().map(|age| age > STALE).unwrap_or(true))
+                .unwrap_or(true);
+        if stale_tmp || name.starts_with("payload.old-") {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
 /// 下载 + SHA-256 校验（sidecar → SHA256SUMS 兜底，080 §3.2 同序）+ 解压 +
 /// rename 成 staging + 写标记。成功返回版本号。
 fn stage_update(rel: &ReleaseInfo) -> Result<String, String> {
     let pkg = pkg_dir().ok_or("无法定位安装目录")?;
     std::fs::create_dir_all(&pkg).map_err(|e| format!("{e}"))?;
+    cleanup_stale_staging(&pkg);
     let ver = rel.version.clone();
     let tmp = pkg.join(format!("update.tmp-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);

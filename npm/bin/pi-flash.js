@@ -19,6 +19,7 @@ const {
   ensure,
   busyMessage,
   applyStagedUpdate,
+  rmLeftovers,
 } = require("./lib");
 
 if (!isNodeVersionSupported(process.versions.node)) {
@@ -34,6 +35,11 @@ if (!isNodeVersionSupported(process.versions.node)) {
     console.error(`✗ ${error.message}`);
     process.exit(1);
   }
+
+  // 清上次中断的半截下载/swap 残留（死进程的才删，活的不碰）；失败不拦启动
+  try {
+    rmLeftovers();
+  } catch {}
 
   // 081：应用内更新已把新载荷下到 staging → 先 swap 再启动
   try {

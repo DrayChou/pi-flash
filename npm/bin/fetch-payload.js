@@ -13,7 +13,7 @@ if (require.main === module) {
     console.error(`\n✗ pi-flash 载荷获取失败：\n  ${error.message}`);
     console.error(
       "  重试：npm rebuild pi-flash（或重跑 npm install -g pi-flash@latest）\n" +
-        "  镜像：设 PI_FLASH_MIRROR=<base-url>（布局需含 /v<版本>/<资产名>）\n" +
+        "  换源：PI_FLASH_MIRROR=<base> 指定唯一源；PI_FLASH_MIRRORS=<逗号分隔> 追加候选\n" +
         `  手动下载：${lib.assetUrls(lib.platformTag()).releasePage}`,
     );
     process.exit(1);

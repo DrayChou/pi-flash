@@ -7,8 +7,9 @@
 //   <pkg>/payload/pi-flash.exe           win32-x64（release zip 根为 pi-flash/ 包装目录）
 //   <pkg>/payload/pi-flash.app/…         darwin-arm64（release zip 根即 .app）
 //
-// 下载源：默认 GitHub Releases；环境变量 PI_FLASH_MIRROR 整体覆盖 base
-// （镜像须保持同构布局 <base>/v<version>/<asset>，见 080 §3.2）。
+// 下载源：GitHub 直连优先，测速不过阈值自动按序切默认镜像列表（080 §3.2）；
+// PI_FLASH_MIRROR 指定唯一源、PI_FLASH_MIRRORS 追加候选。镜像须保持同构布局
+// <base>/v<version>/<asset>。
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
@@ -70,10 +71,31 @@ function platformTag() {
   return tag;
 }
 
+// 候选源：直连优先（官方源健康时不经第三方）；首段测速不过阈值按序切换。
+// 默认镜像为 2026-10 实测可用的前缀加速服务（同构布局）；失效后用
+// PI_FLASH_MIRROR / PI_FLASH_MIRRORS 指定，或直接 PR 更新此表。
+const DIRECT_BASE = "https://github.com/danielbill/pi-flash/releases/download";
+const DEFAULT_MIRRORS = [
+  "https://gh-proxy.com/https://github.com/danielbill/pi-flash/releases/download",
+  "https://ghfast.top/https://github.com/danielbill/pi-flash/releases/download",
+  "https://ghproxy.net/https://github.com/danielbill/pi-flash/releases/download",
+];
+
 function releaseBase() {
   const mirror = process.env.PI_FLASH_MIRROR;
   if (mirror) return mirror.replace(/\/+$/, "");
-  return "https://github.com/danielbill/pi-flash/releases/download";
+  return DIRECT_BASE;
+}
+
+// 显式 PI_FLASH_MIRROR = 只用这一个（跳过测速切换）；否则直连 + 追加 + 默认
+function downloadBases() {
+  if (process.env.PI_FLASH_MIRROR) return [releaseBase()];
+  const extra = (process.env.PI_FLASH_MIRRORS || "").split(/[\s,]+/).filter(Boolean);
+  return [DIRECT_BASE, ...extra, ...DEFAULT_MIRRORS];
+}
+
+function baseLabel(base) {
+  return base === DIRECT_BASE ? "GitHub 直连" : `镜像 ${new URL(base).host}`;
 }
 
 function assetUrls(tag, version = pkgVersion) {
@@ -223,8 +245,45 @@ function applyStagedUpdate() {
 
 // --- 网络 -------------------------------------------------------------------
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+// 测速切换：开传 probeMs（默认 3s）时平均速度仍低于 minSpeedBps（默认
+// 128KB/s）→ 放弃当前源换下一个。环境变量可调，便于慢网测试。
+function minSpeedBps() {
+  return (parseFloat(process.env.PI_FLASH_MIN_KBPS) || 128) * 1024;
+}
+
+function probeMs() {
+  return parseInt(process.env.PI_FLASH_PROBE_MS, 10) || 3000;
+}
+
+function fmtMB(n) {
+  return `${(n / 1024 / 1024).toFixed(1)}MB`;
+}
+
+function fmtSpeed(bps) {
+  return bps >= 1024 * 1024
+    ? `${(bps / 1048576).toFixed(1)}MB/s`
+    : `${Math.round(bps / 1024)}KB/s`;
+}
+
+// 进度行：\r 原地刷新，尾部补空格清残影（postinstall 的 stderr 直接进终端）
+let progressLen = 0;
+
+function drawProgress(got, total, bps) {
+  const speedText = bps > 0 ? ` ${fmtSpeed(bps)}` : "";
+  const line =
+    total > 0
+      ? `   [${String(Math.min(99, Math.floor((got / total) * 100))).padStart(3)}%] ${fmtMB(got)}/${fmtMB(total)}${speedText}`
+      : `   ${fmtMB(got)}${speedText}`;
+  const pad = " ".repeat(Math.max(0, progressLen - line.length));
+  process.stderr.write(`\r${line}${pad}`);
+  progressLen = line.length;
+}
+
+function clearProgress() {
+  if (progressLen > 0) {
+    process.stderr.write(`\r${" ".repeat(progressLen)}\r`);
+    progressLen = 0;
+  }
 }
 
 function httpGet(url, redirectsLeft = 5) {
@@ -250,15 +309,77 @@ function httpGet(url, redirectsLeft = 5) {
   });
 }
 
-async function downloadToFile(url, dest, redirectsLeft = 5) {
-  const res = await httpGet(url, redirectsLeft);
-  await new Promise((resolve, reject) => {
+// 单源下载：进度回调 + 速度守卫——开传满 probeMs 平均速度仍不达标则中止
+// （ETOO_SLOW），由上层换源；30s 无活动超时兜底完全断流。
+async function downloadToFile(url, dest, { onProgress } = {}) {
+  const res = await httpGet(url);
+  const total = parseInt(res.headers["content-length"] || "", 10) || 0;
+  return new Promise((resolve, reject) => {
     const out = fs.createWriteStream(dest);
+    let got = 0;
+    let settled = false;
+    const t0 = Date.now();
+    const settle = (fail, err) => {
+      if (settled) return;
+      settled = true;
+      clearInterval(timer);
+      if (fail) {
+        out.destroy();
+        res.destroy();
+        reject(err);
+      } else {
+        resolve();
+      }
+    };
+    const timer = setInterval(() => {
+      const elapsed = Date.now() - t0;
+      const speed = elapsed > 0 ? got / (elapsed / 1000) : 0;
+      if (onProgress) onProgress(got, total, speed);
+      if (elapsed >= probeMs() && speed < minSpeedBps()) {
+        const err = new Error(
+          `${fmtSpeed(speed)} < 阈值 ${fmtSpeed(minSpeedBps())}`,
+        );
+        err.code = "ETOO_SLOW";
+        settle(true, err);
+      }
+    }, 500);
+    res.on("data", (chunk) => {
+      got += chunk.length;
+    });
     res.pipe(out);
-    out.on("finish", resolve);
-    out.on("error", reject);
-    res.on("error", reject);
+    out.on("finish", () => settle(false));
+    out.on("error", (err) => settle(true, err));
+    res.on("error", (err) => settle(true, err));
   });
+}
+
+// 多源 failover：按序试 downloadBases()，速度过慢/网络错误都换下一个，
+// 全灭才报错（附 release 页与 PI_FLASH_MIRROR 用法）。返回命中的 base，
+// 供校验和钉定官方源用（080 §3.2）。
+async function downloadAssetFile(asset, dest) {
+  const errors = [];
+  for (const base of downloadBases()) {
+    const label = baseLabel(base);
+    process.stderr.write(`   源：${label}\n`);
+    try {
+      await downloadToFile(`${base}/v${pkgVersion}/${asset}`, dest, {
+        onProgress: drawProgress,
+      });
+      clearProgress();
+      return base;
+    } catch (err) {
+      clearProgress();
+      const why =
+        err.code === "ETOO_SLOW" ? `测速不过（${err.message}）` : err.message;
+      console.error(`   ${label} 不可用（${why}），换下一个源`);
+      errors.push(`${label}：${why}`);
+    }
+  }
+  throw new Error(
+    `所有下载源均失败：\n    ${errors.join("\n    ")}\n` +
+      `  可设 PI_FLASH_MIRROR=<base> 指定唯一源（布局 <base>/v<version>/<asset>），\n` +
+      `  或手动下载：${assetUrls(platformTag()).releasePage}`,
+  );
 }
 
 async function fetchText(url) {
@@ -274,23 +395,6 @@ async function fetchText(url) {
     chunks.push(chunk);
   }
   return Buffer.concat(chunks).toString("utf8");
-}
-
-// 有限次重试 + 线性退避（仅网络类操作；校验失败不做无谓重试）
-async function retry(op, label, attempts = 3) {
-  let lastErr;
-  for (let i = 1; i <= attempts; i += 1) {
-    try {
-      return await op();
-    } catch (err) {
-      lastErr = err;
-      if (i < attempts) {
-        console.error(`   ${label}失败（${err.message}），${i}s 后重试 ${i}/${attempts - 1}`);
-        await sleep(i * 1000);
-      }
-    }
-  }
-  throw lastErr;
 }
 
 // --- 校验与解压 ---------------------------------------------------------------
@@ -314,22 +418,31 @@ function parseHashFor(text, filename) {
   return null;
 }
 
-// 校验和取用顺序：<asset>.sha256（平台 sidecar，CI 生成）→ SHA256SUMS（release.sh 生成）
-async function resolveExpectedHash(urls) {
-  for (const url of [urls.sidecar, urls.sums]) {
-    let text;
-    try {
-      text = await retry(() => fetchText(url), "获取校验和", 2);
-    } catch (err) {
-      if (err.status === 404) continue; // sidecar 缺失 → 兜底 SHA256SUMS
-      throw err;
+// 校验和取用顺序：直连 sidecar → 直连 SHA256SUMS → 命中源 sidecar → 命中源
+// SHA256SUMS。直连优先钉定官方哈希（zip 走镜像时防串包）；单请求不做重试，
+// 源足够多，网络不通（非 404）直接换下一源。
+async function resolveExpectedHash(asset, chosenBase) {
+  const bases =
+    chosenBase === DIRECT_BASE ? [DIRECT_BASE] : [DIRECT_BASE, chosenBase];
+  for (const base of bases) {
+    for (const url of [
+      `${base}/v${pkgVersion}/${asset}.sha256`,
+      `${base}/v${pkgVersion}/SHA256SUMS`,
+    ]) {
+      let text;
+      try {
+        text = await fetchText(url);
+      } catch (err) {
+        if (err.status === 404) continue; // sidecar 缺失 → 同源兜底 SHA256SUMS
+        break; // 该源网络不可用 → 换源
+      }
+      const hash = parseHashFor(text, asset);
+      if (hash) return hash;
     }
-    const hash = parseHashFor(text, urls.asset);
-    if (hash) return hash;
   }
   throw new Error(
-    `在 release 资产里找不到 ${urls.asset} 的 SHA-256（试过 ${urls.sidecar} 与 ${urls.sums}）。\n` +
-      `  请到 ${urls.releasePage} 核对；不要在未校验的情况下手动安装载荷。`,
+    `在 release 资产里找不到 ${asset} 的 SHA-256（试过直连与 ${chosenBase}）。\n` +
+      `  请到 ${assetUrls(platformTag()).releasePage} 核对；不要在未校验的情况下手动安装载荷。`,
   );
 }
 
@@ -384,11 +497,35 @@ function busyMessage() {
   return "载荷目录被占用——请先退出正在运行的 pi-flash，再重新执行安装/更新。";
 }
 
-function rmStaleTmp() {
-  for (const entry of fs.readdirSync(pkgDir)) {
-    if (entry.startsWith(TMP_PREFIX)) {
-      fs.rmSync(path.join(pkgDir, entry), { recursive: true, force: true });
+// pid 存活探测：ESRCH = 进程不存在；EPERM = 存在但无权限（按活的处理）
+function pidAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err.code === "EPERM";
+  }
+}
+
+// 清本机残留（080 §3.3）：半截下载 payload.tmp-<pid> / update.tmp-<pid>
+// （含应用内更新器 081 留下的）按 pid 存活判断删除，活进程的不碰；
+// payload.old-* 只在 swap 中断后遗留，无条件删。启动器每次启动与下载前都跑。
+function rmLeftovers() {
+  let entries;
+  try {
+    entries = fs.readdirSync(pkgDir);
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    const tmp = /^(?:payload|update)\.tmp-(\d+)$/.exec(entry);
+    if (tmp) {
+      const pid = parseInt(tmp[1], 10);
+      if (pid === process.pid || pidAlive(pid)) continue;
+    } else if (!entry.startsWith(OLD_PREFIX)) {
+      continue;
     }
+    fs.rmSync(path.join(pkgDir, entry), { recursive: true, force: true });
   }
 }
 
@@ -413,24 +550,27 @@ function replacePayload(contentRoot) {
   }
 }
 
-// 主流程：版本戳不合 → 下载 → 校验 → 解压 → 落位 → 最后写版本戳
+// 主流程：版本戳不合 → 清残留 → 测速选源下载 → 校验 → 解压 → 落位 → 最后写版本戳
 async function ensure({ force = false } = {}) {
   const tag = platformTag(); // 不支持的平台在这里就明确报错
   if (!force && payloadOk(tag)) return;
 
   const urls = assetUrls(tag);
+  rmLeftovers();
   const tmp = path.join(pkgDir, `${TMP_PREFIX}${process.pid}`);
   fs.rmSync(tmp, { recursive: true, force: true });
-  rmStaleTmp();
   fs.mkdirSync(tmp, { recursive: true });
 
   try {
     const zipPath = path.join(tmp, urls.asset);
+    const t0 = Date.now();
     console.error(`   下载载荷 ${urls.asset}`);
-    console.error(`   ${urls.zip}`);
-    await retry(() => downloadToFile(urls.zip, zipPath), "下载载荷");
+    const chosen = await downloadAssetFile(urls.asset, zipPath);
+    console.error(
+      `   下载完成，用时 ${Math.max(1, Math.round((Date.now() - t0) / 1000))}s（源：${baseLabel(chosen)}）`,
+    );
 
-    const expected = await resolveExpectedHash(urls);
+    const expected = await resolveExpectedHash(urls.asset, chosen);
     const actual = await sha256File(zipPath);
     if (actual !== expected) {
       throw new Error(
@@ -460,6 +600,8 @@ module.exports = {
   nodeVersionMessage,
   platformTag,
   releaseBase,
+  downloadBases,
+  baseLabel,
   assetUrls,
   exeRelPath,
   exePath,
@@ -467,11 +609,17 @@ module.exports = {
   compareVersions,
   readStaged,
   applyStagedUpdate,
-  retry,
+  minSpeedBps,
+  probeMs,
+  fmtMB,
+  fmtSpeed,
   sha256File,
   parseHashFor,
   resolveExpectedHash,
+  downloadToFile,
+  downloadAssetFile,
   extractZip,
   ensure,
   busyMessage,
+  rmLeftovers,
 };
