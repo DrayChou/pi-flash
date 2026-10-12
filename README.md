@@ -1,17 +1,15 @@
-<p align="left"><img src="crates/app/assets/icon/pi-flash-256.png" width="88" alt="pi-flash logo"></p>
+![pi-flash 封面](pf-cover.png)
 
 Pi Flash ： Windows上的极速 Pi coding agent！
+
+需要 Node.js ≥ 22.19
+> 平台范围：**仅 Windows x64**
+
+## 演示
 
 ![pi-flash 演示动画](docs/images/pf-intro.gif)
 
 ▶ 同款演示另有**带音轨完整版**（17s mp4）：[docs/images/pf-intro.mp4](docs/images/pf-intro.mp4)
-
-```bash
-npm install -g pi-flash@latest   # 安装与更新
-pi-flash                                # 启动
-```
-需要 Node.js ≥ 22.19
-> 平台范围：**仅 Windows x64**
 
 ## 许可证
 本项目以 **GPL-3.0-or-later** 许可证发布（见 [LICENSE](LICENSE)），继承自Zed项目。
