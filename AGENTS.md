@@ -2,7 +2,7 @@
 Pi-Flash 缩写 PF
 
 # 项目目标
-以PI-WEB为功能原型，ZED为性能原型，用Rust+GPUI编写极速的Pi桌面端。
+以PI-WEB为功能原型，ZED为性能原型，用Rust+GPUI编写极速Pi Windows桌面端。
 
 # Quick Start
 
@@ -13,14 +13,14 @@ RUST_MIN_STACK=33554432 cargo test -p pi-link   # 协议/路径测试都在 pi-l
 ```
 
 - 环境变量：`PI_FLASH_PI_BIN` 覆盖内置 pi；`PI_FLASH_THEME` 切主题（default/dark/rose）；`PI_FLASH_RPC_LOG` 开 RPC 线缆日志
-- UI 验证一律走 pif-ui 自动化链路（见下节），禁止抢真实屏幕
+- UI 验证一律走 pif-ui 自动化链路，禁止抢真实屏幕
 
 # 铁律
 - **内置pi**：内置 `@earendil-works/pi-coding-agent`，vendor 进应用分发，运行时 spawn `node <app>/vendor/pi/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js --mode rpc`。**不读 PATH/系统 pi**；升级 = bump `vendor/pi/package.json` + VERSION + 跑 pi-link 符合性测试（wire 陷阱与升级复核点见 `docs/agents/pi-rpc.md`）。开发期 `PI_FLASH_PI_BIN` 可覆盖。
-- **目标平台**：Windows 
 - 完成任务保证编译通过后提交git，验收交给用户，禁止UI测试
 - **GitHub 推送**：远端 `https://github.com/danielbill/pi-flash.git` 间歇被墙（github.com 不通、api.github.com 通）。`git push` 失败直接走 SSH over 443，勿反复重试 HTTPS：`GIT_SSH_COMMAND="ssh -i ~/.ssh/id_rsa_github -o StrictHostKeyChecking=no" git push ssh://git@ssh.github.com:443/danielbill/pi-flash.git main`。gh CLI 走 api.github.com，一般不受影响。
 - UI绘制遵循 docs\UI设计\UI组件规范.md
+- CHANGELOG发版驱动，平时勿碰！
 
 # 路径
 - pi-web ：`D:\github\---ai-tools---\pi-web`
@@ -29,13 +29,18 @@ RUST_MIN_STACK=33554432 cargo test -p pi-link   # 协议/路径测试都在 pi-l
 - 架构设计：`docs/ARCHITECTURE.md`；复刻计划：`docs/PORT_PLAN.md`
 - 模块设计：`docs/模块设计/`（编号即模块，正文里的 0xx/vNN 引用都指这里）
 - 领域陷阱笔记：`docs/agents/`（见下方「领域笔记」节）
-- 软件分发：`docs/模块设计/080-软件分发.md`；发版唯一路径：`docs/RELEASE.md`（版本号由所有者拍板，禁止擅自变更/建议）
+- 调研归档：`docs/调研/`（外部项目调研报告，如 dsh 插件框架调研）
+- 软件分发：`docs/模块设计/080-软件分发.md`；发版唯一路径：`docs/RELEASE.md`
 - bug 追踪：`docs/bugs.md`；进度：`docs/progress.md`；截图：`tmp/屏幕截图/`
 
 # 架构
 - workspace：`crates/pi-link`（钉版 pi RPC 协议层，测试在此）+ `crates/app`（GPUI 界面）
 - gpui 0.2.2 / gpui-component **vendored**：`[patch.crates-io]` → `vendor/gpui`、`vendor/gpui-component`（workspace exclude；debug profile 保留行号表）
-- 主题：`appearance/theme.rs`（mist 默认；`PI_FLASH_THEME` 可切 default/dark/rose；`appearance::registry` 从 `theme::ALL` 派生）
+- 主题：`appearance/theme.rs`
+
+# UI自动化测试
+**agent 调试 UI 一律走 pif-ui 自动化链路，禁抢真实屏幕/鼠标/键盘，禁OS截图**
+UI测试技能：`.agents/skills/pi-flash-ui-test/SKILL.md`
 
 # File Map
 
@@ -107,15 +112,13 @@ crates/app/src/         GPUI 界面（Chat = 全应用状态实体，域方法�
 
 # 领域笔记（docs/agents/）
 
-**改哪片代码，先读覆盖它的笔记；新陷阱写进所属笔记，不堆回本文件。**
+**改哪片代码，先读相关笔记；新陷阱写进所属笔记，不堆回本文件。**
 
 - [pi-rpc.md](docs/agents/pi-rpc.md)：pi RPC wire 陷阱 + vendor 升级复核点。覆盖 `crates/pi-link/**` 与 app 侧消费方（agent_session、session/runtime、messages、ext_ui）。
 - [gpui.md](docs/agents/gpui.md)：gpui 0.2.2（vendored）/ gpui-component 渲染与交互陷阱。覆盖 `crates/app/src/**`。
 - [engineering.md](docs/agents/engineering.md)：Rust/工具链工程杂项（补丁方式、CRLF、Windows 路径、测试栈、真实按键链）。
 
-# UI 自动化测试
-**agent 调试 UI 一律走 pif-ui 自动化链路，禁止抢真实屏幕/鼠标/键盘，禁止 OS 截图。**
-UI 测试技能：`.agents/skills/pi-flash-ui-test/SKILL.md`
+
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:970c3bf2 -->
 ## Beads Issue Tracker
