@@ -7,8 +7,9 @@
 #   例：scripts/ship.sh 0.2.0 tmp/release-notes-0.2.0.md
 #
 # 步骤：前置校验（版本三处一致、资产三件在位、tag 未占用）→ 发版提交
-# （pathspec 限定六文件，不卷并行改动）→ tag → 推 main + tags → gh release
-# create 挂三资产（紧跟推送，压缩薄壳用户的 404 竞态窗口，080 §4）。
+# （pathspec 限定六文件，不卷并行改动）→ tag → 推 main + tags（HTTPS 被墙
+# 自动降级 SSH over 443）→ gh release create 挂三资产（紧跟推送，压缩薄壳
+# 用户的 404 竞态窗口，080 §4）。
 # npm 薄壳不在此发：publish-npm.yml 随 tag 自动 OIDC 发布（RELEASE.md §4）。
 
 set -euo pipefail
@@ -37,9 +38,15 @@ git add "${FILES[@]}"
 git commit -m "release v${VERSION}" -- "${FILES[@]}"
 git tag "v${VERSION}"
 
-echo "==> 2/3 推送 main + tags（tag 不在远端 gh --verify-tag 会拒；网络断则恢复后重推，勿强推）"
-git push || { echo "✗ git push 失败：本地提交与 tag 不丢，网络恢复后 'git push && git push --tags'，再手动挂 Release（RELEASE.md §3.2）"; exit 1; }
-git push --tags || { echo "✗ git push --tags 失败：恢复后重推 tags，再手动 gh release create（RELEASE.md §3.2）"; exit 1; }
+echo "==> 2/3 推送 main + tags（HTTPS 失败自动走 SSH over 443，AGENTS.md 铁律；两路都断才停）"
+SSH_URL="ssh://git@ssh.github.com:443/$(git remote get-url origin | sed 's#.*github.com[:/]##')"
+push_with_fallback() {  # $1 = refspec（main / tag 名）
+  if git push "$1" 2>/dev/null; then return 0; fi
+  echo "    HTTPS 推 $1 失败（多半被墙），SSH over 443 重试…"
+  GIT_SSH_COMMAND="ssh -i ~/.ssh/id_rsa_github -o StrictHostKeyChecking=no" git push "$SSH_URL" "$1"
+}
+push_with_fallback main || { echo "✗ 两条通道都推不动 main：本地提交与 tag 不丢，网络恢复后重推并手动挂 Release（RELEASE.md §3.2）"; exit 1; }
+push_with_fallback "v${VERSION}" || { echo "✗ 两条通道都推不动 tag：恢复后 'GIT_SSH_COMMAND=\"ssh -i ~/.ssh/id_rsa_github -o StrictHostKeyChecking=no\" git push $SSH_URL v${VERSION}'，再手动 gh release create（RELEASE.md §3.2）"; exit 1; }
 
 echo "==> 3/3 挂 GitHub Release + 三资产"
 gh release create "v${VERSION}" --verify-tag --title "v${VERSION}" \
