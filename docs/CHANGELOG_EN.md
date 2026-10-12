@@ -4,6 +4,8 @@ All notable changes to released versions live here; see `docs/CHANGELOG规范.md
 
 ## [0.1.2] - 2026-10-12
 
+## [0.1.2] - 2026-10-12
+
 A terminal & file-editing fix batch: copy/paste entries for the terminal, a set of field-reported UI fixes, and HTML files now open as source in the editor.
 
 ### Install & Update
@@ -13,7 +15,7 @@ npm install -g pi-flash@latest   # first install; re-run the same command to upd
 pi-flash
 ```
 
-Requires Node.js ≥ 22.19. 
+Requires Node.js ≥ 22.19.
 Or download the zip, unzip it and double-click `pi-flash.exe` — no Node needed.
 Windows x64 only.
 
@@ -42,8 +44,6 @@ Windows x64 only.
 - HTML files now open as source in the editor (syntax highlighting, editable, autosave), with "Open in browser" kept as the first action in the context menu. (8fd3bcf, e3e3dd5)
 - The completion sound is now an original warm marimba two-tone (A4→E5). (4cba884)
 - New i18n missing-translation guard: UI copy without a Traditional Chinese / English translation now fails tests instead of silently falling back to Chinese. (ed2e126)
-
-## [0.1.1] - 2026-10-12
 
 First official public release of pi-flash: a fast pi coding agent desktop client built with Rust + GPUI.
 
