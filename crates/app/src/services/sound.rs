@@ -1,52 +1,58 @@
-//! Agent-run 结束提示音 —— 复刻 pi-web `hooks/useAudio.ts` 的 Web Audio 双音。
+//! Agent-run 结束提示音 —— PF 原创「暖木琴」双音（A4→E5）。
 //!
-//! pi-web 原始逻辑：两个 sine 振荡器，频率 C5 (523.25 Hz) 与 E5 (659.25 Hz)，
-//! 相隔 0.18 s 触发；每个音的包络是 0 → 0.18 线性 20 ms 淡入，再指数衰减到
-//! 0.001（45 ms 处截断）。这里在 Rust 侧合成同参数的 16-bit PCM WAV，Windows
-//! 用 `PlaySoundW(SND_MEMORY)` 播放，避免依赖系统提示音（MessageBeep 的
-//! MB_ICONASTERISK 音色与 pi-web 不一致）。
+//! 刻意区别于 pi-web 的 C5+E5 纯正弦 chime（`hooks/useAudio.ts`）：这里音区更低、
+//! 音程是纯五度（440 → 659.25 Hz），音色用加法合成模拟木琴——基频之外叠一个
+//! 四次泛音（×4，横梁振动的非谐近似），泛音衰减远快于基频（0.12 s vs 0.4 s），
+//! 听感厚实温和、不打扰。两音相隔 0.16 s 触发，基频包络 5 ms 线性淡入后指数
+//! 衰减到 0.001。Rust 侧合成 16-bit PCM WAV，Windows 用
+//! `PlaySoundW(SND_MEMORY)` 播放，不依赖任何音频资源文件。
 //!
-//! 参考：`D:\github\---ai-tools---\pi-web\hooks\useAudio.ts`
+//! 候选试听稿见 `tmp/sound/gen.js`（A 钟声 / B 玻璃琶音 / C 本实现，用户选 C）。
 
-/// 采样率（Hz）。Web Audio 默认 44100，这里同样取 44100。
+/// 采样率（Hz）。Web Audio 默认 44100，沿用之。
 const SAMPLE_RATE: u32 = 44_100;
-/// 两个音的频率（Hz）：C5 与 E5。
-const TONE_FREQS: [f64; 2] = [523.25, 659.25];
+/// 两个音的频率（Hz）：A4 与 E5（纯五度）。
+const TONE_FREQS: [f64; 2] = [440.0, 659.25];
 /// 第二个音相对第一个音的延迟（秒）。
-const TONE_OFFSET: f64 = 0.18;
+const TONE_OFFSET: f64 = 0.16;
+/// 加法合成的泛音倍数：基频 + 四次泛音（木琴音色近似）。
+const PARTIALS: [f64; 2] = [1.0, 4.0];
+/// 各泛音峰值增益。
+const PARTIAL_GAINS: [f64; 2] = [0.22, 0.077];
+/// 各泛音从峰值指数衰减到 [`TAIL_GAIN`] 的时长（秒）——泛音衰减更快才有
+/// 木琴的「木」感，与基频共用包络会像纯弦乐。
+const PARTIAL_DECAYS: [f64; 2] = [0.4, 0.12];
 /// 线性淡入时长（秒）。
-const ATTACK: f64 = 0.02;
-/// 单个音从开始到衰减到静音的总时长（秒）。
-const TONE_LEN: f64 = 0.45;
-/// 峰值增益。
-const PEAK_GAIN: f64 = 0.18;
-/// 衰减终点增益（Web Audio 的 0.001，非 0，避免指数曲线除零）。
+const ATTACK: f64 = 0.005;
+/// 衰减终点增益（对齐 Web Audio 惯例的 0.001，非 0，避免指数曲线除零）。
 const TAIL_GAIN: f64 = 0.001;
 
-/// 单个音的包络：0 → [`PEAK_GAIN`] 线性淡入，再指数衰减到 [`TAIL_GAIN`]。
-fn envelope(t: f64) -> f64 {
+/// 单个泛音的包络：0 → 1.0 线性淡入，再指数衰减到 [`TAIL_GAIN`]，`len` 之后硬切 0。
+fn envelope(t: f64, len: f64) -> f64 {
     if t < 0.0 {
         return 0.0;
     }
     if t < ATTACK {
-        return PEAK_GAIN * (t / ATTACK);
+        return t / ATTACK;
     }
-    if t < TONE_LEN {
-        // 与 exponentialRampToValueAtTime(TAIL_GAIN, TONE_LEN) 对齐：
-        // t=ATTACK 时为 PEAK_GAIN，t=TONE_LEN 时为 TAIL_GAIN。
-        let decay = (TONE_LEN - ATTACK).max(1e-9);
-        let k = 1.0 - (t - ATTACK) / decay;
-        return TAIL_GAIN * (PEAK_GAIN / TAIL_GAIN).powf(k);
+    if t < len {
+        // exponentialRamp 口径：t=ATTACK 时为 1.0，t=len 时为 TAIL_GAIN。
+        let decay = (len - ATTACK).max(1e-9);
+        return TAIL_GAIN.powf((t - ATTACK) / decay);
     }
     0.0
 }
 
-/// 总时长（秒）：第二个音开始时刻 + 自身长度。
+/// 总时长（秒）：第二个音开始时刻 + 最长泛音衰减时长。
 fn total_duration() -> f64 {
-    TONE_OFFSET + TONE_LEN
+    TONE_OFFSET
+        + PARTIAL_DECAYS
+            .iter()
+            .copied()
+            .fold(0.0_f64, f64::max)
 }
 
-/// 合成 pi-web 的双音提示音，返回 16-bit PCM mono WAV 字节。
+/// 合成暖木琴双音提示音，返回 16-bit PCM mono WAV 字节。
 pub fn done_chime_wav() -> Vec<u8> {
     let total = total_duration();
     let frames = (SAMPLE_RATE as f64 * total).ceil() as usize;
@@ -61,7 +67,11 @@ pub fn done_chime_wav() -> Vec<u8> {
             if local < 0.0 {
                 continue;
             }
-            v += envelope(local) * (2.0 * std::f64::consts::PI * freq * local).sin();
+            for (p, &mult) in PARTIALS.iter().enumerate() {
+                v += PARTIAL_GAINS[p]
+                    * envelope(local, PARTIAL_DECAYS[p])
+                    * (2.0 * std::f64::consts::PI * freq * mult * local).sin();
+            }
         }
         let pcm = (v.clamp(-1.0, 1.0) * i16::MAX as f64).round() as i16;
         samples.extend_from_slice(&pcm.to_le_bytes());
@@ -84,7 +94,7 @@ pub fn done_chime_wav() -> Vec<u8> {
     wav
 }
 
-/// 播放 agent-run 结束提示音（pi-web 的双音 chime）；非 Windows 平台为 no-op。
+/// 播放 agent-run 结束提示音（暖木琴双音）；非 Windows 平台为 no-op。
 pub fn play_notify_sound() {
     #[cfg(windows)]
     {
@@ -140,30 +150,31 @@ mod tests {
     }
 
     #[test]
-    fn duration_matches_pi_web() {
-        // pi-web: 0.18s 偏移 + 0.45s 音长 = 0.63s
-        assert!((total_duration() - 0.63).abs() < 1e-9);
+    fn duration_is_0_56_seconds() {
+        // 0.16s 音间隔 + 0.4s 最长泛音衰减 = 0.56s
+        assert!((total_duration() - 0.56).abs() < 1e-9);
         let w = done_chime_wav();
         let frames = (w.len() - 44) / 2;
         let secs = frames as f64 / SAMPLE_RATE as f64;
-        assert!((secs - 0.63).abs() < 0.001, "got {secs}");
+        assert!((secs - 0.56).abs() < 0.001, "got {secs}");
     }
 
     #[test]
-    fn envelope_matches_web_audio() {
-        assert!(envelope(0.0).abs() < 1e-12);
-        assert!((envelope(ATTACK) - PEAK_GAIN).abs() < 1e-9);
-        // 指数段在 TONE_LEN 处收敛到 TAIL_GAIN，之后 osc.stop 硬切到 0
-        assert!((envelope(TONE_LEN - 1e-6) - TAIL_GAIN).abs() < 1e-6);
-        assert_eq!(envelope(TONE_LEN), 0.0);
-        assert_eq!(envelope(TONE_LEN + 0.1), 0.0);
+    fn envelope_fades_and_stops() {
+        let len = PARTIAL_DECAYS[0];
+        assert_eq!(envelope(0.0, len), 0.0);
+        assert!((envelope(ATTACK, len) - 1.0).abs() < 1e-12);
+        // 指数段在 len 处收敛到 TAIL_GAIN，之后硬切到 0
+        assert!((envelope(len - 1e-6, len) - TAIL_GAIN).abs() < 1e-6);
+        assert_eq!(envelope(len, len), 0.0);
+        assert_eq!(envelope(len + 0.1, len), 0.0);
         // 线性淡入中点
-        assert!((envelope(ATTACK / 2.0) - PEAK_GAIN / 2.0).abs() < 1e-9);
+        assert!((envelope(ATTACK / 2.0, len) - 0.5).abs() < 1e-9);
         // 指数段单调下降
         let mut prev = f64::INFINITY;
         let mut t = ATTACK;
-        while t < TONE_LEN {
-            let e = envelope(t);
+        while t < len {
+            let e = envelope(t, len);
             assert!(e < prev, "envelope not decreasing at {t}");
             prev = e;
             t += 0.01;
@@ -171,8 +182,15 @@ mod tests {
     }
 
     #[test]
-    fn contains_both_partials() {
-        // 第二音（659.25 Hz）在第一音之后启动，0.18~0.20s 区间不应静音
+    fn partials_decay_independently() {
+        // 四次泛音 0.12s 已静音，同刻基频仍在响——「木」感的来源
+        assert_eq!(envelope(0.13, PARTIAL_DECAYS[1]), 0.0);
+        assert!(envelope(0.13, PARTIAL_DECAYS[0]) > 0.01);
+    }
+
+    #[test]
+    fn contains_both_notes() {
+        // 第二音（E5）在第一音（A4）之后启动，0.17s 附近不应静音
         let w = done_chime_wav();
         let pcm = |i: usize| -> f64 {
             let o = 44 + i * 2;
@@ -183,7 +201,6 @@ mod tests {
             (0..16).map(|k| pcm(n + k).abs()).fold(0.0, f64::max)
         };
         assert!(at(0.01) > 0.01, "first tone missing");
-        assert!(at(0.19) > 0.01, "second tone missing");
+        assert!(at(0.17) > 0.01, "second tone missing");
     }
 }
-
