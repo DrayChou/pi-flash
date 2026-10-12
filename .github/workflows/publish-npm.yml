@@ -35,7 +35,19 @@ jobs:
       - run: npm install -g npm@^11.15.0 --no-audit --no-fund
       - run: npm --version
 
-      # 薄壳包零依赖、无构建步骤：checkout 后直接发。
-      # npm CLI 检测到 OIDC 环境自动换票，先于任何 token；
+      # 幂等门 + 发布合一步（必须同一 step：跳过靠 exit 0 只结束本 step，
+      # 拆两 step 的话 publish 照跑不误）。
+      # 同版本已在 registry 就绿跑跳过——tag 被 -f 重推 / git push --tags
+      # 重复点火时不再报 E403 cannot publish over（0.1.1）或 latest 被占
+      # （0.1.0 重发），红 run 纯属噪音。
+      # 薄壳包零依赖、无构建步骤：checkout 后直接发；npm view 匿名可读不走
+      # OIDC；publish 时 npm CLI 检测到 OIDC 环境自动换票，先于任何 token；
       # 成功后自动附 provenance 供应链签名（公有仓库 + 公有包，默认开启）。
-      - run: npm publish
+      - name: npm publish
+        run: |
+          V=$(node -p "require('./package.json').version")
+          if npm view "pi-flash@$V" version >/dev/null 2>&1; then
+            echo "pi-flash@$V already on registry — skip publish"
+            exit 0
+          fi
+          npm publish
