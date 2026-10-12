@@ -124,10 +124,8 @@ upsert_section() {
   [[ -f "$target" ]] || return 0
   awk -v vf="$newsec" -v ver="$VERSION" '
     BEGIN { while ((getline l < vf) > 0) sec = sec l ORS }
-    skip {
-      if ($0 ~ /^## \[/) { skip = 0; if (!inserted) { printf "%s", sec; inserted = 1 } }
-      next
-    }
+    skip && !/^## \[/ { next }
+    skip { skip = 0 }   # 跳到下一段：标题行不消费，落回下方规则照常输出（0.1.2 实发曾吞掉 0.1.1 标题）
     /^## \[/ {
       if ($0 ~ "^## \\[" ver "\\]") { skip = 1; if (!inserted) { printf "%s", sec; inserted = 1 } next }
       if (!inserted) { printf "%s", sec; inserted = 1 }
@@ -138,16 +136,28 @@ upsert_section() {
   mv "$target.new" "$target"
 }
 
-ZH_SEC=$(mktemp)
 # 去段首空行（说明文件里 <!-- EN --> 前后常带空行，收编后会多出空行）
-{ echo "## [$VERSION] - $TODAY"; echo; sed '/^<!-- EN -->\r\?$/,$d' "$NOTES_FILE" \
-  | awk 'BEGIN{seen=0} { if (seen==0 && $0 ~ /^[[:space:]]*$/) next; seen=1; print }'; } > "$ZH_SEC"
+drop_lead_blank() {
+  awk 'BEGIN{seen=0} { if (seen==0 && $0 ~ /^[[:space:]]*$/) next; seen=1; print }'
+}
+
+ZH_SEC=$(mktemp)
+zh_body=$(sed '/^<!-- EN -->\r\?$/,$d' "$NOTES_FILE" | drop_lead_blank)
+# 说明文件可自带 ## [v] 标题首行（规范示例款式，0.1.2 实发曾因此双标题）——
+# 带了就剥掉，标题统一由这里 echo（日期归一为当天）
+if head -n 1 <<<"$zh_body" | grep -qF "## [$VERSION]"; then
+  zh_body=$(tail -n +2 <<<"$zh_body" | drop_lead_blank)
+fi
+{ echo "## [$VERSION] - $TODAY"; echo; printf '%s\n' "$zh_body"; } > "$ZH_SEC"
 upsert_section docs/CHANGELOG.md "$ZH_SEC"
 rm -f "$ZH_SEC"
 if grep -q '^<!-- EN -->\r\?$' "$NOTES_FILE"; then
   EN_SEC=$(mktemp)
-  { echo "## [$VERSION] - $TODAY"; echo; sed -n '/^<!-- EN -->\r\?$/,$p' "$NOTES_FILE" | tail -n +2 \
-    | awk 'BEGIN{seen=0} { if (seen==0 && $0 ~ /^[[:space:]]*$/) next; seen=1; print }'; } > "$EN_SEC"
+  en_body=$(sed -n '/^<!-- EN -->\r\?$/,$p' "$NOTES_FILE" | tail -n +2 | drop_lead_blank)
+  if head -n 1 <<<"$en_body" | grep -qF "## [$VERSION]"; then
+    en_body=$(tail -n +2 <<<"$en_body" | drop_lead_blank)
+  fi
+  { echo "## [$VERSION] - $TODAY"; echo; printf '%s\n' "$en_body"; } > "$EN_SEC"
   upsert_section docs/CHANGELOG_EN.md "$EN_SEC"
   rm -f "$EN_SEC"
   echo "    英文段已收编 CHANGELOG_EN.md"

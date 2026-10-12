@@ -2,7 +2,30 @@
 
 All notable changes to released versions live here; see `docs/CHANGELOG规范.md` for the format.
 
-## [0.1.2] - 2026-10-12
+## [0.1.3] - 2026-10-13
+
+Instant sidebar feedback + a faster download path: ghost tabs appear the moment you send, and slow downloads switch mirrors automatically.
+
+### Install & Update
+
+```bash
+npm install -g pi-flash@latest   # first install; re-run the same command to update
+pi-flash
+```
+
+Requires Node.js ≥ 22.19.
+Or download the zip, unzip it and double-click `pi-flash.exe` — no Node needed.
+Windows x64 only.
+
+### New
+- Sidebar ghost tabs: the moment a new session's first message is sent, a tab appears in the sidebar immediately (spinner + first-line preview) and turns into the real tab once the session file lands; rejected messages, dead processes or no session file remove the placeholder instead of leaving a tab that never becomes real. (5914900)
+- Download speed-test with automatic mirror fallback: payload downloads for install/update measure the direct connection and switch through the gh-proxy.com / ghfast.top / ghproxy.net mirrors when slow; the download line refreshes percentage and speed in place, with a 30s no-activity timeout. `PI_FLASH_MIRROR` still pins a single source. (8b2048e)
+
+### Bug fixes
+- Startup restore: closing the app without sending anything no longer loses the last session (the "phantom path" — pi reporting the session file during construction before it exists on disk — is no longer bound). (5914900)
+
+### Improvements
+- Download residue cleanup: partial downloads (payload.tmp-* / update.tmp-*) are removed on launch and before downloads based on whether the owning process is alive; stale leftovers are always cleaned. Checksums come from the official source over a direct connection while the zip goes through mirrors, preventing cross-packed downloads. (8b2048e)
 
 ## [0.1.2] - 2026-10-12
 
@@ -44,6 +67,8 @@ Windows x64 only.
 - HTML files now open as source in the editor (syntax highlighting, editable, autosave), with "Open in browser" kept as the first action in the context menu. (8fd3bcf, e3e3dd5)
 - The completion sound is now an original warm marimba two-tone (A4→E5). (4cba884)
 - New i18n missing-translation guard: UI copy without a Traditional Chinese / English translation now fails tests instead of silently falling back to Chinese. (ed2e126)
+
+## [0.1.1] - 2026-10-12
 
 First official public release of pi-flash: a fast pi coding agent desktop client built with Rust + GPUI.
 
