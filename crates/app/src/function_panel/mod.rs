@@ -20,7 +20,7 @@ use crate::services::workspace::{same_ws, same_ws_key};
 use crate::ListMode;
 use crate::SortMode;
 use crate::appearance::theme::{Theme, theme as T};
-use crate::ui::{icon, icon_hover, spinner};
+use crate::ui::{WithTip, icon, icon_hover, spinner};
 
 /// Flattened psp row model (one virtual list over all rows).
 #[derive(Debug, Clone, PartialEq)]
@@ -391,6 +391,7 @@ fn title_row(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> g
                         .justify_center()
                         .cursor_pointer()
                         .hover(|s| s.text_color(rgb(t.text)))
+                        .with_tip("psp.open_project")
                         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                             let _ = w_open.update(cx, |c, cx| c.open_project_picker(false, cx));
                         })
@@ -408,6 +409,7 @@ fn title_row(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> g
                         .justify_center()
                         .cursor_pointer()
                         .hover(|s| s.text_color(rgb(t.text)))
+                        .with_tip("psp.new_session")
                         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                             let _ = w_new.update(cx, |c, cx| c.new_session(cx));
                         })
@@ -424,12 +426,13 @@ fn title_row(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> g
                         .justify_center()
                         .cursor_pointer()
                         .hover(|s| s.text_color(rgb(t.text)))
+                        .with_tip("psp.search_sessions")
                         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                             let _ = w_search.update(cx, |c, cx| c.open_session_search(cx));
                         })
                         .child(icon_hover("search", 18., t.text_dim)),
                 )
-                // 排序（ellipsis，无 tip）
+                // 排序（ellipsis）
                 .child(
                     div()
                         .id("psp-sort-menu")
@@ -440,6 +443,7 @@ fn title_row(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> g
                         .justify_center()
                         .cursor_pointer()
                         .hover(|s| s.text_color(rgb(t.text)))
+                        .with_tip("psp.sort")
                         .on_mouse_down(MouseButton::Left, move |ev: &gpui::MouseDownEvent, _, cx| {
                             cx.stop_propagation();
                             let _ = w_sort.update(cx, |c, cx| {
@@ -618,6 +622,7 @@ fn project_row(
                             .text_color(rgb(t.text_dim))
                             .cursor_pointer()
                             .hover(|s| s.text_color(rgb(t.text)))
+                            .with_tip("psp.new_session_in_project")
                             .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                                 cx.stop_propagation();
                                 let _ = w_new.update(cx, |c, cx| {
