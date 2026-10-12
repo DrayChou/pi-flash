@@ -1230,15 +1230,151 @@ fn result_images(
             continue;
         }
         wrap = wrap.child(
-            gpui::img(image)
-                .max_w(px(720.))
-                .max_h(px(520.))
+            fitted_image(image, 720., 520.)
                 .rounded(px(6.))
                 .border_1()
                 .border_color(rgb(t.border)),
         );
     }
     wrap.into_any_element()
+}
+
+/// 图片绘制框按 max 约束等比缩放（结果图与大图预览共用）。
+///
+/// gpui `Img` 在 `request_layout` 里把 style 的 w/h 从原始像素**分别**定死，
+/// `max_w`/`max_h` 于是各自独立裁剪一维（宽图被 520 高度压扁），再叠加默认
+/// `ObjectFit::Contain` 就出现上下/左右留白。这里先解析自然像素尺寸自己算
+/// 缩放比，把 w/h 一起定成同比例的实际绘制框，元素盒 = 图像，无空白。
+/// 尺寸解析不出来（SVG 等）时退回 gpui 原生行为。
+pub(crate) fn fitted_image(
+    image: std::sync::Arc<gpui::Image>,
+    max_w: f32,
+    max_h: f32,
+) -> gpui::Img {
+    let mut el = gpui::img(image.clone());
+    if let Some((w, h)) = image_natural_size(&image.bytes, image.format) {
+        let (dw, dh) = fit_box(w, h, max_w, max_h);
+        if dw >= 1.0 && dh >= 1.0 {
+            el = el.w(px(dw)).h(px(dh));
+        }
+    } else {
+        el = el.max_w(px(max_w)).max_h(px(max_h));
+    }
+    el
+}
+
+/// 等比缩放到 (max_w, max_h) 框内；不放大小图（与 gpui 原生像素尺寸一致）。
+fn fit_box(w: u32, h: u32, max_w: f32, max_h: f32) -> (f32, f32) {
+    if w == 0 || h == 0 {
+        return (max_w, max_h);
+    }
+    let scale = (max_w / w as f32).min(max_h / h as f32).min(1.0);
+    (
+        (w as f32 * scale).round().max(1.0),
+        (h as f32 * scale).round().max(1.0),
+    )
+}
+
+/// 编码字节的像素尺寸（PNG/JPEG/GIF/BMP/WebP）；SVG 等返回 None。
+fn image_natural_size(bytes: &[u8], format: gpui::ImageFormat) -> Option<(u32, u32)> {
+    // 注意：try_into 的目标数组长度由 from_*_bytes 反推，必须显式给中间类型
+    // （写成 u32::from_le_bytes(slice) 会被推成 [u8;4] 而恒失败）
+    fn le16(b: &[u8], at: usize) -> Option<u32> {
+        let v: [u8; 2] = b.get(at..at + 2)?.try_into().ok()?;
+        Some(u32::from(u16::from_le_bytes(v)))
+    }
+    fn le24(b: &[u8], at: usize) -> Option<u32> {
+        let v: [u8; 3] = b.get(at..at + 3)?.try_into().ok()?;
+        Some(u32::from_le_bytes([v[0], v[1], v[2], 0]))
+    }
+    fn le32(b: &[u8], at: usize) -> Option<u32> {
+        let v: [u8; 4] = b.get(at..at + 4)?.try_into().ok()?;
+        Some(u32::from_le_bytes(v))
+    }
+    fn be32(b: &[u8], at: usize) -> Option<u32> {
+        let v: [u8; 4] = b.get(at..at + 4)?.try_into().ok()?;
+        Some(u32::from_be_bytes(v))
+    }
+    fn ok(w: u32, h: u32) -> Option<(u32, u32)> {
+        (w > 0 && h > 0).then_some((w, h))
+    }
+
+    match format {
+        gpui::ImageFormat::Png => {
+            (bytes.len() >= 24 && bytes.starts_with(&[0x89, b'P', b'N', b'G']))
+                .then(|| ok(be32(bytes, 16)?, be32(bytes, 20)?))
+                .flatten()
+        }
+        gpui::ImageFormat::Jpeg => {
+            if !bytes.starts_with(&[0xFF, 0xD8]) {
+                return None;
+            }
+            let mut i = 2usize;
+            while i + 3 < bytes.len() {
+                if bytes[i] != 0xFF {
+                    i += 1;
+                    continue;
+                }
+                let marker = bytes[i + 1];
+                i += 2;
+                // 填充字节 FF FF …
+                if marker == 0xFF {
+                    i -= 1;
+                    continue;
+                }
+                // SOF0..SOF15（排除 DHT=C4 / JPG=C8 / DAC=CC），无长度字段
+                let is_sof = (0xC0..=0xCF).contains(&marker)
+                    && !matches!(marker, 0xC4 | 0xC8 | 0xCC);
+                if is_sof {
+                    // 段体：len(2) + precision(1) + height(2) + width(2)
+                    return ok(be16(bytes, i + 5)?, be16(bytes, i + 3)?);
+                }
+                if marker == 0xD8 || marker == 0xD9 {
+                    return None;
+                }
+                let seg_len = be16(bytes, i)? as usize;
+                if seg_len < 2 {
+                    return None;
+                }
+                i += seg_len;
+            }
+            None
+        }
+        gpui::ImageFormat::Gif => {
+            (bytes.len() >= 10 && (bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a")))
+                .then(|| ok(le16(bytes, 6)?, le16(bytes, 8)?))
+                .flatten()
+        }
+        gpui::ImageFormat::Bmp => {
+            (bytes.len() >= 26 && bytes.starts_with(b"BM")).then(|| {
+                let w = le32(bytes, 18)? as i32;
+                let h = le32(bytes, 22)? as i32;
+                ok(w.unsigned_abs(), h.unsigned_abs())
+            })
+            .flatten()
+        }
+        gpui::ImageFormat::Webp => {
+            if bytes.len() < 30 || !bytes.starts_with(b"RIFF") || !bytes[8..].starts_with(b"WEBP")
+            {
+                return None;
+            }
+            match &bytes[12..16] {
+                b"VP8 " => ok(le16(bytes, 26)? & 0x3FFF, le16(bytes, 28)? & 0x3FFF),
+                b"VP8X" => ok(le24(bytes, 24)? + 1, le24(bytes, 27)? + 1),
+                b"VP8L" => {
+                    let b = bytes.get(21..25)?;
+                    let bits = u32::from_le_bytes([b[0], b[1], b[2], b[3]]);
+                    ok((bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1)
+                }
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+fn be16(b: &[u8], at: usize) -> Option<u32> {
+    Some(u32::from(u16::from_be_bytes(b.get(at..at + 2)?.try_into().ok()?)))
 }
 
 pub(crate) fn mime_to_image_format(mime: &str) -> Option<gpui::ImageFormat> {
@@ -2467,6 +2603,87 @@ mod tail_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 回归（图片上下留白）：宽图受 max_h 约束时，绘制框必须同比例缩放，
+    /// 不能把宽定成 720、高定成 520 —— 那样 Contain 会在盒内再留白。
+    #[test]
+    fn fit_box_keeps_aspect_ratio_inside_max() {
+        // 2:1 宽图 → 受宽度约束（720×360，高度还远没到 520）
+        assert_eq!(fit_box(2880, 1440, 720., 520.), (720., 360.));
+        // 16:9 宽图 → 受宽度约束，高 405 < 520
+        assert_eq!(fit_box(1920, 1080, 720., 520.), (720., 405.));
+        // 竖图 → 受高度约束
+        assert_eq!(fit_box(1000, 4000, 720., 520.), (130., 520.));
+        // 小图不放大小（保持 gpui 原生像素尺寸）
+        assert_eq!(fit_box(100, 50, 720., 520.), (100., 50.));
+        // 退化输入不 panic
+        assert_eq!(fit_box(0, 0, 720., 520.), (720., 520.));
+    }
+
+    #[test]
+    fn natural_size_parses_png_jpeg_gif_bmp_webp() {
+        // PNG 8 字节签名 + IHDR
+        let mut png = vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+        png.extend_from_slice(&13u32.to_be_bytes());
+        png.extend_from_slice(b"IHDR");
+        png.extend_from_slice(&1920u32.to_be_bytes());
+        png.extend_from_slice(&1080u32.to_be_bytes());
+        png.extend_from_slice(&[0; 20]);
+        assert_eq!(
+            image_natural_size(&png, gpui::ImageFormat::Png),
+            Some((1920, 1080))
+        );
+
+        // JPEG：SOI + APP0 段 + SOF0
+        let mut jpg = vec![0xFF, 0xD8, 0xFF, 0xE0];
+        jpg.extend_from_slice(&16u16.to_be_bytes());
+        jpg.extend_from_slice(&[0; 14]);
+        jpg.extend_from_slice(&[0xFF, 0xC0]);
+        jpg.extend_from_slice(&17u16.to_be_bytes());
+        jpg.push(8);
+        jpg.extend_from_slice(&1080u16.to_be_bytes());
+        jpg.extend_from_slice(&1920u16.to_be_bytes());
+        jpg.push(3);
+        jpg.extend_from_slice(&[0; 9]);
+        assert_eq!(
+            image_natural_size(&jpg, gpui::ImageFormat::Jpeg),
+            Some((1920, 1080))
+        );
+
+        let mut gif = b"GIF89a".to_vec();
+        gif.extend_from_slice(&320u16.to_le_bytes());
+        gif.extend_from_slice(&240u16.to_le_bytes());
+        gif.extend_from_slice(&[0; 8]);
+        assert_eq!(
+            image_natural_size(&gif, gpui::ImageFormat::Gif),
+            Some((320, 240))
+        );
+
+        let mut bmp = b"BM".to_vec();
+        bmp.extend_from_slice(&[0; 16]);
+        bmp.extend_from_slice(&(-800i32).to_le_bytes());
+        bmp.extend_from_slice(&600i32.to_le_bytes());
+        assert_eq!(
+            image_natural_size(&bmp, gpui::ImageFormat::Bmp),
+            Some((800, 600))
+        );
+
+        let mut vp8 = b"RIFF".to_vec();
+        vp8.extend_from_slice(&[0; 4]);
+        vp8.extend_from_slice(b"WEBP");
+        vp8.extend_from_slice(b"VP8 ");
+        vp8.extend_from_slice(&[0; 4]);
+        vp8.extend_from_slice(&[0x30, 0x01, 0x00]); // 帧 tag
+        vp8.extend_from_slice(&[0x9d, 0x01, 0x2a]); // 同步码
+        vp8.extend_from_slice(&1280u16.to_le_bytes());
+        vp8.extend_from_slice(&720u16.to_le_bytes());
+        assert_eq!(
+            image_natural_size(&vp8, gpui::ImageFormat::Webp),
+            Some((1280, 720))
+        );
+
+        assert_eq!(image_natural_size(b"<svg/>", gpui::ImageFormat::Svg), None);
+    }
 
     /// gpui::rgba 是 0xRRGGBBAA（alpha 低字节）——v56 曾写反成 AARRGGBB
     /// 导致通道错位（工具卡藏青/参数区纯黄，用户实测发现）。

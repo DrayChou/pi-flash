@@ -839,10 +839,7 @@ fn render_image_preview(
         .p_2()
         .shadow_lg()
         .child(
-            gpui::img(image.clone())
-                .max_w(px(1040.))
-                .max_h(px(680.))
-                .rounded(px(6.)),
+            crate::session::messages::fitted_image(image.clone(), 1040., 680.).rounded(px(6.)),
         )
         .child(div().absolute().top(px(6.)).right(px(6.)).child(close));
     dialog_shell(chat, weak, panel)
