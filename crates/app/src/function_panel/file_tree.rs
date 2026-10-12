@@ -26,7 +26,7 @@ use crate::{Chat, i18n::tr, same_path};
 use crate::services::file_icons;
 use crate::services::file_tree::TreeRow;
 use crate::appearance::theme;
-use crate::ui::{VListHeight, icon_path, vlist};
+use crate::ui::{VListHeight, WithTip, icon_path, vlist};
 use crate::*;
 
 /// 行高（pi-web FileExplorer 24px 行）。
@@ -498,8 +498,7 @@ fn action_bar(
 
 /// 操作栏图标钮：26px 命中槽 + 16px 图标（icon_hover 悬停变亮；激活态
 /// 用 accent 实色不参与 hover 变亮——开关点亮语义）。`tip` = hover
-/// tooltip（gpui 原生 tooltip 手势 + gpui-component Tooltip 视图，文案
-/// 过 tr 随语言切换）。
+/// tooltip（ui::tooltip 统一入口 §5.10，显示期过 tr 随语言切换）。
 fn bar_btn(
     id: &'static str,
     icon_name: &'static str,
@@ -518,9 +517,7 @@ fn bar_btn(
         .rounded(px(6.))
         .cursor_pointer()
         .hover(|s| s.bg(rgb(t.bg_hover)))
-        .tooltip(move |window, cx| {
-            gpui_component::tooltip::Tooltip::new(crate::i18n::tr(tip)).build(window, cx)
-        })
+        .with_tip(tip)
         .on_mouse_down(gpui::MouseButton::Left, on_click)
         .child(if active {
             crate::ui::icon(icon_name, 16., t.accent).into_any_element()

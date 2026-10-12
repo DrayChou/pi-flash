@@ -10,6 +10,7 @@ pub mod popup;
 pub mod psp_scrollbar;
 pub mod text_input;
 pub mod tokens;
+pub mod tooltip;
 pub mod vlist;
 
 pub use button::{BtnSize, BtnVariant, button, button_base};
@@ -17,6 +18,7 @@ pub use composer_input::ComposerInput;
 pub use dropdown::{dropdown, DropdownState};
 pub use vlist::{VListHeight, vlist};
 pub use text_input::TextInput;
+pub use tooltip::WithTip;
 
 use gpui::{Animation, AnimationExt, SharedString, Styled, prelude::*};
 

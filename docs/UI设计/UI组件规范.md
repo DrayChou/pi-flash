@@ -236,6 +236,19 @@ composer 胶囊（rounded16、pt10 pb12、AutoGrow 3–10 行）为既有特例�
 
 `ui/psp_scrollbar.rs` 既有常量即标准：thumb 宽 6、内缩 4、hover/拖拽 10、min thumb 25、最大不透明 0.7、autohide 3s + 1s 淡出、全圆角。**容器统一 w10**（存量 w8/w12 收敛）。
 
+### 5.10 悬浮提示 tooltip
+
+唯一入口 `ui/tooltip.rs` 的 `WithTip`（2026-10-13 建），禁止直摸 `gpui_component::tooltip::Tooltip`：
+
+| API | 文案 | 用途 |
+|---|---|---|
+| `.with_tip(key)` | i18n 键，每次弹出过 tr 随语言切换 | icon 钮/可交互元素的悬停提示 |
+| `.with_tip_text(text)` | 动态直排（快捷键拼接等），不走 i18n | 动态文案 |
+
+机制：gpui 原生 tooltip 手势——悬停约 300ms 自动弹出、移开即收，应用层不写 hover 状态机；手势只挂 stateful 元素（`.id()` 必须先行）。提示卡样式 = gpui-component `Tooltip` 默认盘（tip_view 收口），不另行定制。
+
+不属 tooltip 的悬浮物：psp 项目路径悬浮条 / 会话详情卡（自绘 overlay，可交互、有宽限期，见 psp_overlays.rs）。
+
 ---
 
 ## 6. 颜色使用规则（交互态）
@@ -296,6 +309,7 @@ composer 胶囊（rounded16、pt10 pb12、AutoGrow 3–10 行）为既有特例�
 | 8 | checkbox 勾色 白/accent_contrast 分裂 | accent_contrast | mcp_picker、plugin_picker |
 | 9 | 次要按钮描边 border_alpha(0x8c) 与 t.border 并存 | t.border | dialogs.rs、overlay.rs |
 | 10 | 文档-实现漂移（发送钮 28↔36、设置导航 200↔160、statusbar 30↔36） | 以本文为准回写实现 | input.rs、settings/mod.rs、status_bar.rs |
+| 11 | icon 钮 tooltip 只挂文件树四钮，psp 标题行/行内 ⋯＋ 从未有 | §5.10 `with_tip` 全量补挂 | function_panel/mod.rs（psp 标题行 4 + 项目行 2 + 会话行 ⋯） |
 
 落地建议（四阶段滚动，每阶段独立 commit + pif-ui 截图走查）：
 
