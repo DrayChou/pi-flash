@@ -178,6 +178,14 @@ impl Chat {
         self.history_ix = None;
         self.active_key = key;
         self.active_file = file.clone();
+        // 注意力切到会话 ⇒ 内容区必须回到 chat 前台：否则在终端/文件编辑
+        // 视图里点会话列表行（或「新会话」）后，内容区还停在 Term/File，
+        // 看着像「切了会话但窗口没切过来」。browse_last 不受影响，
+        // statusbar 的 files tab 仍能回到终端/文件（set_content_view 只在
+        // Term/File 时更新它）。
+        if self.content_view != crate::ContentView::Chat {
+            self.set_content_view(crate::ContentView::Chat);
+        }
         if let Some(f) = &file {
             set_last_open(&self.cwd.to_string_lossy(), &f.to_string_lossy());
             // v54: 切入会话清除未读/出错红点

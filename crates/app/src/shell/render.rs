@@ -128,7 +128,13 @@ impl Render for Chat {
         } else if self.file_editor_focus(window, cx).is_some() {
             // 023：文件编辑器持有焦点时不回收——否则点进去下一帧就被抢回
             // composer，打字全失效（编辑器此前不在白名单）
-        } else if !self.terminals.iter().any(|t| t.focus.is_focused(window)) {
+        } else if !(self.content_view == crate::ContentView::Term
+            && self.terminals.iter().any(|t| t.focus.is_focused(window)))
+        {
+            // 终端持焦白名单只在终端视图内生效：切回 chat/文件后终端元素
+            // 已卸载，但 gpui 的 focus handle 不会随卸载自动 blur，残留持焦
+            // 会把每帧的焦点回收永久挡在 composer 之外（打字无处可去）
+            //
             // 文件树行内编辑（Zed project_panel `filename_editor`）：编辑
             // 存续期它就是焦点所有者——Zed 里这条由面板列表 `track_focus`
             // 承担（编辑行是面板的一部分，焦点不会跑到别处），pi-flash 的
