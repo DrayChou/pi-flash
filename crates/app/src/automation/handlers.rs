@@ -132,10 +132,13 @@ pub(super) fn dispatch(
                 "chat" => chat.focus.clone(),
                 "git_commit" => chat.git_commit_input.read(cx).focus_handle(),
                 "terminal" => {
-                    let ix = chat.active_terminal.unwrap_or(0);
-                    chat.terminals
-                        .get(ix)
-                        .map(|t| t.focus.clone())
+                    // 优先给**当前显示**的终端（渲染面 = active_panel_tab），
+                    // 没显示终端时退到 active_terminal 记录的那个
+                    chat.shown_terminal_focus()
+                        .or_else(|| {
+                            let ix = chat.active_terminal.unwrap_or(0);
+                            chat.terminals.get(ix).map(|t| t.focus.clone())
+                        })
                         .ok_or_else(|| not_found("没有打开的终端"))?
                 }
                 // 文件编辑器：Ctrl+F 搜索替换条这类「焦点在编辑器才生效」的

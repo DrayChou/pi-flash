@@ -339,6 +339,11 @@ impl Chat {
             self.panel_tabs.insert(0, tab);
         }
         self.active_panel_tab = Some(0);
+        // 切到终端 tab：同步 active_terminal（按键/自动化都读它；否则双终端
+        // 切 tab 后输入会送进后台那个终端）
+        if let Some(tix) = self.shown_terminal_index() {
+            self.active_terminal = Some(tix);
+        }
         cx.notify();
     }
 
@@ -378,6 +383,10 @@ impl Chat {
             }
             other => other,
         };
+        // 关 tab 后激活的可能就是另一个终端 tab：对齐一次（与激活路径同源）
+        if let Some(tix) = self.shown_terminal_index() {
+            self.active_terminal = Some(tix);
+        }
         cx.notify();
     }
 }

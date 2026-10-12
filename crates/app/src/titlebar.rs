@@ -327,9 +327,29 @@ fn content_tab(
         }
         cx.notify();
     });
-    let switch = cx.listener(move |this, _: &gpui::MouseDownEvent, _w, cx| {
+    let switch = cx.listener(move |this, _: &gpui::MouseDownEvent, window, cx| {
+        // 切 tab 立刻把键盘焦点交给目标视图：否则焦点留在已卸载的旧 tab
+        // （终端）/composer 上，键入落空——必须再点一下内容区才生效。
+        // 终端 = 直接给焦点句柄；文件 = pending_focus_file（编辑器实体
+        // 渲染帧懒建，与 open_file_tab 同一条路径）。
+        let target = this.panel_tabs.get(ix).cloned();
+        let focus_term = match target {
+            Some(crate::PanelTab::Term(id)) => this
+                .terminals
+                .iter()
+                .find(|t| t.id == id)
+                .map(|t| t.focus.clone()),
+            Some(crate::PanelTab::File(p)) => {
+                this.pending_focus_file = Some(p);
+                None
+            }
+            _ => None,
+        };
         this.activate_panel_tab(ix, cx);
         this.set_content_view(view);
+        if let Some(f) = focus_term {
+            window.focus(&f);
+        }
         cx.notify();
     });
     // 行尾 ×（仅激活态由 tab_shell 渲染）——脏 tab 也要能关（关时走

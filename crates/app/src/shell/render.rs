@@ -129,7 +129,9 @@ impl Render for Chat {
             // 023：文件编辑器持有焦点时不回收——否则点进去下一帧就被抢回
             // composer，打字全失效（编辑器此前不在白名单）
         } else if !(self.content_view == crate::ContentView::Term
-            && self.terminals.iter().any(|t| t.focus.is_focused(window)))
+            && self
+                .shown_terminal_focus()
+                .is_some_and(|h| h.is_focused(window)))
         {
             // 终端持焦白名单只在终端视图内生效：切回 chat/文件后终端元素
             // 已卸载，但 gpui 的 focus handle 不会随卸载自动 blur，残留持焦
@@ -154,7 +156,21 @@ impl Render for Chat {
                 // 内件未就绪（打开当帧）：本帧让位，输入框渲染时由 focus_soon
                 // 一次性首发（Zed focus_filename_editor 请求同位）
                 Some(_) => {}
-                None => window.focus(&self.focus_handle(cx)),
+                None => {
+                    // 终端视图兜底：焦点不在**当前显示**的终端上（关/切 tab
+                    // 后旧终端元素已卸载但 handle 残留持焦，或焦点被丢到
+                    // 根节点）→ 交回显示的那个终端；否则键入无处可去
+                    // （双终端「打不进字」的根因）。非终端视图照旧回收给
+                    // chat 根。
+                    match self
+                        .shown_terminal_focus()
+                        .filter(|_| self.content_view == crate::ContentView::Term)
+                    {
+                        Some(h) if !h.is_focused(window) => window.focus(&h),
+                        Some(_) => {}
+                        None => window.focus(&self.focus_handle(cx)),
+                    }
+                }
             }
         }
         let t = T();

@@ -1613,10 +1613,33 @@ impl Chat {
         }
     }
 
-    /// Active terminal index helper.
+    /// 内容区**当前显示**的终端在 `terminals` 里的下标（None = 激活的
+    /// panel tab 不是终端）。`term_view` 就是按 `active_panel_tab` 渲染的，
+    /// 所以这条是「渲染面」的唯一口径。
+    pub(crate) fn shown_terminal_index(&self) -> Option<usize> {
+        let id = match self.active_panel_tab.and_then(|ix| self.panel_tabs.get(ix))? {
+            PanelTab::Term(id) => *id,
+            _ => return None,
+        };
+        self.terminals.iter().position(|t| t.id == id)
+    }
+
+    /// 当前显示终端的焦点句柄（渲染帧焦点仲裁用）。
+    pub(crate) fn shown_terminal_focus(&self) -> Option<gpui::FocusHandle> {
+        self.shown_terminal_index()
+            .and_then(|ix| self.terminals.get(ix))
+            .map(|t| t.focus.clone())
+    }
+
+    /// Active terminal index helper。以**渲染面**（激活 panel tab 上的终端）
+    /// 校正 `active_terminal` 再取实体：`active_terminal` 只是索引缓存，切
+    /// tab / 关 tab 后可能仍指着后台终端，按键会送进看不见的那一个——双终端
+    /// 切换后「打不进字 / 数字打不进去」的根因。
     pub(crate) fn active_term(&mut self) -> Option<&mut TerminalTab> {
-        self.active_terminal
-            .and_then(|ix| self.terminals.get_mut(ix))
+        if let Some(tix) = self.shown_terminal_index() {
+            self.active_terminal = Some(tix);
+        }
+        self.active_terminal.and_then(|ix| self.terminals.get_mut(ix))
     }
 
     /// Terminal keyboard input: copy/paste shortcuts first (pi-web
