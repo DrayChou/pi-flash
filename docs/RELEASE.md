@@ -39,6 +39,7 @@
       勿 stash、勿代提交；若按规范流程**预写**了 CHANGELOG 新版本段，同样要先提交——
       收编幂等，内容一致则零改动）
 - [ ] 门禁测试全绿：`cargo check --workspace`、`cargo test -p pi-link`、`node npm/test/e2e.js`（19 项）
+- [ ] 架构守卫 PASS：`scripts/check_arch.sh`（行数红线按**非测试行数**计；超线 = 先拆分或口径复核再发版）
 - [ ] `pi-flash.exe` 未运行（烟测会 `taskkill` 全部实例；且 debug 实例正在运行会让 debug 构建撞 exe 锁）
 - [ ] 发布说明就绪：`tmp/release-notes-<v>.md`（安装/更新命令 + 本版要点；**双语**：中文段在上、
       单独一行 `<!-- EN -->`、下接英文段，见 `docs/CHANGELOG规范.md`；中文段收编 CHANGELOG.md、
@@ -147,6 +148,8 @@ tag 推送后 `publish-npm.yml` 自动 OIDC 发薄壳（分钟级），无需干
 grep -m1 '^version' crates/app/Cargo.toml && grep -m1 '"version"' npm/package.json && git tag
 # 门禁三件套
 cargo check --workspace && cargo test -p pi-link && node npm/test/e2e.js
+# 架构守卫（行数/视图函数红线，非测试行数口径）
+scripts/check_arch.sh
 # 官方源核对
 npm view pi-flash version dist-tags --registry=https://registry.npmjs.org/
 ```

@@ -1,56 +1,106 @@
 #!/usr/bin/env bash
-# check_arch.sh — ARCHITECTURE.md §6 守护规则
+# check_arch.sh — ARCHITECTURE.md §8 守护规则
 # 用法: scripts/check_arch.sh   (非零退出 = 违规)
-# 基线机制: baseline 文件记录当前已知违规(文件=数量),只对"新增"违规报错,
-# 存量违规按 G+ 计划逐个消化后从基线删除。
+# 口径: 行数红线按"非测试行数"计——#[cfg(test)] 标注的块(含 mod tests;
+#       指向的独立测试文件)不计入,测试体量不惩罚生产代码。
+#       函数行数仅量顶层 fn(视图函数在本仓均为顶层自由函数,impl 方法不量)。
 
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-LIMIT_FILE=1500        # 单文件行数上限
-LIMIT_RENDER=300       # 单个 render/fn 行数上限(仅检查 fn render / fn main_column 等视图函数)
-BASELINE=scripts/arch_baseline.txt
+LIMIT_FILE=1500        # 单文件非测试行数上限
+LIMIT_RENDER=300       # 单个顶层视图函数行数上限
 
 fail=0
 
-echo "== 1. 单文件行数 ≤ $LIMIT_FILE =="
-while IFS= read -r f; do
-  n=$(wc -l < "$f")
-  if [ "$n" -gt "$LIMIT_FILE" ]; then
-    echo "VIOLATION: $f ($n lines)"
-    fail=1
-  fi
-done < <(find crates/app/src crates/pi-link/src -name '*.rs')
+echo "== 1. 单文件非测试行数 ≤ $LIMIT_FILE =="
+echo "== 2. 顶层视图函数行数 ≤ $LIMIT_RENDER =="
+python - "$LIMIT_FILE" "$LIMIT_RENDER" <<'PYEOF'
+import os, re, sys
 
-echo
-echo "== 2. render/视图函数行数 ≤ $LIMIT_RENDER =="
-# 对每个 rs 文件,找出顶层 fn 并量行数(简化:fn 行到下一个同缩进 '}')
-python - "$LIMIT_RENDER" <<'PYEOF'
-import re, sys, glob
-limit = int(sys.argv[1])
-bad = []
-for path in glob.glob('crates/app/src/**/*.rs', recursive=True):
-    lines = open(path, encoding='utf-8').read().splitlines()
-    i = 0
-    while i < len(lines):
-        m = re.match(r'^(\s*)(?:pub(?:\(crate\))? )?fn (\w+)\(', lines[i])
-        if m and m.group(1) == '':  # 顶层(无缩进)才量
-            indent = m.group(1)
-            depth = 0; started = False; j = i
-            while j < len(lines):
+limit_file, limit_render = int(sys.argv[1]), int(sys.argv[2])
+files = []
+for root in ('crates/app/src', 'crates/pi-link/src'):
+    for dirpath, _dirs, names in os.walk(root):
+        for name in names:
+            if name.endswith('.rs'):
+                files.append(os.path.join(dirpath, name).replace('\\', '/'))
+# 视图函数行数只查 app(规则本意是 render/视图函数;pi-link 解析函数不在此列)
+fn_roots = [f for f in files if f.startswith('crates/app/src')]
+
+excluded_files = set()
+
+def scan(path):
+    """返回 (行列表, 每行是否属测试区)。#[cfg(test)] 块整体算测试区;
+    `#[cfg(test)] mod x;` 指向的独立文件也整体算测试区。"""
+    lines = open(path, encoding='utf-8', errors='replace').read().splitlines()
+    flags = [False] * len(lines)
+    i, n = 0, len(lines)
+    while i < n:
+        if lines[i].strip() == '#[cfg(test)]':
+            j = i + 1
+            item = lines[j] if j < n else ''
+            m = re.match(r'\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+(\w+)\s*;', item)
+            if m:
+                base = os.path.dirname(path)
+                for cand in (os.path.join(base, m.group(1) + '.rs'),
+                             os.path.join(base, m.group(1), 'mod.rs')):
+                    cand = cand.replace('\\', '/')
+                    if cand in files:
+                        excluded_files.add(cand)
+                for k in range(i, min(j + 1, n)):
+                    flags[k] = True
+                i = j + 1
+                continue
+            depth, started, k = 0, False, j
+            while k < n:
+                depth += lines[k].count('{') - lines[k].count('}')
+                if '{' in lines[k]:
+                    started = True
+                if started and depth <= 0:
+                    break
+                k += 1
+            for k2 in range(i, min(k + 1, n)):
+                flags[k2] = True
+            i = k + 1
+            continue
+        i += 1
+    return lines, flags
+
+bad_file, bad_fn = [], []
+fn_set = set(fn_roots)
+for path in sorted(set(files) - excluded_files):
+    lines, flags = scan(path)
+    non_test = sum(1 for f in flags if not f)
+    if non_test > limit_file:
+        bad_file.append(f"{path} ({non_test} non-test lines)")
+    if path not in fn_set:
+        continue
+    # 顶层 fn 行数(跳过测试区内的 fn)
+    i, n = 0, len(lines)
+    while i < n:
+        m = re.match(r'^(?:pub(?:\(crate\))? )?fn (\w+)\(', lines[i])
+        if m and not flags[i]:
+            depth, started, j = 0, False, i
+            while j < n:
                 depth += lines[j].count('{') - lines[j].count('}')
-                if '{' in lines[j]: started = True
+                if '{' in lines[j]:
+                    started = True
                 if started and depth <= 0:
                     break
                 j += 1
-            n = j - i + 1
-            if n > limit:
-                bad.append(f"{path}: fn {m.group(2)} ({n} lines)")
+            j = min(j, n - 1)
+            cnt = sum(1 for k in range(i, j + 1) if not flags[k])
+            if cnt > limit_render:
+                bad_fn.append(f"{path}: fn {m.group(1)} ({cnt} non-test lines)")
             i = j
         i += 1
-for b in bad:
-    print("VIOLATION:", b)
-sys.exit(1 if bad else 0)
+
+for b in bad_file:
+    print("VIOLATION(file):", b)
+for b in bad_fn:
+    print("VIOLATION(fn):", b)
+sys.exit(1 if (bad_file or bad_fn) else 0)
 PYEOF
 [ $? -ne 0 ] && fail=1
 
