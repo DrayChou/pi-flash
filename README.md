@@ -2,6 +2,8 @@
 
 Pi Flash ： Windows上的极速 Pi coding agent！
 
+![pi-flash 简介](docs/images/pf-intro.mp4)
+
 ```bash
 npm install -g pi-flash@latest   # 安装与更新
 pi-flash                                # 启动
