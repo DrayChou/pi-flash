@@ -26,7 +26,7 @@ impl Chat {
         if failed > 0 {
             self.mc_set_error(
                 &crate::i18n::tf(
-                    "{total} 个技能中有 {count} 个未能更改",
+                    "skills.failed_to_toggle_count",
                     &[("total", paths.len().to_string()), ("count", failed.to_string())],
                 ),
                 cx,
@@ -54,8 +54,8 @@ pub(crate) fn mc_skills_view(
     // px7 + 行内 px8 = 内容左右 15px（与右侧详情 p15 等距，040 扩展页定稿）
     let mut list = sidebar_list().px(px(7.));
     for (label, scope) in [
-        (tr("项目"), pi_link::skills::SkillScope::Project),
-        (tr("全局"), pi_link::skills::SkillScope::Global),
+        (tr("scope.project"), pi_link::skills::SkillScope::Project),
+        (tr("scope.global"), pi_link::skills::SkillScope::Global),
     ] {
         let items: Vec<&pi_link::skills::SkillEntry> =
             chat.mc_skills.iter().filter(|s| s.scope == scope).collect();
@@ -111,7 +111,7 @@ pub(crate) fn mc_skills_view(
                 .p(px(12.))
                 .text_size(crate::appearance::ui_size(11.))
                 .text_color(rgb(t.text_dim))
-                .child(tr("没有找到技能（扫描项目 .pi/skills、.agents/skills 与全局目录）")),
+                .child(tr("skills.empty_hint")),
         );
     }
 
@@ -126,7 +126,7 @@ pub(crate) fn mc_skills_view(
             .p(px(15.))
             .text_size(crate::appearance::ui_size(12.))
             .text_color(rgb(t.text_dim))
-            .child(tr("没有找到技能"))
+            .child(tr("skills.no_skills_found"))
             .into_any_element(),
         Some(sk) => {
             let project = sk.scope == pi_link::skills::SkillScope::Project;
@@ -150,7 +150,7 @@ pub(crate) fn mc_skills_view(
                         .items_center()
                         .gap(px(8.))
                         .min_h(px(28.))
-                        .child(scope_tag(if project { tr("项目") } else { tr("全局") }, project))
+                        .child(scope_tag(if project { tr("scope.project") } else { tr("scope.global") }, project))
                         .child(
                             div()
                                 .flex_1()
@@ -167,16 +167,16 @@ pub(crate) fn mc_skills_view(
                             c.mc_toggle_skill(sw_path.clone(), visible, cx)
                         })),
                 )
-                .child(field(&tr("名称"), mono_text(sk.name.clone(), false)))
+                .child(field(&tr("field.name"), mono_text(sk.name.clone(), false)))
                 .child(field(
-                    &tr("描述"),
+                    &tr("tool_defs.description"),
                     div()
                         .text_size(crate::appearance::ui_size(12.))
                         .text_color(rgb(t.text_muted))
                         .child(SharedString::from(sk.description.clone())),
                 ))
                 .child(field(
-                    &tr("说明大小"),
+                    &tr("tokens.prompt_size"),
                     // 描述 = pi 注入提示词的常驻块（休眠为「—」）；
                     // 正文 = SKILL.md 全文，调用时 read 的一次性开销
                     div()

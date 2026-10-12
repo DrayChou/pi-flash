@@ -225,7 +225,7 @@ impl Chat {
         let rt = cx.new(|_| {
             let mut r = session::runtime::SessionRuntime::new(key.clone(), self.cwd.clone(), None);
             r.default_model = services::workspace::default_model_pref();
-            r.status = tr("新会话").to_string();
+            r.status = tr("session.new").to_string();
             r
         });
         self.runtimes.insert(key, rt.clone());
@@ -413,7 +413,7 @@ impl Chat {
                 self.set_status("session deleted".into(), cx);
             }
             Err(e) => {
-                self.set_status(crate::i18n::tf("删除失败: {e}", &[("e", e.to_string())]), cx);
+                self.set_status(crate::i18n::tf("extensions.remove_failed", &[("e", e.to_string())]), cx);
             }
         }
         self.refresh_sessions();
@@ -428,7 +428,7 @@ impl Chat {
         let input = cx.new(|cx| {
             TextInput::new(cx)
                 .select_all_on_focus()
-                .placeholder(tr("session name"))
+                .placeholder(tr("action.session_name"))
         });
         input.update(cx, |ti, cx| ti.set_value(prefill, cx));
         input.update(cx, |ti, _| {
@@ -590,7 +590,7 @@ impl Chat {
                             })
                     })
             })
-            .unwrap_or_else(|| tr("新会话").to_string());
+            .unwrap_or_else(|| tr("session.new").to_string());
         // 首行 + ≤30 字
         let first_line = raw.lines().next().unwrap_or("").trim().to_string();
         let mut out: String = first_line.chars().take(30).collect();

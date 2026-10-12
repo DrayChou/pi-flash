@@ -68,7 +68,7 @@ pub(crate) fn user_action_bar(
         action(
             format!("copy-{msg_ix}"),
             "check",
-            SharedString::from(tr("已复制")),
+            SharedString::from(tr("session.copied")),
             t.accent,
             false,
         )
@@ -76,7 +76,7 @@ pub(crate) fn user_action_bar(
         action(
             format!("copy-{msg_ix}"),
             "copy",
-            SharedString::from(tr("复制")),
+            SharedString::from(tr("action.copy")),
             t.text_dim,
             false,
         )
@@ -96,7 +96,7 @@ pub(crate) fn user_action_bar(
         action(
             format!("edit-{msg_ix}"),
             "pencil",
-            SharedString::from(tr("编辑")),
+            SharedString::from(tr("actions.edit")),
             t.text_dim,
             false,
         )
@@ -171,9 +171,9 @@ pub(crate) fn assistant_action_bar(
         // 复制反馈（032 恢复）：点亮后 pill 换 ✓ 已复制（主题色，图标同色），
         // 1.5s 后由 runtime.spawn_flash_clear 复位
         let (copy_icon, copy_color, copy_label) = if copied {
-            ("check", t.accent, tr("已复制"))
+            ("check", t.accent, tr("session.copied"))
         } else {
-            ("copy", t.text_dim, tr("复制"))
+            ("copy", t.text_dim, tr("action.copy"))
         };
         bar = bar.child(
             div()
@@ -209,7 +209,7 @@ pub(crate) fn assistant_action_bar(
                 .text_color(rgb(t.text_faint))
                 .child(SharedString::from(format!(
                     "{}{}",
-                    tr("用时"),
+                    tr("stats.duration"),
                     crate::services::format::fmt_duration_ms(end - start)
                 ))),
         );

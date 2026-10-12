@@ -95,13 +95,13 @@ fn render_file_search(
     _cx: &App,
 ) -> Div {
     let status: SharedString = if chat.file_search_scanning {
-        tr("正在扫描文件…").into()
+        tr("file_tree.scanning_files").into()
     } else if chat.file_search_needle.is_empty() {
-        tr("输入文件名关键词搜索当前项目").into()
+        tr("file_tree.search_hint").into()
     } else if chat.file_search_hits.is_empty() {
-        tr("没有匹配的文件").into()
+        tr("composer.no_matching_files").into()
     } else {
-        crate::i18n::tf("{n} 个文件", &[("n", chat.file_search_hits.len().to_string())]).into()
+        crate::i18n::tf("file_tree.files", &[("n", chat.file_search_hits.len().to_string())]).into()
     };
     let cwd = chat.cwd.clone();
     let mut list = div().flex().flex_col();
@@ -439,14 +439,14 @@ fn render_file_dirty(
                     .text_size(crate::appearance::ui_size(13.5))
                     .font_weight(gpui::FontWeight::SEMIBOLD)
                     .text_color(rgb(t.text))
-                    .child(SharedString::from(tr("未保存的修改").to_string())),
+                    .child(SharedString::from(tr("conflict.unsaved_count").to_string())),
             )
             .child(
                 div()
                     .text_size(crate::appearance::ui_size(12.))
                     .text_color(rgb(t.text_dim))
                     .child(SharedString::from(
-                        format!("{} {name}", tr("有未保存的修改：")),
+                        format!("{} {name}", tr("conflict.unsaved_list")),
                     )),
             )
             .child(
@@ -455,7 +455,7 @@ fn render_file_dirty(
                     .justify_end()
                     .gap(px(8.))
                     .child(
-                        btn("fv-dirty-cancel", tr("取消"), false).on_mouse_down(
+                        btn("fv-dirty-cancel", tr("action.cancel"), false).on_mouse_down(
                             gpui::MouseButton::Left,
                             move |_, _, cx| {
                                 let _ = weak_cancel.update(cx, |c, cx| {
@@ -466,7 +466,7 @@ fn render_file_dirty(
                         ),
                     )
                     .child(
-                        btn("fv-dirty-drop", tr("不保存关闭"), false).on_mouse_down(
+                        btn("fv-dirty-drop", tr("conflict.close_without_saving"), false).on_mouse_down(
                             gpui::MouseButton::Left,
                             move |_, _, cx| {
                                 let _ = weak_drop.update(cx, |c, cx| {
@@ -478,7 +478,7 @@ fn render_file_dirty(
                         ),
                     )
                     .child(
-                        btn("fv-dirty-save", tr("保存并关闭"), true).on_mouse_down(
+                        btn("fv-dirty-save", tr("conflict.save_and_close"), true).on_mouse_down(
                             gpui::MouseButton::Left,
                             move |_, _, cx| {
                                 let _ = weak_save.update(cx, |c, cx| {
@@ -623,11 +623,11 @@ fn render_provider_picker(chat: &Chat, weak: &gpui::WeakEntity<Chat>, input: &gp
     // 注册表未就绪/失败：清单区给状态行
     match (&dump, &reg_state) {
         (None, state) if !matches!(state, RegistryState::Failed(_)) => {
-            body = body.child(status_row(tr("正在读取 Provider 注册表…").to_string()));
+            body = body.child(status_row(tr("model.loading_registry").to_string()));
         }
         (None, RegistryState::Failed(e)) => {
             body = body.child(status_row(crate::i18n::tf(
-                "读取 Provider 注册表失败：{e}",
+                "models.registry_read_failed",
                 &[("e", e.clone())],
             )));
         }
@@ -655,7 +655,7 @@ fn render_provider_picker(chat: &Chat, weak: &gpui::WeakEntity<Chat>, input: &gp
                 .gap(px(10.))
                 .child(card_text(
                     name,
-                    crate::i18n::tf("{n} models", &[("n", total.to_string())]),
+                    crate::i18n::tf("model.count", &[("n", total.to_string())]),
                 ))
                 .child(crate::ui::provider_icon(p, 24., t.text_muted));
             grid = grid.child(el);
@@ -672,7 +672,7 @@ fn render_provider_picker(chat: &Chat, weak: &gpui::WeakEntity<Chat>, input: &gp
                     let _ = weak_card.update(cx, |c, cx| {
                         // OAuth 登录缓行（051/beads pi-flash-1cb）：提示不关弹窗
                         c.set_status(
-                            crate::i18n::tr("OAuth 登录暂未接入，订阅服务商暂时无法在此配置")
+                            crate::i18n::tr("model.oauth_unavailable")
                                 .to_string(),
                             cx,
                         );
@@ -688,7 +688,7 @@ fn render_provider_picker(chat: &Chat, weak: &gpui::WeakEntity<Chat>, input: &gp
         body = body.child(grid);
     }
     if dump.is_some() && api_cards.is_empty() && oauth_cards.is_empty() {
-        body = body.child(status_row(tr("没有匹配的 Provider").to_string()));
+        body = body.child(status_row(tr("model.no_provider_match").to_string()));
     }
 
     // 近满窗大面板：搜索条压顶（分隔线），下方滚动区吃满剩余高度
@@ -872,9 +872,9 @@ fn render_project_picker(
     let mut list = div().flex().flex_col();
     if rows.is_empty() {
         let empty = if chat.project_hits.is_empty() {
-            tr("最近 30 天没有打开过的项目")
+            tr("project.idle_30d")
         } else {
-            tr("没有匹配的项目")
+            tr("project.no_match")
         };
         list = list.child(
             div()
@@ -947,7 +947,7 @@ fn render_project_picker(
             let _ = weak_open.update(cx, |c, cx| c.pick_project_folder(fresh, cx));
         })
         .child(icon("folder-plus", 16., t.text_muted))
-        .child(tr("打开文件夹"));
+        .child(tr("action.open_folder"));
     let panel = div()
         .w(px(500.))
         .h(px(500.))
@@ -1009,11 +1009,11 @@ fn render_session_search(
     _cx: &App,
 ) -> Div {
     let status: SharedString = if chat.search_running {
-        tr("搜索中…").into()
+        tr("session_search.searching").into()
     } else if chat.search_needle.is_empty() {
-        tr("输入关键词，搜索当前项目的会话内容").into()
+        tr("session_search.hint").into()
     } else if chat.search_hits.is_empty() {
-        tr("没有匹配结果").into()
+        tr("session_search.no_match").into()
     } else {
         format!("{} 条结果", chat.search_hits.len()).into()
     };
@@ -1117,7 +1117,7 @@ fn render_session_search(
                     .child(input.clone())
                     .child({
                         let label: SharedString = if chat.search_truncated {
-                            format!("{status} · {partial}", partial = tr("部分结果")).into()
+                            format!("{status} · {partial}", partial = tr("session_search.partial")).into()
                         } else {
                             status
                         };
@@ -1167,7 +1167,7 @@ impl Chat {
         let weak_esc = weak.clone();
         let input = cx.new(|cx| {
             TextInput::new(cx)
-                .placeholder(tr("搜索项目…"))
+                .placeholder(tr("project.search_placeholder"))
                 .on_change(Box::new(move |q: &str, cx: &mut App| {
                     let _ = weak.update(cx, |c, cx| {
                         c.project_filter = q.to_string();
@@ -1231,7 +1231,7 @@ impl Chat {
         let weak_esc = weak.clone();
         let input = cx.new(|cx| {
             TextInput::new(cx)
-                .placeholder(tr("搜索会话内容…"))
+                .placeholder(tr("session_search.placeholder"))
                 .on_change(Box::new(move |q: &str, cx: &mut App| {
                     let _ = weak.update(cx, |c, cx| c.search_changed(q, cx));
                 }))

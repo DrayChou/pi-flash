@@ -7,10 +7,10 @@ pub(crate) fn mc_about_view() -> gpui::AnyElement {
     let t = T();
     let mut col = div().id("mc-about").flex().flex_col();
 
-    col = col.child(set_row(tr("作者"), "", value_el(tr(ABOUT_AUTHOR).to_string(), true), t));
+    col = col.child(set_row(tr("about.author"), "", value_el(tr(ABOUT_AUTHOR).to_string(), true), t));
 
     col = col.child(set_row(
-        tr("PF版本"),
+        tr("about.version"),
         "",
         div()
             .flex()
@@ -23,7 +23,7 @@ pub(crate) fn mc_about_view() -> gpui::AnyElement {
     ));
 
     col = col.child(set_row(
-        tr("内核版本"),
+        tr("about.kernel"),
         "",
         value_el(
             format!(
@@ -66,7 +66,7 @@ pub(crate) fn mc_about_view() -> gpui::AnyElement {
                     .text_size(crate::appearance::ui_size(13.))
                     .font_weight(gpui::FontWeight::SEMIBOLD)
                     .text_color(rgb(t.text_muted))
-                    .child(tr("说明")),
+                    .child(tr("about.description")),
             )
             .child(note(tr(ABOUT_DESC)))
             .child(note(tr(ABOUT_NOTE))),

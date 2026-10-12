@@ -41,16 +41,16 @@ pub(crate) fn mc_general_view(
     let mut col = div().flex().flex_col().pr(px(6.));
 
     // ---- 主题：淡色一排 / 深色一排 --------------------------------------
-    col = col.child(section_label(tr("主题")));
+    col = col.child(section_label(tr("settings.theme")));
     col = col.child(theme_row(false, weak));
     col = col.child(theme_row(true, weak));
 
     // ---- 字体：三槽位（族下拉 250px + 字号步进 + 预览行） ----------------
-    col = col.child(section_label(tr("字体")));
+    col = col.child(section_label(tr("settings.fonts")));
     for (ix, label) in [
-        (0usize, tr("会话字体")),
-        (1, tr("面板字体")),
-        (2, tr("文档字体")),
+        (0usize, tr("settings.chat_font")),
+        (1, tr("settings.panel_font")),
+        (2, tr("settings.file_font")),
     ] {
         col = col.child(font_row(
             ix,
@@ -75,8 +75,8 @@ pub(crate) fn mc_general_view(
     let show_thinking = crate::services::workspace::show_thinking();
     col = col.child(
         div().mt(px(7.)).child(set_row(
-            tr("展示思考"),
-            tr("思考默认展开或收起"),
+            tr("settings.show_thinking"),
+            tr("settings.show_thinking_hint"),
             switch_base(
                 "general-show-thinking",
                 show_thinking,
@@ -100,7 +100,7 @@ pub(crate) fn mc_general_view(
 
 
     // ---- 语言：三个一排，左对齐（置底——用户定夺） ------------------------
-    col = col.child(section_label(tr("语言")));
+    col = col.child(section_label(tr("settings.language")));
     col = col.child(lang_row(weak, t));
 
     col.into_any_element()
@@ -275,10 +275,10 @@ fn size_trigger(
     t: &'static crate::appearance::theme::Theme,
 ) -> gpui::AnyElement {
     let sizes: &[(f32, &'static str)] = &[
-        (15., tr("小")),
-        (16., tr("中")),
-        (17., tr("大")),
-        (18., tr("特大")),
+        (15., tr("size.small")),
+        (16., tr("size.medium")),
+        (17., tr("size.large")),
+        (18., tr("size.extra_large")),
     ];
     let current_label = |v: f32| -> &'static str {
         let mut best = sizes[0];

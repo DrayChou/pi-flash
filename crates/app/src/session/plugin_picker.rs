@@ -61,7 +61,7 @@ impl Chat {
     pub(crate) fn open_plugin_picker(&mut self, cx: &mut gpui::Context<Self>) {
         if self.rt().read(cx).tool_preset_key() != "custom" {
             self.pill_menu = None;
-            self.set_status(crate::i18n::tr("扩展只能在 full+ 档勾选").to_string(), cx);
+            self.set_status(crate::i18n::tr("extensions.only_full_preset").to_string(), cx);
             return;
         }
         let seed = self.rt().read(cx).ext_sources.clone();
@@ -111,13 +111,13 @@ impl Chat {
         // 每个对话保存一份：落 ~/.pi-flash/session-ext.json，重启后按会话恢复
         if let Some(path) = pi_link::session_ext::store_path() {
             if let Err(e) = pi_link::session_ext::write_for(&path, &key, &sources) {
-                self.set_status(crate::i18n::tf("扩展清单保存失败: {e}", &[("e", e)]), cx);
+                self.set_status(crate::i18n::tf("extensions.list_save_failed", &[("e", e)]), cx);
                 return;
             }
         }
         if rt.read(cx).agent_running {
             // 运行中不掐轮，只提示生效时机
-            self.set_status(crate::i18n::tr("扩展清单将在下一轮生效").to_string(), cx);
+            self.set_status(crate::i18n::tr("extensions.list_next_turn").to_string(), cx);
         }
     }
 }
@@ -161,7 +161,7 @@ pub(crate) fn view(chat: &Chat, weak: &gpui::WeakEntity<Chat>, window: &gpui::Wi
                 .py(px(12.))
                 .text_size(ui(11.))
                 .text_color(rgb(t.text_dim))
-                .child(SharedString::from(crate::i18n::tr("没有已配置的扩展")))
+                .child(SharedString::from(crate::i18n::tr("extensions.not_configured")))
                 .into_any_element(),
         );
     }
@@ -188,7 +188,7 @@ pub(crate) fn view(chat: &Chat, weak: &gpui::WeakEntity<Chat>, window: &gpui::Wi
                 .text_size(ui(12.))
                 .font_weight(gpui::FontWeight::SEMIBOLD)
                 .text_color(rgb(t.text))
-                .child(SharedString::from(crate::i18n::tr("选择扩展"))),
+                .child(SharedString::from(crate::i18n::tr("extensions.choose_extensions"))),
         )
         .when(total > 0, |d| {
             // 不用 ml_auto（实测 CJK 标签参与测量时 auto margin 收不满，合计
@@ -199,7 +199,7 @@ pub(crate) fn view(chat: &Chat, weak: &gpui::WeakEntity<Chat>, window: &gpui::Wi
                     div()
                         .text_size(ui(10.))
                         .text_color(rgb(t.text_dim))
-                        .child(SharedString::from(crate::i18n::tr("合计："))),
+                        .child(SharedString::from(crate::i18n::tr("tokens.sum"))),
                 )
                 .child(
                     div()
@@ -322,7 +322,7 @@ fn plugin_row(
                 )),
         );
     if project {
-        row = row.child(tag(crate::i18n::tr("项目"), crate::settings::widgets::indigo_bg(), crate::settings::widgets::indigo_fg()));
+        row = row.child(tag(crate::i18n::tr("scope.project"), crate::settings::widgets::indigo_bg(), crate::settings::widgets::indigo_fg()));
     }
     if let Some(n) = tokens {
         row = row.child(

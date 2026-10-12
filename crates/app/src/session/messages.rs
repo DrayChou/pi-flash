@@ -502,7 +502,7 @@ fn render_tool_card(
 
     // 标题行：工具名 + 参数摘要（apply_patch 用路径摘要）+ 耗时 + 箭头
     let preview = if args_partial && result.is_empty() && !result_arrived {
-        tr("正在生成参数...").to_string()
+        tr("messages.generating_args").to_string()
     } else if is_patch {
         let s = summarize_apply_patch(args);
         if s.is_empty() {
@@ -759,7 +759,7 @@ pub(crate) fn render_custom_msg(
                     .text_size(crate::appearance::ui_size(13.))
                     .mb(px(4.))
                     .child(SharedString::from(tr(
-                        "*此对话曾短暂探索另一分支后返回，摘要如下：*",
+                        "branch.detour_note",
                     ))),
             );
             if !summary.trim().is_empty() {
@@ -775,7 +775,7 @@ pub(crate) fn render_custom_msg(
                 .take(140)
                 .collect();
             let preview = if preview.is_empty() {
-                tr("扩展消息（不显示）").to_string()
+                tr("messages.extended_hidden").to_string()
             } else {
                 format!("{}...", preview)
             };
@@ -912,7 +912,7 @@ fn render_compaction_card(
                 .font_weight(FontWeight::BOLD)
                         .line_height(relative(1.35))
                         .text_color(rgb(t.text))
-                        .child(SharedString::from(tr("会话已压缩"))),
+                        .child(SharedString::from(tr("compaction.done"))),
                 )
                 .child(
                     div()
@@ -922,14 +922,14 @@ fn render_compaction_card(
                         .line_height(relative(1.5))
                         .text_color(rgb(t.text))
                         .child(SharedString::from(tr(
-                            "此处之前的会话历史已压缩为以下摘要：",
+                            "compaction.summary_intro",
                         ))),
                 )
                 .child(if body.is_empty() {
                     div()
                         .text_size(crate::appearance::ui_size(12.))
                         .text_color(rgb(t.text_dim))
-                        .child(SharedString::from(tr("（无摘要）")))
+                        .child(SharedString::from(tr("compaction.no_summary")))
                         .into_any_element()
                 } else {
                     markdown::render(&body, t, false)
@@ -942,17 +942,17 @@ fn render_compaction_card(
     if total > 0 {
         let mut parts: Vec<String> = Vec::new();
         if !read_files.is_empty() {
-            parts.push(tf("{n} 读取", &[("n", read_files.len().to_string())]));
+            parts.push(tf("compaction.reads", &[("n", read_files.len().to_string())]));
         }
         if !modified_files.is_empty() {
-            parts.push(tf("{n} 修改", &[("n", modified_files.len().to_string())]));
+            parts.push(tf("compaction.writes", &[("n", modified_files.len().to_string())]));
         }
         // 折叠位复用 runtime.collapsed；usize::MAX 作content_index，
         // 避开同一消息里工具调用用的 (msg_ix, content_index) 键
         let key = (msg_ix, usize::MAX);
         let open = collapsed.get(&key).copied().unwrap_or(false);
         let weak_toggle = weak.clone();
-        let label = tf("文件上下文：{details}", &[("details", parts.join(", "))]);
+        let label = tf("compaction.file_context", &[("details", parts.join(", "))]);
         let mut meta = div()
             .mt(px(10.))
             .pt(px(8.))
@@ -1167,7 +1167,7 @@ fn paired_result(
 ) -> gpui::AnyElement {
     let empty = result_is_empty(result);
     let text = if empty {
-        tr("（无输出）").to_string()
+        tr("messages.no_output").to_string()
     } else {
         result.to_string()
     };
@@ -1469,7 +1469,7 @@ fn split_files_view(files: &[crate::session::diff::DiffFile], t: &theme::Theme) 
                     .child(SharedString::from(
                         title
                             .map(|s| s.clone())
-                            .unwrap_or_else(|| tr("之前").to_string()),
+                            .unwrap_or_else(|| tr("messages.before").to_string()),
                     ))
                     .into_any_element()
             };
@@ -2037,7 +2037,7 @@ pub(crate) fn render_bash_msg(
                         )
                         .into_any_element(),
                 )
-                .child(SharedString::from(tr("执行中 · Esc 中止"))),
+                .child(SharedString::from(tr("composer.running_hint"))),
         );
     }
     col
@@ -2302,7 +2302,7 @@ pub(crate) fn render_assistant_turn(
         let default_open = is_working || !has_final_answer;
         let open = collapsed.get(&key).copied().unwrap_or(default_open);
         let label = crate::i18n::tf(
-            "工作详情 · {m} 条消息 · {t} 次工具调用",
+            "nav.work_details",
             &[("m", n_views.to_string()), ("t", n_tools.to_string())],
         );
         let weak_fold = weak.clone();
@@ -2378,7 +2378,7 @@ pub(crate) fn render_assistant_turn(
     }
     if final_truncated {
         col = col.child(alert_box(
-            tr("回复因达到模型输出长度上限而被截断。发送一条后续消息以继续。").to_string(),
+            tr("messages.truncated").to_string(),
             0xca8a04,
             0xeab308,
             t,

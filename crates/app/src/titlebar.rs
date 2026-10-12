@@ -38,7 +38,7 @@ pub(crate) fn topbar_l(_chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> impl g
         .child(div().ml(px(5.)).child(icon_btn(
             "panes-toggle",
             "panel-left",
-            tr("收起 / 展开侧栏"),
+            tr("titlebar.toggle_sidebar"),
             cx.listener(|this, _: &gpui::MouseDownEvent, _w, cx| {
                 this.toggle_panes(cx);
             }),
@@ -81,7 +81,7 @@ pub(crate) fn topbar_r(
                     .child(icon_btn(
                         "panes-toggle-r",
                         "panel-left",
-                        tr("展开侧栏"),
+                        tr("titlebar.expand_sidebar"),
                         cx.listener(|this, _: &gpui::MouseDownEvent, _w, cx| {
                             this.toggle_panes(cx);
                         }),
@@ -195,7 +195,7 @@ fn tab_strip(
             ),
             // 081 更新日志 tab（新版本首启自动打开）
             crate::PanelTab::Changelog => (
-                tr("更新日志").into(),
+                tr("about.changelog").into(),
                 None,
                 false,
                 Some("history"),

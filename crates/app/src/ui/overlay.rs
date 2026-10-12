@@ -81,7 +81,7 @@ pub fn confirm(
         let on = on_cancel.clone();
         crate::ui::button(
             "confirm-cancel",
-            crate::i18n::tr("取消"),
+            crate::i18n::tr("action.cancel"),
             crate::ui::BtnSize::Md,
             crate::ui::BtnVariant::Secondary,
             false,
@@ -92,7 +92,7 @@ pub fn confirm(
         let on = on_confirm.clone();
         crate::ui::button(
             "confirm-ok",
-            crate::i18n::tr("确认"),
+            crate::i18n::tr("action.confirm"),
             crate::ui::BtnSize::Md,
             crate::ui::BtnVariant::Danger,
             false,

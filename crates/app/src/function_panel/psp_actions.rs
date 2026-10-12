@@ -105,7 +105,7 @@ impl Chat {
                 .all(|s| !same_path(s, p))
         });
         self.set_status(
-            crate::i18n::tf("项目已删除（{n} 个会话）", &[("n", sessions.len().to_string())]),
+            crate::i18n::tf("psp.project_deleted", &[("n", sessions.len().to_string())]),
             cx,
         );
         cx.notify();
@@ -192,7 +192,7 @@ impl Chat {
                 }
             }
         }
-        self.set_status(tr("已改名").to_string(), cx);
+        self.set_status(tr("psp.renamed").to_string(), cx);
         cx.notify();
     }
 

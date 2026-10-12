@@ -113,7 +113,7 @@ impl SettingsPanel {
         let weak_esc = cx.weak_entity();
         let font_filter = cx.new(|cx| {
             TextInput::new(cx)
-                .placeholder(tr("搜索字体…"))
+                .placeholder(tr("settings.search_fonts"))
                 .select_all_on_focus()
                 .on_change(Box::new(move |_, cx| {
                     if let Some(p) = weak_filter.upgrade() {
@@ -142,7 +142,7 @@ impl SettingsPanel {
             mj_key: cx.new(|cx| {
                 TextInput::new(cx)
                     .masked(true)
-                    .placeholder(tr("ENV_VAR_NAME、!shell-command 或明文 key"))
+                    .placeholder(tr("custom_models.key_hint"))
             }),
             mj_id: panel_input("model-id", cx),
             mj_mname: panel_input("显示名（可选）", cx),
@@ -150,13 +150,13 @@ impl SettingsPanel {
             mj_api: 0,
             mj_reasoning: false,
             install_input: cx.new(|cx| {
-                TextInput::new(cx).placeholder(tr("例：pi install npm:pi-web-access"))
+                TextInput::new(cx).placeholder(tr("extensions.source_example"))
             }),
             mcp_add: {
                 let weak_add = cx.weak_entity();
                 cx.new(|cx| {
                     TextInput::new(cx)
-                        .placeholder(tr("粘贴 JSON / url / 命令行 / pi mcp add..."))
+                        .placeholder(tr("mcp.form_placeholder"))
                         .on_change(Box::new(move |_, cx| {
                             if let Some(p) = weak_add.upgrade() {
                                 p.update(cx, |_, cx| cx.notify());

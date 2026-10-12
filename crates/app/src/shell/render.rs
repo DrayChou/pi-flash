@@ -189,26 +189,26 @@ impl Render for Chat {
             let weak_menu = weak.clone();
             let rows: Vec<(String, String, bool)> = match menu {
                 PillMenu::Thinking => [
-                    ("auto", tr("使用 pi 默认设置"), thinking_override.is_none()),
-                    ("off", tr("关闭推理"), thinking_override.as_deref() == Some("off")),
-                    ("minimal", tr("最低限度推理"), thinking_override.as_deref() == Some("minimal")),
-                    ("low", tr("低强度推理"), thinking_override.as_deref() == Some("low")),
-                    ("medium", tr("中等强度推理"), thinking_override.as_deref() == Some("medium")),
-                    ("high", tr("高强度推理"), thinking_override.as_deref() == Some("high")),
-                    ("xhigh", tr("超高强度推理"), thinking_override.as_deref() == Some("xhigh")),
-                    ("max", tr("最高强度推理"), thinking_override.as_deref() == Some("max")),
+                    ("auto", tr("thinking.use_pi_default"), thinking_override.is_none()),
+                    ("off", tr("thinking.off"), thinking_override.as_deref() == Some("off")),
+                    ("minimal", tr("thinking.minimal_reasoning"), thinking_override.as_deref() == Some("minimal")),
+                    ("low", tr("thinking.low_reasoning"), thinking_override.as_deref() == Some("low")),
+                    ("medium", tr("thinking.medium_reasoning"), thinking_override.as_deref() == Some("medium")),
+                    ("high", tr("thinking.high_reasoning"), thinking_override.as_deref() == Some("high")),
+                    ("xhigh", tr("thinking.extra_high_reasoning"), thinking_override.as_deref() == Some("xhigh")),
+                    ("max", tr("thinking.max_reasoning"), thinking_override.as_deref() == Some("max")),
                 ]
                 .iter()
                 .map(|(k, d, on)| (k.to_string(), d.to_string(), *on))
                 .collect(),
                 PillMenu::Tools => [
-                    ("chat-only", tr("仅聊天"), preset_key == "chat-only"),
-                    ("read-only", tr("4 个只读内置工具"), preset_key == "read-only"),
-                    ("default", tr("4 个内置工具"), preset_key == "default"),
+                    ("chat-only", tr("thinking.chat_only"), preset_key == "chat-only"),
+                    ("read-only", tr("tools.preset_readonly_count"), preset_key == "read-only"),
+                    ("default", tr("tools.preset_full_count"), preset_key == "default"),
                     // full：内置 7 件 + 精确集（-ne + 个人扩展/内置扩展，包零注入）
-                    ("full", tr("全部内置工具（不装任何扩展）"), preset_key == "full"),
+                    ("full", tr("extensions.builtin_all_desc"), preset_key == "full"),
                     // full+ = full + 本会话选中扩展（默认档；清单按会话保存）
-                    ("custom", tr("full + 自定义扩展"), preset_key == "custom"),
+                    ("custom", tr("tools.preset_full_desc"), preset_key == "custom"),
                 ]
                 .iter()
                 .map(|(k, d, on)| (k.to_string(), d.to_string(), *on))
@@ -264,7 +264,7 @@ impl Render for Chat {
                                 .text_color(rgb(t.text))
                                 // full+ 档显示自定义名（其余档沿用内部键）
                                 .child(SharedString::from(if key == "custom" {
-                                    tr("full+").to_string()
+                                    tr("extensions.full").to_string()
                                 } else {
                                     key
                                 })),

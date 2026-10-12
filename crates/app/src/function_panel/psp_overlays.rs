@@ -290,14 +290,14 @@ fn hover_card(
         .child(info_row("folder-closed", SharedString::from(prj_name), t))
         .child(info_row(
             "icon-clock-solid",
-            // time_ago 已自带「前」后缀（format.rs 的 tf("{n}天前")）——
+            // time_ago 已自带「前」后缀（format.rs 的 tf("time.d_ago")）——
             // 这里再拼一次就成「1天前前」
             SharedString::from(time_ago(modified)),
             t,
         ))
         .child(info_row(
             "message-square",
-            SharedString::from(tf("{n} 条消息", &[("n", msgs.to_string())])),
+            SharedString::from(tf("psp.messages_count", &[("n", msgs.to_string())])),
             t,
         ))
         .child(
@@ -316,7 +316,7 @@ fn hover_card(
                 .children(if confirming {
                     // 原地换 取消/确认
                     vec![
-                        ghost_btn("hc-cancel", tr("取消"), false, cx.listener(
+                        ghost_btn("hc-cancel", tr("action.cancel"), false, cx.listener(
                             |this, _: &gpui::MouseDownEvent, _w, cx| {
                                 if let Some(c) = this.hover_card.as_mut() {
                                     c.confirming = false;
@@ -325,7 +325,7 @@ fn hover_card(
                             },
                         ))
                         .into_any_element(),
-                        solid_danger_btn("hc-ok", tr("确认"), {
+                        solid_danger_btn("hc-ok", tr("action.confirm"), {
                             let path = path.clone();
                             cx.listener(move |this, _: &gpui::MouseDownEvent, _w, cx| {
                                 this.hover_card = None;
@@ -335,7 +335,7 @@ fn hover_card(
                         .into_any_element(),
                     ]
                 } else {
-                    vec![ghost_btn("hc-del", tr("删除"), true, cx.listener(
+                    vec![ghost_btn("hc-del", tr("action.delete"), true, cx.listener(
                         |this, _: &gpui::MouseDownEvent, _w, cx| {
                             if let Some(c) = this.hover_card.as_mut() {
                                 c.confirming = true;
@@ -434,7 +434,7 @@ fn menu_layer(
     let mut card = menu_card(parent_edges, t);
     match chat.psp_menu.clone().expect("re-checked") {
         crate::PspMenu::Sort { sub, .. } => {
-            let mut view = menu_item("m-list", "icon-organize", tr("列表方式"), false, false);
+            let mut view = menu_item("m-list", "icon-organize", tr("psp.list_mode"), false, false);
             view = view.on_hover(cx.listener(|this, h: &bool, _w, cx| {
                 if *h {
                     if let Some(crate::PspMenu::Sort { sub, .. }) = this.psp_menu.as_mut() {
@@ -443,7 +443,7 @@ fn menu_layer(
                     cx.notify();
                 }
             }));
-            let mut sort = menu_item("m-sort", "icon-sort", tr("排序方式"), false, false);
+            let mut sort = menu_item("m-sort", "icon-sort", tr("psp.sort_mode"), false, false);
             sort = sort.on_hover(cx.listener(|this, h: &bool, _w, cx| {
                 if *h {
                     if let Some(crate::PspMenu::Sort { sub, .. }) = this.psp_menu.as_mut() {
@@ -470,13 +470,13 @@ fn menu_layer(
                     vec![
                         (
                             "icon-grouped",
-                            tr("项目分组列表"),
+                            tr("psp.project_groups"),
                             chat.list_mode == crate::ListMode::Grouped,
                             Box::new(|c, _cx| c.list_mode = crate::ListMode::Grouped),
                         ),
                         (
                             "icon-flat",
-                            tr("最近会话列表"),
+                            tr("psp.recent_sessions"),
                             chat.list_mode == crate::ListMode::Flat,
                             Box::new(|c, _cx| c.list_mode = crate::ListMode::Flat),
                         ),
@@ -485,13 +485,13 @@ fn menu_layer(
                     vec![
                         (
                             "icon-clock-solid",
-                            tr("按更新时间排序"),
+                            tr("psp.sort_by_time"),
                             chat.sort_mode == crate::SortMode::Time,
                             Box::new(|c, _cx| c.sort_mode = crate::SortMode::Time),
                         ),
                         (
                             "icon-hand",
-                            tr("手动排序"),
+                            tr("psp.sort_manual"),
                             chat.sort_mode == crate::SortMode::Manual,
                             Box::new(|c, _cx| c.sort_mode = crate::SortMode::Manual),
                         ),
@@ -526,7 +526,7 @@ fn menu_layer(
                     menu_item(
                         "pm-explorer",
                         "folder-input",
-                        tr("在文件浏览器中打开"),
+                        tr("psp.open_in_file_browser"),
                         false,
                         false,
                     )
@@ -544,7 +544,7 @@ fn menu_layer(
                     }),
                 )
                 .child(
-                    menu_item("pm-terminal", "icon-terminal-solid", tr("在终端中打开"), false, false)
+                    menu_item("pm-terminal", "icon-terminal-solid", tr("file_tree.open_in_terminal"), false, false)
                         .on_mouse_down(MouseButton::Left, {
                             let weak = weak.clone();
                             let path = path.clone();
@@ -564,7 +564,7 @@ fn menu_layer(
                     menu_item(
                         "pm-del",
                         "icon-trash-solid",
-                        tr("删除项目及所有会话"),
+                        tr("psp.delete_project"),
                         true,
                         false,
                     )
@@ -688,7 +688,7 @@ fn confirm_project_del(
                         .text_size(crate::appearance::ui_size(12.5))
                         .text_color(rgb(t.text))
                         .child(SharedString::from(tf(
-                            "删除项目 {name} 及其所有会话？",
+                            "psp.delete_project_confirm",
                             &[("name", name)],
                         ))),
                 )
@@ -697,13 +697,13 @@ fn confirm_project_del(
                         .flex()
                         .justify_end()
                         .gap(px(8.))
-                        .child(ghost_btn("pd-cancel", tr("取消"), false, cx.listener(
+                        .child(ghost_btn("pd-cancel", tr("action.cancel"), false, cx.listener(
                             |this, _: &gpui::MouseDownEvent, _w, cx| {
                                 this.confirm_prj_del = None;
                                 cx.notify();
                             },
                         )))
-                        .child(solid_danger_btn("pd-ok", tr("确认删除"), {
+                        .child(solid_danger_btn("pd-ok", tr("psp.confirm_delete"), {
                             let path = path.clone();
                             cx.listener(move |this, _: &gpui::MouseDownEvent, _w, cx| {
                                 this.confirm_prj_del = None;
@@ -751,7 +751,7 @@ fn tree_menu_layer(
                     &weak,
                     "ftm-new-file",
                     "file-plus",
-                    tr("新建文件"),
+                    tr("file_view.new_file"),
                     false,
                     {
                         let path = path.clone();
@@ -762,7 +762,7 @@ fn tree_menu_layer(
                     &weak,
                     "ftm-new-dir",
                     "folder-plus",
-                    tr("新建目录"),
+                    tr("file_tree.new_folder"),
                     false,
                     {
                         let path = path.clone();
@@ -774,7 +774,7 @@ fn tree_menu_layer(
                     &weak,
                     "ftm-dir-explorer",
                     "folder-input",
-                    tr("在资源管理器中打开"),
+                    tr("file_tree.reveal_in_explorer"),
                     false,
                     {
                         let path = path.clone();
@@ -787,7 +787,7 @@ fn tree_menu_layer(
                     &weak,
                     "ftm-dir-copy",
                     "copy",
-                    tr("复制路径"),
+                    tr("file_tree.copy_path"),
                     false,
                     {
                         let path = path.clone();
@@ -798,7 +798,7 @@ fn tree_menu_layer(
                     &weak,
                     "ftm-dir-at",
                     "at-sign",
-                    tr("@到会话输入框"),
+                    tr("file_tree.insert_at_mention"),
                     false,
                     {
                         let path = path.clone();
@@ -814,7 +814,7 @@ fn tree_menu_layer(
                         &weak,
                         "ftm-dir-rename",
                         "pencil",
-                        tr("改名"),
+                        tr("file_tree.rename"),
                         false,
                         {
                             let path = path.clone();
@@ -825,7 +825,7 @@ fn tree_menu_layer(
                         &weak,
                         "ftm-dir-del",
                         "trash",
-                        tr("删除"),
+                        tr("action.delete"),
                         true,
                         {
                             let path = path.clone();
@@ -842,7 +842,7 @@ fn tree_menu_layer(
                     &weak,
                     "ftm-file-new-file",
                     "file-plus",
-                    tr("新建文件"),
+                    tr("file_view.new_file"),
                     false,
                     {
                         let path = path.clone();
@@ -859,7 +859,7 @@ fn tree_menu_layer(
                     &weak,
                     "ftm-file-new-dir",
                     "folder-plus",
-                    tr("新建目录"),
+                    tr("file_tree.new_folder"),
                     false,
                     {
                         let path = path.clone();
@@ -877,7 +877,7 @@ fn tree_menu_layer(
                     &weak,
                     "ftm-file-explorer",
                     "folder-input",
-                    tr("在资源管理器中打开"),
+                    tr("file_tree.reveal_in_explorer"),
                     false,
                     {
                         let path = path.clone();
@@ -892,7 +892,7 @@ fn tree_menu_layer(
                     &weak,
                     "ftm-file-browser",
                     "globe",
-                    tr("在浏览器中打开"),
+                    tr("file_tree.open_in_browser"),
                     false,
                     {
                         let path = path.clone();
@@ -906,7 +906,7 @@ fn tree_menu_layer(
                     &weak,
                     "ftm-file-copy",
                     "copy",
-                    tr("复制路径"),
+                    tr("file_tree.copy_path"),
                     false,
                     {
                         let path = path.clone();
@@ -917,7 +917,7 @@ fn tree_menu_layer(
                     &weak,
                     "ftm-file-at",
                     "at-sign",
-                    tr("@到会话输入框"),
+                    tr("file_tree.insert_at_mention"),
                     false,
                     {
                         let path = path.clone();
@@ -929,7 +929,7 @@ fn tree_menu_layer(
                     &weak,
                     "ftm-file-rename",
                     "pencil",
-                    tr("改名"),
+                    tr("file_tree.rename"),
                     false,
                     {
                         let path = path.clone();
@@ -940,7 +940,7 @@ fn tree_menu_layer(
                     &weak,
                     "ftm-file-del",
                     "trash",
-                    tr("删除"),
+                    tr("action.delete"),
                     true,
                     {
                         let path = path.clone();
@@ -985,7 +985,7 @@ fn editor_menu_layer(
             &ed,
             "edm-copy",
             "copy",
-            tr("复制"),
+            tr("action.copy"),
             || Box::new(gpui_component::input::Copy),
         ))
         .child(editor_edit_item(
@@ -993,7 +993,7 @@ fn editor_menu_layer(
             &ed,
             "edm-paste",
             "clipboard",
-            tr("粘贴"),
+            tr("action.paste"),
             || Box::new(gpui_component::input::Paste),
         ))
         .child(editor_edit_item(
@@ -1001,7 +1001,7 @@ fn editor_menu_layer(
             &ed,
             "edm-cut",
             "scissors",
-            tr("剪切"),
+            tr("action.cut"),
             || Box::new(gpui_component::input::Cut),
         ))
         .child(editor_edit_item(
@@ -1009,7 +1009,7 @@ fn editor_menu_layer(
             &ed,
             "edm-select-all",
             "check",
-            tr("全选"),
+            tr("action.select_all"),
             || Box::new(gpui_component::input::SelectAll),
         ))
         .child(menu_sep());
@@ -1022,7 +1022,7 @@ fn editor_menu_layer(
             &weak,
             "edm-browser",
             "globe",
-            tr("在浏览器中打开"),
+            tr("file_tree.open_in_browser"),
             false,
             {
                 let path = path.clone();
@@ -1036,7 +1036,7 @@ fn editor_menu_layer(
                 &weak,
                 "edm-preview",
                 "eye",
-                tr("预览"),
+                tr("file_view.preview"),
                 false,
                 {
                     let path = path.clone();
@@ -1052,7 +1052,7 @@ fn editor_menu_layer(
                 &weak,
                 "edm-explorer",
                 "folder-input",
-                tr("在资源管理器中打开"),
+                tr("file_tree.reveal_in_explorer"),
                 false,
                 {
                     let path = path.clone();
@@ -1067,7 +1067,7 @@ fn editor_menu_layer(
                 &weak,
                 "edm-rename",
                 "pencil",
-                tr("改名"),
+                tr("file_tree.rename"),
                 false,
                 {
                     let path = path.clone();
@@ -1078,7 +1078,7 @@ fn editor_menu_layer(
                 &weak,
                 "edm-del",
                 "trash",
-                tr("删除"),
+                tr("action.delete"),
                 true,
                 {
                     let path = path.clone();
@@ -1239,7 +1239,7 @@ fn editor_terminal_item(
     menu_item(
         SharedString::from(id.to_string()),
         "icon-terminal-solid",
-        tr("在终端中打开"),
+        tr("file_tree.open_in_terminal"),
         false,
         false,
     )
@@ -1289,7 +1289,7 @@ fn tree_terminal_item(
     menu_item(
         SharedString::from(id.to_string()),
         "icon-terminal-solid",
-        tr("在终端中打开"),
+        tr("file_tree.open_in_terminal"),
         false,
         false,
     )
@@ -1348,11 +1348,11 @@ fn tree_del_error_layer(
                 div()
                     .text_size(crate::appearance::ui_size(12.5))
                     .text_color(rgb(t.text))
-                    .child(crate::i18n::tf("删除失败：{msg}", &[("msg", msg)])),
+                    .child(crate::i18n::tf("extensions.remove_failed_msg", &[("msg", msg)])),
             )
             .child(div().flex().justify_end().child(crate::ui::button(
                 "del-err-ok",
-                crate::i18n::tr("知道了"),
+                crate::i18n::tr("extensions.ok"),
                 crate::ui::BtnSize::Md,
                 crate::ui::BtnVariant::Secondary,
                 false,
@@ -1390,11 +1390,11 @@ fn tree_delete_confirm(
     // 报其子树内全部受影响的脏 tab 数
     let message = if dirty_count > 0 {
         crate::i18n::tf(
-            "删除 {name}？{n} 个打开文件的未保存更改将丢失（移入回收站）",
+            "tree.delete_confirm_dirty",
             &[("name", name), ("n", dirty_count.to_string())],
         )
     } else {
-        crate::i18n::tf("删除 {name}？（移入回收站）", &[("name", name)])
+        crate::i18n::tf("tree.delete_confirm", &[("name", name)])
     };
     crate::ui::overlay::confirm(
         focus,

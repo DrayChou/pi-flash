@@ -74,7 +74,7 @@ impl Chat {
             }
         }
         if failed > 0 {
-            self.mc_set_error(&crate::i18n::tf("{count} 个服务器未能更改", &[("count", failed.to_string())]), cx);
+            self.mc_set_error(&crate::i18n::tf("mcp.failed_count", &[("count", failed.to_string())]), cx);
         }
         self.reload_settings_panel();
         cx.notify();
@@ -104,7 +104,7 @@ impl Chat {
             Err(e) => return self.mc_set_error(&e, cx),
         };
         if !pi_link::mcp::valid_name(&name) {
-            return self.mc_set_error(tr("服务器名称只能使用字母、数字、_ 和 -"), cx);
+            return self.mc_set_error(tr("mcp.name_invalid"), cx);
         }
         let path = pi_link::mcp::global_path();
         // 编辑模式且改了名 → 删旧条目（旧条目必在全局文件）
@@ -132,7 +132,7 @@ impl Chat {
                 if let Some(st) = self.settings.clone() {
                     st.update(cx, |s, _| s.section = key);
                 }
-                self.set_status(tr("已保存，对新会话生效").to_string(), cx);
+                self.set_status(tr("mcp.saved_next_session").to_string(), cx);
                 cx.notify();
             }
             Err(e) => self.mc_set_error(&e, cx),
@@ -201,7 +201,7 @@ fn mcp_sidebar(
     let enabled = items.iter().filter(|s| s.enabled).count();
     let total = items.len();
     list = list.child(group_header(
-        tr("全局"),
+        tr("scope.global"),
         Some(group_switch(
             "mcp-bulk-g",
             weak,
@@ -245,7 +245,7 @@ fn mcp_sidebar(
                         .bg(gpui::hsla(0., 0., 0.5, 0.12))
                         .text_size(crate::appearance::ui_size(9.))
                         .text_color(rgb(t.text_dim))
-                        .child(tr("已关闭"))
+                        .child(tr("mcp.closed"))
                         .into_any_element()
                 } else {
                     div().into_any_element()
@@ -302,13 +302,13 @@ fn mcp_form(
                 .flex()
                 .items_center()
                 .gap(px(8.))
-                .child(section_title(&tr("MCP名称")))
+                .child(section_title(&tr("mcp.field_name")))
                 .child(div().flex_1())
                 .children(editing.clone().map(|e| {
-                    config_button("mcp-remove", weak, &tr("移除"), Btn::Danger, true, false,
+                    config_button("mcp-remove", weak, &tr("action.remove"), Btn::Danger, true, false,
                         move |c, cx| c.mcp_remove(e.clone(), cx))
                 }))
-                .child(config_button("mcp-save", weak, &tr("保存"), Btn::Primary, false, mcp_add_value.trim().is_empty(), |c, cx| {
+                .child(config_button("mcp-save", weak, &tr("action.save"), Btn::Primary, false, mcp_add_value.trim().is_empty(), |c, cx| {
                     c.mcp_save_submit(cx)
                 })),
         )
@@ -319,7 +319,7 @@ fn mcp_form(
                 .child(mcp_name.clone()),
         )
         // 第三行：服务配置标签
-        .child(section_title(&tr("MCP配置")));
+        .child(section_title(&tr("mcp.form_title")));
     if let Some(err) = error {
         form = form.child(error_note(err));
     }

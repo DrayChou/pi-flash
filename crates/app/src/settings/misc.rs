@@ -14,8 +14,8 @@ pub(crate) fn mc_misc_view(
     // 启动恢复 switch
     let restore_on = crate::services::workspace::startup_restore();
     col = col.child(set_row(
-        tr("启动恢复"),
-        tr("启动时恢复上次激活的项目与会话"),
+        tr("settings.restore_title"),
+        tr("settings.restore_hint"),
         switch(
             "misc-restore",
             restore_on,
@@ -38,8 +38,8 @@ pub(crate) fn mc_misc_view(
     // 加载时间窗口（7/14/30 天档位）：启动按最近活动清单加载窗口内会话
     let days = crate::services::workspace::load_window_days();
     col = col.child(set_row(
-        tr("加载时间窗口"),
-        tr("加载最近几天内活跃的会话"),
+        tr("settings.load_time_window"),
+        tr("settings.load_window_hint"),
         {
             let weak = weak.clone();
             window_row(days, &weak, t)
@@ -51,8 +51,8 @@ pub(crate) fn mc_misc_view(
     // 默认折叠（内部按小时算）。置于「会话显示数」上方（两者都是列表行为）
     let collapse_h = crate::services::workspace::auto_collapse_hours();
     col = col.child(set_row(
-        tr("自动折叠时间"),
-        tr("启动时，超时未活动的项目默认折叠"),
+        tr("settings.auto_collapse_time"),
+        tr("settings.auto_collapse_hint"),
         {
             let weak = weak.clone();
             collapse_row(collapse_h, &weak, t)
@@ -63,8 +63,8 @@ pub(crate) fn mc_misc_view(
     // 会话显示数（3-10）：各项目默认显示的会话数量（psp 初始页大小）
     let sess_n = crate::services::workspace::session_display_count() as u64;
     col = col.child(set_row(
-        tr("会话显示数"),
-        tr("各项目默认显示的会话数量"),
+        tr("settings.session_display_count"),
+        tr("settings.session_count_hint"),
         stepper(sess_n, 3, 10, weak, t),
         t,
     ));
@@ -72,8 +72,8 @@ pub(crate) fn mc_misc_view(
     // 提示音 switch（v60 从界面页挪入）
     let sound_on = crate::services::workspace::load_sound_pref();
     col = col.child(set_row(
-        tr("提示音"),
-        tr("agent 运行结束播放系统提示音"),
+        tr("settings.notification_sound"),
+        tr("settings.sound_hint"),
         switch(
             "misc-sound",
             sound_on,
@@ -99,8 +99,8 @@ pub(crate) fn mc_misc_view(
     // 待重启，off=只在新会话页提示新版本号 ↑ 可点击开 release 页）
     let auto_on = crate::services::workspace::auto_update();
     col = col.child(set_row(
-        tr("自动更新"),
-        tr("允许Pi-Flash自动更新"),
+        tr("about.auto_update"),
+        tr("settings.auto_update_hint"),
         switch(
             "misc-auto-update",
             auto_on,
@@ -133,8 +133,8 @@ pub(crate) fn mc_misc_view(
         .or_else(|_| std::env::var("HOME"))
         .unwrap_or_default();
     col = col.child(set_row(
-        tr("工作区数据目录"),
-        tr("会话记忆 / 布局状态存放位置"),
+        tr("settings.data_dir"),
+        tr("settings.memory_dir"),
         div()
             .flex()
             .flex_col()

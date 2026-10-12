@@ -159,7 +159,7 @@ fn session_fn_bar(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyEle
         .child(fn_bar_btn(
             "sfbar-prompt",
             "file-sliders",
-            tr("系统提示词"),
+            tr("session.system_prompt"),
             chat.session_info_open(crate::TopPanel::System),
             cx.listener(|this, _: &gpui::MouseDownEvent, _w, cx| {
                 this.open_session_info(crate::TopPanel::System, cx);
@@ -169,7 +169,7 @@ fn session_fn_bar(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyEle
         .child(fn_bar_btn(
             "sfbar-tools",
             "wrench",
-            tr("会话工具集"),
+            tr("session.session_tools"),
             chat.session_info_open(crate::TopPanel::Tools),
             cx.listener(|this, _: &gpui::MouseDownEvent, _w, cx| {
                 this.open_session_info(crate::TopPanel::Tools, cx);
@@ -179,7 +179,7 @@ fn session_fn_bar(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyEle
         .child(fn_bar_btn(
             "sfbar-term",
             "terminal",
-            tr("打开终端"),
+            tr("session.open_terminal"),
             chat.content_view == crate::ContentView::Term,
             cx.listener(|this, _: &gpui::MouseDownEvent, window, cx| {
                 this.open_terminal(None, window, cx);
@@ -579,7 +579,7 @@ fn nav_gutter(
         // 计」：N = 用户 + 助手 + 工具调用（ToolCall 块数），非 pi-web
         // totalMessages
         let stats_line = crate::i18n::tf(
-            "{n}条消息：用户{u}条 助手{a}条 工具调用{t}次",
+            "nav.turn_summary",
             &[
                 (
                     "n",

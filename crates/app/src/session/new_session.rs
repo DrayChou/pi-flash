@@ -150,7 +150,7 @@ fn heading(t: &'static crate::appearance::theme::Theme) -> AnyElement {
         .italic()
         .font_weight(gpui::FontWeight::SEMIBOLD)
         .text_color(rgb(t.text))
-        .child(SharedString::from(tr("Hi，打算让我做点什么？")))
+        .child(SharedString::from(tr("new_session.greeting")))
         .into_any_element()
 }
 
@@ -169,7 +169,7 @@ fn action_bar(
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .filter(|n| !n.is_empty())
-        .unwrap_or_else(|| tr("选择项目").to_string())
+        .unwrap_or_else(|| tr("action.select_project").to_string())
         .into();
     let w_open = weak.clone();
     let mut bar = div()
@@ -213,12 +213,12 @@ fn action_bar(
                 .gap(px(5.))
                 .child(crate::ui::spinner(11., t.text_faint))
                 .child(SharedString::from(crate::i18n::tf(
-                    "下载 {v} 版本中…",
+                    "about.downloading_v",
                     &[("v", version.clone())],
                 )))
                 .into_any_element(),
             UpdateState::Ready { version } => SharedString::from(crate::i18n::tf(
-                "请重启软件切换至 {v} 版本",
+                "update.restart_required",
                 &[("v", version.clone())],
             ))
             .into_any_element(),

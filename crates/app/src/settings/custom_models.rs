@@ -57,7 +57,7 @@ impl Chat {
             )
         };
         if name.is_empty() {
-            return self.mc_set_error(tr("Provider 名称不能为空"), cx);
+            return self.mc_set_error(tr("custom_models.name_required"), cx);
         }
         let mut entry = pi_link::models_json::provider_entry(&self.mc_models_json, &old_name)
             .cloned()
@@ -116,7 +116,7 @@ impl Chat {
         if let Ok(Some(pi_link::credentials::StoreMode::File)) =
             pi_link::pf_providers::set_provider_key(entry, name, key, &pi_link::credentials::KeyringVault)
         {
-            self.mc_set_error(tr("系统凭据库不可用，已降级为文件存储"), cx);
+            self.mc_set_error(tr("conflict.vault_unavailable"), cx);
         }
     }
 
@@ -132,10 +132,10 @@ impl Chat {
         self.mc_clear_error(cx);
         let name = name.trim().to_string();
         if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
-            return self.mc_set_error(tr("Provider 名称只能使用字母、数字、_ 和 -"), cx);
+            return self.mc_set_error(tr("custom_models.name_invalid"), cx);
         }
         if pi_link::models_json::provider_entry(&self.mc_models_json, &name).is_some() {
-            return self.mc_set_error(&crate::i18n::tf("已存在名为「{name}」的 Provider", &[("name", name)]), cx);
+            return self.mc_set_error(&crate::i18n::tf("custom_models.exists", &[("name", name)]), cx);
         }
         let mut entry = serde_json::json!({ "api": mj_api_name(api) });
         set_opt_str(&mut entry, "baseUrl", base.trim());
@@ -164,7 +164,7 @@ impl Chat {
             )
         };
         if id.is_empty() {
-            return self.mc_set_error(tr("模型 ID 不能为空"), cx);
+            return self.mc_set_error(tr("custom_models.model_id_required"), cx);
         }
         let mut model = serde_json::json!({ "id": id });
         set_opt_str(&mut model, "name", &mname);
@@ -196,7 +196,7 @@ impl Chat {
             let msg = match pi_link::vendor::run_cli(&cwd, &arg_refs) {
                 Ok(_) => done,
                 Err(e) => crate::i18n::tf(
-                    tr("pi {} 失败: {}"),
+                    tr("extensions.pi_failed"),
                     &[
                         ("cmd", args.join(" ")),
                         ("err", e.lines().last().unwrap_or("").to_string()),
@@ -276,20 +276,20 @@ pub(crate) fn mj_provider_editor(
                 .items_center()
                 .gap(px(8.))
                 .min_h(px(28.))
-                .child(section_title(&tr("配置 Provider")))
+                .child(section_title(&tr("custom_models.configure")))
                 .child(div().flex_1())
-                .child(config_button("mj-apply", weak, &tr("保存"), Btn::Primary, true, false, {
+                .child(config_button("mj-apply", weak, &tr("action.save"), Btn::Primary, true, false, {
                     let n = name.to_string();
                     move |c, cx| c.mj_apply_provider(n.clone(), cx)
                 }))
-                .child(config_button("mj-del", weak, &tr("移除"), Btn::Danger, true, false, {
+                .child(config_button("mj-del", weak, &tr("action.remove"), Btn::Danger, true, false, {
                     let n = name.to_string();
                     move |c, cx| c.mj_delete_provider(n.clone(), cx)
                 })),
         )
         .children(error.as_ref().map(|e| error_note(e)))
         .child(field(
-            &tr("Provider 名称"),
+            &tr("custom_models.field_name"),
             div().w(px(320.)).child(mj_name.clone()),
         ))
         .child(field(
@@ -337,7 +337,7 @@ pub(crate) fn mj_provider_editor(
                         .whitespace_nowrap()
                         .text_ellipsis()
                         .child(SharedString::from(
-                            if id.is_empty() { tr("新模型").to_string() } else { id.to_string() },
+                            if id.is_empty() { tr("custom_models.new_model").to_string() } else { id.to_string() },
                         )),
                 )
                 .children(reasoning.then(|| {
@@ -355,7 +355,7 @@ pub(crate) fn mj_provider_editor(
     let weak_add = weak.clone();
     let pname = name.to_string();
     let detail = detail
-        .child(section_title(&tr("模型")))
+        .child(section_title(&tr("settings.tab.models")))
         .child(list)
         .child(
             div()
@@ -375,7 +375,7 @@ pub(crate) fn mj_provider_editor(
                 .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                     let _ = weak_add.update(cx, |c, cx| c.mj_add_model(pname.clone(), cx));
                 })
-                .child(format!("+ {}", tr("模型"))),
+                .child(format!("+ {}", tr("settings.tab.models"))),
         );
     detail.into_any_element()
 }
@@ -401,7 +401,7 @@ pub(crate) fn mj_model_editor(
                 .items_center()
                 .gap(px(8.))
                 .min_h(px(28.))
-                .child(section_title(&tr("模型")))
+                .child(section_title(&tr("settings.tab.models")))
                 .child(
                     div()
                         .font_family(crate::editor::markdown::MONO_FAMILY)
@@ -410,22 +410,22 @@ pub(crate) fn mj_model_editor(
                         .child(SharedString::from(name.to_string())),
                 )
                 .child(div().flex_1())
-                .child(config_button("mj-mapply", weak, &tr("保存"), Btn::Primary, true, false, {
+                .child(config_button("mj-mapply", weak, &tr("action.save"), Btn::Primary, true, false, {
                     let n = name.to_string();
                     move |c, cx| c.mj_apply_model(n.clone(), ix, cx)
                 }))
-                .child(config_button("mj-mdel", weak, &tr("移除"), Btn::Danger, true, false, {
+                .child(config_button("mj-mdel", weak, &tr("action.remove"), Btn::Danger, true, false, {
                     let n = name.to_string();
                     move |c, cx| c.mj_delete_model(n.clone(), ix, cx)
                 })),
         )
         .children(error.as_ref().map(|e| error_note(e)))
         .child(field(
-            &tr("ID"),
+            &tr("custom_models.field_id"),
             div().w(px(320.)).child(mj_id.clone()),
         ))
         .child(field(
-            &tr("名称"),
+            &tr("field.name"),
             div().w(px(320.)).child(mj_mname.clone()),
         ))
         .child(
@@ -437,7 +437,7 @@ pub(crate) fn mj_model_editor(
                     div()
                         .text_size(crate::appearance::ui_size(11.))
                         .text_color(rgb(t.text_muted))
-                        .child(tr("推理模型（T 徽标）")),
+                        .child(tr("custom_models.reasoning_badge")),
                 )
                 .child(config_switch("mj-reasoning", weak, mj_reasoning, false, |c, cx| {
                     if let Some(st) = c.settings.clone() {
@@ -449,7 +449,7 @@ pub(crate) fn mj_model_editor(
                 })),
         )
         .child(field(
-            &tr("上下文窗口（tokens）"),
+            &tr("custom_models.field_context"),
             div().w(px(200.)).child(mj_ctx.clone()),
         ));
     detail.into_any_element()
@@ -468,8 +468,8 @@ pub(crate) fn mj_add_panel(
     // 详情内边距与列表 15px 统一（040 扩展页定稿；detail_shell 默认 p20）
     detail_shell("mc-detail")
         .p(px(15.))
-        .child(section_title(&tr("添加自定义 Provider")))
-        .child(field(&tr("名称"), div().w(px(320.)).child(mj_name.clone())))
+        .child(section_title(&tr("custom_models.add")))
+        .child(field(&tr("field.name"), div().w(px(320.)).child(mj_name.clone())))
         .child(field("Base URL", div().w(px(420.)).child(mj_base.clone())))
         .child(field("API Key", div().w(px(420.)).child(mj_key.clone())))
         .child(field("API", api_options_row(weak, mj_api)))
@@ -477,7 +477,7 @@ pub(crate) fn mj_add_panel(
         .child(
             div()
                 .pt(px(4.))
-                .child(config_button("mj-create", weak, &tr("创建"), Btn::Primary, false, false, |c, cx| {
+                .child(config_button("mj-create", weak, &tr("action.create"), Btn::Primary, false, false, |c, cx| {
                     let Some(st) = c.settings.clone() else { return };
                     let (name, base, key, api) = st.read(cx).editor_snapshot(cx);
                     c.mj_add_provider(name, base, key, api, cx);

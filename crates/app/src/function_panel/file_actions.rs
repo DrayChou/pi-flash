@@ -69,7 +69,7 @@ impl Chat {
         let weak_esc = weak.clone();
         let input = cx.new(|cx| {
             TextInput::new(cx)
-                .placeholder(tr("搜索文件…"))
+                .placeholder(tr("file_tree.search_files"))
                 .on_change(Box::new(move |q: &str, cx: &mut App| {
                     let _ = weak.update(cx, |c, cx| c.file_search_changed(q, cx));
                 }))
@@ -261,7 +261,7 @@ impl Chat {
                 self.tree_edit_discard(cx);
             } else {
                 edit.validation =
-                    TreeValidation::Error(tr("名称不能为空或包含 .. 等非法段").to_string());
+                    TreeValidation::Error(tr("tree.name_illegal_segment").to_string());
                 cx.notify();
             }
             return;
@@ -325,7 +325,7 @@ impl Chat {
         edit.validation = if filename.trim().is_empty() {
             TreeValidation::None
         } else if filename.trim() != filename {
-            TreeValidation::Warning(tr("名称首尾包含空白字符").to_string())
+            TreeValidation::Warning(tr("tree.name_has_whitespace").to_string())
         } else {
             let f = filename.trim_start_matches(['/', '\\']);
             let target = match &edit.kind {
@@ -397,12 +397,12 @@ impl Chat {
             || name.contains(':')
             || segs.iter().any(|s| s.is_empty() || *s == "..")
         {
-            self.set_status(tr("路径越出项目根").to_string(), cx);
+            self.set_status(tr("conflict.path_escapes_root").to_string(), cx);
             return;
         }
         let target = dir.join(&name);
         if !target.starts_with(&self.cwd) {
-            self.set_status(tr("路径越出项目根").to_string(), cx);
+            self.set_status(tr("conflict.path_escapes_root").to_string(), cx);
             return;
         }
         let r = if is_dir {
@@ -432,7 +432,7 @@ impl Chat {
                 cx.notify();
             }
             Err(e) => {
-                self.set_status(format!("{}: {e}", tr("创建失败")), cx);
+                self.set_status(format!("{}: {e}", tr("conflict.create_failed")), cx);
             }
         }
     }
@@ -456,18 +456,18 @@ impl Chat {
             return;
         }
         if target.exists() {
-            self.set_status(format!("{}：{}", tr("已存在"), target.display()), cx);
+            self.set_status(format!("{}：{}", tr("file_tree.already_exists"), target.display()), cx);
             return;
         }
         // 子目录段改名：缺失的中间目录随建（Zed rename_entry 同语义）
         if target.parent().is_some_and(|p| !p.exists())
             && let Err(e) = std::fs::create_dir_all(target.parent().unwrap())
         {
-            self.set_status(crate::i18n::tf("重命名失败: {e}", &[("e", e.to_string())]), cx);
+            self.set_status(crate::i18n::tf("file_tree.rename_failed", &[("e", e.to_string())]), cx);
             return;
         }
         if let Err(e) = std::fs::rename(path, &target) {
-            self.set_status(crate::i18n::tf("重命名失败: {e}", &[("e", e.to_string())]), cx);
+            self.set_status(crate::i18n::tf("file_tree.rename_failed", &[("e", e.to_string())]), cx);
             return;
         }
         // 打开面重映射：tab 与缓冲持旧路径的话跟上（目录改名 = 整棵前缀）
@@ -530,7 +530,7 @@ impl Chat {
         // 兜底护栏：项目根不可删（操作栏右键菜单已豁免该入口，这里防
         // 其他调用路径误投递）
         if same_path(path, &self.cwd) {
-            self.set_status(tr("不能删除项目根目录").to_string(), cx);
+            self.set_status(tr("tree.delete_root_denied").to_string(), cx);
             cx.notify();
             return;
         }
@@ -562,7 +562,7 @@ impl Chat {
                 // 持久弹层：状态栏 toast 一闪容易漏看，用户回报也拿不到
                 // 具体错误
                 self.tree_del_error = Some(e.to_string());
-                self.set_status(crate::i18n::tf("删除失败: {e}", &[("e", e.to_string())]), cx);
+                self.set_status(crate::i18n::tf("extensions.remove_failed", &[("e", e.to_string())]), cx);
                 cx.notify();
             }
         }
@@ -574,7 +574,7 @@ impl Chat {
         cx.write_to_clipboard(gpui::ClipboardItem::new_string(
             path.to_string_lossy().to_string(),
         ));
-        self.set_status(tr("已复制").to_string(), cx);
+        self.set_status(tr("session.copied").to_string(), cx);
         cx.notify();
     }
 
@@ -611,7 +611,7 @@ pub(crate) enum TreeEditVia {
 /// 重名校验消息（Zed "File or directory '{}' already exists at location."
 /// 同义，走三语）。
 fn existing_msg(name: &str) -> String {
-    crate::i18n::tf("「{name}」已存在，请换一个名称", &[("name", name.to_string())])
+    crate::i18n::tf("tree.exists_named", &[("name", name.to_string())])
 }
 
 /// 行内编辑回调统一接线：Enter 提交 / Esc 取消 / 失焦与点别处提交、键入

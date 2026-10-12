@@ -737,17 +737,17 @@ impl crate::Chat {
     ) {
         let lang = Lang::from_ix(crate::i18n::lang_ix());
         let (title, options) = match kind {
-            menu::MenuKind::Think => (crate::i18n::tr("选择思考档位").to_string(), think_options()),
+            menu::MenuKind::Think => (crate::i18n::tr("remote.select_thinking").to_string(), think_options()),
             menu::MenuKind::ModelProvider => {
-                (crate::i18n::tr("选择模型供应商").to_string(), provider_options(self))
+                (crate::i18n::tr("remote.select_provider").to_string(), provider_options(self))
             }
             menu::MenuKind::Model => {
                 let p = sub.clone().unwrap_or_default();
-                (crate::i18n::tr("选择模型").to_string(), model_options(self, &p))
+                (crate::i18n::tr("model.select_title").to_string(), model_options(self, &p))
             }
-            menu::MenuKind::Task => (crate::i18n::tr("切换会话").to_string(), task_options(self)),
+            menu::MenuKind::Task => (crate::i18n::tr("remote.switch_session").to_string(), task_options(self)),
             menu::MenuKind::Project => {
-                (crate::i18n::tr("切换工作区").to_string(), project_options(self))
+                (crate::i18n::tr("remote.switch_workspace").to_string(), project_options(self))
             }
         };
         if options.is_empty() {

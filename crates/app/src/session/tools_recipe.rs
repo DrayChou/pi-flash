@@ -293,7 +293,7 @@ impl Chat {
         // 进程（kill + 新开）+ 整表重读：运行中换会把正在跑的这一轮直接掐掉，
         // 顺便让「等待模型响应」掉回屏底。UI 已置灰，这里是绕过 UI 的兜底。
         if self.rt().read(cx).agent_running {
-            self.set_status(crate::i18n::tr("运行中不能更换工具预设").to_string(), cx);
+            self.set_status(crate::i18n::tr("compaction.preset_locked").to_string(), cx);
             return;
         }
         let rt = self.rt();
@@ -310,7 +310,7 @@ impl Chat {
             r.refresh_state();
             // 状态行与胶囊同文案（full+）
             let label = r.tool_preset_label();
-            r.status = crate::i18n::tf("工具预设: {k} (会话进程已重绑)", &[("k", label)]);
+            r.status = crate::i18n::tf("tools.preset_rebound", &[("k", label)]);
             cx.emit(session::runtime::SessionEvent::Changed);
         });
         cx.notify();

@@ -31,8 +31,8 @@ pub(crate) fn session_info_dialog(
 ) -> gpui::AnyElement {
     let sys = chat.rt().read(cx).sys.clone();
     let title = match kind {
-        TopPanel::System => tr("系统提示词"),
-        TopPanel::Tools => tr("工具定义"),
+        TopPanel::System => tr("session.system_prompt"),
+        TopPanel::Tools => tr("system_prompt.tool_definitions"),
     };
     // 左导航位：工具面板放工具名列表（设置弹窗左导航同款），系统提示词没有
     let nav = match kind {
@@ -156,8 +156,8 @@ fn system_prompt_panel(
             ).into_any_element()
         }
         // prompt === "" → 空提示词（工具已禁用）；未加载 → 尚未加载
-        Some(_) => empty_state(tr("系统提示词为空（工具已禁用）"), t, false),
-        None => empty_state(tr("系统提示词加载中…"), t, false),
+        Some(_) => empty_state(tr("system_prompt.empty_disabled"), t, false),
+        None => empty_state(tr("system_prompt.loading"), t, false),
     };
     // 分析块：加载且有内容才画
     let mut col = div()
@@ -212,7 +212,7 @@ fn stats_block(sys: &pi_link::transcript::TranscriptSystem, t: &Theme) -> gpui::
     let agent_dir = pi_link::paths::pi_agent_dir();
     let tokens = pi_link::transcript::breakdown(sys, agent_dir.as_deref());
     let total: u64 = tokens.iter().sum();
-    let mut row = vec![stat_cell(tr("总计"), total, total, t.accent, t, true)];
+    let mut row = vec![stat_cell(tr("tokens.total"), total, total, t.accent, t, true)];
     for (i, bucket) in pi_link::transcript::SYSTEM_BUCKETS.iter().enumerate() {
         row.push(stat_cell(
             bucket_label(*bucket),
@@ -254,8 +254,8 @@ fn decl_block(
     let title = format!(
         "{} {} · {} · {} tokens",
         if open { "▾" } else { "▸" },
-        tr("调用声明"),
-        tf("{n} 条", &[("n", decls.len().to_string())]),
+        tr("tool_defs.tool_declarations"),
+        tf("tool_defs.items", &[("n", decls.len().to_string())]),
         crate::services::format::fmt_thousand(tokens),
     );
     let weak_toggle = weak.clone();
@@ -418,13 +418,13 @@ fn fmt_pct(value: u64, total: u64) -> String {
 fn bucket_label(b: pi_link::transcript::SystemBucket) -> &'static str {
     use pi_link::transcript::SystemBucket::*;
     match b {
-        GlobalPrompt => tr("全局提示词"),
-        SystemTools => tr("系统工具"),
-        Skills => tr("技能"),
-        Plugins => tr("扩展"),
-        Mcp => tr("MCP"),
-        ProjectPrompt => tr("项目提示词"),
-        Other => tr("其他"),
+        GlobalPrompt => tr("tokens.global_prompt"),
+        SystemTools => tr("tokens.system_tools"),
+        Skills => tr("settings.tab.skills"),
+        Plugins => tr("settings.tab.extensions"),
+        Mcp => tr("dock.mcp"),
+        ProjectPrompt => tr("tokens.project_prompt"),
+        Other => tr("dock.other"),
     }
 }
 
@@ -569,10 +569,10 @@ fn tool_list(
             list = list.flex().flex_col().children(rows);
         }
         Some(_) => {
-            list = list.child(empty_state(tr("没有启用的工具"), t, true));
+            list = list.child(empty_state(tr("tool_defs.no_active_tools"), t, true));
         }
         None => {
-            list = list.child(empty_state(tr("工具定义尚未加载"), t, true));
+            list = list.child(empty_state(tr("tool_defs.not_loaded"), t, true));
         }
     }
     div()
@@ -642,9 +642,9 @@ fn tool_detail(
 ) -> gpui::AnyElement {
     let Some(decl) = selected else {
         let text = if tools.is_some() {
-            tr("没有启用的工具")
+            tr("tool_defs.no_active_tools")
         } else {
-            tr("工具定义尚未加载")
+            tr("tool_defs.not_loaded")
         };
         return div()
             .flex_1()
@@ -658,7 +658,7 @@ fn tool_detail(
     let mut body = div().flex().flex_col();
 
     if !decl.description.is_empty() {
-        body = body.child(section_label(tr("描述"), "", t)).child(
+        body = body.child(section_label(tr("tool_defs.description"), "", t)).child(
             div()
                 .mb(px(18.))
                 .text_size(crate::appearance::ui_size(12.))
@@ -668,8 +668,8 @@ fn tool_detail(
         );
     }
     body = body.child(section_label(
-        tr("参数"),
-        &tf("{count} 个参数", &[("count", fields.len().to_string())]),
+        tr("tool_defs.params"),
+        &tf("tool_defs.parameters", &[("count", fields.len().to_string())]),
         t,
     ));
     if fields.is_empty() {
@@ -678,7 +678,7 @@ fn tool_detail(
                 .pb(px(10.))
                 .text_size(crate::appearance::ui_size(11.))
                 .text_color(rgb(t.text_dim))
-                .child(tr("无参数")),
+                .child(tr("tool_defs.no_parameters")),
         );
     } else {
         body = body.child(
@@ -744,10 +744,10 @@ fn param_row(f: &ParamField, t: &Theme) -> gpui::AnyElement {
         value = value.child(SharedString::from(f.description.clone()));
     }
     if !f.allowed_values.is_empty() {
-        value = value.child(meta_line(tr("可选值"), &f.allowed_values, t));
+        value = value.child(meta_line(tr("tool_defs.allowed"), &f.allowed_values, t));
     }
     if let Some(default) = &f.default_value {
-        value = value.child(meta_line(tr("默认值"), default, t));
+        value = value.child(meta_line(tr("tool_defs.default"), default, t));
     }
     div()
         .flex()

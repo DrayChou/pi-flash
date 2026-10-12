@@ -58,10 +58,10 @@ pub fn time_ago(modified: std::time::SystemTime) -> String {
         .unwrap_or(0)
         .max(0);
     match secs {
-        0..=59 => crate::i18n::tf("{secs}秒前", &[("secs", secs.to_string())]),
-        60..=3599 => crate::i18n::tf("{n}分钟前", &[("n", (secs / 60).to_string())]),
-        3600..=86399 => crate::i18n::tf("{n}小时前", &[("n", (secs / 3600).to_string())]),
-        _ => crate::i18n::tf("{n}天前", &[("n", (secs / 86400).to_string())]),
+        0..=59 => crate::i18n::tf("time.s_ago", &[("secs", secs.to_string())]),
+        60..=3599 => crate::i18n::tf("time.m_ago", &[("n", (secs / 60).to_string())]),
+        3600..=86399 => crate::i18n::tf("time.h_ago", &[("n", (secs / 3600).to_string())]),
+        _ => crate::i18n::tf("time.d_ago", &[("n", (secs / 86400).to_string())]),
     }
 }
 

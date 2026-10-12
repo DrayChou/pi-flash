@@ -110,7 +110,7 @@ impl Chat {
         self.ensure_models_requested(cx);
         let weak = cx.entity().downgrade();
         let weak_change = weak.clone();
-        let input = cx.new(|cx| TextInput::new(cx).placeholder(crate::i18n::tr("过滤模型...")));
+        let input = cx.new(|cx| TextInput::new(cx).placeholder(crate::i18n::tr("action.filter_models")));
         input.update(cx, |ti, _| {
             ti.set_on_change(Box::new(move |_, cx| {
                 let _ = weak_change.update(cx, |c, cx| {
@@ -444,7 +444,7 @@ pub(crate) fn view(
                 .py(px(12.))
                 .text_size(ui(11.))
                 .text_color(rgb(t.text_dim))
-                .child(SharedString::from(crate::i18n::tr("no models match"))),
+                .child(SharedString::from(crate::i18n::tr("action.no_models_match"))),
         );
     }
     let n_rows = entries.len().max(1);

@@ -127,7 +127,7 @@ pub(crate) fn file_view(
 ) -> gpui::AnyElement {
     let t = T();
     let Some(path) = chat.active_file_path() else {
-        return empty_hint(tr("在左侧文件树中选择一个文件"), t);
+        return empty_hint(tr("file_view.pick_in_tree"), t);
     };
     let conflict = chat
         .file_cache
@@ -425,7 +425,7 @@ fn crumb_siblings_menu(weak: &gpui::WeakEntity<Chat>, dir: &Path) -> gpui::AnyEl
                 .py(px(7.))
                 .text_size(crate::appearance::ui_size(11.5))
                 .text_color(rgb(t.text_faint))
-                .child(SharedString::from(tr("（无文件）").to_string())),
+                .child(SharedString::from(tr("conflict.no_files").to_string())),
         );
     }
     for n in names {
@@ -474,9 +474,9 @@ fn conflict_banner(
     let p_keep = path.to_path_buf();
     let (msg, reload_label, keep_label) = match conflict {
         crate::FileConflict::Changed => (
-            tr("文件已在磁盘上被修改（本地有未保存修改）"),
-            tr("重新加载"),
-            tr("保留我的版本"),
+            tr("conflict.modified_on_disk"),
+            tr("conflict.reload"),
+            tr("conflict.keep_my_version"),
         ),
         crate::FileConflict::Deleted => unreachable!("Deleted 不再渲染横幅（zed parity）"),
     };
@@ -567,7 +567,7 @@ pub(crate) fn render_image_surface(path: &Path, format: gpui::ImageFormat) -> gp
             .items_start()
             .child(img(image).max_w_full())
             .into_any_element(),
-        None => empty_hint(tr("图片读取失败"), t),
+        None => empty_hint(tr("file_view.image_read_failed"), t),
     }
 }
 
@@ -582,10 +582,10 @@ pub(crate) fn render_editor_surface(
 ) -> gpui::AnyElement {
     let t = T();
     let Some(ft) = chat.file_cache.get(path) else {
-        return empty_hint(tr("文件已关闭"), t);
+        return empty_hint(tr("conflict.file_closed"), t);
     };
     let Some(ed) = ft.editor.clone() else {
-        return empty_hint(tr("编辑器初始化中…"), t);
+        return empty_hint(tr("conflict.initializing_editor"), t);
     };
     let weak_menu = weak.clone();
     let menu_path = path.to_path_buf();

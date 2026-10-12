@@ -374,7 +374,7 @@ impl Chat {
             git_log: Vec::new(),
             git_error: None,
             git_commit_input: {
-                let input = cx.new(|cx| TextInput::new(cx).placeholder(tr("提交信息（提交已暂存更改）")));
+                let input = cx.new(|cx| TextInput::new(cx).placeholder(tr("git.commit_placeholder")));
                 input
             },
             git_add_del: (0, 0),

@@ -1,134 +1,150 @@
-// i18n 漏译守卫（`tr("…")` 的参数既是显示值、也是查表键）。
+// i18n 审计（语义键版）——三道防线，全部源码级静态检查。
 //
-// 背景：i18n.rs 的 `TABLE` 首列就是中文源串，`tr("…")` 传字面量时**既是
-// 值**（zh-CN 下 `0 => s` 原样显示）**又是键**（繁/英下 `find(|e| e.0 == s)`）。
-// 两处必须逐字节相等，而 Rust 对此零检查——润色一个字、或新增文案忘了配
-// 译文，繁/英界面都会**静默回落成中文**（用户实测两次：展示思考的描述、
-// 整条列表项只剩标点那次同源）。
+// 迁移后（2026-10-12）键 = `<域>.<主语>[.<限定>]` 语义标识，TABLE 行为
+// `(key, zh-CN, zh-TW, en)`。风险面随之改变：
 //
-// 本测试做源码级审计（读 `src/**/*.rs` 与 `src/i18n.rs` 的 TABLE 三元组）：
-// 1. **新字面量查不到表 → 失败**并逐条列出（真正的回归防线：以后新增 UI
-//    忘了配繁/英，CI 直接红）；
-// 2. `BACKLOG` 里的**存量**漏译不失败，只打印剩余条数——补完一条就从
-//    BACKLOG 删一条，列表只减不增；
-// 3. 表里有、但源码再无字面量调用的条目（常量/变量传参等）只打印，不判定。
+// ① **键必须在表里**：`tr("拼错的键")` 编译期零检查，运行期会把裸键名
+//    直接显示在界面上（比旧方案的"显示中文"更显眼也更难看）。扫源码里
+//    所有 `tr("…")`/`tf("…")` 字面量，断言都能命中 TABLE 首列。
+// ② **空译文挂账**：zh-TW/en 单元格为空 = 尚未翻译，tr() 回落 zh-CN。
+//    存量挂进 BACKLOG（只减不增）；补齐后必须从 BACKLOG 删掉，否则红——
+//    防止挂账清单变成死账。
+// ③ **死键**：表里有、但源码再无字面量调用的键。只打印不判定（常量/变量
+//    传参、预留文案都会误报）。
 //
-// 判定用 **TABLE 的键集合**，不能用「`set_lang(2)` 后 `tr(s)==s`」的行为法：
-// 表里 11 条 EN 译文与中文原串相同（如 `no git`/`session name`/`API Key`），
-// 行为法会把它们误报成漏译。
+// 扫描实现按**整段文本**跑正则（`\s*` 吞换行）：旧版逐行匹配漏掉了
+// `tr(\n    "…",\n)` 这种跨行调用（实测 97 条表项因此被误判"无调用点"）。
+// 注释行先剔除（含 tr( 字样的注释会被当成调用点）。
 
 #[cfg(test)]
 mod audit {
     use std::collections::BTreeSet;
-    use std::path::Path;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
-    /// 存量漏译清单（zh-CN 显示值）。补齐繁/英后请把该条从 TABLE 补上、再从
-    /// 这里删除——测试会校验「清单里的每一条都仍然是漏译」，防止清单变成死账。
+    /// 存量未翻译键（zh-TW 或 en 为空的表行）。补齐译文后：TABLE 里填上
+    /// 译文 + 从这里删掉该键——测试会校验清单没有死账。
     const BACKLOG: &[&str] = &[
-    "/skill，!shell命令，Shift回车换行",
-    "ENV_VAR_NAME、!shell-command 或明文 key",
-    "ESC打断模型",
-    "ID",
-    "MCP",
-    "MCP 保存失败: {e}",
-    "MCP 清单将在下一轮生效",
-    "MCP名称",
-    "MCP配置",
-    "OAuth 登录暂未接入，订阅服务商暂时无法在此配置",
-    "Provider 名称",
-    "Provider 名称不能为空",
-    "Provider 名称只能使用字母、数字、_ 和 -",
-    "Stage All",
-    "Tab / Enter 插入",
-    "Token 累计",
-    "{count} 个服务器未能更改",
-    "{n} models",
-    "{n} 条消息",
-    "上下文",
-    "上下文 token",
-    "上下文压缩中，请等待……",
-    "上下文窗口（tokens）",
-    "之前",
-    "会话",
-    "会话尚未产生用量。",
-    "会话记忆 / 布局状态存放位置",
-    "使用比例",
-    "例：pi install npm:pi-web-access",
-    "其他",
-    "切换会话",
-    "切换工作区",
-    "列表方式",
-    "删除项目及所有会话",
-    "发送失败",
-    "启动恢复",
-    "启动时恢复上次激活的项目与会话",
-    "回复因达到模型输出长度上限而被截断。发送一条后续消息以继续。",
-    "图片读取失败",
-    "在文件浏览器中打开",
-    "密钥不在系统凭据库，请重新保存",
-    "展开侧栏",
-    "工作区干净",
-    "工作区数据目录",
-    "工具预设: {k} (会话进程已重绑)",
-    "已保存，对新会话生效",
-    "已关闭",
-    "已存在名为「{name}」的 Provider",
-    "已改名",
-    "手动排序",
-    "扩展消息（不显示）",
-    "按更新时间排序",
-    "排序方式",
-    "推理模型（T 徽标）",
-    "推送中…",
-    "推送完成",
-    "提交信息（提交已暂存更改）",
-    "提交已暂存",
-    "搜索 Provider...",
-    "搜索中…",
-    "搜索会话内容…",
-    "搜索文件",
-    "收起 / 展开侧栏",
-    "新模型",
-    "无会话",
-    "暂无提交",
-    "暂无终端会话",
-    "最近会话列表",
-    "服务器名称只能使用字母、数字、_ 和 -",
-    "未找到扩展、提示词或技能命令",
-    "模型 ID 不能为空",
-    "正在生成参数...",
-    "正在等待模型...",
-    "正在读取 Provider 注册表…",
-    "正在运行 {names}...",
-    "正在运行 {name}...",
-    "没有匹配的 Provider",
-    "没有匹配结果",
-    "没有已配置的 MCP 服务器",
-    "消息内容过大，已按纯文本显示",
-    "添加 Provider",
-    "添加自定义 Provider",
-    "状态",
-    "用时",
-    "确认删除",
-    "粘贴 JSON / url / 命令行 / pi mcp add...",
-    "累计费用",
-    "缓存写",
-    "缓存命中率",
-    "缓存读",
-    "编辑",
-    "至少需要保留一个启用的模型",
-    "费用",
-    "输入",
-    "输入关键词，搜索当前项目的会话内容",
-    "选择 MCP",
-    "选择思考档位",
-    "选择模型供应商",
-    "部分结果",
-    "配置 Provider",
-    "项目分组列表",
-    "项目已删除（{n} 个会话）",
-    "（无输出）",
+"branch.detour_note",
+"composer.compacting_wait2",
+"composer.hint_esc",
+"composer.hint_shortcuts",
+"custom_models.add",
+"custom_models.base_url_hint",
+"custom_models.configure",
+"custom_models.endpoint_hint",
+"custom_models.exists",
+"custom_models.field_context",
+"custom_models.field_id",
+"custom_models.field_name",
+"custom_models.key_hint",
+"custom_models.model_id_required",
+"custom_models.name_invalid",
+"custom_models.name_required",
+"custom_models.new_model",
+"custom_models.reasoning_badge",
+"dock.mcp",
+"dock.other",
+"extensions.source_example",
+"file_tree.search",
+"file_view.image_read_failed",
+"git.commit_placeholder",
+"git.no_commits",
+"git.pushed",
+"git.pushing",
+"git.stage_all",
+"git.staged",
+"mcp.closed",
+"mcp.failed_count",
+"mcp.field_name",
+"mcp.form_placeholder",
+"mcp.form_title",
+"mcp.name_invalid",
+"mcp.next_turn",
+"mcp.none_configured",
+"mcp.save_failed",
+"mcp.saved_next_session",
+"mcp.select",
+"menu.no_command_found",
+"menu.tab_enter_insert",
+"messages.before",
+"messages.extended_hidden",
+"messages.generating_args",
+"messages.too_large",
+"messages.truncated",
+"model.add_provider",
+"model.count",
+"model.keep_one",
+"model.key_not_in_vault",
+"model.no_provider_match",
+"model.oauth_unavailable",
+"model.search_provider",
+"model.loading_registry",
+"psp.confirm_delete",
+"psp.delete_project",
+"psp.list_mode",
+"psp.messages_count",
+"psp.no_sessions",
+"psp.open_in_file_browser",
+"psp.project_deleted",
+"psp.project_groups",
+"psp.recent_sessions",
+"psp.renamed",
+"psp.session_label",
+"psp.sort_by_time",
+"psp.sort_manual",
+"psp.sort_mode",
+"plugins.copy_install",
+"plugins.from",
+"plugins.state",
+"remote.qr_confirm",
+"remote.qr_desc",
+"remote.qr_hint",
+"remote.qr_loading",
+"remote.qr_title",
+"remote.select_provider",
+"remote.select_thinking",
+"remote.switch_session",
+"remote.switch_workspace",
+"session_search.hint",
+"session_search.no_match",
+"session_search.partial",
+"session_search.placeholder",
+"session_search.searching",
+"settings.data_dir",
+"settings.memory_dir",
+"settings.restore_hint",
+"settings.restore_title",
+"stats.cache_hit_rate",
+"stats.cache_read",
+"stats.cache_write",
+"stats.context_label",
+"stats.context_tokens",
+"stats.cost",
+"stats.duration",
+"stats.input",
+"stats.no_usage",
+"stats.share",
+"stats.tokens_total",
+"stats.total_cost",
+"status.running_tool",
+"status.running_tools",
+"status.send_failed",
+"status.waiting_model",
+"terminal.none",
+"titlebar.expand_sidebar",
+"titlebar.toggle_sidebar",
+"tools.preset_rebound",
+"actions.edit",
+"git.clean",
+"models.json_read_failed",
+"nav.work_details",
+"mcp.enabled_count",
+"models.registry_read_failed",
+"models.available_count",
+"skills.failed_to_toggle_count",
+"psp.delete_project_confirm",
+"status.running_tools_with_extra",
+"messages.no_output",
     ];
 
     fn src_root() -> PathBuf {
@@ -151,38 +167,142 @@ mod audit {
         }
     }
 
-    /// i18n.rs 的 TABLE 首列（= 全部合法键）。只认标准三元组行 `("k", "a", "b"),`。
-    fn table_keys(i18n_src: &str) -> BTreeSet<String> {
-        let Some(body) = i18n_src.split_once("const TABLE") else {
+    /// 去掉纯注释行后拼回整段文本（跨行调用才能被整段正则扫到）
+    fn code_of(p: &Path) -> String {
+        let mut out = Vec::new();
+        let text = read(p);
+        for line in text.lines() {
+            let t = line.trim_start();
+            if t.starts_with("//") || t.starts_with("/*") || t.starts_with('*') {
+                continue;
+            }
+            out.push(line);
+        }
+        out.join("\n")
+    }
+
+    /// TABLE 行 → (key, zh, tw, en)
+    fn table_rows(i18n_src: &str) -> Vec<(String, String, String, String)> {
+        let Some((_, after)) = i18n_src.split_once("const TABLE") else {
             panic!("i18n.rs 里找不到 TABLE");
         };
-        let mut keys = BTreeSet::new();
-        let mut started = false;
-        for line in body.1.lines() {
-            if !started {
-                if line.contains("&[") {
-                    started = true;
+        let mut rows = Vec::new();
+        let started = after.contains("&[");
+        assert!(started, "i18n.rs 的 TABLE 声明格式变了");
+        for line in after.lines() {
+            let t = line.trim();
+            if !(t.starts_with('(')) {
+                continue;
+            }
+            let inner = t.trim_start_matches('(').trim_end_matches("),").trim_end_matches(')');
+            let parts: Vec<String> = split_args(inner);
+            if parts.len() == 4 {
+                rows.push((parts[0].clone(), parts[1].clone(), parts[2].clone(), parts[3].clone()));
+            }
+        }
+        rows
+    }
+
+    /// 把一行里的顶层逗号拆开，返回**去引号后**的字符串字面量
+    fn split_args(s: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut cur = String::new();
+        let mut in_str = false;
+        let mut esc = false;
+        for ch in s.chars() {
+            if in_str {
+                cur.push(ch);
+                if esc {
+                    esc = false;
+                } else if ch == '\\' {
+                    esc = true;
+                } else if ch == '"' {
+                    in_str = false;
                 }
                 continue;
             }
-            let t = line.trim();
-            if t.starts_with("];") {
-                break;
-            }
-            if let Some(k) = first_string_literal(t) {
-                keys.insert(k);
+            match ch {
+                '"' => {
+                    in_str = true;
+                    cur.push(ch);
+                }
+                ',' => {
+                    out.push(cur.trim().to_string());
+                    cur.clear();
+                }
+                _ => cur.push(ch),
             }
         }
-        assert!(started, "i18n.rs 的 TABLE 声明格式变了");
-        keys
+        if !cur.trim().is_empty() {
+            out.push(cur.trim().to_string());
+        }
+        out.into_iter()
+            .map(|a| a.trim().trim_start_matches('"').trim_end_matches('"').to_string())
+            .collect()
     }
 
-    /// 取一行里第一个 Rust 字符串字面量的**内容**（转义原样保留，两侧同源可比）。
+    /// 源码里所有 `tr("…")` / `tf("…")` 的字面量参数（跨行、尾逗号都算）
+    fn literal_calls(root: &Path) -> BTreeSet<String> {
+        let mut files = Vec::new();
+        walk(root, &mut files);
+        let mut found = BTreeSet::new();
+        for f in files {
+            match f.file_name().and_then(|s| s.to_str()) {
+                // i18n.rs = 元数据与负例；本文件源码里有 `["tr(", "tf("]`
+                Some("i18n.rs") | Some("i18n_audit.rs") => continue,
+                _ => {}
+            }
+            let txt = code_of(&f);
+            let mut from = 0usize;
+            while let Some(at) = txt[from..].find("tr(") {
+                let abs = from + at;
+                from = abs + 3;
+                let prev = txt[..abs].chars().next_back();
+                if prev.is_some_and(|c| c.is_alphanumeric() || c == '_') {
+                    continue;
+                }
+                let rest = &txt[from..];
+                let Some(q) = rest.find('"') else { continue };
+                let head = rest[..q].trim();
+                if !head.is_empty() && !head.chars().all(|c| c.is_whitespace() || c == ',') {
+                    // tr( 之后到第一个引号之间还有别的实参 → 不是单键调用
+                    continue;
+                }
+                if let Some(lit) = first_string_literal(&rest[q..]) {
+                    found.insert(lit);
+                }
+            }
+            // tf( 同口径
+            let mut from = 0usize;
+            while let Some(at) = txt[from..].find("tf(") {
+                let abs = from + at;
+                from = abs + 3;
+                let prev = txt[..abs].chars().next_back();
+                if prev.is_some_and(|c| c.is_alphanumeric() || c == '_') {
+                    continue;
+                }
+                let rest = &txt[from..];
+                let Some(q) = rest.find('"') else { continue };
+                let head = rest[..q].trim();
+                if !head.is_empty() && !head.chars().all(|c| c.is_whitespace() || c == ',') {
+                    continue;
+                }
+                if let Some(lit) = first_string_literal(&rest[q..]) {
+                    found.insert(lit);
+                }
+            }
+        }
+        found
+    }
+
     fn first_string_literal(s: &str) -> Option<String> {
-        let start = s.find('"')?;
         let b = s.as_bytes();
+        let start = b.first().copied()?;
+        if start != b'"' {
+            return None;
+        }
         let mut out = String::new();
-        let mut i = start + 1;
+        let mut i = 1usize;
         while i < b.len() {
             match b[i] {
                 b'\\' if i + 1 < b.len() => {
@@ -192,7 +312,6 @@ mod audit {
                 }
                 b'"' => return Some(out),
                 _ => {
-                    // 保持 UTF-8 完整：按字符推进
                     let ch = s[i..].chars().next()?;
                     out.push(ch);
                     i += ch.len_utf8();
@@ -202,98 +321,72 @@ mod audit {
         None
     }
 
-    /// 扫源码，取出所有 `tr("…")` / `tf("…")` 的**字面量**参数（常量/变量传参
-    /// 天然不在其中——它们由 TABLE 里的常量键兜底，见 ABOUT_*）。
-    fn literal_calls(root: &Path) -> BTreeSet<String> {
-        let mut files = Vec::new();
-        walk(root, &mut files);
-        let mut found = BTreeSet::new();
-        for f in files {
-            // i18n.rs 自身跳过：TABLE 条目与 tr 行为测试里的字面量是「元数据」，
-            // 不是调用点（含故意写成 "not in table" 的负例）。
-            // 本文件也要跳过：扫描器源码里的 `["tr(", "tf("]` 会被当成调用点。
-            match f.file_name().and_then(|s| s.to_str()) {
-                Some("i18n.rs") | Some("i18n_audit.rs") => continue,
-                _ => {}
-            }
-            for line in read(&f).lines() {
-                let t = line.trim_start();
-                if t.starts_with("//") || t.starts_with("///") || t.starts_with('*') {
-                    continue;
-                }
-                for call in ["tr(", "tf("] {
-                    let mut from = 0usize;
-                    while let Some(at) = line[from..].find(call) {
-                        let abs = from + at;
-                        from = abs + call.len();
-                        // 标识符的一部分（如 `xtr(`）不算调用
-                        let prev = line[..abs].chars().next_back();
-                        if prev.is_some_and(|c| c.is_alphanumeric() || c == '_') {
-                            continue;
-                        }
-                        if let Some(lit) = first_string_literal(&line[from..]) {
-                            if !lit.is_empty() {
-                                found.insert(lit);
-                            }
-                        }
-                    }
-                }
+    #[test]
+    fn keys_and_translations_are_complete() {
+        let root = src_root();
+        let rows = table_rows(&read(&root.join("i18n.rs")));
+        assert!(rows.len() > 300, "TABLE 解析异常，只读到 {} 行", rows.len());
+
+        // 键唯一（撞键 = find 永远取第一条，另一条成死数据）
+        let mut seen = std::collections::BTreeSet::new();
+        let mut dup = Vec::new();
+        for (k, _, _, _) in &rows {
+            if !seen.insert(k.clone()) {
+                dup.push(k.clone());
             }
         }
-        found
-    }
+        assert!(dup.is_empty(), "TABLE 有重复键：{dup:?}");
 
-    #[test]
-    fn no_new_untranslated_literals() {
-        let root = src_root();
-        let keys = table_keys(&read(&root.join("i18n.rs")));
-        assert!(keys.len() > 100, "TABLE 解析异常，只读到 {} 个键", keys.len());
+        let keys: BTreeSet<&str> = rows.iter().map(|r| r.0.as_str()).collect();
         let calls = literal_calls(&root);
 
-        let missing: Vec<&String> = calls.iter().filter(|c| !keys.contains(*c)).collect();
+        // ① 调用点用的键必须在表里（否则界面显示裸键名）
+        let unknown: Vec<&String> =
+            calls.iter().filter(|c| !keys.contains(c.as_str())).collect();
+        assert!(
+            unknown.is_empty(),
+            "⛔ {} 个调用点的键不在 TABLE 里（界面会显示裸键名）：{unknown:?}",
+            unknown.len()
+        );
 
-        let stale: Vec<&&str> = BACKLOG
+        // ② 空译文挂账：BACKLOG 必须与「当前空译文的键」完全一致
+        let untranslated: BTreeSet<&str> = rows
             .iter()
-            .filter(|b| !missing.iter().any(|m| m.as_str() == **b))
+            .filter(|r| r.2.is_empty() || r.3.is_empty())
+            .map(|r| r.0.as_str())
             .collect();
+        let backlog: BTreeSet<&str> = BACKLOG.iter().copied().collect();
 
-        if !missing.is_empty() {
-            // 「本次新增」= 存量清单之外的那些；清单已被删条目时不能相减（溢出）
-            let fresh = missing
-                .iter()
-                .filter(|m| !BACKLOG.iter().any(|b| *m.as_str() == **b))
-                .count();
-            eprintln!(
-                "\n⛔ i18n 漏译（存量 {} 条 + 新增 {} 条）：\n{}\n",
-                missing.len() - fresh,
-                fresh,
-                missing
-                    .iter()
-                    .map(|s| format!("    \"{s}\","))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            );
-            eprintln!(
-                "补法：在 crates/app/src/i18n.rs 的 TABLE 里加一行 \
-                 (\"<上面的中文>\", \"<繁>\", \"<英>\"), 补完把 BACKLOG 里对应条目删掉。\n"
-            );
-        }
+        let fixed: Vec<&&str> = backlog.difference(&untranslated).collect();
+        assert!(
+            fixed.is_empty(),
+            "BACKLOG 有 {} 条已补齐译文，请从 BACKLOG 删掉：{fixed:?}",
+            fixed.len()
+        );
+        let fresh: Vec<&&str> = untranslated.difference(&backlog).collect();
+        assert!(
+            fresh.is_empty(),
+            "⛔ 有 {} 条表行繁/英为空但不在 BACKLOG 里（新文案忘了配译文，\
+             或改了旧文案的翻译状态）：{fresh:?}",
+            fresh.len()
+        );
 
-        assert!(
-            stale.is_empty(),
-            "BACKLOG 有 {} 条已不再漏译（补齐了或调用点已删），请把它们从 BACKLOG 里删掉：{stale:?}",
-            stale.len()
-        );
-        assert!(
-            missing.len() <= BACKLOG.len(),
-            "⛔ 新增了 {} 条未配译文的 UI 文案（上面已列出）。\
-             规则：`tr(\"中文\")` 的参数同时是显示值和 TABLE 的键，两者必须逐字节一致。",
-            missing.len().saturating_sub(BACKLOG.len())
-        );
+        // ③ 死键：只报告，不判定（常量/变量传参、预留文案都会误报）
+        let dead: Vec<&str> = keys.iter().copied().filter(|k| !calls.contains(*k)).collect();
         eprintln!(
-            "i18n 审计：{} 个调用点字面量，{} 条存量漏译（BACKLOG {} 条）",
+            "i18n 审计：{} 行 / {} 键，{} 个调用点键，未翻译 {} 条（BACKLOG {}），死键 {} 条",
+            rows.len(),
+            keys.len(),
             calls.len(),
-            missing.len(),
-            BACKLOG.len()
+            untranslated.len(),
+            backlog.len(),
+            dead.len()
         );
-    }}
+        if !dead.is_empty() {
+            eprintln!("死键（表里有、无字面量调用点，常量/变量传参也会计入）：");
+            for k in &dead {
+                eprintln!("    {k}");
+            }
+        }
+    }
+}

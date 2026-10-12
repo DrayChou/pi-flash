@@ -147,7 +147,7 @@ pub(crate) fn render_ext_dialog(
                                         });
                                     }
                                 })
-                                .child(tr("取消"))
+                                .child(tr("action.cancel"))
                                 .into_any_element()
                         }))
                         .children(is_confirm.then(|| {
@@ -171,11 +171,11 @@ pub(crate) fn render_ext_dialog(
                                         });
                                     }
                                 })
-                                .child(tr("否"))
+                                .child(tr("action.no"))
                                 .into_any_element()
                         }))
                         .children((!is_select).then(|| {
-                            let label = if is_confirm { tr("是") } else { tr("提交") };
+                            let label = if is_confirm { tr("action.yes") } else { tr("action.submit") };
                             div()
                                 .id("ext-ok")
                                 .px_3()

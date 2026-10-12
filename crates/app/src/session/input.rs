@@ -185,20 +185,20 @@ fn ctx_usage_panel(
             div()
                 .text_size(crate::appearance::ui_size(12.))
                 .text_color(rgb(t.text_muted))
-                .child(tr("会话尚未产生用量。"))
+                .child(tr("stats.no_usage"))
                 .into_any_element(),
         ],
         Some(s) => {
             let fmt_k = |n: u64| -> String { format!("{}K", (n as f64 / 1000.).round() as u64) };
             let ctx_rows = vec![
                 row(
-                    tr("使用比例"),
+                    tr("stats.share"),
                     s.context_percent
                         .map(|p| format!("{p:.1}%"))
                         .unwrap_or_else(|| "\u{2014}".into()),
                 ),
                 row(
-                    tr("上下文 token"),
+                    tr("stats.context_tokens"),
                     match (s.context_tokens, s.context_window) {
                         (Some(t), Some(w)) => format!("{} / {}", fmt_k(t), fmt_k(w)),
                         (Some(t), None) => fmt_k(t),
@@ -207,20 +207,20 @@ fn ctx_usage_panel(
                 ),
             ];
             let token_rows = vec![
-                row(tr("输入"), fmt_thousand(s.input)),
-                row(tr("输出"), fmt_thousand(s.output)),
-                row(tr("缓存读"), fmt_thousand(s.cache_read)),
-                row(tr("缓存写"), fmt_thousand(s.cache_write)),
-                row(tr("总计"), fmt_thousand(s.tokens_total)),
+                row(tr("stats.input"), fmt_thousand(s.input)),
+                row(tr("stats.output"), fmt_thousand(s.output)),
+                row(tr("stats.cache_read"), fmt_thousand(s.cache_read)),
+                row(tr("stats.cache_write"), fmt_thousand(s.cache_write)),
+                row(tr("tokens.total"), fmt_thousand(s.tokens_total)),
             ];
-            let mut cost_rows = vec![row(tr("累计费用"), format!("${:.4}", s.cost))];
+            let mut cost_rows = vec![row(tr("stats.total_cost"), format!("${:.4}", s.cost))];
             if let Some(r) = s.cache_hit_rate() {
-                cost_rows.push(row(tr("缓存命中率"), format!("{:.1}%", r * 100.)));
+                cost_rows.push(row(tr("stats.cache_hit_rate"), format!("{:.1}%", r * 100.)));
             }
             vec![
-                section(tr("上下文"), ctx_rows),
-                section(tr("Token 累计"), token_rows),
-                section(tr("费用"), cost_rows),
+                section(tr("stats.context_label"), ctx_rows),
+                section(tr("stats.tokens_total"), token_rows),
+                section(tr("stats.cost"), cost_rows),
             ]
         }
     };
@@ -228,7 +228,7 @@ fn ctx_usage_panel(
     // 「压 缩」字间插窄空格（gpui 无 letter_spacing，字符串层处理；
     // 「压缩中…」多字，保持原样不插）
     let compact_label = {
-        let raw = if compacting { tr("压缩中…") } else { tr("压缩") };
+        let raw = if compacting { tr("status.compacting") } else { tr("action.compact") };
         let mut cs = raw.chars();
         match (cs.next(), cs.next(), cs.next()) {
             (Some(a), Some(b), None) => format!("{a}\u{2009}{b}"),
@@ -304,9 +304,9 @@ fn plugin_button(
     };
     let active = is_custom;
     let label = if n > 0 {
-        format!("{}({n})", crate::i18n::tr("扩展"))
+        format!("{}({n})", crate::i18n::tr("settings.tab.extensions"))
     } else {
-        crate::i18n::tr("扩展").to_string()
+        crate::i18n::tr("settings.tab.extensions").to_string()
     };
     let color = if !active {
         t.text_faint
@@ -366,9 +366,9 @@ fn mcp_button(
         chat.mcp_picker.is_some(),
     );
     let label = if n > 0 {
-        format!("{}({n})", crate::i18n::tr("MCP"))
+        format!("{}({n})", crate::i18n::tr("dock.mcp"))
     } else {
-        crate::i18n::tr("MCP").to_string()
+        crate::i18n::tr("dock.mcp").to_string()
     };
     let color = if open { t.accent } else { t.text_muted };
     let mut el = div()
@@ -435,7 +435,7 @@ pub(crate) fn input_area(
                     .as_ref()
                     .map(|(p, id)| chat.model_display_name(p, id))
             })
-            .unwrap_or_else(|| tr("选择模型").to_string());
+            .unwrap_or_else(|| tr("model.select_title").to_string());
         let thinking_label = state_thinking
             .or_else(|| r.thinking_override.clone())
             .or_else(|| draft_thinking.clone())
@@ -461,11 +461,11 @@ pub(crate) fn input_area(
     let ph: SharedString = if compacting {
         // 压缩期间输入锁死（下方 on_change/on_submit 丢弃变更），用
         // placeholder 文案告知用户系统在做什么
-        tr("上下文压缩中，请等待……").into()
+        tr("composer.compacting_wait2").into()
     } else if streaming {
-        tr("ESC打断模型").into()
+        tr("composer.hint_esc").into()
     } else {
-        tr("/skill，!shell命令，Shift回车换行").into()
+        tr("composer.hint_shortcuts").into()
     };
     composer.update(cx, |f, _| f.set_placeholder(Some(ph)));
     // 压缩锁：编辑器组件整块不挂载（无焦点/IME/粘贴），显示 placeholder
@@ -959,9 +959,9 @@ fn composer_bar(
                         .text_size(crate::appearance::ui_size(BAR_FONT))
                         .text_color(rgb(t.text_dim))
                         .child(SharedString::from(if bash_excluded {
-                            tr("Shell · 输出仅本地（!!）")
+                            tr("composer.shell_local_only")
                         } else {
-                            tr("Shell · 输出发给模型")
+                            tr("composer.shell_to_model")
                         })),
                 )
                 .into_any_element()
@@ -1022,7 +1022,7 @@ fn composer_bar(
                         if this.rt().read(cx).agent_running {
                             // 置灰之外再给一句说明：工具预设换不了是因为要重绑进程
                             this.set_status(
-                                crate::i18n::tr("运行中不能更换工具预设").to_string(),
+                                crate::i18n::tr("compaction.preset_locked").to_string(),
                                 cx,
                             );
                             return;

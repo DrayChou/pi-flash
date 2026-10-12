@@ -35,7 +35,7 @@ impl Chat {
             .collect();
         let path = pi_link::config::settings_path();
         if let Err(e) = pi_link::config::write_packages(&path, next.clone()) {
-            self.mc_set_error(&crate::i18n::tf("写入 settings.json 失败: {e}", &[("e", e)]), cx);
+            self.mc_set_error(&crate::i18n::tf("settings.write_failed", &[("e", e)]), cx);
             return;
         }
         // globals 是启动时的内存副本：不同步的话 reload_settings_panel 拷回旧列表
@@ -71,7 +71,7 @@ impl Chat {
         }
         if let Err(e) = pi_link::config::write_packages(&pi_link::config::settings_path(), next.clone())
         {
-            self.mc_set_error(&crate::i18n::tf("写入 settings.json 失败: {e}", &[("e", e)]), cx);
+            self.mc_set_error(&crate::i18n::tf("settings.write_failed", &[("e", e)]), cx);
             return;
         }
         self.globals.packages = next;
@@ -89,13 +89,13 @@ impl Chat {
         self.mc_clear_error(cx);
         let source = pi_link::skills::normalize_source(&source);
         if source.is_empty() {
-            self.mc_set_error(&tr("请输入扩展来源，或粘贴 pi install 安装命令"), cx);
+            self.mc_set_error(&tr("extensions.source_placeholder"), cx);
             return;
         }
         self.pkg_op = Some(crate::PkgOp::Install);
         self.mc_cli_op(
             vec!["install".to_string(), source.clone()],
-            crate::i18n::tf("已安装 {source}", &[("source", source.clone())]),
+            crate::i18n::tf("extensions.installed", &[("source", source.clone())]),
             cx,
         );
     }
@@ -109,7 +109,7 @@ impl Chat {
         self.pkg_op = Some(crate::PkgOp::Remove(source.clone()));
         self.mc_cli_op(
             vec!["remove".to_string(), source.clone()],
-            crate::i18n::tf("已移除 {source}", &[("source", source.clone())]),
+            crate::i18n::tf("extensions.removed", &[("source", source.clone())]),
             cx,
         );
     }
@@ -218,13 +218,13 @@ fn pl_install_bar(
                         .text_color(rgb(t.accent_contrast))
                         .opacity(0.8)
                         .child(crate::ui::spinner(12., t.accent_contrast))
-                        .child(tr("安装中"))
+                        .child(tr("extensions.installing"))
                         .into_any_element()
                 } else {
                     config_button(
                         "pkg-install-go",
                         weak,
-                        &tr("安装"),
+                        &tr("extensions.install"),
                         Btn::Primary,
                         false,
                         false,
@@ -300,7 +300,7 @@ fn pl_sidebar(
                     .text_size(crate::appearance::ui_size(12.))
                     .font_weight(gpui::FontWeight::SEMIBOLD)
                     .text_color(rgb(t.text_dim))
-                    .child(tr("配置全局默认扩展")),
+                    .child(tr("extensions.global_defaults")),
             )
             .child(
                 div()
@@ -385,7 +385,7 @@ fn pl_detail(
                 div()
                     .text_size(crate::appearance::ui_size(12.))
                     .text_color(rgb(t.text_dim))
-                    .child(tr("没有已安装的扩展")),
+                    .child(tr("extensions.not_installed")),
             )
             .into_any_element();
     };
@@ -451,13 +451,13 @@ fn pl_detail(
                         .text_color(rgb(t.text))
                         .child(SharedString::from(pi_link::skills::display_source(&src).to_string())),
                 )
-                .child(scope_tag(&tr("全局"), false))
+                .child(scope_tag(&tr("scope.global"), false))
                 .child(div().flex_1())
                 .child(trash),
         )
     // 详情排版与技能页同款：field = 标签在上、内容在下（040 定稿）
     .child(field(
-        &tr("说明"),
+        &tr("about.description"),
         div()
             .text_size(crate::appearance::ui_size(12.))
             .text_color(rgb(t.text_muted))
@@ -466,15 +466,15 @@ fn pl_detail(
             )),
     ))
     .child(field(
-        &tr("状态"),
+        &tr("plugins.state"),
         div().child(if disabled {
-            SharedString::from(tr("已停用").to_string())
+            SharedString::from(tr("status.disabled").to_string())
         } else {
-            SharedString::from(tr("已启用").to_string())
+            SharedString::from(tr("status.enabled").to_string())
         }),
     ))
     .child(field(
-        &tr("说明大小"),
+        &tr("tokens.prompt_size"),
         // 尚未测得（延迟加载未跑完/未安装）显示「—」
         mono_text(
             match chat.ext_tokens.get(&src) {
@@ -487,9 +487,9 @@ fn pl_detail(
             true,
         ),
     ))
-    .child(field(&tr("来源"), mono_text(src.clone(), false)))
+    .child(field(&tr("extensions.source"), mono_text(src.clone(), false)))
     .child(field(
-        &tr("路径"),
+        &tr("extensions.path"),
         div()
             .font_family(crate::editor::markdown::MONO_FAMILY)
             .text_size(crate::appearance::ui_size(11.))
@@ -512,7 +512,7 @@ pub(crate) fn remove_confirm_overlay(
     let src = chat.pkg_confirm_remove.as_ref()?;
     let name = pi_link::skills::display_source(src).to_string();
     let weak = cx.entity().downgrade();
-    let message = crate::i18n::tf("卸载扩展 {name}？", &[("name", name)]);
+    let message = crate::i18n::tf("extensions.uninstall_confirm", &[("name", name)]);
     Some(crate::ui::overlay::confirm(
         &chat.dialog_focus,
         message,

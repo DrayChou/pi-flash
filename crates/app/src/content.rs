@@ -24,7 +24,7 @@ pub(crate) fn content_main(
             .into_any_element(),
         ContentView::Term => term_view(chat, weak, window, cx)
             .map(|d| d.into_any_element())
-            .unwrap_or_else(|| empty_hint(tr("暂无终端会话"), t)),
+            .unwrap_or_else(|| empty_hint(tr("terminal.none"), t)),
         ContentView::File => crate::editor::view::file_view(chat, weak, window, cx).into_any_element(),
         // 081 更新日志 tab（新版本首启自动打开）
         ContentView::Changelog => changelog_view(chat).into_any_element(),
@@ -59,7 +59,7 @@ pub(crate) fn empty_hint(text: &str, t: &'static crate::appearance::theme::Theme
 fn changelog_view(chat: &mut Chat) -> gpui::AnyElement {
     let t = T();
     let Some(page) = &chat.changelog else {
-        return empty_hint(tr("暂无更新日志"), t);
+        return empty_hint(tr("about.no_changelog_available"), t);
     };
     let version = page.version.clone();
     let body = page.body.clone();
@@ -78,7 +78,7 @@ fn changelog_view(chat: &mut Chat) -> gpui::AnyElement {
                     .text_size(crate::appearance::ui_size(17.))
                     .font_weight(gpui::FontWeight::SEMIBOLD)
                     .text_color(rgb(t.text))
-                    .child(tr("更新日志").to_string()),
+                    .child(tr("about.changelog").to_string()),
             )
             .child(
                 div()
@@ -117,10 +117,10 @@ fn changelog_view(chat: &mut Chat) -> gpui::AnyElement {
                 .text_size(crate::appearance::ui_size(11.))
                 .text_color(rgb(t.text_dim))
                 .child(crate::ui::spinner(14., t.text_dim))
-                .child(tr("正在获取更新日志…").to_string()),
+                .child(tr("about.fetching_changelog").to_string()),
         );
     } else {
-        col = col.child(empty_hint(tr("暂无更新日志"), t));
+        col = col.child(empty_hint(tr("about.no_changelog_available"), t));
     }
     col.into_any_element()
 }
@@ -153,7 +153,7 @@ pub(crate) fn term_view(
                     crate::terminal::TermStatus::Exited(code) => {
                         let code_text = code
                             .map(|c| c.to_string())
-                            .unwrap_or_else(|| tr("unknown").to_string());
+                            .unwrap_or_else(|| tr("exit.unknown").to_string());
                         col = col.child(
                             div()
                                 .py(px(7.))
@@ -162,7 +162,7 @@ pub(crate) fn term_view(
                                 .font_family(crate::terminal::FONT_FAMILY)
                                 .text_color(rgb(0x6e8a7d))
                                 .child(SharedString::from(crate::i18n::tf(
-                                    "Process exited with code {code_text}",
+                                    "exit.process_exited",
                                     &[("code_text", code_text)],
                                 ))),
                         );

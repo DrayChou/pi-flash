@@ -233,7 +233,7 @@ pub(crate) fn psp_view(
                 // 与「显示更多」行同款：placeholder 色 + 面板字号−1（2026-10-10 定夺）
                 .text_size(crate::appearance::ui_size(11.))
                 .text_color(rgb(t.text_faint))
-                .child(tr("无会话"))
+                .child(tr("psp.no_sessions"))
                 .into_any_element(),
             PspRow::More { key } => {
                 let weak_more = weak.clone();
@@ -254,7 +254,7 @@ pub(crate) fn psp_view(
                             cx.notify();
                         });
                     })
-                    .child(tr("显示更多"))
+                    .child(tr("settings.show_more"))
                     .into_any_element()
             }
             PspRow::Title => div().into_any_element(),
@@ -324,8 +324,8 @@ pub(crate) fn psp_view(
 /// title 行（操作行）：左文案（项目/会话），右 4 常显钮。
 fn title_row(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> gpui::AnyElement {
     let label = match chat.list_mode {
-        ListMode::Flat => tr("会话"),
-        _ => tr("项目"),
+        ListMode::Flat => tr("psp.session_label"),
+        _ => tr("scope.project"),
     };
     let w_open = weak.clone();
     let w_new = weak.clone();

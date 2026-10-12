@@ -289,14 +289,14 @@ pub(crate) fn slash_menu_view(
                 .text_size(crate::appearance::ui_size(11.))
                 .text_color(rgb(t.text_dim))
                 .child(SharedString::from(if is_at {
-                    format!("{} · {n}", tr("文件"))
+                    format!("{} · {n}", tr("composer.files"))
                 } else {
-                    format!("{} · {n}", tr("斜杠命令"))
+                    format!("{} · {n}", tr("composer.slash_commands"))
                 }))
                 .child(
                     div()
                         .font_family(crate::editor::markdown::MONO_FAMILY)
-                        .child(tr("Tab / Enter 插入")),
+                        .child(tr("menu.tab_enter_insert")),
                 ),
         )
         .child(
@@ -326,9 +326,9 @@ pub(crate) fn slash_menu_view(
                                 .text_size(crate::appearance::ui_size(12.))
                                 .text_color(rgb(t.text_dim))
                                 .child(if is_at {
-                                    tr("没有匹配的文件")
+                                    tr("composer.no_matching_files")
                                 } else {
-                                    tr("未找到扩展、提示词或技能命令")
+                                    tr("menu.no_command_found")
                                 }),
                         );
                     } else {

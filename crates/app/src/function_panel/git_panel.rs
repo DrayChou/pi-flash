@@ -259,7 +259,7 @@ fn changes_body(
                                 cx.notify();
                             },
                         ))
-                        .child(SharedString::from(tr("Stage All")))
+                        .child(SharedString::from(tr("git.stage_all")))
                         .child(icon("chevron-down", 10., t.text_dim)),
                 ),
         )
@@ -337,7 +337,7 @@ fn changes_body(
                                         this.git_commit_staged(cx);
                                     },
                                 ))
-                                .child(SharedString::from(tr("提交已暂存")))
+                                .child(SharedString::from(tr("git.staged")))
                                 .child(icon("chevron-down", 10., t.text_dim)),
                         ),
                 )
@@ -401,7 +401,7 @@ fn section(chat: &Chat, weak: gpui::WeakEntity<Chat>, t: &'static Theme) -> gpui
             .py(px(6.))
             .text_size(crate::appearance::ui_size(11.))
             .text_color(rgb(t.text_dim))
-            .child(tr("工作区干净"))
+            .child(tr("git.clean"))
             .into_any_element();
     }
     let tree = build_git_tree(chat);
@@ -543,7 +543,7 @@ fn history_body(
                 .py(px(6.))
                 .text_size(crate::appearance::ui_size(11.))
                 .text_color(rgb(t.text_dim))
-                .child(tr("暂无提交")),
+                .child(tr("git.no_commits")),
         );
     }
     for c in &chat.git_log {
@@ -658,7 +658,7 @@ impl Chat {
     }
 
     pub(crate) fn git_push_branch(&mut self, cx: &mut Context<Self>) {
-        self.git_error = Some(tr("推送中…").to_string());
+        self.git_error = Some(tr("git.pushing").to_string());
         cx.notify();
         let cwd = self.cwd.clone();
         cx.spawn(async move |this, cx| {
@@ -667,7 +667,7 @@ impl Chat {
                 .background_spawn(async move { git::git_push(&cwd) })
                 .await;
             let _ = this.update(cx, |chat, cx| {
-                chat.git_error = r.err().or_else(|| Some(tr("推送完成").to_string()));
+                chat.git_error = r.err().or_else(|| Some(tr("git.pushed").to_string()));
                 cx.notify();
             });
         })

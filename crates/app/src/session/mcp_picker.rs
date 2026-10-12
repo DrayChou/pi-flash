@@ -65,7 +65,7 @@ impl Chat {
             return;
         };
         if let Err(e) = pi_link::mcp::set_enabled(&entry.file, &entry.name, !entry.enabled) {
-            self.set_status(crate::i18n::tf("MCP 保存失败: {e}", &[("e", e)]), cx);
+            self.set_status(crate::i18n::tf("mcp.save_failed", &[("e", e)]), cx);
             return;
         }
         self.reload_settings_panel();
@@ -73,7 +73,7 @@ impl Chat {
         if rt.read(cx).agent_running {
             // 运行中不掐轮：标记重绑，下一轮 send_input 空闲发送前生效
             rt.update(cx, |r, _| r.pending_mcp_reload = true);
-            self.set_status(crate::i18n::tr("MCP 清单将在下一轮生效").to_string(), cx);
+            self.set_status(crate::i18n::tr("mcp.next_turn").to_string(), cx);
         }
         cx.notify();
     }
@@ -107,7 +107,7 @@ pub(crate) fn view(chat: &Chat, weak: &gpui::WeakEntity<Chat>, window: &gpui::Wi
                 .py(px(12.))
                 .text_size(ui(11.))
                 .text_color(rgb(t.text_dim))
-                .child(SharedString::from(crate::i18n::tr("没有已配置的 MCP 服务器")))
+                .child(SharedString::from(crate::i18n::tr("mcp.none_configured")))
                 .into_any_element(),
         );
     }
@@ -127,7 +127,7 @@ pub(crate) fn view(chat: &Chat, weak: &gpui::WeakEntity<Chat>, window: &gpui::Wi
                 .text_size(ui(12.))
                 .font_weight(gpui::FontWeight::SEMIBOLD)
                 .text_color(rgb(t.text))
-                .child(SharedString::from(crate::i18n::tr("选择 MCP"))),
+                .child(SharedString::from(crate::i18n::tr("mcp.select"))),
         )
         .child(div().flex_1())
         .child(
@@ -135,7 +135,7 @@ pub(crate) fn view(chat: &Chat, weak: &gpui::WeakEntity<Chat>, window: &gpui::Wi
                 .text_size(ui(10.))
                 .text_color(rgb(t.text_dim))
                 .child(SharedString::from(crate::i18n::tf(
-                    "已开启 {n}/{total}",
+                    "mcp.enabled_count",
                     &[("n", enabled_n.to_string()), ("total", items.len().to_string())],
                 ))),
         );

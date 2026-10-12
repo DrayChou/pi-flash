@@ -1418,7 +1418,7 @@ fn render_code_block(lang: &str, code: &str, t: &Theme, streaming: bool) -> gpui
                 .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
                     cx.write_to_clipboard(gpui::ClipboardItem::new_string(copy_code.clone()));
                 })
-                .child(SharedString::from(crate::i18n::tr("复制"))),
+                .child(SharedString::from(crate::i18n::tr("action.copy"))),
         );
 
     // 代码体：行号 gutter 前缀 + 逐行高亮段
@@ -2079,7 +2079,7 @@ fn render_oversize(src: &str, t: &Theme) -> AnyElement {
                 .text_size(px(crate::ui::tokens::fixed::MD_WARN))
                 .child(SharedString::from(format!(
                     "⚠ {} ({}KB)",
-                    crate::i18n::tr("消息内容过大，已按纯文本显示"),
+                    crate::i18n::tr("messages.too_large"),
                     kb
                 ))),
         )

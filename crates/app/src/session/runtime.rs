@@ -1378,11 +1378,11 @@ impl SessionRuntime {
             })
             .unwrap_or_default();
         match tools.len() {
-            0 => tr("正在等待模型...").to_string(),
-            1 => crate::i18n::tf("正在运行 {name}...", &[("name", tools[0].clone())]),
-            n if n <= 3 => crate::i18n::tf("正在运行 {names}...", &[("names", tools.join(", "))]),
+            0 => tr("status.waiting_model").to_string(),
+            1 => crate::i18n::tf("status.running_tool", &[("name", tools[0].clone())]),
+            n if n <= 3 => crate::i18n::tf("status.running_tools", &[("names", tools.join(", "))]),
             n => crate::i18n::tf(
-                "正在运行 {names}（另有 {count} 个）...",
+                "status.running_tools_with_extra",
                 &[
                     ("names", tools[..2].join(", ")),
                     ("count", (n - 2).to_string()),
@@ -1662,18 +1662,18 @@ impl SessionRuntime {
         let excluded = trimmed.starts_with("!!");
         let command = trimmed[if excluded { 2 } else { 1 }..].trim();
         if command.is_empty() {
-            self.status = tr("命令为空：! 后面接 shell 命令").to_string();
+            self.status = tr("composer.shell_empty").to_string();
             cx.notify();
             return;
         }
         // pi 侧拒绝条件（rpc-mode bash：busy 即 error）——提前拦，输入保留
         if self.bash_running || self.agent_running || self.compacting {
-            self.status = tr("会话忙，无法执行 shell 命令").to_string();
+            self.status = tr("composer.shell_busy").to_string();
             cx.notify();
             return;
         }
         let Some(session) = &self.agent.session else {
-            self.status = tr("未连接").into();
+            self.status = tr("status.disconnected").into();
             cx.notify();
             return;
         };
@@ -1822,7 +1822,7 @@ impl SessionRuntime {
                         Self::attach_pump(&this, rx, epoch, cx);
                     }
                     None => {
-                        self.status = tr("未连接").into();
+                        self.status = tr("status.disconnected").into();
                         cx.notify();
                         return;
                     }
@@ -1844,7 +1844,7 @@ impl SessionRuntime {
                     Self::attach_pump(&this, rx, epoch, cx);
                 }
                 None => {
-                    self.status = tr("未连接").into();
+                    self.status = tr("status.disconnected").into();
                     cx.notify();
                     return;
                 }
@@ -1855,7 +1855,7 @@ impl SessionRuntime {
             self.refresh_state();
         }
         let Some(session) = &self.agent.session else {
-            self.status = tr("未连接").into();
+            self.status = tr("status.disconnected").into();
             cx.notify();
             return;
         };
@@ -1938,7 +1938,7 @@ impl SessionRuntime {
                     Self::attach_pump(&this, rx, epoch, cx);
                 }
                 None => {
-                    self.status = tr("未连接").into();
+                    self.status = tr("status.disconnected").into();
                     cx.notify();
                     return false;
                 }
@@ -1946,7 +1946,7 @@ impl SessionRuntime {
             self.refresh_state();
         }
         let Some(session) = &self.agent.session else {
-            self.status = tr("未连接").into();
+            self.status = tr("status.disconnected").into();
             cx.notify();
             return false;
         };
@@ -1970,7 +1970,7 @@ impl SessionRuntime {
                 self.optimistic_send(text, cx);
             }
         } else {
-            self.status = tr("发送失败").into();
+            self.status = tr("status.send_failed").into();
         }
         cx.notify();
         sent
@@ -1983,13 +1983,13 @@ impl SessionRuntime {
             return false;
         }
         let Some(session) = &self.agent.session else {
-            self.status = tr("未连接").into();
+            self.status = tr("status.disconnected").into();
             cx.notify();
             return false;
         };
         let ok = session.send(cmd).is_ok();
         if !ok {
-            self.status = tr("发送失败").into();
+            self.status = tr("status.send_failed").into();
         }
         cx.notify();
         ok
@@ -2042,10 +2042,10 @@ impl SessionRuntime {
         match self.agent.session.as_ref().map(|s| s.send(&Command::Compact)) {
             Some(Ok(_)) => {
                 self.compacting = true;
-                self.status = tr("压缩中…").into();
+                self.status = tr("status.compacting").into();
             }
             Some(Err(e)) => self.status = e,
-            None => self.status = tr("未连接").into(),
+            None => self.status = tr("status.disconnected").into(),
         }
         cx.emit(SessionEvent::Changed);
         cx.notify();
@@ -2062,7 +2062,7 @@ impl SessionRuntime {
         }
         if key == "custom" {
             // 档名 full+；扩展数量由右边的「扩展(n)」按钮承载，不重复
-            return crate::i18n::tr("full+").to_string();
+            return crate::i18n::tr("extensions.full").to_string();
         }
         key.to_string()
     }

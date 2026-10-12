@@ -136,7 +136,7 @@ pub(crate) fn files_view(
                 .text_size(crate::appearance::ui_size(11.))
                 .text_color(rgb(t.text_dim))
                 .child(SharedString::from(crate::i18n::tf(
-                    "{n} 个文件",
+                    "file_tree.files",
                     &[("n", n.to_string())],
                 )));
             if add > 0 {
@@ -190,7 +190,7 @@ pub(crate) fn files_view(
                     VListHeight::Fill,
                     false,
                     true,
-                    tr("暂无变更"),
+                    tr("file_tree.no_changes"),
                     None,
                     move |ix, _window, _cx| match rows.get(ix) {
                         Some(row) => changes_row(row.clone(), editing.clone(), weak_c.clone()),
@@ -453,7 +453,7 @@ fn action_bar(
                 .child(bar_btn(
                     "ft-toggle-changes",
                     "git-commit-horizontal",
-                    tr("只看变更"),
+                    tr("file_tree.show_changes_only"),
                     t,
                     changes_only,
                     move |_, _, cx| {
@@ -463,7 +463,7 @@ fn action_bar(
                 .child(bar_btn(
                     "ft-search",
                     "search",
-                    tr("搜索文件"),
+                    tr("file_tree.search"),
                     t,
                     false,
                     move |_, _, cx| {
@@ -473,7 +473,7 @@ fn action_bar(
                 .child(bar_btn(
                     "ft-explorer",
                     "folder-input",
-                    tr("在资源管理器中打开"),
+                    tr("file_tree.reveal_in_explorer"),
                     t,
                     false,
                     move |_, _, _cx| {
@@ -483,7 +483,7 @@ fn action_bar(
                 .child(bar_btn(
                     "ft-term",
                     "icon-terminal-solid",
-                    tr("在终端中打开"),
+                    tr("file_tree.open_in_terminal"),
                     t,
                     false,
                     move |_, window, cx| {

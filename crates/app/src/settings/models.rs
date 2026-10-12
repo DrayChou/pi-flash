@@ -232,7 +232,7 @@ impl Chat {
     /// Apply a pattern edit: persist to settings.json, refresh panel state.
     pub(crate) fn apply_pattern_edit(&mut self, edit: models_config::Edit, cx: &mut Context<Self>) {
         if self.mc_project_scope {
-            self.mc_set_error(tr("项目级 .pi/settings.json 覆盖了 enabledModels，面板只读"), cx);
+            self.mc_set_error(tr("models.project_override_dotpi"), cx);
             return;
         }
         if !edit.changed {
@@ -241,7 +241,7 @@ impl Chat {
         if let Err(e) =
             pi_link::config::write_enabled_models(&pi_link::config::settings_path(), edit.patterns.clone())
         {
-            self.mc_set_error(&crate::i18n::tf("写入 settings.json 失败: {e}", &[("e", e)]), cx);
+            self.mc_set_error(&crate::i18n::tf("settings.write_failed", &[("e", e)]), cx);
             return;
         }
         self.mc_patterns = edit.patterns;
@@ -254,7 +254,7 @@ impl Chat {
         self.mc_clear_error(cx);
         match models_config::set_models_enabled(self.mc_patterns.as_ref(), &self.mc_refs(), &[r], enable) {
             Ok(edit) => self.apply_pattern_edit(edit, cx),
-            Err(_) => self.mc_set_error(tr("至少需要保留一个启用的模型"), cx),
+            Err(_) => self.mc_set_error(tr("model.keep_one"), cx),
         }
     }
 
@@ -262,7 +262,7 @@ impl Chat {
         self.mc_clear_error(cx);
         match models_config::set_provider_enabled(self.mc_patterns.as_ref(), &self.mc_refs(), provider, enable) {
             Ok(edit) => self.apply_pattern_edit(edit, cx),
-            Err(_) => self.mc_set_error(tr("至少需要保留一个启用的模型"), cx),
+            Err(_) => self.mc_set_error(tr("model.keep_one"), cx),
         }
     }
 
@@ -286,18 +286,18 @@ impl Chat {
     pub(crate) fn mc_save_key(&mut self, provider: String, key: String, cx: &mut Context<Self>) {
         self.mc_clear_error(cx);
         if key.trim().is_empty() {
-            self.mc_set_error(tr("API Key 不能为空"), cx);
+            self.mc_set_error(tr("models.api_key_required"), cx);
             return;
         }
         // 051：明文 → 凭据库 + pf-auth.json 引用；高级引用原样；库不可用降级明文
         match pi_link::pf_auth::store_catalog_key(&provider, key.trim(), &pi_link::credentials::KeyringVault)
         {
             Ok(pi_link::credentials::StoreMode::File) => {
-                self.mc_set_error(tr("系统凭据库不可用，已降级为文件存储"), cx);
+                self.mc_set_error(tr("conflict.vault_unavailable"), cx);
             }
             Ok(_) => {}
             Err(e) => {
-                self.mc_set_error(&crate::i18n::tf("保存失败: {e}", &[("e", e)]), cx);
+                self.mc_set_error(&crate::i18n::tf("models.failed_to_save", &[("e", e)]), cx);
                 return;
             }
         }
@@ -334,7 +334,7 @@ impl Chat {
                         &pi_link::credentials::KeyringVault,
                     ) else {
                         return pi_link::probe::ProbeOutcome::Unreachable {
-                            error: crate::i18n::tr("密钥不在系统凭据库，请重新保存").to_string(),
+                            error: crate::i18n::tr("model.key_not_in_vault").to_string(),
                         };
                     };
                     let (url, auth) = target;
@@ -353,11 +353,11 @@ impl Chat {
                 // 失败原因走详情错误条（错误条在保存/获取后短暂可见）
                 match &outcome {
                     pi_link::probe::ProbeOutcome::AuthRejected { status } => c.mc_set_error(
-                        &crate::i18n::tf("获取失败：key 被拒（HTTP {s}）", &[("s", status.to_string())]),
+                        &crate::i18n::tf("extensions.fetch_key_rejected", &[("s", status.to_string())]),
                         cx,
                     ),
                     pi_link::probe::ProbeOutcome::Unreachable { error } => c.mc_set_error(
-                        &crate::i18n::tf("获取失败：{e}", &[("e", error.clone())]),
+                        &crate::i18n::tf("extensions.fetch_failed", &[("e", error.clone())]),
                         cx,
                     ),
                     pi_link::probe::ProbeOutcome::Ok { .. } => {}
@@ -471,7 +471,7 @@ pub(crate) fn mc_models_view(
     let mut detail_error = error.clone();
     if let Some(e) = &chat.mc_mj_error {
         detail_error = Some(crate::i18n::tf(
-            "无法读取 models.json，为避免覆盖已禁用保存：{e}",
+            "models.json_read_failed",
             &[("e", e.clone())],
         ));
     }
@@ -741,7 +741,7 @@ fn mc_add_action(weak: &gpui::WeakEntity<Chat>) -> gpui::AnyElement {
                 .text_color(rgb(t.text_dim))
                 .hover(|s| s.bg(rgb(t.bg_hover)))
                 .child(crate::ui::icon_hover("plus", 13., t.text_dim))
-                .child(tr("添加 Provider"))
+                .child(tr("model.add_provider"))
                 .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                     let _ = weak.update(cx, |c, cx| {
                         c.dialog = Some(c.provider_picker_dialog(cx));
@@ -854,7 +854,7 @@ fn mc_models_detail(
             .child(detail_button(
                 "mc-remove",
                 weak,
-                &tr("移除"),
+                &tr("action.remove"),
                 crate::ui::button::BtnVariant::Danger,
                 false,
                 move |c, cx| c.mc_ask_remove_provider(remove_provider.clone(), cx),
@@ -911,7 +911,7 @@ fn mc_models_detail(
                 .child(detail_button(
                     "mc-key-save",
                     weak,
-                    &tr("保存"),
+                    &tr("action.save"),
                     crate::ui::button::BtnVariant::Primary,
                     false,
                     move |c, cx| {
@@ -977,7 +977,7 @@ fn mc_enabled_section(
             .items_center()
             .gap(px(8.))
             .child(section_title(&crate::i18n::tf(
-                "可用模型 {enabled}/{total}",
+                "models.available_count",
                 &[("enabled", enabled_count.to_string()), ("total", models.len().to_string())],
             )))
             .child(div().flex_1())
@@ -1135,7 +1135,7 @@ pub(crate) fn remove_provider_confirm_overlay(
     let name = crate::ui::provider_display_name(&provider).to_string();
     let weak = cx.entity().downgrade();
     let message = crate::i18n::tf(
-        "删除 {name} 的 API Key，并不再显示？",
+        "extensions.remove_key_confirm",
         &[("name", name)],
     );
     Some(crate::ui::overlay::confirm(
@@ -1174,7 +1174,7 @@ impl Chat {
     pub(crate) fn provider_picker_dialog(&mut self, cx: &mut Context<Self>) -> Dialog {
         self.ensure_registry(cx);
         let weak_esc = cx.entity().downgrade();
-        let input = cx.new(|cx| TextInput::new(cx).placeholder(tr("搜索 Provider...")));
+        let input = cx.new(|cx| TextInput::new(cx).placeholder(tr("model.search_provider")));
         input.update(cx, |ti, _| {
             ti.set_on_escape(Box::new(move |cx| {
                 // same dispatch-lease hazard as submit: closing the dialog
