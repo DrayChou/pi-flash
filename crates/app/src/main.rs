@@ -26,6 +26,8 @@ mod editor;
 mod ext_ui;
 mod function_panel;
 mod i18n;
+#[cfg(test)]
+mod i18n_audit;
 mod models_config;
 mod remote_control;
 mod startup;
