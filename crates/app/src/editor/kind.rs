@@ -5,33 +5,26 @@
 //! 行，框架不动。
 //!
 //! 职责边界：
-//! - **handler 管**：是否进 tab（html→系统浏览器旁路）、CodeEditor 配置
-//!   （高亮语言/软换行/图片粘贴钩子；None = 无编辑器类型）、主体渲染算法、
-//!   工具栏按钮（默认仅搜索；md 追加预览 eye）、右键菜单文件动作块、
-//!   是否有源码/预览双态（file.view_mode op 门控）
+//! - **handler 管**：CodeEditor 配置（高亮语言/软换行/图片粘贴钩子；None
+//!   = 无编辑器类型）、主体渲染算法、工具栏按钮（默认仅搜索；md 追加预览
+//!   eye）、右键菜单文件动作块（html 的「在浏览器中打开」入口在此，与文件
+//!   树菜单 021 同款）、是否有源码/预览双态（file.view_mode op 门控）
 //! - **共享基建不管类型**：文本缓冲/脏位/自动保存/外部改动检测/冲突横幅
 //!   （tabs.rs）、面包屑/搜索面板/焦点（view.rs 宿主）——对一切已打开
 //!   tab 统一生效
 //!
 //! 与旧实现的分野：txt 与 code 是两个 kind（不再靠 ts_language 回退
-//! "text" 混在一起）；`csv` 等未注册后缀自然落 TextKind（将来表格视图 =
-//! 纯增量注册 CsvKind）。
+//! "text" 混在一起）；html 不再旁路系统浏览器、直接开源码（2026-10-12
+//! 二改拍板）；`csv` 等未注册后缀自然落 TextKind（将来表格视图 = 纯增量
+//! 注册 CsvKind）。
 
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::OnceLock;
 
-use gpui::{AnyElement, Context, div, prelude::*};
+use gpui::{AnyElement, Context};
 
 use crate::Chat;
-
-/// 打开路由：进内容区 tab（默认）或旁路系统（html/htm → 系统浏览器，
-/// webview 内嵌 gpui 不可行——023 拍板）。
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum OpenRoute {
-    Tab,
-    SystemBrowser,
-}
 
 /// CodeEditor 配置（由 [`FileKind::editor_config`] 产出，view.rs 消费）。
 #[derive(Clone, Copy)]
@@ -98,11 +91,6 @@ pub(crate) trait FileKind: Sync {
     #[allow(dead_code)]
     fn name(&self) -> &'static str;
 
-    /// 打开路由（默认进 tab）
-    fn open_route(&self) -> OpenRoute {
-        OpenRoute::Tab
-    }
-
     /// CodeEditor 配置；None = 该类型无编辑器（图片查看器等）
     fn editor_config(&self) -> Option<EditorConfig> {
         None
@@ -151,7 +139,9 @@ struct ImageKind {
     format: gpui::ImageFormat,
 }
 
-/// HTML：打开即旁路系统浏览器，不进 tab（023 拍板）。
+/// HTML：源码直接进编辑器（tree-sitter html 高亮；2026-10-12 二改拍板，
+/// 不再旁路系统浏览器）——「在浏览器中打开」保留为右键菜单首位文件动作
+/// （023 菜单设计，与文件树菜单 021 同款）。
 struct HtmlKind;
 
 impl FileKind for TextKind {
@@ -230,8 +220,8 @@ impl FileKind for HtmlKind {
     fn name(&self) -> &'static str {
         "html"
     }
-    fn open_route(&self) -> OpenRoute {
-        OpenRoute::SystemBrowser
+    fn editor_config(&self) -> Option<EditorConfig> {
+        Some(EditorConfig { ts_lang: "html", soft_wrap: true, image_paste: false })
     }
     fn menu_file_actions(&self, _source_mode: bool) -> &'static [MenuAction] {
         const BROWSER_FIRST: &[MenuAction] = &[
@@ -244,14 +234,9 @@ impl FileKind for HtmlKind {
         ];
         BROWSER_FIRST
     }
-    /// html 不进 tab（open_route 旁路），防御性兜底
-    fn render_body(&self, _cx: &mut Context<Chat>, _body: BodyCtx<'_>) -> AnyElement {
-        div_empty()
+    fn render_body(&self, cx: &mut Context<Chat>, body: BodyCtx<'_>) -> AnyElement {
+        super::view::render_editor_surface(body.chat, body.weak, body.path, cx)
     }
-}
-
-fn div_empty() -> AnyElement {
-    div().into_any_element()
 }
 
 // ---------------------------------------------------------------------------
@@ -384,22 +369,28 @@ mod tests {
         assert_eq!(kind("sql").name(), "text");
     }
 
+    /// html：源码进编辑器（2026-10-12 二改拍板），浏览器入口只在右键菜单。
+    #[test]
+    fn html_opens_as_source() {
+        assert_eq!(kind("html").name(), "html");
+        assert_eq!(kind("htm").name(), "html");
+        let cfg = kind("html").editor_config().unwrap();
+        assert_eq!(cfg.ts_lang, "html");
+        assert!(cfg.soft_wrap);
+        assert_eq!(
+            kind("html").menu_file_actions(true)[0],
+            MenuAction::Browser
+        );
+        assert!(!kind("html").supports_view_mode());
+        assert_eq!(kind("html").toolbar(), &[ToolButton::Search]);
+    }
+
     /// txt 与 code 分离：两者都是编辑器型，但高亮与身份不同。
     #[test]
     fn text_vs_code_distinct() {
         assert_eq!(kind("txt").name(), "text");
         assert_eq!(kind("rs").name(), "code");
         assert_eq!(kind("txt").editor_config().unwrap().ts_lang, "text");
-    }
-
-    /// 打开路由：html/htm 旁路系统浏览器，其余进 tab。
-    #[test]
-    fn open_routes() {
-        assert_eq!(kind("html").open_route(), OpenRoute::SystemBrowser);
-        assert_eq!(kind("htm").open_route(), OpenRoute::SystemBrowser);
-        assert_eq!(kind("md").open_route(), OpenRoute::Tab);
-        assert_eq!(kind("rs").open_route(), OpenRoute::Tab);
-        assert_eq!(kind("txt").open_route(), OpenRoute::Tab);
     }
 
     /// 编辑器配置：md 关软换行 + 图片粘贴钩子；图片无编辑器。

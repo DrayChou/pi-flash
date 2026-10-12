@@ -4,15 +4,15 @@
 //! （P2 归并：actions_panels 的 tab 侧。）
 
 use crate::*;
-use crate::services::shell_open::open_in_browser;
 
 /// 自动保存静默期（023；Zed autosave after_timeout 同构）。
 const AUTOSAVE_DEBOUNCE_MS: u64 = 1000;
 
 impl Chat {
-    /// v54.4：文件打开路由——handler 决定旁路（html/htm 交系统浏览器，
-    /// webview 内嵌在 gpui 上不可行）或进内容区 tab；未注册类型走默认
-    /// 文本 kind。
+    /// v54.4：文件打开路由——统一打开为内容区 tab，主体渲染与编辑器配置
+    /// 由 kind handler 决定（未注册类型走默认文本 kind）。html/htm 直接
+    /// 开源码（2026-10-12 二改拍板，不再旁路系统浏览器；浏览器入口保留在
+    /// 右键菜单首位文件动作）。
     ///
     /// 023 改版：编辑器实体懒创建（InputState::new 要 window，本调用链
     /// 没有——渲染帧在 content.rs 里补），二进制/超限文件提示不打开。
@@ -20,13 +20,6 @@ impl Chat {
         // 消息文本/远程控制可能传来相对路径：统一按 cwd 绝对化（已开复用
         // 的 same_path 比较与磁盘读取都基于绝对形态）
         let path = if path.is_absolute() { path } else { self.cwd.join(path) };
-        if matches!(
-            super::kind::kind_of(&path).open_route(),
-            super::kind::OpenRoute::SystemBrowser
-        ) {
-            open_in_browser(&path);
-            return;
-        }
         const MAX: u64 = 10 * 1024 * 1024;
         if std::fs::metadata(&path).map(|m| m.len() > MAX).unwrap_or(false) {
             self.set_status(

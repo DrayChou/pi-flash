@@ -968,9 +968,9 @@ fn md_target() -> Option<MdTarget> {
     MD_TARGET.with(|c| c.borrow().clone())
 }
 
-/// 点击打开路径：有目标走 `Chat::open_file_tab`（已开复用置顶 / html→浏览器
-/// / 二进制·超限·缺失兜底都在其中）；无目标退回系统关联打开（cx.open_url
-/// 对本地路径 = ShellExecute）。
+/// 点击打开路径：有目标走 `Chat::open_file_tab`（已开复用置顶 / 二进制·
+/// 超限·缺失兜底都在其中；html 开源码 tab）；无目标退回系统关联打开
+/// （cx.open_url 对本地路径 = ShellExecute）。
 fn open_path_with(target: Option<MdTarget>, path: String, cx: &mut gpui::App) {
     if let Some(MdTarget { chat, base }) = target {
         let _ = chat.update(cx, |c, cx| {

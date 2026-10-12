@@ -138,8 +138,8 @@ impl Chat {
         .detach();
     }
 
-    /// 命中行点击：打开文件 tab（html/htm 自动路由浏览器，open_file_tab
-    /// 既有语义；10MB/二进制闸同样生效）。
+    /// 命中行点击：打开文件 tab（主体渲染/编辑器配置由 kind handler 决定；
+    /// 10MB/二进制闸同样生效）。
     pub(crate) fn open_file_search_hit(&mut self, rel: &str, cx: &mut Context<Self>) {
         self.dialog = None;
         self.open_file_tab(self.cwd.join(rel), cx);
