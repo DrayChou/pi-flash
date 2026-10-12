@@ -339,8 +339,55 @@ fn split_links(text: &str) -> Vec<(String, bool)> {
     }
 }
 
-/// Collect inline runs until `is_end` matches (consuming the end event).
+/// 块级边界事件：列表项内容里遇到它就得停手（块级 `Start` 走递归解析、
+/// 块级 `End` 只跳过标记）。**行内事件不在此列**——`Code`/强调/链接/
+/// 软换行/行内公式都由 [`collect_inline`] 消费。
+///
+/// ⚠️ 含 `TagEnd::Item`：列表项内容用 [`collect_inline_peek`]（不消费终止
+/// 事件），终止符原样留给外层 while 判定。
+fn is_block_boundary(e: &Event) -> bool {
+    matches!(
+        e,
+        Event::Start(
+            Tag::Paragraph
+                | Tag::List(_)
+                | Tag::CodeBlock(_)
+                | Tag::BlockQuote(_)
+                | Tag::Table(_)
+                | Tag::Image { .. }
+                | Tag::HtmlBlock
+        ) | Event::End(
+            TagEnd::Item
+                | TagEnd::Paragraph
+                | TagEnd::List(_)
+                | TagEnd::CodeBlock
+                | TagEnd::BlockQuote(_)
+                | TagEnd::Table
+                | TagEnd::Image
+                | TagEnd::HtmlBlock
+        )
+    )
+}
+
+/// Collect inline runs until `is_end` matches (**consuming** the end event) —
+/// existing callers（段落 / 表格单元 / 图片 alt）的口径。
 fn collect_inline(
+    events: &[Event],
+    i: &mut usize,
+    is_end: &dyn Fn(&Event) -> bool,
+    html: bool,
+) -> Vec<Run> {
+    let runs = collect_inline_peek(events, i, is_end, html);
+    if *i < events.len() && is_end(&events[*i]) {
+        *i += 1;
+    }
+    runs
+}
+
+/// 同 [`collect_inline`]，但命中 `is_end` 时**不**消费终止事件（光标留在它上面）。
+/// 列表项内容用这个：终止符 `End(TagEnd::Item)` 必须留给外层 while 判定，
+/// 吃掉它会把下一项并进本项。
+fn collect_inline_peek(
     events: &[Event],
     i: &mut usize,
     is_end: &dyn Fn(&Event) -> bool,
@@ -377,7 +424,6 @@ fn collect_inline(
     while *i < events.len() {
         match &events[*i] {
             e if is_end(e) => {
-                *i += 1;
                 flush(&mut text, cur, &cur_url, &mut runs);
                 return runs;
             }
@@ -699,7 +745,13 @@ fn parse_block(
                                 task = Some(*checked);
                                 *i += 1;
                             }
-                            Event::Start(inner_tag) => {
+                            // 只接**块级** Start（段落 / 嵌套列表 / 代码块 / 引用 /
+                            // 表格 / 图片 / HTML 块）。行内 Start（Link / Strong /
+                            // Emphasis / Strikethrough）必须落到下面的
+                            // collect_inline_peek —— 旧写法 `Event::Start(inner_tag)`
+                            // 把行内开标签也抢走（内层 `_ => {}` 静默空转），
+                            // 于是列表里的链接/强调丢了样式。
+                            Event::Start(inner_tag) if is_block_boundary(&events[*i]) => {
                                 let inner_tag = inner_tag.clone();
                                 *i += 1;
                                 match &inner_tag {
@@ -743,11 +795,25 @@ fn parse_block(
                                     _ => {}
                                 }
                             }
-                            Event::Text(t) => {
-                                runs.push(Run { text: t.to_string(), style: Style::Normal, url: None });
+                            // 块级收尾标记（End(Paragraph)/End(CodeBlock)…）：其内容
+                            // 已由上面的 Start 臂消费，这里只跳过标记本身。
+                            // End(Item) 不在此列——它是本项终止符，交给外层 while。
+                            Event::End(_) if is_block_boundary(&events[*i]) => {
                                 *i += 1;
                             }
-                            _ => *i += 1,
+                            // 其余全是**行内**事件（Text / Code / 强调 / 链接 /
+                            // 软换行 / 行内公式…）：一律交给 collect_inline_peek，
+                            // 与段落同源。⚠️ 此前这里只有 `Event::Text` 一个分支，
+                            // 其余全被 `_ => *i += 1` **静默吞掉**——紧凑列表
+                            // （tight list，CommonMark 默认不带 <p>）里的 `code`、
+                            // **粗体**、链接全部不渲染（用户实测：整条列表只剩
+                            // 「：、、」）。
+                            _ => runs.extend(collect_inline_peek(
+                                events,
+                                i,
+                                &|e| is_block_boundary(e),
+                                html,
+                            )),
                         }
                     }
                     *i += 1; // End(Item)
@@ -2735,6 +2801,35 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
+    }
+
+    /// 回归（2026-10-12 用户实测）：紧凑列表里的**行内元素整段丢失**——
+    /// 解析器在列表项分支只认 `Event::Text`，`Event::Code`/强调/链接全被
+    /// `_ => *i += 1` 静默吞掉，一条 `- \`a\`：\`b\`` 的列表渲染出来只剩「：、」。
+    #[test]
+    fn list_items_keep_inline_runs() {
+        let blocks = parse("- `a`：`b`\n- 普通 **粗体** 与 `code`\n- [链接](https://x.y)");
+        let items: Vec<&MdBlock> =
+            blocks.iter().filter(|b| matches!(b, MdBlock::ListItem { .. })).collect();
+        assert_eq!(items.len(), 3);
+        let styles = |ix: usize| -> Vec<Style> {
+            match items[ix] {
+                MdBlock::ListItem { runs, .. } => runs.iter().map(|r| r.style).collect(),
+                other => panic!("{other:?}"),
+            }
+        };
+        assert_eq!(
+            text_of(match items[0] {
+                MdBlock::ListItem { runs, .. } => runs,
+                _ => unreachable!(),
+            }),
+            "a：b",
+            "行内 code 必须保留"
+        );
+        assert!(styles(0).contains(&Style::Code), "code run 保留：{:?}", styles(0));
+        assert!(styles(1).contains(&Style::Bold), "粗体保留：{:?}", styles(1));
+        assert!(styles(1).contains(&Style::Code), "code run 保留：{:?}", styles(1));
+        assert!(styles(2).contains(&Style::Link), "链接保留：{:?}", styles(2));
     }
 
     #[test]
