@@ -8,6 +8,7 @@
 
 use gpui::{Context, Focusable, MouseButton, SharedString, div, img, prelude::*, px, rgb};
 
+use super::kind::{BodyCtx, FileKind, ToolButton, kind_of};
 use crate::Chat;
 use crate::content::empty_hint;
 use crate::i18n::tr;
@@ -15,51 +16,20 @@ use crate::appearance::theme::theme as T;
 use crate::ui::icon;
 use std::path::Path;
 
-/// 扩展名 → gpui-component tree-sitter 语言名（未收录回退 "text" 纯色；
-/// 已剔除 ruby/sql——sequel 的 cc 钉版与 gpui 冲突、ruby 的 parser.c 在
-/// MSVC 下编不过，均从 vendored feature 里移除）。
-fn ts_language(ext: &str) -> &'static str {
-    match ext {
-        "rs" => "rust",
-        "py" | "pyw" => "python",
-        "js" | "jsx" | "mjs" | "cjs" => "javascript",
-        "ts" | "mts" | "cts" => "typescript",
-        "tsx" => "tsx",
-        "go" => "go",
-        "json" | "jsonc" => "json",
-        "html" | "htm" | "xml" | "vue" | "svg" => "html",
-        "css" | "scss" => "css",
-        "md" | "markdown" => "markdown",
-        "toml" => "toml",
-        "yaml" | "yml" => "yaml",
-        "c" | "h" => "c",
-        "cpp" | "cc" | "cxx" | "hpp" | "hxx" => "cpp",
-        "cs" => "csharp",
-        "java" => "java",
-        "swift" => "swift",
-        "zig" => "zig",
-        "sh" | "bash" | "zsh" => "bash",
-        "cmake" => "cmake",
-        "proto" => "proto",
-        "diff" | "patch" => "diff",
-        "ex" => "elixir",
-        "graphql" | "gql" => "graphql",
-        "scala" => "scala",
-        "mk" => "make",
-        _ => "text",
-    }
-}
-
 /// 编辑器实体懒创建：InputState::new 要 `&mut Window`，而 open_file_tab
 /// 的调用链没有——渲染帧是唯一同时持有 window 与 Chat 可变的点。创建时
 /// 订阅 Change 事件；dirty 用「编辑器值 != 磁盘真值缓存」比较（set_value
-/// 也发 Change，盲标会假脏）。
+/// 也发 Change，盲标会假脏）。编辑器配置（高亮语言/软换行/图片粘贴钩子）
+/// 由 kind handler 产出；`editor_config() = None` 的类型（图片查看器）不建实体。
 fn ensure_file_editor(
     chat: &mut Chat,
     path: &Path,
     window: &mut gpui::Window,
     cx: &mut Context<Chat>,
 ) {
+    let Some(cfg) = kind_of(path).editor_config() else {
+        return;
+    };
     if chat
         .file_cache
         .get(path)
@@ -73,24 +43,16 @@ fn ensure_file_editor(
         .get(path)
         .map(|f| f.content.clone())
         .unwrap_or_default();
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
     let ed = cx.new(|scx| {
-        // 024：md 关软换行（wrap 与折叠正交，024 §6.1 定案）；装饰 provider
-        // 由 file_view 的 sync_md_live_state 幂等同步（鼠标 eye 与
-        // file.view_mode op 同路径），preview 渲染页不渲染编辑器零影响。
         gpui_component::input::InputState::new(window, scx)
-            .code_editor(ts_language(&ext))
-            .soft_wrap(!md_file(path))
+            .code_editor(cfg.ts_lang)
+            .soft_wrap(cfg.soft_wrap)
     });
     ed.update(cx, |st, scx| {
         st.set_value(content, window, scx);
-        // 025 插图（P0）：仅 md 文件挂剪贴板图片粘贴钩子——非 md 自动
-        // 不做（文本粘贴照旧）。落盘/引用串见 markdown::attachments。
-        if ext == "md" {
+        // 025 插图（P0）：handler 配了粘贴钩子才挂（目前仅 md）——非 md
+        // 自动不做（文本粘贴照旧）。落盘/引用串见 markdown::attachments。
+        if cfg.image_paste {
             st.on_image_paste = Some(
                 crate::editor::markdown::attachments::image_paste_hook(path.to_path_buf()),
             );
@@ -167,11 +129,11 @@ pub(crate) fn file_view(
     let Some(path) = chat.active_file_path() else {
         return empty_hint(tr("在左侧文件树中选择一个文件"), t);
     };
-    let (md_source, conflict) = chat
+    let conflict = chat
         .file_cache
         .get(&path)
-        .map(|f| (f.md_source, f.conflict.clone()))
-        .unwrap_or((false, None));
+        .map(|f| f.conflict.clone())
+        .unwrap_or(None);
 
     // 渲染帧副作用区：编辑器懒创建 + 自动重载灌入（见两 fn 文档）
     ensure_file_editor(chat, &path, window, cx);
@@ -186,6 +148,7 @@ pub(crate) fn file_view(
         }
     }
 
+    let kind = kind_of(&path);
     let mut host = div()
         .id("file-view")
         .flex_1()
@@ -193,7 +156,8 @@ pub(crate) fn file_view(
         .flex()
         .flex_col()
         .bg(rgb(t.bg))
-        .child(file_nav_bar(chat, weak, &path, md_source, cx))
+        // 023：导航操作栏由壳统一渲染（面包屑 + handler 声明的工具栏按钮）
+        .child(file_nav_bar(chat, weak, kind, &path, cx))
         // Ctrl+S 保存：action 绑定在 "Input" 上下文（编辑器聚焦时命中），
         // 由本容器 on_action 接住
         .on_action(cx.listener(|this, _: &crate::FileSave, _w, cx| {
@@ -206,41 +170,9 @@ pub(crate) fn file_view(
     if let Some(c @ crate::FileConflict::Changed) = conflict.as_ref() {
         host = host.child(conflict_banner(weak, &path, c));
     }
-    // 024: md 源码态装饰幂等对账（装饰 provider 收口；preview 分支不受影响）
-    sync_md_live_state(chat, &path, md_source, cx);
-    host.child(file_editor_body(chat, &path, md_source, weak, cx))
+    // 主体渲染算法由 kind handler 决定（md 双态/图片查看器/代码编辑器）
+    host.child(file_editor_body(chat, kind, &path, weak, cx))
         .into_any_element()
-}
-
-/// 024: md 源码态 WYSIWYG 装饰幂等同步——`md_source=true`（eye 切源码）
-/// 挂装饰 provider（非光标行折叠语法字符 + 渲染器同款着色；preview
-/// 渲染页不渲染编辑器，无需装饰）。行号保持默认（024 新设计：源码视图
-/// 既有能力不丢）。鼠标 eye 与 `file.view_mode` op 都只改 ft.md_source，
-/// 状态差异在此收口防漂移。
-fn sync_md_live_state(
-    chat: &mut Chat,
-    path: &Path,
-    md_source: bool,
-    cx: &mut Context<Chat>,
-) {
-    if !md_file(path) {
-        return;
-    }
-    let Some(ed) = chat.file_cache.get(path).and_then(|f| f.editor.clone()) else {
-        return;
-    };
-    if ed.read(cx).has_decorations() == md_source {
-        return;
-    }
-    ed.update(cx, |st, _| {
-        st.set_decorations(if md_source {
-            Some(std::rc::Rc::new(
-                crate::editor::markdown::wysiwyg::MdLiveProvider,
-            ))
-        } else {
-            None
-        });
-    });
 }
 
 /// 导航操作栏面包屑的路径分段：`(显示文本, 该段绝对路径)`。
@@ -281,17 +213,18 @@ pub(crate) fn breadcrumb_segments(
 }
 
 /// 导航操作栏：左 = 面包屑（项目根相对路径段，目录段点开兄弟文件菜单，
-/// 对齐 Zed 可点击面包屑）；右 = eye/eye-off（md 源码/渲染切换）+ search（聚焦
+/// 对齐 Zed 可点击面包屑）；右 = kind handler 声明的工具栏按钮序列
+/// （默认仅 search；md = eye/eye-off 源码渲染切换 + search）+ search（聚焦
 /// 编辑器并派发组件 Search，即 Ctrl+F 内置搜索替换弹层）。
 fn file_nav_bar(
     chat: &mut Chat,
     weak: &gpui::WeakEntity<Chat>,
+    kind: &'static dyn FileKind,
     path: &Path,
-    md_source: bool,
     cx: &mut Context<Chat>,
 ) -> gpui::AnyElement {
     let t = T();
-    let is_md = md_file(path);
+    let source_mode = chat.file_cache.get(path).is_some_and(|f| f.md_source);
 
     // 面包屑段：cwd 相对路径；不在 cwd 下（工作区外/别的盘打开的文件）退化
     // 为绝对路径。Windows 盘符前缀与根分隔符合成一段——Zed 面包屑同款：
@@ -359,65 +292,15 @@ fn file_nav_bar(
         }
     }
 
-    // 右侧操作区：eye（仅 md）+ search
+    // 右侧操作区：handler 声明的按钮序列（023/024：默认仅搜索，md 加预览）
     let ed_for_focus = chat.file_cache.get(path).and_then(|f| f.editor.clone());
     let mut right = div().flex_shrink_0().flex().items_center().gap(px(2.));
-    if is_md {
-        let weak_eye = weak.clone();
-        let src = md_source;
-        right = right.child(
-            div()
-                .id("fv-eye")
-                .size(px(24.))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(5.))
-                .cursor_pointer()
-                .when(md_source, |d| d.bg(rgb(t.bg_selected)))
-                .hover(|s| s.bg(rgb(t.bg_hover)))
-                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                    let _ = weak_eye.update(cx, |c, cx| {
-                        if let Some(p) = c.active_file_path() {
-                            if let Some(ft) = c.file_cache.get_mut(&p) {
-                                ft.md_source = !src;
-                            }
-                            // 切到源码态即聚焦编辑器（渲染帧消费）
-                            if !src {
-                                c.pending_focus_file = Some(p);
-                            }
-                        }
-                        cx.notify();
-                    });
-                })
-                .child(icon(
-                    // 图标 = 点击后的动作：渲染态 → eye-off（关闭预览进源码），
-                    // 源码态 → eye（回到预览）
-                    if md_source { "eye" } else { "eye-off" },
-                    14.,
-                    if md_source { t.accent } else { t.text_muted },
-                )),
-        );
+    for btn in kind.toolbar() {
+        right = match btn {
+            ToolButton::Eye => right.child(eye_button(weak, source_mode)),
+            ToolButton::Search => right.child(search_button(ed_for_focus.clone())),
+        };
     }
-    let ed_for_search = ed_for_focus.clone();
-    right = right.child(
-        div()
-            .id("fv-search")
-            .size(px(24.))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(px(5.))
-            .cursor_pointer()
-            .hover(|s| s.bg(rgb(t.bg_hover)))
-            .on_mouse_down(MouseButton::Left, move |_, window, cx| {
-                if let Some(ed) = &ed_for_search {
-                    ed.update(cx, |s, scx| s.focus(window, scx));
-                    window.dispatch_action(Box::new(gpui_component::input::Search), cx);
-                }
-            })
-            .child(icon("search", 13., t.text_muted)),
-    );
 
     // 操作栏整体（zed 同构）：第一行 = 面包屑 + eye/search 图标；第二行 =
     // 搜索框（Ctrl+F 展开、Esc 收起，不用时整行收起）——搜索框是操作栏的
@@ -448,6 +331,65 @@ fn file_nav_bar(
         bar = bar.child(panel);
     }
     bar.into_any_element()
+}
+
+/// 预览切换按钮（ToolButton::Eye，双态类型工具栏；024）：图标 = 点击后的
+/// 动作——源码态显示 eye（回预览），渲染态显示 eye-off（进源码）。
+fn eye_button(weak: &gpui::WeakEntity<Chat>, source_mode: bool) -> gpui::AnyElement {
+    let t = T();
+    let weak_eye = weak.clone();
+    div()
+        .id("fv-eye")
+        .size(px(24.))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px(5.))
+        .cursor_pointer()
+        .when(source_mode, |d| d.bg(rgb(t.bg_selected)))
+        .hover(|s| s.bg(rgb(t.bg_hover)))
+        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+            let _ = weak_eye.update(cx, |c, cx| {
+                if let Some(p) = c.active_file_path() {
+                    if let Some(ft) = c.file_cache.get_mut(&p) {
+                        ft.md_source = !source_mode;
+                    }
+                    // 切到源码态即聚焦编辑器（渲染帧消费）
+                    if !source_mode {
+                        c.pending_focus_file = Some(p);
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .child(icon(
+            if source_mode { "eye" } else { "eye-off" },
+            14.,
+            if source_mode { t.accent } else { t.text_muted },
+        ))
+        .into_any_element()
+}
+
+/// 搜索按钮（ToolButton::Search）：聚焦编辑器并派发内置搜索（Ctrl+F 弹层）。
+fn search_button(ed: Option<gpui::Entity<gpui_component::input::InputState>>) -> gpui::AnyElement {
+    let t = T();
+    div()
+        .id("fv-search")
+        .size(px(24.))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px(5.))
+        .cursor_pointer()
+        .hover(|s| s.bg(rgb(t.bg_hover)))
+        .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+            if let Some(ed) = &ed {
+                ed.update(cx, |s, scx| s.focus(window, scx));
+                window.dispatch_action(Box::new(gpui_component::input::Search), cx);
+            }
+        })
+        .child(icon("search", 13., t.text_muted))
+        .into_any_element()
 }
 
 /// 面包屑目录段的兄弟文件菜单（对齐 Zed 点击面包屑列同级文件）。
@@ -589,142 +531,59 @@ fn banner_btn(
         .into_any_element()
 }
 
-/// 编辑区主体：md 渲染预览（默认）或 CodeEditor（所有文件都可编辑，Zed parity）。
+/// 编辑区主体分发壳：主体渲染算法由 kind handler 决定（md 双态/图片查看
+/// 器/代码与文本编辑器），本函数零类型特判——类型决策全在 kind.rs。
 fn file_editor_body(
     chat: &mut Chat,
+    kind: &'static dyn FileKind,
     path: &Path,
-    md_source: bool,
     weak: &gpui::WeakEntity<Chat>,
     cx: &mut Context<Chat>,
 ) -> gpui::AnyElement {
+    let source_mode = chat.file_cache.get(path).is_some_and(|f| f.md_source);
+    kind.render_body(
+        cx,
+        BodyCtx { chat, weak, path, source_mode },
+    )
+}
+
+/// 图片查看面板（ImageKind::render_body）：gpui img() 真渲染（最佳查看
+/// 方式），无编辑器、只读。
+pub(crate) fn render_image_surface(path: &Path, format: gpui::ImageFormat) -> gpui::AnyElement {
     let t = T();
-    let is_md = md_file(path);
+    match std::fs::read(path)
+        .ok()
+        .map(|bytes| std::sync::Arc::new(gpui::Image::from_bytes(format, bytes)))
+    {
+        Some(image) => div()
+            .id("fv-img")
+            .flex_1()
+            .min_h_0()
+            .overflow_y_scroll()
+            .bg(rgb(t.bg))
+            .p(px(20.))
+            .flex()
+            .justify_center()
+            .items_start()
+            .child(img(image).max_w_full())
+            .into_any_element(),
+        None => empty_hint(tr("图片读取失败"), t),
+    }
+}
+
+/// 编辑器面板（TextKind/CodeKind render_body 与 MarkdownKind 源码态共用）：
+/// gpui-component CodeEditor——tree-sitter 高亮 + 行号 + Ctrl+F 搜索替换，
+/// 右键菜单（zed）：编辑块 + 文件动作块，渲染挂 psp_overlays 同层。
+pub(crate) fn render_editor_surface(
+    chat: &mut Chat,
+    weak: &gpui::WeakEntity<Chat>,
+    path: &Path,
+    _cx: &mut Context<Chat>,
+) -> gpui::AnyElement {
+    let t = T();
     let Some(ft) = chat.file_cache.get(path) else {
         return empty_hint(tr("文件已关闭"), t);
     };
-    // 预览内容真值 = **缓冲区**（Zed 的 markdown preview 渲染 buffer 文本，
-    // 不是磁盘文件）：有未保存修改（源码态改完切预览 / 冲突挂着 / 自动保存
-    // 还没落地）时取编辑器值，否则用磁盘真值缓存（省一次 Rope 物化）。
-    let content = if ft.dirty {
-        ft.editor
-            .as_ref()
-            .map(|e| e.read(cx).text().to_string())
-            .unwrap_or_else(|| ft.content.clone())
-    } else {
-        ft.content.clone()
-    };
-
-    // md 渲染预览（默认态）：复用 agent 正文的 markdown 渲染器
-    if is_md && !md_source {
-        // 图片相对路径解析基准：tab 路径可能来自消息文本（相对形态），
-        // 统一按工作区 cwd 绝对化再取父目录，不依赖进程 cwd
-        let abs = if path.is_absolute() {
-            path.to_path_buf()
-        } else {
-            chat.cwd.join(path)
-        };
-        // 块级虚拟化（抄 zed thread_view 的 list 架构，v60）：ListState 每
-        // 帧只建可视块条目（progress.md 784 块全量构建 ≈ 30ms/帧，滚动必
-        // 卡）。滚动条 = v63-6 配方：ListStateHandle 适配 gpui-component
-        // Scrollbar，仅实际溢出时渲染，且必须是 list 容器的**兄弟**（同
-        // 旧滚动层——作为子元素会被连带位移，滚动了滑块跟内容漂出视口）。
-        let blocks = crate::editor::markdown::doc_blocks(&content);
-        if chat.file_view_list_path.as_deref() != Some(path) {
-            chat.file_view_list.reset(blocks.len());
-            chat.file_view_list_path = Some(path.to_path_buf());
-        } else if chat.file_view_list.item_count() != blocks.len() {
-            // 块数变了（外部改动/编辑动了段落结构）也不能跳回顶部：记下
-            // 当前阅读锚点（条目 + 条目内偏移），重建后原样恢复（Zed 的
-            // preview 由 buffer anchor 驱动，滚动位跨 reload 不掉）。
-            let anchor = chat.file_view_list.logical_scroll_top();
-            chat.file_view_list.reset(blocks.len());
-            chat.file_view_list.scroll_to(gpui::ListOffset {
-                item_ix: anchor.item_ix.min(blocks.len().saturating_sub(1)),
-                offset_in_item: anchor.offset_in_item,
-            });
-        }
-        let base = abs.parent().map(|p| p.to_path_buf());
-        let blocks_for_list = blocks.clone();
-        let weak_preview = weak.clone();
-        return div()
-            .relative()
-            .flex_1()
-            .min_h_0()
-            .min_w_0()
-            .flex()
-            .flex_col()
-            .bg(rgb(t.bg))
-            .child(
-                gpui::list(chat.file_view_list.clone(), move |ix, _window, _cx| {
-                    // 预览内路径点击基准 = 预览文件所在目录（pi-web baseDir 同型）
-                    crate::editor::markdown::set_link_target(weak_preview.clone(), base.clone());
-                    crate::editor::markdown::render_doc_item(&blocks_for_list, ix, base.as_deref())
-                })
-                // list 元素自身要 flex_1 从 flex 列父容器拿高度——Auto 尺寸
-                // 下无内容贡献、无 grow 会被 taffy 布局成 0 高（条目建了
-                // 也全画在 0 高视口外，预览全空）；session_list 同款
-                .flex_1()
-                .min_h_0(),
-            )
-            .when(
-                chat.file_view_list.max_offset_for_scrollbar().height > px(0.),
-                |d| {
-                    let handle =
-                        crate::ui::list_handle::ListStateHandle(chat.file_view_list.clone());
-                    d.child(
-                        div()
-                            .absolute()
-                            .top(px(4.))
-                            .bottom(px(4.))
-                            .right(px(3.))
-                            .w(px(8.))
-                            .child(gpui_component::scroll::Scrollbar::vertical(
-                                &chat.file_scrollbar,
-                                &handle,
-                            )),
-                    )
-                },
-            )
-            .into_any_element();
-    }
-
-    // 图片：gpui img() 真渲染（沿旧版查看路径，最佳查看方式）
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    let img_format = match ext.as_str() {
-        "png" => Some(gpui::ImageFormat::Png),
-        "jpg" | "jpeg" => Some(gpui::ImageFormat::Jpeg),
-        "gif" => Some(gpui::ImageFormat::Gif),
-        "webp" => Some(gpui::ImageFormat::Webp),
-        "bmp" => Some(gpui::ImageFormat::Bmp),
-        "svg" => Some(gpui::ImageFormat::Svg),
-        _ => None,
-    };
-    if let Some(format) = img_format {
-        return match std::fs::read(path)
-            .ok()
-            .map(|bytes| std::sync::Arc::new(gpui::Image::from_bytes(format, bytes)))
-        {
-            Some(image) => div()
-                .id("fv-img")
-                .flex_1()
-                .min_h_0()
-                .overflow_y_scroll()
-                .bg(rgb(t.bg))
-                .p(px(20.))
-                .flex()
-                .justify_center()
-                .items_start()
-                .child(img(image).max_w_full())
-                .into_any_element(),
-            None => empty_hint(tr("图片读取失败"), t),
-        };
-    }
-
-    // CodeEditor（gpui-component）：tree-sitter 高亮 + 行号 + Ctrl+F 搜索替换
     let Some(ed) = ft.editor.clone() else {
         return empty_hint(tr("编辑器初始化中…"), t);
     };
@@ -741,7 +600,6 @@ fn file_editor_body(
         .bg(rgb(t.bg))
         .font_family(crate::editor::markdown::MONO_FAMILY)
         .text_size(px(crate::appearance::file_font().size))
-        // 右键菜单（zed）：编辑块 + 文件动作块，渲染挂 psp_overlays 同层
         .on_mouse_down(
             gpui::MouseButton::Right,
             move |ev: &gpui::MouseDownEvent, _, cx| {
@@ -766,17 +624,9 @@ fn file_editor_body(
         .into_any_element()
 }
 
-/// markdown 源文件判定（eye 预览切换只对它出现）。
-fn md_file(path: &Path) -> bool {
-    matches!(
-        path.extension().and_then(|e| e.to_str()),
-        Some(e) if e.eq_ignore_ascii_case("md") || e.eq_ignore_ascii_case("markdown")
-    )
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{breadcrumb_segments, ts_language};
+    use super::breadcrumb_segments;
     use std::path::{Path, PathBuf};
 
     /// 在 cwd 下的相对分段：每段路径累积正确，最后一段 = 全路径。
@@ -817,20 +667,5 @@ mod tests {
         assert_eq!(segs[1].1, PathBuf::from("/etc"));
     }
 
-    /// 扩展名 → tree-sitter 语言名映射（023 编辑器高亮）；未收录回退 text。
-    #[test]
-    fn ts_language_mapping() {
-        assert_eq!(ts_language("rs"), "rust");
-        assert_eq!(ts_language("py"), "python");
-        assert_eq!(ts_language("tsx"), "tsx");
-        assert_eq!(ts_language("md"), "markdown");
-        assert_eq!(ts_language("toml"), "toml");
-        assert_eq!(ts_language("cpp"), "cpp");
-        // 大小写由调用方 lower-case 后再进本表（ensure_file_editor）
-        assert_eq!(ts_language("CPP"), "text");
-        // 已从 vendored feature 剔除的语言回退纯色（不 panic、不高亮）
-        assert_eq!(ts_language("rb"), "text");
-        assert_eq!(ts_language("sql"), "text");
-        assert_eq!(ts_language("unknownext"), "text");
-    }
+    // 扩展名 → kind 路由断言迁至 kind.rs 注册表测试（ext_routing 等）。
 }

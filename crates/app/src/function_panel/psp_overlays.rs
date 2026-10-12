@@ -950,7 +950,8 @@ fn tree_menu_layer(
 }
 
 /// 编辑区右键菜单（2026-10-11 用户定案）：编辑块（复制/粘贴/剪切/全选）
-/// + 文件动作块（浏览器 html/预览 md/资源管理器/终端 + 改名/删除），
+/// + 文件动作块（由 editor/kind.rs 的 FileTypeHandler 声明：浏览器/预览/
+/// 资源管理器/终端 + 改名/删除，本渲染器零类型特判），
 /// 样式与文件树菜单同套（menu_card/menu_item/menu_sep）。编辑四项
 /// 先把焦点还给编辑器再派发 Input 动作（菜单打开不改变焦点归属，
 /// 但点击可能让焦点漂移，保险起见每次归位）。
@@ -1009,87 +1010,77 @@ fn editor_menu_layer(
             || Box::new(gpui_component::input::SelectAll),
         ))
         .child(menu_sep());
-    // 「在浏览器中打开」只对 html（同文件树菜单 021）
-    let is_html = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| matches!(e.to_ascii_lowercase().as_str(), "html" | "htm"));
-    if is_html {
-        card = card.child(editor_item(
-            &weak,
-            "edm-browser",
-            "globe",
-            tr("在浏览器中打开"),
-            false,
-            {
-                let path = path.clone();
-                move |_c, _cx| crate::services::shell_open::open_in_browser(&path)
-            },
-        ));
-    }
-    // 「预览」只对 md 且当前源码态（eye 同一开关：切回渲染态）
-    let md_source = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| e.eq_ignore_ascii_case("md") || e.eq_ignore_ascii_case("markdown"))
-        && chat
-            .file_cache
-            .get(&path)
-            .is_some_and(|f| f.md_source);
-    if md_source {
-        card = card.child(editor_item(
-            &weak,
-            "edm-preview",
-            "eye",
-            tr("预览"),
-            false,
-            {
-                let path = path.clone();
-                move |c, cx| {
-                    if let Some(ft) = c.file_cache.get_mut(&path) {
-                        ft.md_source = false;
+    // 文件动作块：条目与顺序由 kind handler 声明（含分隔线）——默认骨架 =
+    // 资源管理器/终端 + 改名/删除；md 源码态带预览项，html 首位浏览器项
+    let source_mode = chat.file_cache.get(&path).is_some_and(|f| f.md_source);
+    for action in crate::editor::kind::kind_of(&path).menu_file_actions(source_mode) {
+        card = match action {
+            crate::editor::kind::MenuAction::Browser => card.child(editor_item(
+                &weak,
+                "edm-browser",
+                "globe",
+                tr("在浏览器中打开"),
+                false,
+                {
+                    let path = path.clone();
+                    move |_c, _cx| crate::services::shell_open::open_in_browser(&path)
+                },
+            )),
+            crate::editor::kind::MenuAction::PreviewToggle => card.child(editor_item(
+                &weak,
+                "edm-preview",
+                "eye",
+                tr("预览"),
+                false,
+                {
+                    let path = path.clone();
+                    move |c, cx| {
+                        if let Some(ft) = c.file_cache.get_mut(&path) {
+                            ft.md_source = false;
+                        }
+                        cx.notify();
                     }
-                    cx.notify();
-                }
-            },
-        ));
+                },
+            )),
+            crate::editor::kind::MenuAction::Explorer => card.child(editor_item(
+                &weak,
+                "edm-explorer",
+                "folder-input",
+                tr("在资源管理器中打开"),
+                false,
+                {
+                    let path = path.clone();
+                    move |_c, _cx| crate::services::shell_open::reveal_in_explorer(&path)
+                },
+            )),
+            crate::editor::kind::MenuAction::Terminal => {
+                card.child(editor_terminal_item(&weak, "edm-term", &path))
+            }
+            crate::editor::kind::MenuAction::Sep => card.child(menu_sep()),
+            crate::editor::kind::MenuAction::Rename => card.child(editor_item(
+                &weak,
+                "edm-rename",
+                "pencil",
+                tr("改名"),
+                false,
+                {
+                    let path = path.clone();
+                    move |c, cx| c.open_file_rename(path.clone(), false, true, cx)
+                },
+            )),
+            crate::editor::kind::MenuAction::Delete => card.child(editor_item(
+                &weak,
+                "edm-del",
+                "trash",
+                tr("删除"),
+                true,
+                {
+                    let path = path.clone();
+                    move |c, cx| c.confirm_tree_delete(path.clone(), cx)
+                },
+            )),
+        };
     }
-    card = card
-        .child(editor_item(
-            &weak,
-            "edm-explorer",
-            "folder-input",
-            tr("在资源管理器中打开"),
-            false,
-            {
-                let path = path.clone();
-                move |_c, _cx| crate::services::shell_open::reveal_in_explorer(&path)
-            },
-        ))
-        .child(editor_terminal_item(&weak, "edm-term", &path))
-        .child(menu_sep())
-        .child(editor_item(
-            &weak,
-            "edm-rename",
-            "pencil",
-            tr("改名"),
-            false,
-            {
-                let path = path.clone();
-                move |c, cx| c.open_file_rename(path.clone(), false, true, cx)
-            },
-        ))
-        .child(editor_item(
-            &weak,
-            "edm-del",
-            "trash",
-            tr("删除"),
-            true,
-            {
-                let path = path.clone();
-                move |c, cx| c.confirm_tree_delete(path.clone(), cx)
-            },
-        ));
     layer.child(card).into_any_element()
 }
 

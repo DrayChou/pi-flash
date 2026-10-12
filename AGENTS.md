@@ -86,8 +86,10 @@ crates/app/src/         GPUI 界面（Chat = 全应用状态实体，域方法�
   appearance/             界面域：theme.rs 七主题色板 + 注册表（registry 自 ALL 派生）
                           + 字体槽位 + 界面/多语言（006/007）
   automation/             pif-ui 自动化服务：snapshot / screenshot / op 分发
-  editor/                 文件编辑器域：view 编辑页（023）+ tabs 文件 tab 生命周期 +
-                          markdown/ 渲染与所见即所得（024/025）
+  editor/                 文件编辑器域：kind FileTypeHandler 注册表（按后缀注册，
+                          未注册走默认文本 kind；打开路由/编辑器配置/主体渲染/
+                          工具栏/右键菜单全由 handler 决定）+ view 编辑页（023）
+                          + tabs 文件 tab 生命周期 + markdown/ 渲染与所见即所得（024/025）
   function_panel/         左 dock 域：psp 一体列表（015）+ psp_actions 项目动作 +
                           file_tree（021）+ file_actions 树文件动作 + git 面板（022）+ 悬浮层
   remote_control/         微信 ⇄ 会话桥（060）

@@ -209,11 +209,13 @@ pub(crate) struct Chat {
     pub(crate) content_view: ContentView,
     /// 浏览操作区的最后视图（Term/File）：文件树标签点击时恢复
     pub(crate) browse_last: ContentView,
-    pub(crate) file_scrollbar: gpui_component::scroll::ScrollbarState,
-    /// 文件视图块级虚拟化（抄 zed thread_view 的 list 架构）：md 渲染预览用，
-    /// ListState 每帧只建可视块；path 记当前文件，换文件时 reset 归零滚动
-    pub(crate) file_view_list: gpui::ListState,
-    pub(crate) file_view_list_path: Option<PathBuf>,
+    /// md 预览滚动条状态（MarkdownKind preview 面板的 v63-6 配方）
+    pub(crate) md_preview_scrollbar: gpui_component::scroll::ScrollbarState,
+    /// md 渲染预览块级虚拟化（抄 zed thread_view 的 list 架构）：MarkdownKind
+    /// preview 面板用，ListState 每帧只建可视块；path 记当前文件，换文件时
+    /// reset 归零滚动
+    pub(crate) md_preview_list: gpui::ListState,
+    pub(crate) md_preview_list_path: Option<PathBuf>,
     /// psp 会话列表滚动（滚动条数据源）
     pub(crate) psp_scroll: gpui::ScrollHandle,
     pub(crate) psp_sb_state: crate::ui::psp_scrollbar::PspScrollbarState,
@@ -460,9 +462,9 @@ impl Chat {
             slp_hover: false,
             content_view: ContentView::Chat,
             browse_last: ContentView::Term,
-            file_scrollbar: gpui_component::scroll::ScrollbarState::default(),
-            file_view_list: gpui::ListState::new(0, gpui::ListAlignment::Top, px(1000.)),
-            file_view_list_path: None,
+            md_preview_scrollbar: gpui_component::scroll::ScrollbarState::default(),
+            md_preview_list: gpui::ListState::new(0, gpui::ListAlignment::Top, px(1000.)),
+            md_preview_list_path: None,
             psp_scroll: gpui::ScrollHandle::new(),
             psp_sb_state: crate::ui::psp_scrollbar::PspScrollbarState::new(),
             nav_open: false,

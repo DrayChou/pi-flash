@@ -352,7 +352,13 @@ pub(super) fn dispatch(
                 other => return Err(bad(format!("未知 mode: {other}"))),
             };
             match chat.file_cache.get_mut(&path) {
-                Some(ft) => ft.md_source = source,
+                Some(ft) => {
+                    // 双态类型才有视图模式可切（仅 md）：其余静默成功（op
+                    // 语义同前——不报错，只是没有可切换的态）
+                    if crate::editor::kind::kind_of(&path).supports_view_mode() {
+                        ft.md_source = source;
+                    }
+                }
                 None => return Err(not_found(format!("文件 tab 未打开: {}", path.display()))),
             }
             cx.notify();

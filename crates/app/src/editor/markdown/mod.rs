@@ -2318,6 +2318,128 @@ fn render_doc_item_inner(blocks: &[MdBlock], ix: usize, t: &Theme) -> AnyElement
         .into_any_element()
 }
 
+// ---------------------------------------------------------------------------
+// 文件 md 预览（MarkdownKind::render_body 的 preview 态，自 view.rs 归位）
+// ---------------------------------------------------------------------------
+
+/// md 渲染预览面板：内容真值 = **缓冲区** + 块级虚拟化 + 滚动锚点恢复 +
+/// 溢出滚动条（v60/v63-6 配方，注释保留原始依据）。
+pub(crate) fn render_preview_body(
+    chat: &mut crate::Chat,
+    weak: &gpui::WeakEntity<crate::Chat>,
+    path: &std::path::Path,
+    cx: &mut gpui::Context<crate::Chat>,
+) -> gpui::AnyElement {
+    let t = crate::appearance::theme::theme();
+    // 预览内容真值 = **缓冲区**（Zed 的 markdown preview 渲染 buffer 文本，
+    // 不是磁盘文件）：有未保存修改（源码态改完切预览 / 冲突挂着 / 自动保存
+    // 还没落地）时取编辑器值，否则用磁盘真值缓存（省一次 Rope 物化）。
+    let content = match chat.file_cache.get(path) {
+        Some(ft) if ft.dirty => ft
+            .editor
+            .as_ref()
+            .map(|e| e.read(cx).text().to_string())
+            .unwrap_or_else(|| ft.content.clone()),
+        Some(ft) => ft.content.clone(),
+        None => String::new(),
+    };
+    // 图片相对路径解析基准：tab 路径可能来自消息文本（相对形态），
+    // 统一按工作区 cwd 绝对化再取父目录，不依赖进程 cwd
+    let abs = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        chat.cwd.join(path)
+    };
+    // 块级虚拟化（抄 zed thread_view 的 list 架构，v60）：ListState 每
+    // 帧只建可视块条目（progress.md 784 块全量构建 ≈ 30ms/帧，滚动必
+    // 卡）。滚动条 = v63-6 配方：ListStateHandle 适配 gpui-component
+    // Scrollbar，仅实际溢出时渲染，且必须是 list 容器的**兄弟**（同
+    // 旧滚动层——作为子元素会被连带位移，滚动了滑块跟内容漂出视口）。
+    let blocks = doc_blocks(&content);
+    if chat.md_preview_list_path.as_deref() != Some(path) {
+        chat.md_preview_list.reset(blocks.len());
+        chat.md_preview_list_path = Some(path.to_path_buf());
+    } else if chat.md_preview_list.item_count() != blocks.len() {
+        // 块数变了（外部改动/编辑动了段落结构）也不能跳回顶部：记下
+        // 当前阅读锚点（条目 + 条目内偏移），重建后原样恢复（Zed 的
+        // preview 由 buffer anchor 驱动，滚动位跨 reload 不掉）。
+        let anchor = chat.md_preview_list.logical_scroll_top();
+        chat.md_preview_list.reset(blocks.len());
+        chat.md_preview_list.scroll_to(gpui::ListOffset {
+            item_ix: anchor.item_ix.min(blocks.len().saturating_sub(1)),
+            offset_in_item: anchor.offset_in_item,
+        });
+    }
+    let base = abs.parent().map(|p| p.to_path_buf());
+    let blocks_for_list = blocks.clone();
+    let weak_preview = weak.clone();
+    div()
+        .relative()
+        .flex_1()
+        .min_h_0()
+        .min_w_0()
+        .flex()
+        .flex_col()
+        .bg(rgb(t.bg))
+        .child(
+            gpui::list(chat.md_preview_list.clone(), move |ix, _window, _cx| {
+                // 预览内路径点击基准 = 预览文件所在目录（pi-web baseDir 同型）
+                set_link_target(weak_preview.clone(), base.clone());
+                render_doc_item(&blocks_for_list, ix, base.as_deref())
+            })
+            // list 元素自身要 flex_1 从 flex 列父容器拿高度——Auto 尺寸
+            // 下无内容贡献、无 grow 会被 taffy 布局成 0 高（条目建了
+            // 也全画在 0 高视口外，预览全空）；session_list 同款
+            .flex_1()
+            .min_h_0(),
+        )
+        .when(
+            chat.md_preview_list.max_offset_for_scrollbar().height > px(0.),
+            |d| {
+                let handle = crate::ui::list_handle::ListStateHandle(chat.md_preview_list.clone());
+                d.child(
+                    div()
+                        .absolute()
+                        .top(px(4.))
+                        .bottom(px(4.))
+                        .right(px(3.))
+                        .w(px(8.))
+                        .child(gpui_component::scroll::Scrollbar::vertical(
+                            &chat.md_preview_scrollbar,
+                            &handle,
+                        )),
+                )
+            },
+        )
+        .into_any_element()
+}
+
+/// 024: md 源码态 WYSIWYG 装饰幂等同步——`source_mode=true`（eye 切源码）
+/// 挂装饰 provider（非光标行折叠语法字符 + 渲染器同款着色；preview
+/// 渲染页不渲染编辑器，无需装饰）。行号保持默认（024 新设计：源码视图
+/// 既有能力不丢）。鼠标 eye 与 `file.view_mode` op 都只改 ft.md_source，
+/// 状态差异在此收口防漂移。
+pub(crate) fn sync_live_decorations(
+    chat: &mut crate::Chat,
+    path: &std::path::Path,
+    source_mode: bool,
+    cx: &mut gpui::Context<crate::Chat>,
+) {
+    let Some(ed) = chat.file_cache.get(path).and_then(|f| f.editor.clone()) else {
+        return;
+    };
+    if ed.read(cx).has_decorations() == source_mode {
+        return;
+    }
+    ed.update(cx, |st, _| {
+        st.set_decorations(if source_mode {
+            Some(std::rc::Rc::new(wysiwyg::MdLiveProvider))
+        } else {
+            None
+        });
+    });
+}
+
 #[cfg(test)]
 mod tests {
     /// 025 P1：wiki 图片展开——fence 外展开、fence 内不碰、尺寸语法取文件名。

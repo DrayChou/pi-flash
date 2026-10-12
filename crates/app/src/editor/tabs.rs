@@ -10,8 +10,9 @@ use crate::services::shell_open::open_in_browser;
 const AUTOSAVE_DEBOUNCE_MS: u64 = 1000;
 
 impl Chat {
-    /// v54.4：文件打开路由——html/htm 交系统浏览器（webview 内嵌在 gpui
-    /// 上不可行，绕过）；其余统一打开为内容区 tab。
+    /// v54.4：文件打开路由——handler 决定旁路（html/htm 交系统浏览器，
+    /// webview 内嵌在 gpui 上不可行）或进内容区 tab；未注册类型走默认
+    /// 文本 kind。
     ///
     /// 023 改版：编辑器实体懒创建（InputState::new 要 window，本调用链
     /// 没有——渲染帧在 content.rs 里补），二进制/超限文件提示不打开。
@@ -19,11 +20,10 @@ impl Chat {
         // 消息文本/远程控制可能传来相对路径：统一按 cwd 绝对化（已开复用
         // 的 same_path 比较与磁盘读取都基于绝对形态）
         let path = if path.is_absolute() { path } else { self.cwd.join(path) };
-        let is_html = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .is_some_and(|e| matches!(e.to_ascii_lowercase().as_str(), "html" | "htm"));
-        if is_html {
+        if matches!(
+            super::kind::kind_of(&path).open_route(),
+            super::kind::OpenRoute::SystemBrowser
+        ) {
             open_in_browser(&path);
             return;
         }

@@ -81,7 +81,9 @@ impl DockPanel {
 pub(crate) enum ContentView {
     Chat,
     Term,
-    /// 文件查看 tab（PanelTab::File；md/html 渲染、其余源码）
+    /// 文件查看 tab（PanelTab::File；主体渲染算法由 editor/kind.rs 的
+    /// FileTypeHandler 按后缀决定：md 双态、图片查看器、代码/文本编辑器、
+    /// 未注册走默认文本）
     File,
     /// 081 更新日志 tab（PanelTab::Changelog；markdown 渲染）
     Changelog,
@@ -314,9 +316,11 @@ pub(crate) enum FileConflict {
     /// （含父目录），自动保存对它保持沉默（防误重建）
     Deleted,
 }
-// 023 文件编辑展示页：所有文件都进 CodeEditor（Zed parity——Zed 里不分
-// 文件大小、一律可编辑）。曾按 50K 行上限加过「超限转只读虚拟化列表」的
-// 特殊分支，已删除：特殊路径既不是 Zed 行为，也让大文件不可编辑。
+// 023 文件编辑展示页：编辑器型文件（代码/文本/md 源码态，由 editor/kind.rs
+// 注册表决定）都进 CodeEditor（Zed parity——Zed 里不分文件大小、一律可
+// 编辑）。曾按 50K 行上限加过「超限转只读虚拟化列表」的特殊分支，已删除：
+// 特殊路径既不是 Zed 行为，也让大文件不可编辑。图片走 ImageKind 查看器
+// （无编辑器）；html/htm 打开即旁路系统浏览器，根本不进 tab。
 /// 文件 tab 缓冲区状态（023 文件编辑展示页）。
 ///
 /// `content` 是磁盘真值缓存（打开/保存/重载时更新）；`editor` 懒创建——
