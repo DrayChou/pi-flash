@@ -14,6 +14,11 @@ license = "GPL-3.0-or-later"
 
 [profile.dev]
 debug = 1
+# 关增量编译：省 target/debug/incremental 常驻数 G（同一 crate 会按指纹囤好几份
+# 副本，cargo 只偶尔清旧的）。代价：改动所在 crate 的重编译慢 20~40%，
+# 链接/未改依赖不受影响。临时要快迭代：CARGO_INCREMENTAL=1 cargo run -p app
+#（env 覆盖 profile）。
+incremental = false
 
 [profile.dev.package."*"]
 debug = false               # 依赖不带调试信息：windows/gpui 的 rlib 和 pdb 直接瘦一圈
