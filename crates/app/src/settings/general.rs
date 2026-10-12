@@ -76,7 +76,7 @@ pub(crate) fn mc_general_view(
     col = col.child(
         div().mt(px(7.)).child(set_row(
             tr("展示思考"),
-            tr("开启时思考块默认展开全文，关闭时默认收起为一行"),
+            tr("思考默认展开或收起"),
             switch_base(
                 "general-show-thinking",
                 show_thinking,

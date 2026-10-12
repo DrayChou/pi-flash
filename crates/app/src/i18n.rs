@@ -210,7 +210,7 @@ const TABLE: &[(&str, &str, &str)] = &[
     ("退出登录", "退出登入", "Sign out"),
     // 界面页显示开关（自「其他」页挪入，无小节标题——用户定夺）
     ("展示思考", "展示思考", "Show thinking"),
-    ("开启时思考块默认展开全文，关闭时默认收起为一行", "開啟時思考塊預設展開全文，關閉時預設收起為一行", "When on, thinking blocks expand by default; when off, they collapse to one line"),
+    ("思考默认展开或收起", "思考預設展開或收起", "thinking blocks expand by default or collapse to one line"),
     // 081 自动更新（其他页开关 + 新会话页版本号位 + 更新日志 tab）
     ("自动更新", "自動更新", "Auto-update"),
     ("允许Pi-Flash自动更新", "允許Pi-Flash自動更新", "Let Pi-Flash update itself automatically"),
