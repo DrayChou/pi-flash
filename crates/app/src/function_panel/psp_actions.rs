@@ -204,4 +204,11 @@ impl Chat {
         }
         cx.notify();
     }
+
+    /// 改名中点卡外 = 取消（Esc 同语义：不提交）并收卡。卡是 hover 态浮层，
+    /// 鼠标已不在卡上，留着等于一张钉死的空壳，直接收掉。
+    pub(crate) fn hover_card_rename_dismiss(&mut self, cx: &mut Context<Self>) {
+        self.hover_card = None;
+        cx.notify();
+    }
 }

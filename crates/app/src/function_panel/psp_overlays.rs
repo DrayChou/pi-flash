@@ -157,6 +157,7 @@ fn hover_card(
     };
     let path = card.path.clone();
     let confirming = card.confirming;
+    let renaming = card.renaming;
     let anchor_x = chat.slp_w + 8.;
     let title_for_rename = title.clone();
 
@@ -192,6 +193,16 @@ fn hover_card(
             }
             cx.notify();
         }));
+    // 改名中点卡外 = 取消（2026-11 用户定夺：原来只能改名或回车，像被卡住）
+    // 用 capture 阶段的 `on_mouse_down_out`（capture 只判「点不在卡 bounds
+    // 内」，本次点击照常冒泡给下层 = 点哪去哪），不铺全屏 catcher：铺了
+    // 会遮挡整窗 hit-test，侧栏行悬停会跟着失效。
+    if renaming {
+        let weak = cx.entity().downgrade();
+        el = el.on_mouse_down_out(move |_, _w, cx| {
+            let _ = weak.update(cx, |c, cx| c.hover_card_rename_dismiss(cx));
+        });
+    }
     // 横向：左半 → 卡左缘贴锚点（侧栏右缘外 8px），反之右缘贴锚点
     el = match (dir.left, dir.right) {
         (Some(l), _) => el.left(l),
