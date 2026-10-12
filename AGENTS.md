@@ -18,7 +18,7 @@ RUST_MIN_STACK=33554432 cargo test -p pi-link   # 协议/路径测试都在 pi-l
 # 铁律
 - **内置pi**：内置 `@earendil-works/pi-coding-agent`，vendor 进应用分发，运行时 spawn `node <app>/vendor/pi/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js --mode rpc`。**不读 PATH/系统 pi**；升级 = bump `vendor/pi/package.json` + VERSION + 跑 pi-link 符合性测试（wire 陷阱与升级复核点见 `docs/agents/pi-rpc.md`）。开发期 `PI_FLASH_PI_BIN` 可覆盖。
 - 完成任务保证编译通过后提交git，验收交给用户，禁止UI测试
-- **GitHub 推送**：origin 已直连 SSH over 443（`~/.ssh/config` 的 `Host github.com-443` 别名 → ssh.github.com:443，已配 IdentityFile），`git push`/`git fetch` 直接推拉即可。github.com 的 HTTPS(443) 与 SSH(22) 都间歇被墙，勿切回 HTTPS 远端、勿再手拼 GIT_SSH_COMMAND。gh CLI 走 api.github.com，一般不受影响。
+- **GitHub 推送**：origin 已直连 SSH over 443（`~/.ssh/config` 的 `Host github.com-443` 别名 → ssh.github.com:443，已配 IdentityFile），`git push`/`git fetch` 直接推拉即可。github HTTPS(443) 与 SSH(22) 间歇被墙，勿走 HTTPS 远端、勿手拼 GIT_SSH_COMMAND。gh CLI 走 api.github.com，一般不受影响。
 - UI绘制遵循 docs\UI设计\UI组件规范.md
 - CHANGELOG发版驱动，平时勿碰！
 

@@ -1,4 +1,4 @@
-![pi-flash 封面](pf-cover.png)
+![pi-flash 封面](docs/images/pf-cover.png)
 
 Pi Flash ： Windows上的极速 Pi coding agent！
 
@@ -9,7 +9,6 @@ Pi Flash ： Windows上的极速 Pi coding agent！
 
 ![pi-flash 演示动画](docs/images/pf-intro.gif)
 
-▶ 同款演示另有**带音轨完整版**（17s mp4）：[docs/images/pf-intro.mp4](docs/images/pf-intro.mp4)
 
 ## 许可证
 本项目以 **GPL-3.0-or-later** 许可证发布（见 [LICENSE](LICENSE)），继承自Zed项目。
