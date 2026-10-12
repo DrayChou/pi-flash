@@ -491,7 +491,7 @@ pub(crate) fn input_area(
         // 边框不随 agent 运行变色（pi-web 的 streaming 琥珀色已去掉）：
         // 焦点态用 accent；`!` shell 模式用工具绿（pi-web tool-bg parity）
         .border_color(if bash_mode {
-            gpui::rgba(crate::session::messages::rgba_a(0x22c55e, 0.4))
+            gpui::rgba(crate::appearance::theme::rgba_a(0x22c55e, 0.4))
         } else if input_focused {
             rgb(t.accent)
         } else {

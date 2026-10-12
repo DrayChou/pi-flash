@@ -396,6 +396,39 @@ impl SessionRuntime {
         })
         .detach();
     }
+
+    /// spawn pi 进程并挂事件泵；失败写 `status` 并 notify，返回 false。
+    /// 「工具预设/MCP 重绑」与「草稿懒 spawn」共用此内核。
+    fn spawn_attached(&mut self, cx: &mut Context<Self>) -> bool {
+        let this = cx.entity();
+        match self.spawn() {
+            Some(rx) => {
+                let epoch = self.agent.epoch;
+                Self::attach_pump(&this, rx, epoch, cx);
+                true
+            }
+            None => {
+                self.status = tr("status.disconnected").into();
+                cx.notify();
+                false
+            }
+        }
+    }
+
+    /// 草稿懒 spawn（pi-web ensureNewSession parity）：还没有 pi 进程时
+    /// spawn + attach_pump + 拉初始状态。失败返回 false（调用方提前 return）。
+    pub(crate) fn ensure_spawned(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.agent.session.is_some() {
+            return true;
+        }
+        if !self.spawn_attached(cx) {
+            return false;
+        }
+        // state/stats/commands/models；文件绑定的 ping 由 AgentEnd 的
+        // refresh_state 补（首轮之前会话文件还不存在）
+        self.refresh_state();
+        true
+    }
 }
 
 impl EventEmitter<SessionEvent> for SessionRuntime {}
@@ -1920,17 +1953,8 @@ impl SessionRuntime {
                         let _ = pi_link::session_ext::write_for(&p, &self.key, &self.ext_sources);
                     }
                 }
-                let this = cx.entity();
-                match self.spawn() {
-                    Some(rx) => {
-                        let epoch = self.agent.epoch;
-                        Self::attach_pump(&this, rx, epoch, cx);
-                    }
-                    None => {
-                        self.status = tr("status.disconnected").into();
-                        cx.notify();
-                        return;
-                    }
+                if !self.spawn_attached(cx) {
+                    return;
                 }
                 if let Some(s) = &self.agent.session {
                     let _ = s.send(&Command::GetMessages);
@@ -1938,26 +1962,8 @@ impl SessionRuntime {
                 self.refresh_state();
             }
         }
-        if self.agent.session.is_none() {
-            // lazy draft: the pi process spawns on the first prompt
-            // (pi-web ensureNewSession parity). spawn_with returns the event
-            // receiver — attach the pump here or the session goes deaf.
-            let this = cx.entity();
-            match self.spawn() {
-                Some(rx) => {
-                    let epoch = self.agent.epoch;
-                    Self::attach_pump(&this, rx, epoch, cx);
-                }
-                None => {
-                    self.status = tr("status.disconnected").into();
-                    cx.notify();
-                    return;
-                }
-            }
-            // state/stats/commands/models; the file-bound ping that promotes
-            // the draft comes from AgentEnd's refresh_state (the file exists
-            // only after the first turn)
-            self.refresh_state();
+        if !self.ensure_spawned(cx) {
+            return;
         }
         let Some(session) = &self.agent.session else {
             self.status = tr("status.disconnected").into();
@@ -2035,20 +2041,8 @@ impl SessionRuntime {
         if self.compacting {
             return false;
         }
-        if self.agent.session.is_none() {
-            let this = cx.entity();
-            match self.spawn() {
-                Some(rx) => {
-                    let epoch = self.agent.epoch;
-                    Self::attach_pump(&this, rx, epoch, cx);
-                }
-                None => {
-                    self.status = tr("status.disconnected").into();
-                    cx.notify();
-                    return false;
-                }
-            }
-            self.refresh_state();
+        if !self.ensure_spawned(cx) {
+            return false;
         }
         let Some(session) = &self.agent.session else {
             self.status = tr("status.disconnected").into();

@@ -1,8 +1,8 @@
-//! Chat 实体本体（P3 自 main.rs 拆出）：155 字段的全应用状态 + 构造器
+//! Chat 实体本体（P3 自 main.rs 拆出）：全应用状态字段簇 + 构造器
 //! （new 含全部字段初始化与各泵启动）+ 跨域小 setter（set_status/
 //! set_content_view）+ 焦点仲裁辅助（file_editor_focus）与 Focusable。
-//! 域方法住各领域文件（session/pool、session/input、editor/tabs……共
-//! 28 个外部 impl Chat 块）。
+//! 域方法住各领域文件（session/pool、session/input、editor/tabs……）；
+//! 字段数与 impl 块数不写死在注释里（随演进漂移，查数用 grep）。
 
 use crate::*;
 

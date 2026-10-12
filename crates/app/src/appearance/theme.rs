@@ -73,6 +73,12 @@ pub fn border_alpha(t: &Theme, a: u32) -> u32 {
     (t.border << 8) | (a & 0xff)
 }
 
+/// 0xRRGGBB + alpha → gpui::rgba 的 0xRRGGBBAA 布局（alpha 在低字节）。
+pub fn rgba_a(rgb24: u32, alpha: f32) -> u32 {
+    let a = (alpha * 255.0).round().clamp(0.0, 255.0) as u32;
+    ((rgb24 & 0xffffff) << 8) | a
+}
+
 /// token 分析块 7 大类的固定类别色（系统提示词面板比例长条 + 信息块色点）。
 /// 中饱和中亮度：mist/default 浅底与 dark 深底下都可读；与主题 accent 无关
 /// （类别色要跨主题稳定，同一类永远同一颜色）。

@@ -365,12 +365,6 @@ pub(crate) fn render_block(
     }
 }
 
-/// 0xRRGGBB + alpha → gpui::rgba 的 0xRRGGBBAA 布局（alpha 在低字节）。
-pub(crate) fn rgba_a(rgb24: u32, alpha: f32) -> u32 {
-    let a = (alpha * 255.0).round().clamp(0.0, 255.0) as u32;
-    ((rgb24 & 0xffffff) << 8) | a
-}
-
 /// pi-web getToolPreview：command/path/file_path/pattern/query 键序取值
 /// 截 120 字符，都没有取首个键的值。
 fn tool_preview(args: &str) -> String {
@@ -486,17 +480,17 @@ fn render_tool_card(
     // 状态色（pi-web 成功绿/失败红 边框+底色+工具名）
     let (border_c, bg_c, name_c, top_c) = if is_error {
         (
-            rgba_a(0xf87171, 0.45),
-            rgba_a(0xf87171, 0.05),
+            theme::rgba_a(0xf87171, 0.45),
+            theme::rgba_a(0xf87171, 0.05),
             0xf87171,
-            rgba_a(0xf87171, 0.25),
+            theme::rgba_a(0xf87171, 0.25),
         )
     } else {
         (
-            rgba_a(0x22c55e, 0.25),
-            rgba_a(0x22c55e, 0.04),
+            theme::rgba_a(0x22c55e, 0.25),
+            theme::rgba_a(0x22c55e, 0.04),
             0x16a34a,
-            rgba_a(0x22c55e, 0.2),
+            theme::rgba_a(0x22c55e, 0.2),
         )
     };
 
@@ -626,7 +620,7 @@ fn render_tool_card(
             card = card.child(
                 div()
                     .border_t_1()
-                    .border_color(gpui::rgba(rgba_a(0x22c55e, 0.15)))
+                    .border_color(gpui::rgba(theme::rgba_a(0x22c55e, 0.15)))
                     .bg(rgb(t.bg))
                     .child(split_files_view(files, t)),
             );
@@ -637,7 +631,7 @@ fn render_tool_card(
             card = card.child(
                 div()
                     .border_t_1()
-                    .border_color(gpui::rgba(rgba_a(0x22c55e, 0.15)))
+                    .border_color(gpui::rgba(theme::rgba_a(0x22c55e, 0.15)))
                     .bg(rgb(t.bg))
                     .child(match crate::session::diff::parse_unified_patch(diff_text) {
                         Some(files) => split_files_view(&files, t),
@@ -659,9 +653,9 @@ fn alert_box(text: String, color: u32, border_rgb: u32, _t: &theme::Theme) -> gp
         .px(px(10.))
         .py(px(7.))
         .border_1()
-        .border_color(gpui::rgba(rgba_a(border_rgb, 0.3)))
+        .border_color(gpui::rgba(theme::rgba_a(border_rgb, 0.3)))
         .rounded(px(6.))
-        .bg(gpui::rgba(rgba_a(border_rgb, 0.07)))
+        .bg(gpui::rgba(theme::rgba_a(border_rgb, 0.07)))
         .text_color(rgb(color))
         .font_family(crate::editor::markdown::MONO_FAMILY)
         .text_size(crate::appearance::ui_size(12.))
@@ -1177,12 +1171,12 @@ fn paired_result(
         .overflow_y_scroll()
         .border_t_1()
         .border_color(gpui::rgba(if is_error {
-            rgba_a(0xf87171, 0.3)
+            theme::rgba_a(0xf87171, 0.3)
         } else {
-            rgba_a(0x22c55e, 0.15)
+            theme::rgba_a(0x22c55e, 0.15)
         }))
         .bg(if is_error {
-            gpui::rgba(rgba_a(0xf87171, 0.04))
+            gpui::rgba(theme::rgba_a(0xf87171, 0.04))
         } else {
             rgba(t.bg_subtle)
         })
@@ -1215,9 +1209,9 @@ fn result_images(
         .bg(rgb(t.bg))
         .border_t_1()
         .border_color(gpui::rgba(if is_error {
-            rgba_a(0xf87171, 0.3)
+            theme::rgba_a(0xf87171, 0.3)
         } else {
-            rgba_a(0x22c55e, 0.15)
+            theme::rgba_a(0x22c55e, 0.15)
         }));
     for data in images {
         let Some(format) = mime_to_image_format(&data.mime) else {
@@ -1512,8 +1506,8 @@ fn diff_cell(
 ) -> gpui::AnyElement {
     use crate::session::diff::CellKind;
     let bg = match cell.kind {
-        CellKind::Added => gpui::rgba(rgba_a(0x22c55e, 0.12)),
-        CellKind::Removed => gpui::rgba(rgba_a(0xf87171, 0.13)),
+        CellKind::Added => gpui::rgba(theme::rgba_a(0x22c55e, 0.12)),
+        CellKind::Removed => gpui::rgba(theme::rgba_a(0xf87171, 0.13)),
         CellKind::Empty => rgba(t.bg_subtle),
         CellKind::Context => gpui::rgba(0),
     };
@@ -1599,9 +1593,9 @@ fn patch_text_view(text: &str, t: &theme::Theme) -> gpui::AnyElement {
                 3
             };
             let (bg, color, bar) = match kind {
-                0 => (gpui::rgba(rgba_a(0x60a5fa, 0.12)), t.accent, t.accent),
-                1 => (gpui::rgba(rgba_a(0x22c55e, 0.12)), 0x22c55e, 0x22c55e),
-                2 => (gpui::rgba(rgba_a(0xf87171, 0.13)), 0xf87171, 0xf87171),
+                0 => (gpui::rgba(theme::rgba_a(0x60a5fa, 0.12)), t.accent, t.accent),
+                1 => (gpui::rgba(theme::rgba_a(0x22c55e, 0.12)), 0x22c55e, 0x22c55e),
+                2 => (gpui::rgba(theme::rgba_a(0xf87171, 0.13)), 0xf87171, 0xf87171),
                 _ => (gpui::rgba(0), t.text, 0),
             };
             div()
@@ -1705,7 +1699,7 @@ pub(crate) fn render_msg(
     bubble_scrolls: &std::rc::Rc<
         std::cell::RefCell<std::collections::HashMap<String, gpui::ScrollHandle>>,
     >,
-    collapsed: &HashMap<(usize, usize), bool>,
+    _collapsed: &HashMap<(usize, usize), bool>,
     t: &theme::Theme,
     // Some(est_tokens) 仅当此消息是流式中的最后一条（工作中回复）
     _stream_info: Option<u64>,
@@ -1912,7 +1906,7 @@ pub(crate) fn render_msg(
                                     .rounded(px(12.))
                                     .bg(rgb(t.user_bg))
                                     .border_1()
-                                    .border_color(gpui::rgba(rgba_a(0x3b82f6, 0.2)))
+                                    .border_color(gpui::rgba(theme::rgba_a(0x3b82f6, 0.2)))
                                     .text_color(rgb(t.text))
                                     .child(div().flex().flex_col().child(md)),
                             )
@@ -1944,16 +1938,10 @@ pub(crate) fn render_msg(
         }
         row = row.child(bottom);
         col = col.child(row);
-    } else {
-        // 单条 assistant（仅当它不构成轮头时才会走到这里——session_list
-        // 已把轮渲染收敛到 render_assistant_turn；此分支防御性保留）
-        // pi-web 块容器 gap 8（text/thinking/工具卡统一间距）
-        let mut blocks_col = div().w_full().flex().flex_col().gap(px(8.));
-        for b in &m.blocks {
-            blocks_col = blocks_col.child(render_block(b, msg_ix, weak, collapsed, t, false, None));
-        }
-        col = col.child(blocks_col);
     }
+    // 非 User 臂已删：mod.rs 分发入口只在 m.role == Role::User 时调
+    // render_msg（assistant 轮走 render_assistant_turn、bash 走 render_bash_msg），
+    // 曾有的「单条 assistant」防御分支不可达，见 pzy 拆分前清理。
     col
 }
 
@@ -2689,9 +2677,9 @@ mod tests {
     /// 导致通道错位（工具卡藏青/参数区纯黄，用户实测发现）。
     #[test]
     fn rgba_a_layout_is_rrggbbaa() {
-        assert_eq!(rgba_a(0x22c55e, 0.25), 0x22c55e40);
-        assert_eq!(rgba_a(0xf87171, 0.45), 0xf8717173);
-        assert_eq!(rgba_a(0x3b82f6, 0.2), 0x3b82f633);
+        assert_eq!(theme::rgba_a(0x22c55e, 0.25), 0x22c55e40);
+        assert_eq!(theme::rgba_a(0xf87171, 0.45), 0xf8717173);
+        assert_eq!(theme::rgba_a(0x3b82f6, 0.2), 0x3b82f633);
         // bg_subtle 是全仓库唯一 8 位 RRGGBBAA 主题色，必须走 rgba() 不能
         // 走 rgb()（rgb 跳首字节，0xffffff14 会读成 #ffff14 纯黄）
         // 深色主题 bg_subtle=0xffffff14 → 白 8% alpha（而非 rgb() 误读的 #ffff14）
