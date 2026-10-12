@@ -4,6 +4,9 @@ Pi-Flash (PF) —— 极速 pi coding agent 桌面端（Rust + GPUI）。本包�
 安装时从 GitHub Releases 按平台下载载荷（exe / node / 钉版 pi），SHA-256 校验后落位；
 仓库与设计见 <https://github.com/danielbill/pi-flash>。
 
+> **平台范围：目前只发布 Windows x64（win32-x64），不发布 macOS 版本。**
+> 在 macOS 上执行安装会报「暂无发布资产」——这是预期行为，不是 bug。需要 macOS 版本请等后续公告。
+
 ## 安装与更新（同一条命令）
 
 ```bash
@@ -30,7 +33,9 @@ npx pi-flash@latest                # 不常驻安装直接跑
 - **安装时提示下载失败 / 校验不过**：重跑 `npm rebuild pi-flash`；或到
   [Releases](https://github.com/danielbill/pi-flash/releases) 手动核对后重试。
 - **更新时提示"载荷目录被占用"**：先退出正在运行的 pi-flash，再执行安装命令。
-- **postinstall 被 `--ignore-scripts` 禁用**：不影响——`pi-flash` 首次启动会自愈补齐载荷。
-- **非 win32-x64 / darwin-arm64 平台**：暂无发布资产，报错后可手动下载绿色包。
+- **postinstall 被 `--ignore-scripts` 或 npm 的 `allowScripts` 门控禁用**：不影响——`pi-flash`
+  首次启动会自愈补齐载荷（会先打印「载荷缺失或版本不符，正在补齐…」并下载，约一两分钟）。
+- **macOS 上安装报错**：macOS 不在支持范围（暂不发布 darwin 资产），请在 Windows x64 上使用。
+- **非 win32-x64 平台**（Linux / 32 位 Windows 等）：同理暂无发布资产。
 
 载荷落在本包目录 `payload/` 内，`npm uninstall` 一并清除。
