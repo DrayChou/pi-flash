@@ -22,6 +22,21 @@
 
 - **StyledText runs 的 font_size/font_weight 无效**（shape_text 只认容器继承链）→ 字号/加粗挂容器 div（markdown sized_text/weight 参数即此）。
 - 字节/字符边界：gpui highlight/切片 range 按字节且必须落字符边界（粘贴 panic 0xc0000409 两连的根源）。
+- **注入语言高亮（`<style>`→css / `<script>`→javascript）是每可见行成本**：
+  `InputElement::highlight_lines` **逐可见行**调 `SyntaxHighlighter::styles()`，
+  而 vendor 原 `handle_injection` 每次调用都 `parser.parse` 整块注入内容 + 在
+  整棵注入树上跑全量 query（无缓存、无范围裁剪）→ 视口 N 行落在注入块内就是
+  N 次整块 parse。实测 118KB 设计稿 HTML（32KB `<style>`）**每帧 ≈8s**：应用
+  整体假死，连 pif-ui `snapshot` 都要等 6s+、`file.open` 一个**已开** tab
+  （复用分支，不读盘）也要 9s——全是在等 UI 线程。
+  已修（`vendor/gpui-component/src/highlighter/highlighter.rs`）：注入解析成品
+  按 (语言, 注入节点字节范围) 缓存（`update()` 换文本时整表清空），查询用
+  `set_byte_range` 裁到请求行在注入内容里的字节段。复测同文件 `app.info`
+  8.1s → 0.18s，CSS/JS 高亮颜色不变（pif-ui `shot` A/B 目视）。
+  **复核/回归只能走 app 侧 pif-ui 实测**：`cargo test --lib` 在 vendor/
+  gpui-component 里现在编译不过（上游 `tests/fixtures/layout.json` 未 vendor +
+  `input/text_wrapper.rs` 测试两处 SmallVec 类型推断），高亮单测跑不了。
+  量法：隔离实例开文件后连打 `pif-ui exec app.info`，返回值 >1s 即此病复发。
 - svg 未登记进 `assets!()` 会**静默画空白**（有双向一致性测试守卫）。
 - `icon_hover` 自定义元素在 list 虚拟条目里占位不绘制 → 用 `icon()`/`icon_current`。
 - `WindowBounds::Maximized` 创建路径无效 → `zoom_window()`。

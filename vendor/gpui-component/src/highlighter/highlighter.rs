@@ -6,6 +6,7 @@ use gpui::{HighlightStyle, SharedString};
 
 use ropey::{ChunkCursor, Rope};
 use std::{
+    cell::RefCell,
     collections::{BTreeSet, HashMap},
     ops::Range,
     usize,
@@ -39,6 +40,22 @@ pub struct SyntaxHighlighter {
     parser: Parser,
     /// The last parsed tree.
     tree: Option<Tree>,
+
+    /// PF 修复（2026-10-12）：注入语言（`<style>`/`<script>` 等）的解析成品
+    /// 缓存，key = (语言, 注入节点在宿主文本里的字节范围)。见
+    /// [`Self::handle_injection`] 的性能说明。`update()` 换文本时整表清空。
+    injection_cache: RefCell<HashMap<(SharedString, usize, usize), InjectionParse>>,
+}
+
+/// 一段注入内容的解析成品：`parse` 只在其文本变化（`update()` 换树）后重做，
+/// 每帧的查询只在这棵树内按请求字节范围裁剪。
+struct InjectionParse {
+    /// 注入内容在宿主文本中的起始字节（查询结果坐标回换算用）
+    offset: usize,
+    /// 注入内容（tree 与该树上的 query 都基于它；同时免掉每帧重新
+    /// `slice..to_string()`）
+    content: String,
+    tree: Tree,
 }
 
 struct TextProvider<'a>(&'a Rope);
@@ -289,6 +306,7 @@ impl SyntaxHighlighter {
             language: config.name.clone(),
             query: Some(query),
             injection_queries,
+            injection_cache: RefCell::new(HashMap::new()),
 
             locals_pattern_index,
             highlights_pattern_index,
@@ -356,6 +374,8 @@ impl SyntaxHighlighter {
 
         self.tree = Some(new_tree);
         self.text = text.clone();
+        // 宿主文本变了：注入内容的解析成品（树 + 内容）全部作废
+        self.injection_cache.borrow_mut().clear();
     }
 
     /// Match the visible ranges of nodes in the Tree for highlighting.
@@ -373,7 +393,7 @@ impl SyntaxHighlighter {
 
         let source = &self.text;
         let mut cursor = QueryCursor::new();
-        cursor.set_byte_range(range);
+        cursor.set_byte_range(range.clone());
         let mut matches = cursor.matches(&query, root_node, TextProvider(&source));
 
         while let Some(query_match) = matches.next() {
@@ -382,7 +402,7 @@ impl SyntaxHighlighter {
             if let (Some(language_name), Some(content_node), _) =
                 self.injection_for_match(None, query, query_match)
             {
-                let styles = self.handle_injection(&language_name, content_node);
+                let styles = self.handle_injection(&language_name, content_node, &range);
                 for (node_range, highlight_name) in styles {
                     highlights.push(HighlightItem::new(node_range.clone(), highlight_name));
                 }
@@ -435,43 +455,88 @@ impl SyntaxHighlighter {
     }
 
     /// TODO: Use incremental parsing to handle the injection.
+    ///
+    /// PF 修复（2026-10-12，见 docs/agents/gpui.md「高亮」节）：原实现每次调用
+    /// 都 `parser.parse(整块注入内容)` + 在**整棵**注入树上跑全量 query，且
+    /// 结果不缓存。而 `InputElement::highlight_lines` 是**逐可见行**调
+    /// `styles()` 的 → 视口里有 N 行落在 `<style>`/`<script>` 内就是 N 次整块
+    /// parse + 全量 query。118KB 设计稿 HTML（32KB `<style>`）实测每帧约 8 秒
+    /// （应用整体假死，连自动化 snapshot 都要等几秒）。
+    ///
+    /// 现在：
+    /// 1. 解析成品按 (语言, 注入节点范围) 缓存，宿主文本变化（`update()`）
+    ///    才重做——同一块注入内容一帧内查 N 次只 parse 一次；
+    /// 2. 每次查询用 `set_byte_range` 裁到请求行在注入内容里的对应字节段
+    ///    （与宿主树 `match_styles` 同款语义：只保留与该段相交的 capture），
+    ///    不再每行物化整块注入内容的全量匹配。
     fn handle_injection(
         &self,
         injection_language: &str,
         node: Node,
+        range: &Range<usize>,
     ) -> Vec<(Range<usize>, String)> {
         // Ensure byte offsets are on char boundaries for UTF-8 safety
         let start_offset = self.text.clip_offset(node.start_byte(), Bias::Left);
         let end_offset = self.text.clip_offset(node.end_byte(), Bias::Right);
-
-        let mut cache = vec![];
-        let Some(query) = &self.injection_queries.get(injection_language) else {
-            return cache;
-        };
-
-        let content = self.text.slice(start_offset..end_offset);
-        if content.len() == 0 {
-            return cache;
-        };
-        // FIXME: Avoid to_string.
-        let content = content.to_string();
-
-        let Some(config) = LanguageRegistry::singleton().language(injection_language) else {
-            return cache;
-        };
-        let mut parser = Parser::new();
-        if parser.set_language(&config.language).is_err() {
-            return cache;
+        if start_offset >= end_offset {
+            return vec![];
         }
 
-        let source = content.as_bytes();
-        let Some(tree) = parser.parse(source, None) else {
-            return cache;
+        let Some(query) = &self.injection_queries.get(injection_language) else {
+            return vec![];
         };
 
-        let mut query_cursor = QueryCursor::new();
-        let mut matches = query_cursor.matches(query, tree.root_node(), source);
+        let key = (
+            SharedString::from(injection_language.to_string()),
+            start_offset,
+            end_offset,
+        );
+        if !self.injection_cache.borrow().contains_key(&key) {
+            // FIXME: Avoid to_string.
+            let content = self.text.slice(start_offset..end_offset).to_string();
+            if content.is_empty() {
+                return vec![];
+            }
 
+            let Some(config) = LanguageRegistry::singleton().language(injection_language) else {
+                return vec![];
+            };
+            let mut parser = Parser::new();
+            if parser.set_language(&config.language).is_err() {
+                return vec![];
+            }
+            let Some(tree) = parser.parse(content.as_bytes(), None) else {
+                return vec![];
+            };
+            self.injection_cache.borrow_mut().insert(
+                key.clone(),
+                InjectionParse {
+                    offset: start_offset,
+                    content,
+                    tree,
+                },
+            );
+        }
+
+        // 请求范围 → 注入内容坐标（clip 进注入文本）
+        let cache = self.injection_cache.borrow();
+        let Some(parsed) = cache.get(&key) else {
+            return vec![];
+        };
+        let content_len = parsed.content.len();
+        let q_start = range.start.saturating_sub(parsed.offset).min(content_len);
+        let q_end = range.end.saturating_sub(parsed.offset).min(content_len);
+        if q_start >= q_end {
+            return vec![];
+        }
+
+        let source = parsed.content.as_bytes();
+        let mut query_cursor = QueryCursor::new();
+        query_cursor.set_byte_range(q_start..q_end);
+        let mut matches = query_cursor.matches(query, parsed.tree.root_node(), source);
+
+        let mut out = vec![];
+        // 与原本一致：只收「不与前一个 highlight 重叠」的 capture（宿主坐标）
         let mut last_end = start_offset;
         while let Some(m) = matches.next() {
             for cap in m.captures {
@@ -489,12 +554,12 @@ impl SyntaxHighlighter {
 
                 if let Some(highlight_name) = query.capture_names().get(cap.index as usize) {
                     last_end = node_range.end;
-                    cache.push((node_range, highlight_name.to_string()));
+                    out.push((node_range, highlight_name.to_string()));
                 }
             }
         }
 
-        cache
+        out
     }
 
     /// Ref:
