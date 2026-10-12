@@ -34,6 +34,10 @@ const PREFIX_BYTES: u64 = 256 * 1024;
 const TAIL_BYTES: u64 = 64 * 1024;
 /// Lines of the prefix considered when looking for the preview message.
 const PREVIEW_LINES: usize = 40;
+/// Degraded preview chars grabbed from a prefix-truncated line (see
+/// `preview_from_partial_line`). Deliberately shorter than the 120-char
+/// full-parse cap: it's a best-effort salvage, not a real preview.
+const PARTIAL_PREVIEW_CHARS: usize = 50;
 
 const NEEDLE_MESSAGE: &str = "\"type\":\"message\"";
 const NEEDLE_SESSION_INFO: &str = "\"type\":\"session_info\"";
@@ -84,6 +88,11 @@ pub fn sessions_root() -> Option<PathBuf> {
 // ---------------------------------------------------------------------------
 // fingerprint index entry (persisted)
 // ---------------------------------------------------------------------------
+
+/// v2: `scan_file` salvages previews from prefix-truncated first user
+/// lines (huge first paste ⇒ "(empty)" rows); v1 caches hold the old
+/// empty previews on dormant files, so they are dropped once on load.
+const INDEX_VERSION: u64 = 2;
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
 struct IndexEntry {
@@ -163,6 +172,13 @@ impl Scanner {
         let Ok(Value::Object(obj)) = crate::config::read_json(&path) else {
             return;
         };
+        // Schema bump → discard the whole cache once (entries keep their
+        // (mtime, size) fingerprint forever on dormant files, so a changed
+        // scan algorithm would never see those files again otherwise).
+        if obj.get("version").and_then(|v| v.as_u64()) != Some(INDEX_VERSION) {
+            self.dirty = true;
+            return;
+        }
         let Some(entries) = obj.get("entries").and_then(|v| v.as_object()) else {
             return;
         };
@@ -186,7 +202,7 @@ impl Scanner {
                 )
             })
             .collect();
-        let value = serde_json::json!({ "version": 1, "entries": entries });
+        let value = serde_json::json!({ "version": INDEX_VERSION, "entries": entries });
         // 自有目录可能还没建（首启 / 迁移后）——写前确保存在
         let _ = crate::paths::ensure_dir();
         let _ = crate::config::write_json(path, &value);
@@ -401,6 +417,57 @@ fn read_latest_session_info(path: &Path) -> Option<Value> {
     }
 }
 
+/// Salvage a preview from a prefix-truncated line. The 256KB prefix cuts
+/// the first user message mid-line exactly when it matters — a huge first
+/// paste (system-prompt line alone can be 40-100KB, so a 300KB+ first
+/// message starts near the boundary). Full JSON parsing then fails on the
+/// one entry the preview needs and the row degrades to its "(empty)"
+/// fallback title. Best-effort: locate the user role marker (it must sit
+/// before `"content"` — a truncated *assistant* line can quote the literal
+/// inside its text) and decode the first string's leading characters.
+fn preview_from_partial_line(line: &str) -> Option<String> {
+    const CONTENT_MARKER: &str = "\"content\"";
+    const TEXT_MARKER: &str = "\"text\":\"";
+    if !line.starts_with('{') {
+        return None;
+    }
+    let role = line.find("\"role\":\"user\"")?;
+    let content = line.find(CONTENT_MARKER)?;
+    if role > content {
+        return None; // role marker occurs inside message text, not the header
+    }
+    let rest = line[content + CONTENT_MARKER.len()..].trim_start();
+    let rest = rest.strip_prefix(':')?.trim_start();
+    // string content (`"content":"…"`) vs block array (`"content":[…]`)
+    let raw = match rest.strip_prefix('"') {
+        Some(s) => s,
+        None => {
+            let at = rest.find(TEXT_MARKER)? + TEXT_MARKER.len();
+            &rest[at..]
+        }
+    };
+    let mut out = String::new();
+    let mut chars = raw.chars();
+    while out.chars().count() < PARTIAL_PREVIEW_CHARS {
+        match chars.next() {
+            None | Some('"') => break, // end of raw or closing quote
+            Some('\\') => match chars.next() {
+                None => break,
+                Some('n' | 'r' | 't' | 'b' | 'f') => out.push(' '),
+                Some('u') => {
+                    let hex: String = chars.by_ref().take(4).collect();
+                    if let Some(c) = u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) {
+                        out.push(c);
+                    }
+                }
+                Some(esc) => out.push(esc), // \" \\ \/ … escape lands literally
+            },
+            Some(c) => out.push(c),
+        }
+    }
+    (!out.is_empty()).then_some(out)
+}
+
 /// One bounded scan of a session file: header + preview from the prefix,
 /// name from the tail, count streamed. Never reads the whole file into
 /// memory at once.
@@ -409,7 +476,16 @@ fn scan_file(path: &Path, modified: SystemTime, size: u64) -> Option<IndexEntry>
     let mut cwd = String::new();
     let mut preview = String::new();
     for line in prefix.lines().take(PREVIEW_LINES) {
-        let Ok(v) = crate::json::parse_value(line) else { continue };
+        let Ok(v) = crate::json::parse_value(line) else {
+            // Prefix-truncated line: salvage a 50-char preview from the
+            // raw text (only ever fills preview while it's still empty).
+            if preview.is_empty() {
+                if let Some(p) = preview_from_partial_line(line) {
+                    preview = p;
+                }
+            }
+            continue;
+        };
         match v["type"].as_str() {
             Some("session") => {
                 id = v["id"].as_str().unwrap_or("").to_string();
@@ -992,6 +1068,51 @@ mod tests {
     }
 
     #[test]
+    fn scan_salvages_preview_when_first_user_line_truncated() {
+        // Real-world shape: small header/meta lines, a fat system-prompt
+        // line, then a first user message so big the 256KB prefix cuts its
+        // line — full parse fails, the degraded path must still surface
+        // the leading text (capped at PARTIAL_PREVIEW_CHARS).
+        let root = temp_root("scan-trunc");
+        let big = "甲".repeat(200_000); // 600KB utf8 >> PREFIX_BYTES
+        let body = format!(
+            concat!(
+                "{{\"type\":\"model_change\",\"id\":\"m\"}}\n",
+                "{{\"type\":\"message\",\"id\":\"s\",\"message\":{{\"role\":\"system\",\"content\":\"{}\"}}}}\n",
+                "{{\"type\":\"message\",\"id\":\"u1\",\"message\":{{\"role\":\"user\",\"content\":[{{\"type\":\"text\",\"text\":\"{}\"}}]}}}}\n",
+            ),
+            "sys ".repeat(30_000), // ~120KB system line
+            big,
+        );
+        let path = write_session(&root, "D:\\proj-trunc", "trunc1", &body);
+        let mtime = std::fs::metadata(&path).unwrap().modified().unwrap();
+        let e = scan_file(&path, mtime, body.len() as u64).expect("scan ok");
+        let want: String = "甲".repeat(PARTIAL_PREVIEW_CHARS.min(40)); // 50 chars = 150B > 120B display cap → re-truncated with …
+        assert_eq!(e.preview, format!("{want}…"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn partial_line_preview_rejects_assistant_and_bad_anchors() {
+        // assistant line quoting the literal must not yield a preview
+        let a = "{\"type\":\"message\",\"id\":\"a\",\"message\":{\"role\":\"assistant\",\"content\":\"see \\\"role\\\":\\\"user\\\" docs and \\\"text\\\":\\\"spoiled\"";
+        assert_eq!(preview_from_partial_line(a), None);
+        // role marker after content (inside quoted text) is rejected
+        let late = "{\"message\":{\"content\":\"junk\"},\"role\":\"user\"}";
+        assert_eq!(preview_from_partial_line(late), None);
+        // proper string-content user line, escapes decoded, \n folded;
+        // result capped at exactly 50 chars
+        let ok = "{\"message\":{\"role\":\"user\",\"content\":\"line1\\nline2 \\\"quoted\\\" rest of a fairly long first message";
+        assert_eq!(
+            preview_from_partial_line(ok).as_deref(),
+            Some("line1 line2 \"quoted\" rest of a fairly long first m")
+        );
+        // empty text → None (caller keeps scanning later lines)
+        let empty = "{\"message\":{\"role\":\"user\",\"content\":\"\"}";
+        assert_eq!(preview_from_partial_line(empty), None);
+    }
+
+    #[test]
     fn list_for_cwd_targets_one_group() {
         let root = temp_root("groups");
         write_session(&root, "D:\\proj-a", "a1", BODY);
@@ -1041,6 +1162,36 @@ mod tests {
         let mut b = Scanner::open_persisted(&root, &idx);
         assert_eq!(b.list(10).len(), 1);
         assert_eq!(b.scans, 0, "warm scanner stats only, no file scans");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn index_version_bump_forces_full_rescan() {
+        let root = temp_root("idx-ver");
+        let path = write_session(&root, "D:\\proj", "v1", BODY);
+        let idx = root.join("index.json");
+        // hand-written v1 index (previous schema) with a stale empty preview
+        let mtime = std::fs::metadata(&path).unwrap().modified().unwrap();
+        let dur = mtime.duration_since(UNIX_EPOCH).unwrap();
+        let stale = serde_json::json!({
+            "version": 1,
+            "entries": {
+                path.to_string_lossy(): {
+                    "mtime_sec": dur.as_secs(), "mtime_nsec": dur.subsec_nanos(),
+                    "size": std::fs::metadata(&path).unwrap().len(),
+                    "id": "v1", "cwd": "D:\\proj", "preview": "",
+                    "name": null, "message_count": 3,
+                }
+            }
+        });
+        crate::config::write_json(&idx, &stale).unwrap();
+        let mut b = Scanner::open_persisted(&root, &idx);
+        let list = b.list(10);
+        assert_eq!(b.scans, 1, "v1 cache discarded → file rescanned");
+        assert_eq!(list[0].preview, "hello 世界", "fresh scan, not stale cache");
+        b.save_index();
+        let saved = crate::config::read_json(&idx).unwrap();
+        assert_eq!(saved["version"].as_u64(), Some(INDEX_VERSION));
         let _ = std::fs::remove_dir_all(&root);
     }
 
