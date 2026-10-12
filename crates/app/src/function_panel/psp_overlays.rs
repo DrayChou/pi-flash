@@ -879,12 +879,9 @@ fn tree_menu_layer(
                     },
                 ))
                 .child(tree_terminal_item(&weak, "ftm-file-term", &path));
-            // 「在浏览器中打开」只对 html 文件出现（设计稿 021）
-            let is_html = path
-                .extension()
-                .and_then(|e| e.to_str())
-                .is_some_and(|e| matches!(e.to_ascii_lowercase().as_str(), "html" | "htm"));
-            if is_html {
+            // 「在浏览器中打开」只对 html 页文件出现（设计稿 021）——判据
+            // 与编辑器右键菜单同一处（editor/kind.rs `browser_openable`）
+            if crate::editor::kind::browser_openable(&path) {
                 card = card.child(tree_item(
                     &weak,
                     "ftm-file-browser",
@@ -1011,21 +1008,24 @@ fn editor_menu_layer(
         ))
         .child(menu_sep());
     // 文件动作块：条目与顺序由 kind handler 声明（含分隔线）——默认骨架 =
-    // 资源管理器/终端 + 改名/删除；md 源码态带预览项，html 首位浏览器项
+    // 资源管理器/终端 + 改名/删除；md 源码态带预览项；「在浏览器中打开」
+    // 是路径判据（html/htm，同文件树菜单），保留在动作块首位
     let source_mode = chat.file_cache.get(&path).is_some_and(|f| f.md_source);
+    if crate::editor::kind::browser_openable(&path) {
+        card = card.child(editor_item(
+            &weak,
+            "edm-browser",
+            "globe",
+            tr("在浏览器中打开"),
+            false,
+            {
+                let path = path.clone();
+                move |_c, _cx| crate::services::shell_open::open_in_browser(&path)
+            },
+        ));
+    }
     for action in crate::editor::kind::kind_of(&path).menu_file_actions(source_mode) {
         card = match action {
-            crate::editor::kind::MenuAction::Browser => card.child(editor_item(
-                &weak,
-                "edm-browser",
-                "globe",
-                tr("在浏览器中打开"),
-                false,
-                {
-                    let path = path.clone();
-                    move |_c, _cx| crate::services::shell_open::open_in_browser(&path)
-                },
-            )),
             crate::editor::kind::MenuAction::PreviewToggle => card.child(editor_item(
                 &weak,
                 "edm-preview",

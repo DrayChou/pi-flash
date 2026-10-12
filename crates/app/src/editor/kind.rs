@@ -7,16 +7,18 @@
 //! 职责边界：
 //! - **handler 管**：CodeEditor 配置（高亮语言/软换行/图片粘贴钩子；None
 //!   = 无编辑器类型）、主体渲染算法、工具栏按钮（默认仅搜索；md 追加预览
-//!   eye）、右键菜单文件动作块（html 的「在浏览器中打开」入口在此，与文件
-//!   树菜单 021 同款）、是否有源码/预览双态（file.view_mode op 门控）
+//!   eye）、右键菜单文件动作块（默认骨架 = 资源管理器/终端 + 改名/删除）、
+//!   是否有源码/预览双态（file.view_mode op 门控）
 //! - **共享基建不管类型**：文本缓冲/脏位/自动保存/外部改动检测/冲突横幅
 //!   （tabs.rs）、面包屑/搜索面板/焦点（view.rs 宿主）——对一切已打开
 //!   tab 统一生效
 //!
 //! 与旧实现的分野：txt 与 code 是两个 kind（不再靠 ts_language 回退
-//! "text" 混在一起）；html 不再旁路系统浏览器、直接开源码（2026-10-12
-//! 二改拍板）；`csv` 等未注册后缀自然落 TextKind（将来表格视图 = 纯增量
-//! 注册 CsvKind）。
+//! "text" 混在一起）；html/htm 与 xml/vue 共用一个 CodeKind（ts_lang
+//! "html"）——「在浏览器中打开」是**路径判据**（[`browser_openable`]）
+//! 而不是一个专门 kind，编辑器右键菜单与文件树菜单（021）共用同一处
+//! 判断；`csv` 等未注册后缀自然落 TextKind（将来表格视图 = 纯增量注册
+//! CsvKind）。
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -50,8 +52,6 @@ pub(crate) enum ToolButton {
 /// 本表——由 psp_overlays 的编辑块固定渲染）。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum MenuAction {
-    /// 在浏览器中打开（edm-browser）
-    Browser,
     /// 预览：双态类型源码态专属，点击切回渲染态（edm-preview）
     PreviewToggle,
     /// 在资源管理器中打开（edm-explorer）
@@ -139,11 +139,6 @@ struct ImageKind {
     format: gpui::ImageFormat,
 }
 
-/// HTML：源码直接进编辑器（tree-sitter html 高亮；2026-10-12 二改拍板，
-/// 不再旁路系统浏览器）——「在浏览器中打开」保留为右键菜单首位文件动作
-/// （023 菜单设计，与文件树菜单 021 同款）。
-struct HtmlKind;
-
 impl FileKind for TextKind {
     fn name(&self) -> &'static str {
         "text"
@@ -216,36 +211,12 @@ impl FileKind for ImageKind {
     }
 }
 
-impl FileKind for HtmlKind {
-    fn name(&self) -> &'static str {
-        "html"
-    }
-    fn editor_config(&self) -> Option<EditorConfig> {
-        Some(EditorConfig { ts_lang: "html", soft_wrap: true, image_paste: false })
-    }
-    fn menu_file_actions(&self, _source_mode: bool) -> &'static [MenuAction] {
-        const BROWSER_FIRST: &[MenuAction] = &[
-            MenuAction::Browser,
-            MenuAction::Explorer,
-            MenuAction::Terminal,
-            MenuAction::Sep,
-            MenuAction::Rename,
-            MenuAction::Delete,
-        ];
-        BROWSER_FIRST
-    }
-    fn render_body(&self, cx: &mut Context<Chat>, body: BodyCtx<'_>) -> AnyElement {
-        super::view::render_editor_surface(body.chat, body.weak, body.path, cx)
-    }
-}
-
 // ---------------------------------------------------------------------------
 // 注册表：后缀名 → handler（未命中 → TextKind）
 // ---------------------------------------------------------------------------
 
 static TEXT: TextKind = TextKind;
 static MARKDOWN: MarkdownKind = MarkdownKind;
-static HTML: HtmlKind = HtmlKind;
 static IMG_PNG: ImageKind = ImageKind { format: gpui::ImageFormat::Png };
 static IMG_JPEG: ImageKind = ImageKind { format: gpui::ImageFormat::Jpeg };
 static IMG_GIF: ImageKind = ImageKind { format: gpui::ImageFormat::Gif };
@@ -260,7 +231,9 @@ static TYPESCRIPT: CodeKind = CodeKind { ts_lang: "typescript" };
 static TSX: CodeKind = CodeKind { ts_lang: "tsx" };
 static GO: CodeKind = CodeKind { ts_lang: "go" };
 static JSON: CodeKind = CodeKind { ts_lang: "json" };
-static HTML_LANG: CodeKind = CodeKind { ts_lang: "html" };
+/// 树状标记语言共用实例（html/htm/xml/vue → ts_lang "html"）：后三者的高亮
+/// 语言随 html，且都不享浏览器菜单（那是 [`browser_openable`] 的判据）
+static MARKUP: CodeKind = CodeKind { ts_lang: "html" };
 static CSS: CodeKind = CodeKind { ts_lang: "css" };
 static TOML: CodeKind = CodeKind { ts_lang: "toml" };
 static YAML: CodeKind = CodeKind { ts_lang: "yaml" };
@@ -289,7 +262,6 @@ fn registry() -> &'static HashMap<&'static str, &'static dyn FileKind> {
             }
         };
         put(&["md", "markdown"], &MARKDOWN);
-        put(&["html", "htm"], &HTML);
         put(&["png"], &IMG_PNG);
         put(&["jpg", "jpeg"], &IMG_JPEG);
         put(&["gif"], &IMG_GIF);
@@ -303,8 +275,10 @@ fn registry() -> &'static HashMap<&'static str, &'static dyn FileKind> {
         put(&["tsx"], &TSX);
         put(&["go"], &GO);
         put(&["json", "jsonc"], &JSON);
-        // xml/vue：树状标记语言随 html 高亮（svg 已归 ImageKind，不在此）
-        put(&["xml", "vue"], &HTML_LANG);
+        // html/htm/xml/vue：树状标记语言共用一个 CodeKind（源码进编辑器，
+        // tree-sitter html 高亮；html 二改拍板起不再旁路系统浏览器）。
+        // 「在浏览器中打开」不是 kind 差异 → [`browser_openable`] 路径判据
+        put(&["html", "htm", "xml", "vue"], &MARKUP);
         put(&["css", "scss"], &CSS);
         put(&["toml"], &TOML);
         put(&["yaml", "yml"], &YAML);
@@ -338,6 +312,17 @@ pub(crate) fn kind_of(path: &Path) -> &'static dyn FileKind {
     }
 }
 
+/// 「在浏览器中打开」适用判据（html/htm）：编辑器右键菜单（edm-browser，
+/// 文件动作块首位）与文件树菜单（ftm-file-browser，021）共用同一处判断，
+/// 两处扩展名规则不再各写一份（漂移过：树菜单认 html 而编辑器菜单不动）。
+/// 判据是路径而非 kind——html/htm 与 xml/vue 同用一个 CodeKind，xml 不开
+/// 浏览器。
+pub(crate) fn browser_openable(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| matches!(e.to_ascii_lowercase().as_str(), "html" | "htm"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -369,20 +354,31 @@ mod tests {
         assert_eq!(kind("sql").name(), "text");
     }
 
-    /// html：源码进编辑器（2026-10-12 二改拍板），浏览器入口只在右键菜单。
+    /// html：源码进编辑器（2026-10-12 二改拍板），且**并入代码类处理器**——
+    /// 与 xml/vue 同一个 CodeKind（ts_lang "html"）。浏览器入口不再是 kind
+    /// 差异，而是路径判据（`browser_openable`，见下个测试）。
     #[test]
     fn html_opens_as_source() {
-        assert_eq!(kind("html").name(), "html");
-        assert_eq!(kind("htm").name(), "html");
+        assert_eq!(kind("html").name(), "code");
+        assert_eq!(kind("htm").name(), "code");
+        assert_eq!(kind("xml").name(), "code");
         let cfg = kind("html").editor_config().unwrap();
         assert_eq!(cfg.ts_lang, "html");
         assert!(cfg.soft_wrap);
-        assert_eq!(
-            kind("html").menu_file_actions(true)[0],
-            MenuAction::Browser
-        );
         assert!(!kind("html").supports_view_mode());
         assert_eq!(kind("html").toolbar(), &[ToolButton::Search]);
+        // 文件动作块 = 默认骨架（浏览器项由 browser_openable 打头渲染）
+        assert_eq!(kind("html").menu_file_actions(true), DEFAULT_FILE_ACTIONS);
+    }
+
+    /// 浏览器打开判据：只认 html/htm（大小写不敏感）；xml 同 kind 但不开。
+    #[test]
+    fn browser_openable_only_pages() {
+        assert!(browser_openable(Path::new("a.html")));
+        assert!(browser_openable(Path::new("A.HTM")));
+        assert!(!browser_openable(Path::new("a.xml")));
+        assert!(!browser_openable(Path::new("a.md")));
+        assert!(!browser_openable(Path::new("README")));
     }
 
     /// txt 与 code 分离：两者都是编辑器型，但高亮与身份不同。
@@ -415,7 +411,8 @@ mod tests {
         assert_eq!(kind("md").toolbar(), &[ToolButton::Eye, ToolButton::Search]);
     }
 
-    /// 右键菜单文件动作块：默认骨架；md 源码态带预览项；html 首位浏览器。
+    /// 右键菜单文件动作块：默认骨架；md 源码态带预览项（浏览器项是路径
+    /// 判据，不在本表）。
     #[test]
     fn menus() {
         assert_eq!(
@@ -425,8 +422,7 @@ mod tests {
         let md_src = kind("md").menu_file_actions(true);
         assert_eq!(md_src[0], MenuAction::PreviewToggle);
         assert_eq!(kind("md").menu_file_actions(false), DEFAULT_FILE_ACTIONS);
-        let html = kind("html").menu_file_actions(true);
-        assert_eq!(html[0], MenuAction::Browser);
+        assert_eq!(kind("html").menu_file_actions(true), DEFAULT_FILE_ACTIONS);
     }
 
     /// 双态：仅 markdown 支持 view_mode（file.view_mode op 门控）。
