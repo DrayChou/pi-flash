@@ -254,6 +254,9 @@ pub(crate) struct Chat {
     /// 编辑区右键菜单（zed 式：编辑块 + 文件动作块；渲染挂 psp_overlays
     /// 同层）。(文件路径, 鼠标 x, y)
     pub(crate) editor_menu: Option<(PathBuf, f32, f32)>,
+    /// 终端右键菜单（复制 / 粘贴 / 全选；渲染挂 psp_overlays 同层）。
+    /// (终端 tab id, 鼠标 x, y)
+    pub(crate) term_menu: Option<(usize, f32, f32)>,
     /// 021 文件树删除确认（统一 overlay::confirm；待删路径）
     pub(crate) tree_confirm_del: Option<PathBuf>,
     /// 删除失败持久弹层（trash Err 不再只靠状态栏一闪，用户可直接回报
@@ -486,6 +489,7 @@ impl Chat {
             tree_menu: None,
             tree_edit: None,
             editor_menu: None,
+            term_menu: None,
             tree_del_error: None,
             tree_confirm_del: None,
             changes_only: ui.tree_changes_only,

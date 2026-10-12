@@ -39,6 +39,12 @@ pub(crate) fn psp_overlays(
     if chat.editor_menu.is_some() {
         el = el.child(editor_menu_layer(chat, vp, t, cx));
     }
+    // 终端右键菜单（复制/粘贴/全选）；tab 已关则不再挂（防挂到空气里）
+    if let Some((tab_id, x, y)) = chat.term_menu
+        && chat.terminals.iter().any(|t| t.id == tab_id)
+    {
+        el = el.child(term_menu_layer(chat, tab_id, x, y, vp, t, cx));
+    }
     if let Some(card) = &chat.hover_card {
         // 延迟显示（0.3s）：快速滑过会话列表时不创建视觉，不干扰行悬停
         if card.shown {
@@ -1082,6 +1088,97 @@ fn editor_menu_layer(
         };
     }
     layer.child(card).into_any_element()
+}
+
+/// 终端右键菜单（复制 / 粘贴 / 全选）：动作作用于右键那一个终端 tab
+/// （不依赖 active_terminal），完成后焦点还给终端——菜单是终端的附属
+/// UI，收起后键盘要能接着用。
+fn term_menu_layer(
+    chat: &mut Chat,
+    tab_id: usize,
+    x: f32,
+    y: f32,
+    vp: (f32, f32),
+    t: &'static Theme,
+    cx: &mut gpui::Context<Chat>,
+) -> gpui::AnyElement {
+    let weak = cx.entity().downgrade();
+    let weak_layer = weak.clone();
+    let edges = PopupEdges::around((x, y), vp, 0., 12.);
+    let has_sel = chat
+        .terminals
+        .iter()
+        .find(|t| t.id == tab_id)
+        .is_some_and(|t| t.selection.is_some());
+    let layer = crate::ui::overlay::layer(false, Some(&chat.dialog_focus), move |_w, cx| {
+        let _ = weak_layer.update(cx, |c, cx| {
+            c.term_menu = None;
+            cx.notify();
+        });
+    });
+    let card = menu_card(edges, t)
+        .child(term_menu_item(
+            &weak,
+            "tm-copy",
+            "copy",
+            tr("action.copy"),
+            has_sel,
+            tab_id,
+            |c, tab, cx| {
+                c.term_copy(tab, cx);
+            },
+        ))
+        .child(term_menu_item(
+            &weak,
+            "tm-paste",
+            "clipboard",
+            tr("action.paste"),
+            true,
+            tab_id,
+            |c, tab, cx| {
+                c.term_paste(tab, cx);
+            },
+        ))
+        .child(term_menu_item(
+            &weak,
+            "tm-select-all",
+            "check",
+            tr("action.select_all"),
+            true,
+            tab_id,
+            |c, tab, cx| {
+                c.term_select_all(tab, cx);
+            },
+        ));
+    layer.child(card).into_any_element()
+}
+
+/// 终端菜单动作项：点击 = 应用动作（作用于该 tab）+ 收菜单 + 焦点回终端。
+fn term_menu_item(
+    weak: &gpui::WeakEntity<Chat>,
+    id: &'static str,
+    icon_name: &'static str,
+    label: &str,
+    enabled: bool,
+    tab_id: usize,
+    apply: fn(&mut Chat, usize, &mut gpui::Context<Chat>),
+) -> gpui::Stateful<gpui::Div> {
+    let weak = weak.clone();
+    let item = menu_item(SharedString::from(id.to_string()), icon_name, label, false, false)
+        .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+            cx.stop_propagation();
+            let _ = weak.update(cx, |c, cx| {
+                apply(c, tab_id, cx);
+                c.term_menu = None;
+                // 焦点回终端：菜单收起后键盘接着用（与打开菜单时的聚焦对称）
+                if let Some(tab) = c.terminals.iter().find(|t| t.id == tab_id) {
+                    let f = tab.focus.clone();
+                    window.focus(&f);
+                }
+                cx.notify();
+            });
+        });
+    if enabled { item } else { item.opacity(0.45) }
 }
 
 /// 编辑菜单动作项接线：点击 = 应用动作 + 收**编辑菜单**（tree_item 写死

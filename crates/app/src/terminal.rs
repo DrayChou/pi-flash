@@ -788,6 +788,26 @@ impl gpui::Element for TerminalElement {
                     }
                     this.drag_selection(ev.position, bounds, window, cx);
                 });
+                // right-click: terminal context menu (copy / paste / select
+                // all) — 终端没有右键菜单的话，鼠标用户无从复制粘贴
+                let this = shared.clone();
+                window.on_mouse_event(move |ev: &MouseDownEvent, phase, window, cx| {
+                    if phase != gpui::DispatchPhase::Bubble
+                        || ev.button != MouseButton::Right
+                        || !bounds.contains(&ev.position)
+                    {
+                        return;
+                    }
+                    cx.stop_propagation();
+                    // 先聚焦终端：菜单动作作用于它，收起后键盘也继续可用
+                    window.focus(&this.focus);
+                    let (x, y) = (f32::from(ev.position.x), f32::from(ev.position.y));
+                    let tab_id = this.tab_id;
+                    let _ = this.weak.update(cx, |chat, cx| {
+                        chat.term_menu = Some((tab_id, x, y));
+                        cx.notify();
+                    });
+                });
                 let this = shared;
                 window.on_mouse_event(move |ev: &ScrollWheelEvent, phase, window, cx| {
                     if phase != gpui::DispatchPhase::Bubble || !bounds.contains(&ev.position) {
@@ -1631,47 +1651,107 @@ impl Chat {
             .map(|t| t.focus.clone())
     }
 
-    /// Active terminal index helper。以**渲染面**（激活 panel tab 上的终端）
-    /// 校正 `active_terminal` 再取实体：`active_terminal` 只是索引缓存，切
-    /// tab / 关 tab 后可能仍指着后台终端，按键会送进看不见的那一个——双终端
-    /// 切换后「打不进字 / 数字打不进去」的根因。
-    pub(crate) fn active_term(&mut self) -> Option<&mut TerminalTab> {
-        if let Some(tix) = self.shown_terminal_index() {
-            self.active_terminal = Some(tix);
+    /// 该终端 tab 的选区文本 → 系统剪贴板。返回是否真的复制了东西
+    /// （无选区 = false，调用方据此决定 Ctrl+C 是否回落为 ^C）。
+    /// 选区**不**清掉（xterm/浏览器语义：复制后还能看到选中的东西）。
+    pub(crate) fn term_copy(&mut self, tab_id: usize, cx: &mut Context<Self>) -> bool {
+        let Some(tab) = self.terminals.iter_mut().find(|t| t.id == tab_id) else {
+            return false;
+        };
+        let Some(sel) = tab.selection else { return false };
+        let text = terminal::selection_text(&tab.term.lock(), sel);
+        if text.is_empty() {
+            return false;
         }
-        self.active_terminal.and_then(|ix| self.terminals.get_mut(ix))
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
+        true
     }
 
-    /// Terminal keyboard input: copy/paste shortcuts first (pi-web
+    /// 系统剪贴板文本 → 该终端 PTY（换行归一 + bracketed paste 交给
+    /// [`terminal::paste_bytes`]）。返回是否读到了剪贴板文本。
+    pub(crate) fn term_paste(&mut self, tab_id: usize, cx: &mut Context<Self>) -> bool {
+        use alacritty_terminal::event_loop::Msg;
+        let Some(text) = cx.read_from_clipboard().and_then(|i| i.text()) else {
+            return false;
+        };
+        let Some(tab) = self.terminals.iter().find(|t| t.id == tab_id) else {
+            return false;
+        };
+        let mode = *tab.term.lock().mode();
+        let bytes = terminal::paste_bytes(&text, &mode);
+        let _ = tab.pty.send(Msg::Input(bytes.into()));
+        true
+    }
+
+    /// 全选：可见屏 + 回滚缓冲（选区坐标与 [`terminal::selection_text`]
+    /// 的钳位口径一致，-history..screen）。
+    pub(crate) fn term_select_all(&mut self, tab_id: usize, cx: &mut Context<Self>) {
+        let Some(tab) = self.terminals.iter_mut().find(|t| t.id == tab_id) else {
+            return;
+        };
+        let (screen, total, cols) = {
+            let term = tab.term.lock();
+            (
+                term.grid().screen_lines() as i32,
+                term.grid().total_lines() as i32,
+                term.grid().columns(),
+            )
+        };
+        let min_line = -(total - screen).max(0);
+        tab.sel_anchor = None;
+        tab.selection = Some((
+            SelPt { line: min_line, col: 0 },
+            SelPt { line: screen - 1, col: cols.saturating_sub(1) },
+        ));
+        cx.notify();
+    }
+
+    /// Terminal keyboard input: clipboard shortcuts first (pi-web
     /// attachCustomKeyEventHandler parity: Ctrl+C with selection copies and
-    /// never sends ^C; Ctrl+V goes to the PTY, never the browser), then the
-    /// keystroke → escape-sequence table.
+    /// never sends ^C; Ctrl+V goes to the PTY, never the browser), plus the
+    /// Windows 习惯键（Ctrl+Insert / Shift+Insert / Ctrl+Shift+C / Ctrl+Shift+A），
+    /// then the keystroke → escape-sequence table. 目标恒为**当前显示**的终端。
     pub(crate) fn terminal_key(&mut self, ev: &KeyDownEvent, cx: &mut Context<Self>) {
         use alacritty_terminal::event_loop::Msg;
-        let Some(tab) = self.active_term() else { return };
+        let Some(tix) = self.shown_terminal_index().or(self.active_terminal) else {
+            return;
+        };
+        let Some(tab) = self.terminals.get(tix) else { return };
+        let tab_id = tab.id;
         let k = &ev.keystroke;
         let ctrl = k.modifiers.control;
         let shift = k.modifiers.shift;
+        // 右键菜单开着时 ESC 先收菜单（否则这一下会变成 PTY 的 ^[）
+        if k.key == "escape" && self.term_menu.is_some() {
+            self.term_menu = None;
+            cx.notify();
+            cx.stop_propagation();
+            return;
+        }
         let mode = *tab.term.lock().mode();
 
-        if ctrl && k.key == "v" {
-            if let Some(text) = cx.read_from_clipboard().and_then(|i| i.text()) {
-                let bytes = terminal::paste_bytes(&text, &mode);
-                let _ = tab.pty.send(Msg::Input(bytes.into()));
-            }
+        // 粘贴：Ctrl+V（pi-web parity）/ Shift+Insert（Windows 习惯）
+        if (ctrl && k.key == "v") || (shift && k.key == "insert") {
+            self.term_paste(tab_id, cx);
             cx.stop_propagation();
             return;
         }
-        if ctrl && k.key == "c" && (shift || tab.selection.is_some()) {
-            if let Some(sel) = tab.selection {
-                let text = terminal::selection_text(&tab.term.lock(), sel);
-                cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
-                tab.selection = None;
-                tab.sel_anchor = None;
+        // 复制：Ctrl+C 有选区才算复制（无选区落到下面的 ^C 中断）；
+        //       Ctrl+Insert / Ctrl+Shift+C 即使无选区也吞掉（不把 ^C 送进 PTY）
+        if ctrl && (k.key == "c" || k.key == "insert") {
+            let copied = self.term_copy(tab_id, cx);
+            if copied || shift || k.key == "insert" {
+                cx.stop_propagation();
+                return;
             }
+        }
+        // 全选（Windows Terminal 同键：Ctrl+Shift+A）
+        if ctrl && shift && k.key == "a" {
+            self.term_select_all(tab_id, cx);
             cx.stop_propagation();
             return;
         }
+        let Some(tab) = self.terminals.get(tix) else { return };
         if let Some(bytes) = terminal::keystroke_to_pty(k, &mode) {
             let _ = tab.pty.send(Msg::Input(bytes.into()));
             cx.stop_propagation();
