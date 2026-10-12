@@ -15,11 +15,12 @@
 - `get_messages` 快照携带 bashExecution——与乐观卡并轨会出双卡。
 - **`agent_end{willRetry:true}` 不是轮末**（pi-flash-7ep）：可重试错误（429/5xx/网络断，默认 maxRetries=3、退避 2s/4s/8s 上限 60s）后 pi 在**同一轮内**退避并重发 `agent_start`。轮的真正终点是 `agent_end{willRetry:false}` + `agent_settled`；pi 语义 `isStreaming=_isAgentRunActive` 持续到 settled（`isIdle` 明列 retry 不算 idle）。伴随事件 `auto_retry_start{attempt,maxAttempts,delayMs,errorMessage}` / `auto_retry_end{success,attempt,finalError?}`（success=true 不带 finalError）。注意 `FreeUsageLimitError` 类账号限额在 pi 的 NON-RETRYABLE 名单里，不会重试（`@earendil-works/pi-ai` utils/retry.js）。
 
-## 方法存在性（1.0.0 / 1.1.0 实测，vendor 升级时复核）
+## 方法存在性（1.0.0 / 1.1.0 / 1.2.0 实测，vendor 升级时复核）
 
 - 无 `navigate_tree` / `systemPrompt` / `get_tools`（`get_tools` 是 pi-web 进程内 SDK 专属）。
 - `get_commands` 只回扩展 + skill 命令，**无内置**——升级时复核 `catalog.rs`。
 - RPC 模式不支持 custom 扩展 UI；`extension_ui_response` 的 id 必须是请求 id（pi 在 raw-line 层按 id 关联）。
+- 1.2.0 起 `getAllTools` 输出多可选键 `namespace` / `reachesTools`（codemode/tool_search 声明用）；pi-link 无 `deny_unknown_fields`，直接容忍。
 
 ## transcript 重放
 
