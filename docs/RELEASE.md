@@ -82,6 +82,7 @@ cd npm && npm publish                             # ③ 仅首发/回退需要�
 - **①→② 间隔要短**：macOS CI 若先跑完而 release 不存在，`softprops/action-gh-release` 会自建 release，
   随后 `gh release create` 撞名失败（撞了就改用 `gh release upload v<v> <资产>` 补挂）
 - 尾部块内的 `npm publish` 与 CI 的 `publish-npm.yml` **二选一**，勿双跑（重复发版报 EPUBLISHCONFLICT，job 红）
+- tag 已存在且指向旧提交（测试期残留）时：发版前 `git tag -f v<v>` + 强制推 tag。`gh release create --verify-tag` 只校核tag 存在，不校核指向哪个 commit
 
 ### 3.3 等 macOS CI
 
@@ -120,6 +121,7 @@ darwin 资产 + sidecar 由 CI 自动挂上同一 release（分钟级），无�
 | npm publish ENEEDAUTH/EOTP | 检查 trusted publisher 是否配好（Actions 里看 OIDC 日志）；未配则手动浏览器授权；勿新建长效 token（除非走 bypass-token 过渡方案） |
 | Trusted Publisher 过期 | npmjs 删除重建，2 天窗口内再发一版完成绑定 |
 | npm 版本发错 | 禁止重发同版本 → 前向修复，版本号由所有者拍板（§0） |
+| `publish-npm` 报 cannot publish over the previously published versions | 测试期手发过同号：先 `npm unpublish pi-flash@<v>`（**需登录 + 2FA，注意 72h 窗口**），再 `gh run rerun <publish-npm run id>` 让 OIDC 重发。本机 npmjs token 可能已失效（写操作 exit 0 但 registry 无变化）→ unpublish 后必须回 registry 核对 `npm view pi-flash versions` |
 | 薄壳安装 404（包已上线、资产未挂） | 竞态窗口：等资产挂完，`npm rebuild pi-flash` 重试 |
 | 薄壳下载 SHA-256 不符 | 自动删除并失败；确认资产与 sidecar 同批上传，重装 |
 
