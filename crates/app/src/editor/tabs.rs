@@ -353,6 +353,19 @@ impl Chat {
                     .pty
                     .send(alacritty_terminal::event_loop::Msg::Shutdown);
                 self.terminals.remove(tix);
+                // 终端可开多个（同项目不限量）：下标随移除平移/夹紧，
+                // 否则 active_terminal 会指错终端或越界
+                self.active_terminal = match self.active_terminal {
+                    Some(a) if a == tix => {
+                        if self.terminals.is_empty() {
+                            None
+                        } else {
+                            Some(tix.min(self.terminals.len() - 1))
+                        }
+                    }
+                    Some(a) if a > tix => Some(a - 1),
+                    other => other,
+                };
             }
         }
         self.active_panel_tab = match self.active_panel_tab {

@@ -1567,8 +1567,11 @@ mod tests {
 // ---------------------------------------------------------------------------
 
 impl Chat {
-    /// 打开（或聚焦）一个终端；`cwd_override` 为 psp 项目菜单定向打开时
+    /// 打开一个终端；`cwd_override` 为 psp 项目菜单定向打开时
     /// 的项目目录，None = 当前工作区。v54: 终端在内容区 tab 显示。
+    ///
+    /// 不按 cwd 复用：每次调用都新开一个终端 tab（同一项目可开任意
+    /// 多个，tab 标题按目录名显示、允许重名），不跳回已有终端。
     pub(crate) fn open_terminal(
         &mut self,
         cwd_override: Option<PathBuf>,
@@ -1576,17 +1579,6 @@ impl Chat {
         cx: &mut Context<Self>,
     ) {
         let term_cwd = cwd_override.unwrap_or_else(|| self.cwd.clone());
-        if let Some(ix) = self.terminals.iter().position(|t| same_path(&t.cwd, &term_cwd)) {
-            self.active_terminal = Some(ix);
-            if let Some(tix) = self.panel_tabs.iter().position(|tab| matches!(tab, PanelTab::Term(id) if *id == self.terminals[ix].id)) {
-                self.activate_panel_tab(tix, cx);
-            }
-            self.set_content_view(ContentView::Term);
-            let focus = self.terminals[ix].focus.clone();
-            window.focus(&focus);
-            cx.notify();
-            return;
-        }
         let Some(tx) = self.term_events.clone() else { return };
         let (cell_w, line_h) = terminal::measure_cell(window);
         let font_size = terminal::font_size();

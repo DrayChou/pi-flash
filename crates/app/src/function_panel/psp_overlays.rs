@@ -545,9 +545,9 @@ fn menu_layer(
                             move |_, window, cx| {
                                 cx.stop_propagation();
                                 let _ = weak.update(cx, |c, cx| {
+                                    // 只开终端 tab（内容区切过去），dock 面板
+                                    // 留在原处——会话列表里开终端不切文件树
                                     c.open_terminal_in(path.clone(), window, cx);
-                                    c.dock_panel = crate::DockPanel::Files;
-                                    c.persist_ui();
                                     c.psp_menu = None;
                                     cx.notify();
                                 });
