@@ -45,7 +45,8 @@ use util::ResultExt;
 use super::ImageCacheProvider;
 
 const DRAG_THRESHOLD: f64 = 2.;
-const TOOLTIP_SHOW_DELAY: Duration = Duration::from_millis(500);
+// PF 本地改动：500→350（用户定夺 2026-10-13；上游升级需重套，见 docs/agents/gpui.md）
+const TOOLTIP_SHOW_DELAY: Duration = Duration::from_millis(350);
 const HOVERABLE_TOOLTIP_HIDE_DELAY: Duration = Duration::from_millis(500);
 
 /// The styling information for a given group.

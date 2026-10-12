@@ -28,6 +28,18 @@ pub fn tip_view(text: impl Into<Text>, window: &mut Window, cx: &mut App) -> Any
     gpui_component::tooltip::Tooltip::new(text).build(window, cx)
 }
 
+/// 同 `tip_view`，另带键位 chip（`Kbd` 右挂，`with_tip_action` 专用）。
+fn tip_view_kbd(
+    text: impl Into<Text>,
+    kbd: Option<gpui_component::Kbd>,
+    window: &mut Window,
+    cx: &mut App,
+) -> AnyView {
+    gpui_component::tooltip::Tooltip::new(text)
+        .key_binding(kbd)
+        .build(window, cx)
+}
+
 /// 给可交互元素挂统一 tooltip。
 pub trait WithTip: StatefulInteractiveElement + Sized {
     /// i18n 键：每次显示期过 `i18n::tr`，随语言切换。
@@ -43,6 +55,17 @@ pub trait WithTip: StatefulInteractiveElement + Sized {
         let text = text.into();
         // tooltip 闭包是 Fn（每次弹出重建视图），SharedString 廉价克隆
         self.tooltip(move |window, cx| tip_view(text.clone(), window, cx))
+    }
+
+    /// i18n 键 + 动作键位 chip（截图样式「文字 + Ctrl+X 灰底键帽」）。
+    /// 键位每次弹出查 keymap（`binding_for_action`）——绑定改了 chip 自动
+    /// 跟随，唯一事实源是 keymap；动作没绑键则只显文字不显 chip。
+    fn with_tip_action(self, key: &'static str, action: &dyn gpui::Action) -> Self {
+        let action = action.boxed_clone();
+        self.tooltip(move |window, cx| {
+            let kbd = gpui_component::Kbd::binding_for_action(action.as_ref(), None, window);
+            tip_view_kbd(crate::i18n::tr(key), kbd, window, cx)
+        })
     }
 }
 

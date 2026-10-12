@@ -49,7 +49,10 @@ pub(crate) use session::menu::slash_menu_view;
 // ↑/↓ 在菜单态导航补全、空输入态回溯历史，非空多行重新派发组件 MoveUp/
 // MoveDown；Tab 在菜单态接受补全；Ctrl+V 截获图片粘贴（composer 附件化，
 // 其余输入框经根节点兜底重派发组件 Paste）。组件默认的这些键由此被截获。
-actions!(app, [ComposerUp, ComposerDown, ComposerTab, ComposerPaste, FileSave]);
+// psp 全局三动作（OpenProjectPicker/NewSession/OpenSessionSearch）：无上下
+// 文全局绑定 Ctrl+P / Ctrl+N / Ctrl+K；psp 头部三钮的 tooltip 键位 chip 也
+// 查这三个动作（键位单一事实源 = keymap，绑定改了 chip 自动跟随）。
+actions!(app, [ComposerUp, ComposerDown, ComposerTab, ComposerPaste, FileSave, OpenProjectPicker, NewSession, OpenSessionSearch]);
 use i18n::tr;
 use models_config::EnabledState;
 use crate::appearance::theme::theme as T;
@@ -134,6 +137,13 @@ fn main() {
                 // 上下文内无人监听该 action，自然空转）
                 KeyBinding::new("ctrl-s", FileSave, Some("Input")),
                 KeyBinding::new("cmd-s", FileSave, Some("Input")),
+                // psp 全局三键（无上下文 = 任意焦点可用；组件输入框未占这三个键）
+                KeyBinding::new("ctrl-p", OpenProjectPicker, None),
+                KeyBinding::new("cmd-p", OpenProjectPicker, None),
+                KeyBinding::new("ctrl-n", NewSession, None),
+                KeyBinding::new("cmd-n", NewSession, None),
+                KeyBinding::new("ctrl-k", OpenSessionSearch, None),
+                KeyBinding::new("cmd-k", OpenSessionSearch, None),
             ]);
             appearance::sync_gpui_tokens(cx);
             // startup restore (§4)：每次启动默认最大化（位置不持久化——

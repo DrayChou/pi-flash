@@ -243,9 +243,10 @@ composer 胶囊（rounded16、pt10 pb12、AutoGrow 3–10 行）为既有特例�
 | API | 文案 | 用途 |
 |---|---|---|
 | `.with_tip(key)` | i18n 键，每次弹出过 tr 随语言切换 | icon 钮/可交互元素的悬停提示 |
+| `.with_tip_action(key, action)` | 同上 + 键位 chip（`Kbd` 右挂，样式「Ctrl+P」灰底键帽） | 有全局快捷键的钮；键位查 keymap 自动跟随绑定 |
 | `.with_tip_text(text)` | 动态直排（快捷键拼接等），不走 i18n | 动态文案 |
 
-机制：gpui 原生 tooltip 手势——悬停约 300ms 自动弹出、移开即收，应用层不写 hover 状态机；手势只挂 stateful 元素（`.id()` 必须先行）。提示卡样式 = gpui-component `Tooltip` 默认盘（tip_view 收口），不另行定制。
+机制：gpui 原生 tooltip 手势——悬停 **350ms** 自动弹出（vendored gpui 本地改动，上游 500ms，升级需重套）、移开即收，应用层不写 hover 状态机；手势只挂 stateful 元素（`.id()` 必须先行）。提示卡样式 = gpui-component `Tooltip` 默认盘（tip_view 收口），不另行定制。
 
 不属 tooltip 的悬浮物：psp 项目路径悬浮条 / 会话详情卡（自绘 overlay，可交互、有宽限期，见 psp_overlays.rs）。
 

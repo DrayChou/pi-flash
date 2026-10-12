@@ -391,7 +391,7 @@ fn title_row(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> g
                         .justify_center()
                         .cursor_pointer()
                         .hover(|s| s.text_color(rgb(t.text)))
-                        .with_tip("psp.open_project")
+                        .with_tip_action("psp.open_project", &crate::OpenProjectPicker)
                         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                             let _ = w_open.update(cx, |c, cx| c.open_project_picker(false, cx));
                         })
@@ -409,7 +409,7 @@ fn title_row(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> g
                         .justify_center()
                         .cursor_pointer()
                         .hover(|s| s.text_color(rgb(t.text)))
-                        .with_tip("psp.new_session")
+                        .with_tip_action("psp.new_session", &crate::NewSession)
                         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                             let _ = w_new.update(cx, |c, cx| c.new_session(cx));
                         })
@@ -426,7 +426,7 @@ fn title_row(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> g
                         .justify_center()
                         .cursor_pointer()
                         .hover(|s| s.text_color(rgb(t.text)))
-                        .with_tip("psp.search_sessions")
+                        .with_tip_action("psp.search_sessions", &crate::OpenSessionSearch)
                         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                             let _ = w_search.update(cx, |c, cx| c.open_session_search(cx));
                         })

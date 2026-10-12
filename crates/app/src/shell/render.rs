@@ -475,6 +475,17 @@ impl Render for Chat {
             .on_action(cx.listener(|_, _: &ComposerTab, window, cx| {
                 window.dispatch_action(Box::new(gpui_component::input::IndentInline), cx);
             }))
+            // psp 全局三动作（Ctrl+P / Ctrl+N / Ctrl+K，绑定见 main.rs bind_keys）：
+            // 直开项目/新建会话/搜索会话，与 psp 头部三钮同一方法
+            .on_action(cx.listener(|this, _: &OpenProjectPicker, _window, cx| {
+                let _ = this.open_project_picker(false, cx);
+            }))
+            .on_action(cx.listener(|this, _: &NewSession, _window, cx| {
+                let _ = this.new_session(cx);
+            }))
+            .on_action(cx.listener(|this, _: &OpenSessionSearch, _window, cx| {
+                let _ = this.open_session_search(cx);
+            }))
             .child(body);
 
         if let Some(panel) = self.settings.clone() {
