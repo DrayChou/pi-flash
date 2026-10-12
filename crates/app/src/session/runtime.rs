@@ -113,12 +113,17 @@ pub(crate) struct SessionRuntime {
     pub pending_echo: Option<String>,
     pub stream_started: Option<std::time::Instant>,
     pub agent_running: bool,
-    /// 本轮是否出错：is_error 消息 / prompt 发送失败 / stopReason=="error"
-    /// 置位；AgentEnd 带 will_retry（自动重试，错误已恢复）清位。
+    /// 本轮结局（三色通知的红档）：**最后一条 assistant 消息**
+    /// stopReason=="error"（模型/接口层错误），或 prompt 发送失败。
+    /// 定义 = 「用户消息起、最后一条助手消息止」——每条 assistant 消息
+    /// 覆盖这两个旗标（MessageEnd）、每条用户消息归零（MessageStart），
+    /// 与转写区 final_error/final_truncated 同口径。**工具调用失败不算**
+    /// （toolResult.isError 是 agent 工作过程的一部分，工具报错后 agent
+    /// 照常自愈并答完——2026-10-12 实测：grep 未命中被误报红点）。
     /// AgentSettled 时随 TurnSettled 冒泡给订阅方（出错红点）。
     pub turn_error: bool,
-    /// 本轮内部中断（stopReason = length/aborted：上限截断、中止——非外部
-    /// 错误也非正常完成，通知点黄色档）
+    /// 本轮结局（黄档）：最后一条 assistant 消息 stopReason = length/aborted
+    /// （输出上限截断 / 中止——非外部错误也非正常完成）
     pub turn_interrupted: bool,
     pub status: String,
     /// 「其他」页提示音开关的运行时副本（app_settings.json `sound` 是真值
@@ -698,13 +703,23 @@ impl SessionRuntime {
                 }
             }
             Event::MessageStart { role, blocks, timestamp, is_error, tool_call_id, custom_type: _, custom_display: _, details, raw_system } => {
-                // 出错消息（agent 错误 / toolResult error）点亮本轮错误旗；
-                // 是否被重试恢复由 AgentEnd(will_retry) 裁决
-                if is_error {
-                    self.turn_error = true;
-                }
+                // is_error 只出现在 toolResult 上（协议口径：非 toolResult 恒
+                // false），而工具报错是 agent 工作过程的一部分——它经常一边
+                // 试错一边把事情做完（grep 未命中、命令非零退出…），**不是**
+                // 这一轮的「外部错误/崩溃」。红点只认轮末终值：助手消息
+                // stopReason=="error"（见 MessageEnd）与 prompt 发送失败。
                 match role.as_str() {
                     "user" => {
+                        // 轮次边界：结局旗标在用户消息处归零，由随后的每条
+                        // assistant 消息按 stopReason **覆盖**（见 MessageEnd）。
+                        // 不在 AgentStart/AgentEnd 清——自动重试同样会发
+                        // AgentStart（会把上一跳的错误结局抹掉），而
+                        // AgentEnd(willRetry) 是 pi 的乐观预判：先报 true，再看
+                        // `_prepareRetry` 决定是否真的重试；退避期间被中止（用户
+                        // 停止/新消息）或重试未跑起来时，清掉的错误旗再也没机会
+                        // 置回来——「错误轮次报青蓝」的根因。
+                        self.turn_error = false;
+                        self.turn_interrupted = false;
                         // upgrade the optimistic send bubble in place instead
                         // of pushing a duplicate echo (pi-web
                         // optimisticUserMessageKey parity); image blocks and
@@ -954,16 +969,15 @@ impl SessionRuntime {
                             m.error_message = error_message;
                             m.model = model;
                             self.streaming_content = false;
-                            // 通知点三色分类（2026-10-10）：error → 红
-                            // （外部错误/崩溃）；length/aborted → 黄（内部
-                            // 中断：上限截断/中止）；其余 = 正常完成青蓝
-                            match m.stop_reason.as_deref() {
-                                Some("error") => self.turn_error = true,
-                                Some("length" | "aborted") => {
-                                    self.turn_interrupted = true;
-                                }
-                                _ => {}
-                            }
+                            // 通知点三色 = **最后一条 assistant 消息的 stopReason**
+                            // （与转写区 final_error/final_truncated 同一口径）：
+                            // error → 红（外部错误/崩溃）；length/aborted → 黄
+                            // （内部中断）；其余 = 正常完成青蓝。这里**覆盖**（不是
+                            // 只置位）：pi 自动重试会产出多条 assistant 消息，只有
+                            // 最后一条是这轮的结局（重试成功也要能从红回到正常）。
+                            self.turn_error = m.stop_reason.as_deref() == Some("error");
+                            self.turn_interrupted =
+                                matches!(m.stop_reason.as_deref(), Some("length" | "aborted"));
                         }
                     }
                 } else if role == "user" {
@@ -991,9 +1005,10 @@ impl SessionRuntime {
                 }
             }
             Event::AgentStart => {
+                // 不动 turn_error/turn_interrupted：自动重试也会走这里，结局由
+                // assistant 消息（MessageEnd）覆盖、由用户消息（MessageStart）
+                // 归零（见那两处注释）。
                 self.agent_running = true;
-                self.turn_error = false;
-                self.turn_interrupted = false;
                 self.status = "running".into();
                 if self.stream_started.is_none() {
                     self.stream_started = Some(std::time::Instant::now());
@@ -1021,13 +1036,11 @@ impl SessionRuntime {
                 // 轮不到记点
                 cx.emit(SessionEvent::TurnSettled);
             }
-            Event::AgentEnd { will_retry } => {
+            Event::AgentEnd { will_retry: _ } => {
                 self.agent_running = false;
-                // 自动重试 = 本轮错误已被恢复路径接管，不记红点
-                if will_retry {
-                    self.turn_error = false;
-                    self.turn_interrupted = false;
-                }
+                // willRetry 只说明 pi「打算」重试（乐观预判）——结局旗标不在这里
+                // 清：重试真跑起来后由它的 assistant 消息覆盖，没跑起来就保留
+                // 上一跳的错误结局（见 AgentStart / MessageEnd 注释）。
                 self.phase_waiting = false;
                 self.pending_echo = None;
                 self.streaming_content = false;
@@ -2057,3 +2070,135 @@ impl SessionRuntime {
 }
 
 
+
+#[cfg(test)]
+mod turn_outcome_tests {
+    //! 轮末结局（三色通知点）的定义锁：结局 = **最后一条 assistant 消息的
+    //! stopReason**，由用户消息归零、由每条 assistant 消息覆盖。
+    //!
+    //! 两个真机回归（2026-10-12）：
+    //! 1. pi 的 `agent_end.willRetry` 是乐观预判（先报 true，再看
+    //!    `_prepareRetry` 决定是否真重试）。原先在这里清旗 → 退避期间被
+    //!    中止/未重试时，错误结局被清掉 → 错误的轮次报青蓝完成点。
+    //! 2. `toolResult.isError`（grep 未命中、命令非零退出）被当成轮末错误 →
+    //!    正常完成的轮次报红点。
+    use super::*;
+    use gpui::TestAppContext;
+
+    fn ev_start(role: &str, is_error: bool) -> Event {
+        Event::MessageStart {
+            role: role.into(),
+            blocks: Vec::new(),
+            timestamp: None,
+            is_error,
+            tool_call_id: None,
+            custom_type: None,
+            custom_display: true,
+            details: None,
+            raw_system: None,
+        }
+    }
+
+    fn ev_end(role: &str, stop: &str, err: Option<&str>) -> Event {
+        Event::MessageEnd {
+            role: role.into(),
+            blocks: Vec::new(),
+            usage: None,
+            timestamp: None,
+            stop_reason: Some(stop.into()),
+            error_message: err.map(str::to_string),
+            is_error: false,
+            tool_call_id: None,
+            custom_type: None,
+            custom_display: true,
+            model: Some("m".into()),
+        }
+    }
+
+    fn runtime(cx: &mut TestAppContext) -> gpui::Entity<SessionRuntime> {
+        cx.new(|_| {
+            let mut r = SessionRuntime::new("t".into(), PathBuf::from("C:\t"), None);
+            r.sound_on = false;
+            r
+        })
+    }
+
+    fn feed(rt: &gpui::Entity<SessionRuntime>, cx: &mut TestAppContext, ev: Event) {
+        rt.update(cx, |r, cx| r.on_event(ev, cx));
+    }
+
+    /// 真机回归 1：错误尝试之后 willRetry=true，但重试没跑起来（退避期间被
+    /// 中止/新消息打断）→ 结算必须仍是「出错」，不能被乐观预判清成完成。
+    #[gpui::test]
+    fn error_survives_optimistic_will_retry(cx: &mut TestAppContext) {
+        let rt = runtime(cx);
+        feed(&rt, cx, ev_start("user", false));
+        feed(&rt, cx, ev_start("assistant", false));
+        feed(&rt, cx, ev_end("assistant", "error", Some("Connection error.")));
+        assert!(rt.read_with(cx, |r, _| r.turn_error), "error 消息当即置红");
+        feed(&rt, cx, Event::AgentEnd { will_retry: true });
+        assert!(
+            rt.read_with(cx, |r, _| r.turn_error),
+            "乐观 willRetry 不得清掉已发生的错误结局"
+        );
+        feed(&rt, cx, Event::AgentSettled);
+        assert!(rt.read_with(cx, |r, _| r.turn_error), "结算时仍是红档");
+    }
+
+    /// 重试真的成功：最后一条 assistant 的 stop 覆盖错误结局 → 青蓝。
+    #[gpui::test]
+    fn retry_success_overwrites_error(cx: &mut TestAppContext) {
+        let rt = runtime(cx);
+        feed(&rt, cx, ev_start("user", false));
+        feed(&rt, cx, ev_start("assistant", false));
+        feed(&rt, cx, ev_end("assistant", "error", Some("Connection error.")));
+        // 重试：pi 会再发一次 agent_start + 一条成功的 assistant 消息
+        feed(&rt, cx, Event::AgentStart);
+        feed(&rt, cx, ev_start("assistant", false));
+        feed(&rt, cx, ev_end("assistant", "stop", None));
+        feed(&rt, cx, Event::AgentEnd { will_retry: false });
+        feed(&rt, cx, Event::AgentSettled);
+        assert!(!rt.read_with(cx, |r, _| r.turn_error));
+        assert!(!rt.read_with(cx, |r, _| r.turn_interrupted));
+    }
+
+    /// 真机回归 2：工具报错（isError）是工作过程，不是轮末结局。
+    #[gpui::test]
+    fn tool_error_is_not_a_turn_error(cx: &mut TestAppContext) {
+        let rt = runtime(cx);
+        feed(&rt, cx, ev_start("user", false));
+        feed(&rt, cx, ev_start("assistant", false));
+        feed(&rt, cx, ev_start("toolResult", true));
+        feed(&rt, cx, ev_end("toolResult", "stop", None));
+        feed(&rt, cx, ev_start("assistant", false));
+        feed(&rt, cx, ev_end("assistant", "stop", None));
+        feed(&rt, cx, Event::AgentSettled);
+        assert!(!rt.read_with(cx, |r, _| r.turn_error));
+    }
+
+    /// 黄色档：length/aborted 是内部中断，非外部错误。
+    #[gpui::test]
+    fn length_stop_is_warning_not_error(cx: &mut TestAppContext) {
+        let rt = runtime(cx);
+        feed(&rt, cx, ev_start("user", false));
+        feed(&rt, cx, ev_start("assistant", false));
+        feed(&rt, cx, ev_end("assistant", "length", None));
+        feed(&rt, cx, Event::AgentSettled);
+        assert!(!rt.read_with(cx, |r, _| r.turn_error));
+        assert!(rt.read_with(cx, |r, _| r.turn_interrupted));
+    }
+
+    /// 新一轮用户消息把上轮结局归零（上一轮的黄/红不得泄漏进下一轮）。
+    #[gpui::test]
+    fn new_user_turn_resets_outcome(cx: &mut TestAppContext) {
+        let rt = runtime(cx);
+        feed(&rt, cx, ev_start("user", false));
+        feed(&rt, cx, ev_start("assistant", false));
+        feed(&rt, cx, ev_end("assistant", "error", Some("boom")));
+        assert!(rt.read_with(cx, |r, _| r.turn_error));
+        // 用户再发一条 → 归零（重试不发用户消息，所以重试不会误清）
+        feed(&rt, cx, ev_start("user", false));
+        assert!(!rt.read_with(cx, |r, _| r.turn_error));
+        assert!(!rt.read_with(cx, |r, _| r.turn_interrupted));
+    }
+}

@@ -53,6 +53,12 @@ impl Chat {
                             (r.file.clone(), r.turn_error, r.turn_interrupted)
                         };
                         if let Some(f) = file {
+                            // 通知点只表达**最近一轮**的结局：先摘掉上一轮的
+                            // 档位再挂新点——否则旧红点（优先级最高）会盖住
+                            // 新一轮的完成通知，反之亦然
+                            chat.unread.remove(&f);
+                            chat.turn_errors.remove(&f);
+                            chat.turn_warnings.remove(&f);
                             if turn_error {
                                 chat.turn_errors.insert(f);
                             } else if turn_interrupted {
