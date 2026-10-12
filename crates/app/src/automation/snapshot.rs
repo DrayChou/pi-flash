@@ -287,6 +287,12 @@ fn sessions_surface(chat: &Chat) -> Value {
         .iter()
         .map(|g| json!({"name": g.name, "path": g.path.display().to_string(), "sessions": g.sessions.len()}))
         .collect();
+    // 伪标签（draft 已发送、pi 未落盘）：验收断言「发送瞬间标签出现」用
+    let pending_tabs: Vec<Value> = chat
+        .pending_tabs
+        .iter()
+        .map(|e| json!({"key": e.key, "preview": truncate(&e.preview, 120), "cwd": e.cwd}))
+        .collect();
     json!({
         "cwd": chat.cwd.display().to_string(),
         "active_key": chat.active_key,
@@ -294,6 +300,7 @@ fn sessions_surface(chat: &Chat) -> Value {
         "runtimes": chat.runtimes.keys().cloned().collect::<Vec<_>>(),
         "sessions": sessions,
         "projects": projects,
+        "pending_tabs": pending_tabs,
     })
 }
 

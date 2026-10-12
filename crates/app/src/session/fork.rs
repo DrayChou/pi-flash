@@ -139,6 +139,14 @@ impl SessionRuntime {
         if self.file.as_deref() == Some(f.as_path()) {
             return;
         }
+        // pi 在 SessionManager 构造期就把 sessionFile 定死，而文件本体要等
+        // 首条 user/assistant 消息才落盘（_hasConversation/_persist，#10000）——
+        // 启动期 get_state/get_session_stats 带回的是「幻影路径」，没落盘不绑
+        // 定：否则 boot 草稿就被迁走 pool key、recents/last-open 记下不存在的
+        // 文件。fork/clone 的分支文件当场写盘（分支必带对话历史），守卫无感。
+        if !f.is_file() {
+            return;
+        }
         self.file = Some(f.clone());
         self.disk_file_len = std::fs::metadata(&f).map(|m| m.len()).unwrap_or(0);
         self.disk_msg_count = pi_link::sessions::count_message_entries(&f) as usize;

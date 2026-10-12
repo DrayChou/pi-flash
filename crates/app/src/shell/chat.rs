@@ -236,6 +236,10 @@ pub(crate) struct Chat {
     pub(crate) turn_errors: HashSet<PathBuf>,
     /// 内部中断黄点（stopReason = length/aborted：上限截断、中止）
     pub(crate) turn_warnings: HashSet<PathBuf>,
+    /// 伪标签（draft 首条消息乐观上侧栏）：pi 落盘前 Sidebar 的占位行。
+    /// 挂 = PendingTab(Some)；摘 = FileBound 换真身 / 发送被拒 / 进程死 /
+    /// 轮末确定无文件。纯内存态——没落盘的 draft 重启后本就不存在。
+    pub(crate) pending_tabs: Vec<PendingTab>,
     /// 窗口焦点快照（render 每帧写；焦点变化本身会触发重绘所以不陈旧）。
     /// 「agent 结束时窗口没焦点就给点」的判定依据（2026-10-10 定夺）
     pub(crate) window_active: bool,
@@ -479,6 +483,7 @@ impl Chat {
             unread: HashSet::new(),
             turn_errors: HashSet::new(),
             turn_warnings: HashSet::new(),
+            pending_tabs: Vec::new(),
             window_active: true,
             remote: remote_control::RemoteControl::new(),
             hovered_project: None,

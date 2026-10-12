@@ -74,6 +74,32 @@ impl Chat {
                     chat.refresh_sessions();
                     cx.notify();
                 }
+                SessionEvent::PendingTab(preview) => {
+                    // 伪标签生命周期（draft 首条消息乐观上侧栏）：挂/刷新按
+                    // key 幂等，撤按 key 摘除。真标签由 FileBound 落地。
+                    let key = rt.read(cx).key.clone();
+                    match preview {
+                        Some(p) => {
+                            let p = p.clone();
+                            let cwd = rt.read(cx).cwd.to_string_lossy().to_string();
+                            if let Some(e) =
+                                chat.pending_tabs.iter_mut().find(|e| e.key == key)
+                            {
+                                e.preview = p;
+                            } else {
+                                chat.pending_tabs.push(PendingTab {
+                                    key,
+                                    preview: p,
+                                    cwd,
+                                });
+                            }
+                        }
+                        None => {
+                            chat.pending_tabs.retain(|e| e.key != key);
+                        }
+                    }
+                    cx.notify();
+                }
                 SessionEvent::ExtUi(req) => {
                     // 微信端与桌面端**并行**拿到同一请求（060 §4.1）：两边都要
                     // 渲染一份文本，但只有一方能应答 —— 桌面 ext_respond 会
@@ -251,6 +277,8 @@ impl Chat {
         if old_key == path_key {
             return;
         }
+        // 伪标签到此退役：磁盘扫描现在找得到真文件，真标签接管
+        self.pending_tabs.retain(|e| e.key != old_key);
         rt.update(cx, |r, _| r.key = path_key.clone());
         // 会话级插件清单跟着身份走（草稿 key → 会话文件路径）：确认时按草稿
         // key 落盘，这里把它搬到真实会话键上，重启后按会话恢复（034）

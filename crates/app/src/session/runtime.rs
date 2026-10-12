@@ -59,6 +59,10 @@ pub(crate) enum SessionEvent {
     /// a draft got persisted: pi bound this process to a fresh session file
     /// (pi-web promoteNewSession parity — the pool key migrates draft-N → path)
     FileBound(PathBuf),
+    /// 伪标签（draft 首条消息乐观上侧栏）：Some(预览) = 挂/刷新，None = 撤。
+    /// 真标签要等 pi 落盘 + 磁盘扫描（进程冷启 1-3s），伪标签让「发送瞬间」
+    /// 就有标签；FileBound 落地时由 on_file_bound 摘除换真身。
+    PendingTab(Option<String>),
 }
 
 /// 033 会话导航面板的一轮摘要（runtime 缓存条目）：用户消息索引 + 前
@@ -440,6 +444,11 @@ async fn consume_runtime_events(
             if let Some(s) = rt.state.as_mut() {
                 s.is_streaming = false;
             }
+            // 进程死了：文件落过盘就补绑定（真标签接管；重启后可重开），
+            // 没落盘（boot 即死 / 全程无消息）撤伪标签
+            if !rt.try_bind_reported_file(cx) {
+                cx.emit(SessionEvent::PendingTab(None));
+            }
             cx.emit(SessionEvent::Changed);
             cx.notify();
         }
@@ -699,6 +708,10 @@ impl SessionRuntime {
                         self.pager.release();
                         // 发送失败 = 本轮未跑成，红点
                         self.turn_error = true;
+                        // preflight 拒绝（无鉴权/无模型）= 什么都没落盘，撤伪标签
+                        if !self.try_bind_reported_file(cx) {
+                            cx.emit(SessionEvent::PendingTab(None));
+                        }
                     }
                 }
             }
@@ -991,6 +1004,12 @@ impl SessionRuntime {
                     if self.messages.iter().filter(|m| m.role == Role::User).count() == 1 {
                         cx.emit(SessionEvent::ListDirty);
                         cx.notify();
+                        // 绑定对账：此刻文件已在盘上（pi 先 appendMessage 落
+                        // 盘再发事件，存在性守卫此刻放行）→ FileBound 迁移
+                        // pool key。不等 AgentSettled 的 refresh_state：否则
+                        // 「真标签已上侧栏、pool key 还是 draft-N」的窗口里
+                        // 点标签会 spawn 出 duplicate runtime。
+                        self.try_bind_reported_file(cx);
                         cx.spawn(async move |this, cx| {
                             cx.background_executor()
                                 .timer(std::time::Duration::from_millis(300))
@@ -1031,6 +1050,13 @@ impl SessionRuntime {
                 self.status = status_line(true, "idle");
                 self.settle_turn();
                 self.refresh_state();
+                // 轮末对账：文件落盘了就绑定换真身（首条消息处通常已绑，这里
+                // 幂等）；确定没落盘（prompt 被扩展接管等，pi 没写过任何
+                // user/assistant 消息）就撤伪标签——标签不能挂一个永远不会
+                // 变真的会话。
+                if !self.try_bind_reported_file(cx) {
+                    cx.emit(SessionEvent::PendingTab(None));
+                }
                 // 轮次终点专用事件（turn_error 终值随行）：订阅方按「窗口
                 // 没焦点」规则给点——走 Changed 的话 running 已复位，永远
                 // 轮不到记点
@@ -1117,6 +1143,35 @@ impl SessionRuntime {
                 .page_turn(ix, self.messages.len(), self.phase_row_visible());
         }
         self.notify_list(cx);
+    }
+
+    /// 绑定对账：pi 报告过的 sessionFile（state 里）若已落盘就跟随绑定
+    /// （FileBound → Chat 迁移 pool key + 摘伪标签换真身）。返回 false =
+    /// 报过但确定没落盘（调用方据此撤伪标签）。state 还空着时发一条
+    /// GetState 兜底（响应带 sessionFile 走 follow_session_file 同一守卫）。
+    fn try_bind_reported_file(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.file.is_some() {
+            return true;
+        }
+        match self
+            .state
+            .as_ref()
+            .and_then(|s| s.session_file.clone().map(PathBuf::from))
+        {
+            Some(f) => {
+                if !f.is_file() {
+                    return false;
+                }
+                self.follow_session_file(f, cx);
+                true
+            }
+            None => {
+                if let Some(session) = &self.agent.session {
+                    let _ = session.send(&Command::GetState);
+                }
+                true
+            }
+        }
     }
 
     /// Remember the session file's current size (our own writer's progress):
@@ -1588,6 +1643,18 @@ impl SessionRuntime {
     /// message parity）：气泡立即显示并钉视口顶，RPC 回显经 pending_echo
     /// 去重就地升级。
     fn optimistic_send(&mut self, text: String, cx: &mut Context<Self>) {
+        // 伪标签：还没绑定会话文件的 draft，乐观发送的同一帧就在侧栏挂标
+        // 签（真标签要等 pi 落盘 + 磁盘扫描，进程冷启 1-3s）。prompt/steer/
+        // 微信远程三个入口共用本漏斗；已绑定会话被 file 守卫挡掉。
+        if self.file.is_none() {
+            let preview = text
+                .lines()
+                .map(str::trim)
+                .find(|l| !l.is_empty())
+                .unwrap_or_default()
+                .to_string();
+            cx.emit(SessionEvent::PendingTab(Some(preview)));
+        }
         self.pending_echo = Some(text.clone());
         self.messages.push(Msg {
             role: Role::User,
@@ -2275,5 +2342,72 @@ mod turn_outcome_tests {
         feed(&rt, cx, ev_start("user", false));
         assert!(!rt.read_with(cx, |r, _| r.turn_error));
         assert!(!rt.read_with(cx, |r, _| r.turn_interrupted));
+    }
+}
+
+#[cfg(test)]
+mod binding_guard_tests {
+    //! 幻影绑定守卫 + 绑定对账（伪标签前置）：pi 在 SessionManager 构造期
+    //! 就报 sessionFile，文件本体要等首条 user/assistant 消息才落盘
+    //! （_hasConversation/_persist，#10000）。没落盘不得绑定——boot 草稿保
+    //! 持 draft 身份、recents/last-open 不记幻影路径；落盘了才迁移。
+
+    use super::*;
+    use gpui::TestAppContext;
+
+    fn runtime(cx: &mut TestAppContext) -> gpui::Entity<SessionRuntime> {
+        cx.new(|_| {
+            let mut r = SessionRuntime::new("draft-t".into(), PathBuf::from("C:/t"), None);
+            r.sound_on = false;
+            r
+        })
+    }
+
+    /// follow_session_file 存在性守卫：幻影路径不绑定，已落盘文件正常绑定。
+    #[gpui::test]
+    fn follow_requires_existing_file(cx: &mut TestAppContext) {
+        let rt = runtime(cx);
+        rt.update(cx, |r, cx| {
+            r.follow_session_file(PathBuf::from("Z:/pf-not-landed/x.jsonl"), cx);
+            assert!(r.file.is_none(), "幻影路径不得绑定");
+        });
+        let real = std::env::temp_dir().join(format!("pf-guard-{}.jsonl", std::process::id()));
+        std::fs::write(&real, "{}\n").unwrap();
+        rt.update(cx, |r, cx| {
+            r.follow_session_file(real.clone(), cx);
+            assert_eq!(r.file.as_deref(), Some(real.as_path()), "已落盘文件正常绑定");
+        });
+        let _ = std::fs::remove_file(&real);
+    }
+
+    /// 绑定对账三态：state 空 → GetState 兜底返回 true；报过未落盘 →
+    /// false（调用方撤伪标签）；已落盘 → 绑定 + true。
+    #[gpui::test]
+    fn try_bind_reported_file_states(cx: &mut TestAppContext) {
+        let rt = runtime(cx);
+        rt.update(cx, |r, cx| {
+            assert!(r.try_bind_reported_file(cx), "state 空 = 绑定在途，伪标签先留着");
+            assert!(r.file.is_none());
+        });
+        rt.update(cx, |r, cx| {
+            r.state = Some(SessionState {
+                session_file: Some("Z:/pf-not-landed/x.jsonl".into()),
+                ..Default::default()
+            });
+            assert!(!r.try_bind_reported_file(cx), "未落盘的报备文件不得视为已绑定");
+            assert!(r.file.is_none());
+        });
+        let real =
+            std::env::temp_dir().join(format!("pf-guard-bind-{}.jsonl", std::process::id()));
+        std::fs::write(&real, "{}\n").unwrap();
+        rt.update(cx, |r, cx| {
+            r.state = Some(SessionState {
+                session_file: Some(real.to_string_lossy().into_owned()),
+                ..Default::default()
+            });
+            assert!(r.try_bind_reported_file(cx));
+            assert_eq!(r.file.as_deref(), Some(real.as_path()));
+        });
+        let _ = std::fs::remove_file(&real);
     }
 }

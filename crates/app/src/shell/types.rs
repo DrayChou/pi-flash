@@ -141,6 +141,19 @@ pub(crate) struct HoverCard {
     pub rename_input: Option<gpui::Entity<crate::ui::TextInput>>,
 }
 
+/// 伪标签（draft 首条消息乐观上侧栏）：pi 还没落盘、没有真实 SessionInfo
+/// 时的占位行。FileBound 落地时摘除换真身；prompt 被拒 / 进程死 / 轮末无
+/// 文件时撤除。Chat 侧 Vec 保插入序（侧栏按挂标签先后排）。
+#[derive(Debug, Clone)]
+pub(crate) struct PendingTab {
+    /// 所属 runtime 的池 key（draft-N）——点击据此 switch_to
+    pub key: String,
+    /// 首条消息首行（真标签落地后的 preview 与它一致，视觉无缝衔接）
+    pub preview: String,
+    /// 归属项目（draft 的 cwd）：渲染时插进匹配的项目组
+    pub cwd: String,
+}
+
 /// psp 菜单（⋯ 排序两级 / 项目菜单）；(x, y) 为事件坐标锚点。
 #[derive(Debug, Clone)]
 pub(crate) enum PspMenu {

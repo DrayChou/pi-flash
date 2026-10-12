@@ -28,6 +28,8 @@ pub(crate) enum PspRow {
     Title,
     Project(usize),
     Session { p: usize, s: usize },
+    /// 伪标签（draft 已发送、pi 未落盘的占位行；key = 池 key draft-N）
+    Pending { key: String },
     /// 空项目展开时的「无会话」占位
     Empty,
     /// 「显示更多」行（key = 组 ws_key；Flat 模式用全局键）
@@ -42,11 +44,27 @@ fn psp_page() -> usize {
 
 pub(crate) fn psp_rows(chat: &Chat) -> Vec<PspRow> {
     let mut rows = vec![PspRow::Title];
+    // 伪标签归属：cwd 匹配项目组的插在组内会话行之前（它就是该项目最新的
+    // 活动）；没有任何组可归（该项目还没有已落盘会话）的插在 Title 后。
+    // 折叠的组里伪标签照常显示——它正是用户刚发出的那条消息的标签。
+    let orphan_pending: Vec<String> = chat
+        .pending_tabs
+        .iter()
+        .filter(|e| !chat.projects.iter().any(|g| same_ws(&g.path.to_string_lossy(), &e.cwd)))
+        .map(|e| e.key.clone())
+        .collect();
     match chat.list_mode {
         ListMode::Grouped => {
             for (pi, g) in chat.projects.iter().enumerate() {
                 rows.push(PspRow::Project(pi));
                 let key = same_ws_key(&g.path.to_string_lossy());
+                for e in chat
+                    .pending_tabs
+                    .iter()
+                    .filter(|e| same_ws(&g.path.to_string_lossy(), &e.cwd))
+                {
+                    rows.push(PspRow::Pending { key: e.key.clone() });
+                }
                 if chat.collapsed_keys.contains(&key) {
                     continue;
                 }
@@ -69,6 +87,10 @@ pub(crate) fn psp_rows(chat: &Chat) -> Vec<PspRow> {
             }
         }
         ListMode::Flat => {
+            // Flat：伪标签按插入序排列表最前（最新活动优先）
+            for e in &chat.pending_tabs {
+                rows.push(PspRow::Pending { key: e.key.clone() });
+            }
             let mut all: Vec<(usize, usize)> = Vec::new();
             for (pi, g) in chat.projects.iter().enumerate() {
                 for si in 0..g.sessions.len() {
@@ -91,6 +113,11 @@ pub(crate) fn psp_rows(chat: &Chat) -> Vec<PspRow> {
                 rows.push(PspRow::More { key });
             }
         }
+    }
+    // 无组可归的伪标签（该项目组还没被 rebuild_projects 建出来）：插在
+    // Title 之后置顶——用户刚发的消息必须是第一眼能看到的东西
+    for (i, key) in orphan_pending.into_iter().enumerate() {
+        rows.insert(1 + i, PspRow::Pending { key });
     }
     rows
 }
@@ -226,6 +253,7 @@ pub(crate) fn psp_view(
         .map(|row| match row {
             PspRow::Project(pi) => project_row(chat, pi, &weak, t),
             PspRow::Session { p, s } => session_row_view(chat, p, s, &weak, t, window, cx),
+            PspRow::Pending { key } => pending_row_view(chat, &key, &weak, t),
             PspRow::Empty => div()
                 .id("psp-empty")
                 .pl(px(45.))
@@ -883,6 +911,82 @@ fn session_row_view(
                     info.modified,
                 ))),
         ),
+        )
+        .into_any_element()
+}
+
+/// 伪标签行（draft 已发送、pi 未落盘的占位）：行高/字号/选中与悬停底色
+/// 同 [`session_row_view`]（ZCode TaskListItem 样式），左侧状态槽 =
+/// spinner（此刻进程正在 boot/跑，与真标签的 running 态同视觉），标题 =
+/// 首条消息首行（真标签落地后的 preview 与它一致，衔接无跳变）。没有文
+/// 件就没有 hover 卡 / 改名 / 删除——点击只做 switch_to。FileBound 落地
+/// 后本行被真标签顶替。
+fn pending_row_view(
+    chat: &Chat,
+    key: &str,
+    weak: &gpui::WeakEntity<Chat>,
+    t: &'static Theme,
+) -> gpui::AnyElement {
+    let Some(entry) = chat.pending_tabs.iter().find(|e| e.key == key) else {
+        return div().into_any_element();
+    };
+    let is_active = chat.active_key == entry.key;
+    let title: SharedString = if entry.preview.is_empty() {
+        tr("session.new").to_string().into()
+    } else {
+        entry.preview.clone().into()
+    };
+    let row_sel = gpui::rgba((t.text << 8) | 0x1a); // 10%（与 session 行同色）
+    let panel_family = crate::appearance::panel_font().family;
+    let key_click = entry.key.clone();
+    let w_click = weak.clone();
+    div()
+        // 与 session 行同理：滚动容器 overflow 压缩时行不许收缩
+        .flex_shrink_0()
+        .child(
+            div()
+                .id(SharedString::from(format!("ps-draft-{key}")))
+                .w_full()
+                .h(px(crate::ui::tokens::row::MAIN))
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .pl(px(10.))
+                .pr(px(10.))
+                .rounded(px(8.))
+                .cursor_pointer()
+                .when(is_active, |d| d.bg(row_sel).hover(|s| s.bg(row_sel)))
+                .when(!is_active, |d| d.hover(|s| s.bg(row_sel)))
+                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                    let key = key_click.clone();
+                    let _ = w_click.update(cx, |c, cx| {
+                        if let Some(rt) = c.runtimes.get(&key).cloned() {
+                            c.switch_to(rt, cx);
+                        }
+                    });
+                })
+                .child(
+                    // 状态槽（15px，与会话行同位）：伪标签期间轮次必在飞
+                    div()
+                        .size(px(15.))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(spinner(15., t.accent)),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .font_family(panel_family)
+                        .text_size(crate::appearance::ui_size(12.))
+                        .text_color(rgb(t.text))
+                        .child(title),
+                )
+                // 时间区占位：与 session 行同宽，标题截断位对齐
+                .child(div().flex_shrink_0().w(px(38.))),
         )
         .into_any_element()
 }
