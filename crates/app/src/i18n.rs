@@ -30,8 +30,8 @@ pub fn lang_ix() -> usize {
 /// 关于页信息块文案的唯一落点（009-06）：TABLE 首列（zh-CN key）与 about.rs
 /// 共用这组常量，改文案只动这里，zh-TW/en 在 TABLE 同行跟改。
 pub const ABOUT_AUTHOR: &str = "不正常赛博捅讯社";
-pub const ABOUT_DESC: &str = "windows上Pi的极速Desktop + 文件管理编辑 + markdown增强";
-pub const ABOUT_NOTE: &str = "Pi-Flash内核将保持轻巧，专注速度体验";
+pub const ABOUT_DESC: &str = "Windows上Pi的极速Shell + 文件管理编辑";
+pub const ABOUT_NOTE: &str = "Pi-Flash将保持轻巧专注速度体验";
 
 /// (source zh-CN, zh-TW, en)
 const TABLE: &[(&str, &str, &str)] = &[
@@ -195,6 +195,8 @@ const TABLE: &[(&str, &str, &str)] = &[
     ("加载时间窗口", "載入時間範圍", "Load time window"),
     ("加载最近几天内活跃的会话", "載入最近幾天內活躍的會話", "Load sessions active within the window"),
     ("会话显示数", "會話顯示數", "Session display count"),
+    ("自动折叠时间", "自動摺疊時間", "Auto-collapse time"),
+    ("启动时，超时未活动的项目默认折叠", "啟動時，超時未活動的專案預設摺疊", "Collapse projects with no recent activity at startup"),
     ("各项目默认显示的会话数量", "各項目預設顯示的會話數量", "Sessions shown per project by default"),
     ("显示更多", "顯示更多", "Show more"),
     // session list / relative time templates
@@ -225,8 +227,8 @@ const TABLE: &[(&str, &str, &str)] = &[
     ("PF版本", "PF 版本", "Version"),
     ("内核版本", "內核版本", "Kernel"),
     ("说明", "說明", "Description"),
-    (ABOUT_DESC, "windows上Pi的極速Desktop + 檔案管理編輯 + markdown增強", "A lightning-fast Pi desktop for Windows + file management & editing + markdown enhancements"),
-    (ABOUT_NOTE, "Pi-Flash內核將保持輕巧，專注速度體驗", "The Pi-Flash kernel stays lean and focused on speed"),
+    (ABOUT_DESC, "Windows上Pi的極速Shell + 檔案管理編輯", "A lightning-fast Pi Shell for Windows + file management & editing"),
+    (ABOUT_NOTE, "Pi-Flash將保持輕巧專注速度體驗", "The Pi-Flash kernel stays lean and focused on speed"),
     // 文件树 git 标识开关（设置-界面）
     ("文件树 Git 标识", "檔案樹 Git 標識", "File tree Git markers"),
     ("文件树显示 git 修改徽标与目录变更点", "檔案樹顯示 git 修改徽標與目錄變更點", "Show git modification badges and directory change dots in the file tree"),

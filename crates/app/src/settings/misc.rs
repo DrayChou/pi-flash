@@ -1,5 +1,5 @@
-//! 设置「其他」页 (v54): pi 版本 / 启动恢复 / 加载时间窗口 / 会话显示数 /
-//! 提示音 / 工作区数据目录。set-row 版式（标题+描述左，控件右）。
+//! 设置「其他」页 (v54): pi 版本 / 启动恢复 / 加载时间窗口 / 自动折叠时间 /
+//! 会话显示数 / 提示音 / 工作区数据目录。set-row 版式（标题+描述左，控件右）。
 //! 展示思考 / 文件树 Git 标识已挪至「界面」页。
 
 use super::*;
@@ -43,6 +43,19 @@ pub(crate) fn mc_misc_view(
         {
             let weak = weak.clone();
             window_row(days, &weak, t)
+        },
+        t,
+    ));
+
+    // 自动折叠时间（1/3/7 天档位）：启动时项目内会话全部早于该阈值 → 项目
+    // 默认折叠（内部按小时算）。置于「会话显示数」上方（两者都是列表行为）
+    let collapse_h = crate::services::workspace::auto_collapse_hours();
+    col = col.child(set_row(
+        tr("自动折叠时间"),
+        tr("启动时，超时未活动的项目默认折叠"),
+        {
+            let weak = weak.clone();
+            collapse_row(collapse_h, &weak, t)
         },
         t,
     ));
@@ -186,6 +199,58 @@ fn window_row(
         .into_any_element()
 }
 
+/// 档位：1/3/7 天一排（仿语言按钮，active 描边）——内部按小时（24/72/168）
+/// 存取与比较，档位值即三档小时数。
+fn collapse_row(
+    hours: u64,
+    weak: &gpui::WeakEntity<Chat>,
+    t: &'static crate::appearance::theme::Theme,
+) -> gpui::AnyElement {
+    const CHOICES: [(u64, &str); 3] = [(24, "1 天"), (72, "3 天"), (168, "7 天")];
+    div()
+        .flex()
+        .gap(px(8.))
+        .children(CHOICES.iter().map(|(v, label)| {
+            let active = hours == *v;
+            let weak_item = weak.clone();
+            let value = *v;
+            div()
+                .id(SharedString::from(format!("misc-collapse-{v}")))
+                .w(px(72.))
+                .h(px(30.))
+                .px(px(10.))
+                .rounded(px(5.))
+                .border_1()
+                .border_color(if active { rgb(t.accent) } else { rgb(t.border) })
+                .bg(if active { rgb(t.bg_selected) } else { rgb(t.bg_panel) })
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_size(crate::appearance::ui_size(12.))
+                .font_weight(if active {
+                    gpui::FontWeight::SEMIBOLD
+                } else {
+                    gpui::FontWeight::NORMAL
+                })
+                // §5.4：选项文字统一 text_muted，选中只加粗不变色
+                // （选中感由 accent 描边 + bg_selected 承担）
+                .text_color(rgb(t.text_muted))
+                .cursor_pointer()
+                .hover(|s| s.bg(rgb(t.bg_hover)))
+                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                    let _ = weak_item.update(cx, |_c, cx| {
+                        let mut s = crate::services::workspace::app_settings();
+                        s.auto_collapse_hours = Some(value);
+                        crate::services::workspace::save_app_settings(&s);
+                        cx.notify();
+                    });
+                })
+                .child(SharedString::from(label.to_string()))
+                .into_any_element()
+        }))
+        .into_any_element()
+}
+
 /// 会话显示数 +/- 控件：两个 24px 档位按钮夹居中数值，到边界后对应按钮
 /// 置灰禁点。
 fn stepper(
@@ -298,8 +363,8 @@ fn dir_row(key: &str, path: &str, t: &'static crate::appearance::theme::Theme) -
                 .rounded(px(5.))
                 .cursor_pointer()
                 .hover(|s| s.bg(rgb(t.bg_hover)))
-                // psp 菜单「在终端中打开」同款 icon
-                .child(crate::ui::icon("icon-terminal-solid", 16., t.text_dim))
+                // 文件树标题栏「在资源管理器中打开」同款 icon
+                .child(crate::ui::icon("folder-input", 16., t.text_dim))
                 .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                     cx.stop_propagation();
                     crate::services::shell_open::open_in_explorer(&open_path);

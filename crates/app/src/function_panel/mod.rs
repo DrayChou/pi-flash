@@ -146,6 +146,31 @@ impl Chat {
         self.sync_current_sessions();
     }
 
+    /// 启动自动折叠（其他页「自动折叠时间」档位 1/3/7 天，内部按小时算）：
+    /// 项目内**所有**会话的最后活动时间都早于阈值 → 该项目组默认折叠。
+    /// 只在启动装载项目集后调一次（`startup::spawn_session_list_load`）——
+    /// 运行期 `refresh_sessions` 等重建不得再折叠，否则用户手动展开的组
+    /// 会被下一轮重建打回去。空组（无会话）不折叠；当前项目永不折叠
+    /// （钉顶的活动项目折叠等于看不见自己刚开的会话）。
+    pub(crate) fn auto_collapse_stale_projects(&mut self) {
+        let hours = crate::services::workspace::auto_collapse_hours();
+        let cutoff = std::time::SystemTime::now()
+            - std::time::Duration::from_secs(hours * 3600);
+        let cwd = self.cwd.to_string_lossy().to_string();
+        for g in &self.projects {
+            if g.sessions.is_empty() {
+                continue;
+            }
+            if same_ws(&g.path.to_string_lossy(), &cwd) {
+                continue;
+            }
+            if newest(g) < cutoff {
+                self.collapsed_keys
+                    .insert(same_ws_key(&g.path.to_string_lossy()));
+            }
+        }
+    }
+
     /// Keep `sessions` (current project) in sync with the matching group.
     pub(crate) fn sync_current_sessions(&mut self) {
         let cwd = self.cwd.to_string_lossy().to_string();

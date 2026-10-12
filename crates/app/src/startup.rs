@@ -741,6 +741,9 @@ pub(crate) fn spawn_session_list_load(
         let all = pi_link::sessions::sessions_for_paths(&paths);
         let _ = this.update(cx, |chat, cx| {
             chat.rebuild_projects(all);
+            // 启动自动折叠：项目内会话全部早于「自动折叠时间」阈值 → 折叠
+            // （其他页档位 1/3/7 天）。仅启动这一次，运行期重建不参与
+            chat.auto_collapse_stale_projects();
             // 项目集确定后，后台把集合内每个项目的项目上下文装好
             // （settings/mcp/skills）——首帧不等它；切项目/开设置页直接命中
             let pending: Vec<PathBuf> = chat

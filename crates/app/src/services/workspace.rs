@@ -196,7 +196,7 @@ pub fn save_sound_pref(on: bool) {
     save_app_settings(&s);
 }
 
-/// Agent-run finished notification sound —— 复刻 pi-web 的双音 chime
+/// Agent-run finished notification sound —— PF 原创暖木琴双音
 /// （见 [`crate::services::sound`]）；非 Windows 平台为 no-op。
 pub fn play_notify_sound() {
     crate::services::sound::play_notify_sound();
@@ -426,6 +426,9 @@ pub struct AppSettings {
     pub git_markers: Option<bool>,
     /// 其他页: 各项目默认显示的会话数量（psp 初始页大小，3-10，默认 10）
     pub session_display_count: Option<u64>,
+    /// 其他页: 启动自动折叠阈值（小时）——项目内会话最后活动时间全部早于
+    /// 阈值即折叠。档位 24/72/168（1/3/7 天），默认 168（7 天）
+    pub auto_collapse_hours: Option<u64>,
     /// @ 文件索引缓存有效期（秒，1-3600，默认 60）
     pub at_index_ttl_secs: Option<u64>,
     /// @ 文件索引缓存的最多项目数（每 cwd 一份，1-100，默认 10）
@@ -498,6 +501,7 @@ pub fn app_settings() -> AppSettings {
                     session_display_count: map
                         .get("session_display_count")
                         .and_then(|v| v.as_u64()),
+                    auto_collapse_hours: map.get("auto_collapse_hours").and_then(|v| v.as_u64()),
                     at_index_ttl_secs: map
                         .get("at_index_ttl_secs")
                         .and_then(|v| v.as_u64()),
@@ -570,6 +574,9 @@ pub fn save_app_settings(s: &AppSettings) {
     }
     if let Some(v) = s.session_display_count {
         obj.insert("session_display_count".into(), Value::Number(v.into()));
+    }
+    if let Some(v) = s.auto_collapse_hours {
+        obj.insert("auto_collapse_hours".into(), Value::Number(v.into()));
     }
     if let Some(v) = s.at_index_ttl_secs {
         obj.insert("at_index_ttl_secs".into(), Value::Number(v.into()));
@@ -658,6 +665,16 @@ pub fn session_display_count() -> usize {
         .session_display_count
         .unwrap_or(10)
         .clamp(3, 10) as usize
+}
+
+/// 其他页: 启动自动折叠阈值（小时；档位 24/72/168 = 1/3/7 天，默认 168）。
+/// 启动装载项目集后，项目内会话最后活动时间全部早于该阈值 → 该项目组折叠。
+pub fn auto_collapse_hours() -> u64 {
+    match app_settings().auto_collapse_hours.unwrap_or(168) {
+        24 => 24,
+        72 => 72,
+        _ => 168,
+    }
 }
 
 /// @ 文件索引缓存有效期（秒；默认 60，clamp 1-3600）。
