@@ -6,11 +6,8 @@ Pi Flash ： Windows上的极速 Pi coding agent！
 npm install -g pi-flash@latest   # 安装与更新
 pi-flash                                # 启动
 ```
-
-> 平台范围：**仅 Windows x64**，暂不发布 macOS 版本（macOS 上安装会报「暂无发布资产」）。
 需要 Node.js ≥ 22.19
-
-## 
+> 平台范围：**仅 Windows x64**
 
 ## 许可证
 本项目以 **GPL-3.0-or-later** 许可证发布（见 [LICENSE](LICENSE)），继承自Zed项目。
@@ -18,5 +15,3 @@ pi-flash                                # 启动
 不接受未经 Copyright Holder 同意的闭源分发。
 
 第三方组件的版权与许可证声明见[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
-
-
