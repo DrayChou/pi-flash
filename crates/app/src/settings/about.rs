@@ -1,5 +1,5 @@
 use super::*;
-use crate::i18n::{ABOUT_AUTHOR, ABOUT_DESC, ABOUT_NOTE};
+use crate::i18n::{ABOUT_DESC, ABOUT_NOTE};
 
 const GITHUB_URL: &str = "https://github.com/danielbill/pi-flash";
 
@@ -7,8 +7,7 @@ pub(crate) fn mc_about_view() -> gpui::AnyElement {
     let t = T();
     let mut col = div().id("mc-about").flex().flex_col();
 
-    col = col.child(set_row(tr("about.author"), "", value_el(tr(ABOUT_AUTHOR).to_string(), true), t));
-
+    col = col.child(set_row(tr("about.author"), "", value_el(tr("about.author_name").to_string(), true), t));
     col = col.child(set_row(
         tr("about.version"),
         "",

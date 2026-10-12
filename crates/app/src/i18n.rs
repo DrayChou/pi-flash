@@ -40,9 +40,8 @@ pub fn lang_ix() -> usize {
 // 会被挂进 BACKLOG，补齐后从 BACKLOG 删掉。
 // ===========================================================================
 
-/// 关于页信息块：这三个常量现在是**键**，文案在 TABLE 同一行（改文案不必动
+/// 关于页信息块：这两个常量现在是**键**，文案在 TABLE 同一行（改文案不必动
 /// 键）。about.rs 直接 `tr(ABOUT_*)`。
-pub const ABOUT_AUTHOR: &str = "about.author";
 pub const ABOUT_DESC: &str = "about.tagline";
 pub const ABOUT_NOTE: &str = "about.note";
 
