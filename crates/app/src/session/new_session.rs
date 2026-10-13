@@ -27,12 +27,12 @@ use crate::session::input;
 use crate::appearance::theme::theme as T;
 use crate::ui::{icon, icon_alpha};
 
-/// 背景 logo「墨迹」目标高 = 51% 聊天区高（zcode 参考实测：Z 墨迹跨度
-/// 6.4%..57.3%）。logo-marks.svg 墨迹只占 43.75% 盒高，盒子按视口高补偿
-/// （聊天区 ≈ 92% 视口 ⇒ 0.51×0.92/0.4375 ≈ 1.07）。
-const LOGO_INK_RATIO: f32 = 112. / 256.;
+/// 背景 logo「墨迹」高 = 32% 视口高（LOGO_SCREEN×INK_RATIO，INK_RATIO 在
+/// 乘积里约掉，只用于反推盒高）。logo-marks.svg 为 v5 字标（2026-10 与
+/// 徽章母版同步整体放大），墨迹实测占盒高 51.7%（529/1024，取 132/256）。
+const LOGO_INK_RATIO: f32 = 132. / 256.;
 const LOGO_SCREEN: f32 = 0.32 / LOGO_INK_RATIO;
-/// logo 带：顶对齐 64% 高带内居中 ⇒ 墨迹中线 32% 聊天区高。
+/// logo 带：顶对齐 50% 高带内居中 ⇒ 墨迹中线 25% 视口高。
 const LOGO_BAND: f32 = 0.5;
 /// 欢迎语带：顶对齐 74% 高带内居中 ⇒ 欢迎语中心 37%（压墨迹下半部）。
 const HEADING_BAND: f32 = 0.74;
@@ -63,7 +63,8 @@ pub(crate) fn page(
         // 内容区在 topbar_r 之后绘制，放开后菜单自然盖在 topbar 上（与会话
         // 界面的悬浮胶囊同行为）
         .child(
-            // 墨迹盒 ~1.07×视口高必然越界，裁剪只作用于这层装饰
+            // 墨迹盒 ~0.62×视口高（见 LOGO_SCREEN），窄窗下可横向越界，
+            // 裁剪只作用于这层装饰
             div()
                 .absolute()
                 .inset_0()
@@ -119,11 +120,12 @@ pub(crate) fn page(
         .into_any_element()
 }
 
-/// 背景 logo：盒子 ~1.07×视口高（墨迹达 51% 聊天区高，见 LOGO_SCREEN），
-/// 顶对齐 64% 高带内居中 ⇒ 墨迹中线 32%，下沿没人接（composer 簇 56% 居中
-/// 会盖住 45%+ 以下的部分）。text 色低 alpha（深 ~10%、浅 ~6%）。纯装饰层：
-/// 无 id/无 handler，不参与命中。越界裁剪由调用方的 inset_0 容器承担
-/// （根节点不能裁——会切掉上浮的 / @ 菜单，见 page 注释）。
+/// 背景 logo：盒子 = 视口高 × 0.32/INK_RATIO ≈ 0.62（墨迹恒 32% 视口高，
+/// 见 LOGO_SCREEN），顶对齐 50% 高带内居中 ⇒ 墨迹中线 25%，下沿没人接
+/// （composer 簇 56% 居中会盖住 45%+ 以下的部分）。text 色低 alpha（深
+/// ~10%、浅 ~6%）。纯装饰层：无 id/无 handler，不参与命中。越界裁剪由
+/// 调用方的 inset_0 容器承担（根节点不能裁——会切掉上浮的 / @ 菜单，见
+/// page 注释）。
 fn logo_backdrop(t: &'static crate::appearance::theme::Theme, size: f32) -> AnyElement {
     let a = if t.dark { 0x1a } else { 0x10 };
     div()

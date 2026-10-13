@@ -57,7 +57,8 @@ pub(crate) fn splash_view() -> gpui::Div {
                 .h(px(40.))
                 .window_control_area(WindowControlArea::Drag),
         )
-        .child(crate::ui::icon("logo-marks", 88., 0xa1a1a1))
+        // 盒 106 = 原始 88 的 1.2 倍（用户定的 +20%）；墨迹占盒 51.7%（v5 裸标）⇒ 实际墨迹高 ~55px
+        .child(crate::ui::icon("logo-marks", 106., 0xa1a1a1))
 }
 
 // ---------------------------------------------------------------------------
