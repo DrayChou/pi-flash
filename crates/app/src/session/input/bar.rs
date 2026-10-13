@@ -168,10 +168,10 @@ pub(super) fn composer_bar(
             t,
             cx,
         ));
-    // 右侧：环 + 模型 + 思考 + 发送，按钮间距统一 10px；操作栏左右
-    // padding 10px = 发送钮距胶囊边框 10px
+    // 右侧：环 + 模型 + 思考 + 发送，按钮间距统一 15px（2026-10-13 用户
+    // 定夺，与左组一致）；操作栏左右 padding 10px = 发送钮距胶囊边框 10px
     let ctx_tip = ctx_tip_element(chat, t, cx);
-    let mut right = div().ml_auto().flex().items_center().gap(px(10.)).child(
+    let mut right = div().ml_auto().flex().items_center().gap(px(15.)).child(
         // 上下文用量环：track 在下、实际比例的主题色弧在上（弧 SVG 按百分比
         // 运行时生成，icons/ring-p{1-99}；100% 走静态 ring-100）。悬浮显示
         // 用量详情，挪开淡出（ctx_tip_* 状态机）
