@@ -102,6 +102,11 @@ pub fn bucket_color(b: pi_link::transcript::SystemBucket) -> u32 {
     }
 }
 
+/// 「消息」类别色（composer 用量弹层的分类行专用）：消息 token 不属于系统
+/// 提示词 7 大桶（由官方上下文总量反推），但要与桶色同板展示；品红与 7 桶
+/// 色相均不相邻。固定值，跨主题不变（同 bucket_color 口径）。
+pub const CTX_MESSAGES_COLOR: u32 = 0xc75bc7;
+
 /// danger_hover at alpha `a`（删除确认行 wash 等）。
 pub fn danger_alpha(t: &Theme, a: u32) -> u32 {
     (t.danger_hover << 8) | (a & 0xff)

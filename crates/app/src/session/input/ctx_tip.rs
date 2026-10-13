@@ -2,7 +2,7 @@
 
 
 
-use gpui::{AnimationExt, Context, MouseButton, SharedString, div, prelude::*, px, rgb};
+use gpui::{AnimationExt, Context, MouseButton, SharedString, div, prelude::*, px, relative, rgb};
 
 use crate::Chat;
 use crate::i18n::tr;
@@ -63,9 +63,9 @@ pub(super) fn ctx_tip_element(
     if !visible {
         return None;
     }
-    let (stats, compacting, can_compact) = {
+    let (stats, sys, compacting, can_compact) = {
         let r = chat.rt().read(cx);
-        (r.stats.clone(), r.compacting, r.can_compact())
+        (r.stats.clone(), r.sys.clone(), r.compacting, r.can_compact())
     };
     let closing = chat.dlg.ctx_tip_closing.is_some();
     let wrap = div()
@@ -89,7 +89,7 @@ pub(super) fn ctx_tip_element(
             div()
                 .w(px(320.))
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                .child(ctx_usage_panel(stats, compacting, can_compact, t, cx)),
+                .child(ctx_usage_panel(stats, sys.as_ref(), compacting, can_compact, t, cx)),
         );
     let el = if closing {
         wrap.with_animation(
@@ -107,10 +107,15 @@ pub(super) fn ctx_tip_element(
     Some(gpui::deferred(el).into_any_element())
 }
 
-/// 用量详情面板本体（pi-web session-info-popover 简化版——上下文比例 /
-/// token 分项 / 费用 / 缓存命中率）。
+/// 用量详情面板（ZCode「上下文容量」弹层风格）：标题行（已用/窗口 · 百分比）
+/// + 进度条 + 分类占比行（类别色点 · 降序）+ 分隔线 + 平均缓存命中率；下方
+/// 保留 token 分项 / 费用 / 压缩按钮。分类占比为**估算**：系统侧 7 大类走
+/// `pi_link::transcript::breakdown`（与系统提示词面板分析块同源），「消息」
+/// = 官方上下文总量 − 系统侧估算（反推）——各行加总恒等于 pi 报告的官方
+/// 总量，估算误差全部收进「消息」行。
 fn ctx_usage_panel(
     stats: Option<pi_link::protocol::SessionStats>,
+    sys: Option<&pi_link::transcript::TranscriptSystem>,
     compacting: bool,
     can_compact: bool,
     t: &'static crate::appearance::theme::Theme,
@@ -154,6 +159,51 @@ fn ctx_usage_panel(
             .into_any_element()
     };
 
+    /// 分类占比文案：一位小数，尾数 .0 去掉（59.7% / 2%）。
+    fn cat_pct(v: u64, total: u64) -> String {
+        if total == 0 {
+            return "0%".into();
+        }
+        let p = v as f64 / total as f64 * 100.0;
+        if (p * 10.).round() % 10. == 0. {
+            format!("{p:.0}%")
+        } else {
+            format!("{p:.1}%")
+        }
+    }
+
+    /// 分类行数据：(标签, 类别色, 估算 token)。系统侧 7 桶来自 breakdown
+    /// 估算，「消息」= 官方总量 − 系统侧合计（反推，clamp 0）；零行跳过，
+    /// 按 token 降序（稳定排序：同值保持桶序、「消息」殿后）。
+    fn cat_rows(
+        sys: &pi_link::transcript::TranscriptSystem,
+        context_total: u64,
+    ) -> Vec<(&'static str, u32, u64)> {
+        if context_total == 0 {
+            return Vec::new();
+        }
+        let agent_dir = pi_link::paths::pi_agent_dir();
+        let est = pi_link::transcript::breakdown(sys, agent_dir.as_deref());
+        let mut rows: Vec<(&'static str, u32, u64)> = pi_link::transcript::SYSTEM_BUCKETS
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| est[*i] > 0)
+            .map(|(i, b)| {
+                (
+                    crate::top_panels::bucket_label(*b),
+                    crate::appearance::theme::bucket_color(*b),
+                    est[i],
+                )
+            })
+            .collect();
+        let msgs = context_total.saturating_sub(est.iter().sum());
+        if msgs > 0 {
+            rows.push((tr("stats.messages"), crate::appearance::theme::CTX_MESSAGES_COLOR, msgs));
+        }
+        rows.sort_by(|a, b| b.2.cmp(&a.2));
+        rows
+    }
+
     let body: Vec<gpui::AnyElement> = match stats {
         None => vec![
             div()
@@ -164,22 +214,133 @@ fn ctx_usage_panel(
         ],
         Some(s) => {
             let fmt_k = |n: u64| -> String { format!("{}K", (n as f64 / 1000.).round() as u64) };
-            let ctx_rows = vec![
-                row(
-                    tr("stats.share"),
-                    s.context_percent
-                        .map(|p| format!("{p:.1}%"))
+            let ctx_total = s.context_tokens.unwrap_or(0);
+
+            // —— 上下文容量块（ZCode 风格）——
+            // 标题行右值：已用/窗口（百分比），窗口未知只给已用
+            let bar_pct = s.context_percent.or_else(|| match (s.context_tokens, s.context_window) {
+                (Some(tk), Some(w)) if w > 0 => Some(tk as f64 / w as f64 * 100.),
+                _ => None,
+            });
+            let head_right = match (s.context_tokens, s.context_window) {
+                (Some(tk), Some(w)) => format!(
+                    "{} / {}（{}）",
+                    fmt_k(tk),
+                    fmt_k(w),
+                    bar_pct
+                        .map(|v| format!("{v:.1}%"))
                         .unwrap_or_else(|| "\u{2014}".into()),
                 ),
-                row(
-                    tr("stats.context_tokens"),
-                    match (s.context_tokens, s.context_window) {
-                        (Some(t), Some(w)) => format!("{} / {}", fmt_k(t), fmt_k(w)),
-                        (Some(t), None) => fmt_k(t),
-                        _ => "\u{2014}".into(),
-                    },
-                ),
-            ];
+                (Some(tk), None) => fmt_k(tk),
+                _ => "\u{2014}".into(),
+            };
+            let mut ctx = div()
+                .flex()
+                .flex_col()
+                .gap(px(8.))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .gap(px(8.))
+                        .child(
+                            div()
+                                .text_size(crate::appearance::ui_size(12.))
+                                .font_weight(gpui::FontWeight::SEMIBOLD)
+                                .text_color(rgb(t.text))
+                                .child(tr("stats.context_capacity")),
+                        )
+                        .child(
+                            div()
+                                .text_size(crate::appearance::ui_size(12.))
+                                .font_family(crate::editor::markdown::MONO_FAMILY)
+                                .text_color(rgb(t.text_dim))
+                                .child(SharedString::from(head_right)),
+                        ),
+                );
+            // 进度条：track = 边框色 ~1/3 透明度，fill = accent，宽 = 占窗口比
+            if let Some(p) = bar_pct {
+                ctx = ctx.child(
+                    div()
+                        .w_full()
+                        .h(px(6.))
+                        .rounded(px(3.))
+                        .bg(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x55)))
+                        .overflow_hidden()
+                        .child(
+                            div()
+                                .h_full()
+                                .w(relative(p.clamp(0., 100.) as f32 / 100.))
+                                .rounded(px(3.))
+                                .bg(rgb(t.accent)),
+                        ),
+                );
+            }
+            // 分类占比行（系统态已加载且官方总量已知才画；否则退回旧两行）
+            let cats = sys.filter(|_| ctx_total > 0).map(|sys| cat_rows(sys, ctx_total));
+            match cats {
+                Some(rows) if !rows.is_empty() => {
+                    ctx = ctx.children(rows.into_iter().map(|(label, color, v)| {
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(8.))
+                            .child(
+                                div()
+                                    .size(px(8.))
+                                    .rounded_full()
+                                    .flex_shrink_0()
+                                    .bg(rgb(color)),
+                            )
+                            .child(
+                                div()
+                                    .text_size(crate::appearance::ui_size(12.))
+                                    .text_color(rgb(t.text_dim))
+                                    .child(SharedString::from(label)),
+                            )
+                            .child(
+                                div()
+                                    .ml_auto()
+                                    .text_size(crate::appearance::ui_size(12.))
+                                    .font_family(crate::editor::markdown::MONO_FAMILY)
+                                    .text_color(rgb(t.text))
+                                    .child(SharedString::from(cat_pct(v, ctx_total))),
+                            )
+                            .into_any_element()
+                    }));
+                }
+                _ => {
+                    ctx = ctx.children(vec![
+                        row(
+                            tr("stats.share"),
+                            s.context_percent
+                                .map(|p| format!("{p:.1}%"))
+                                .unwrap_or_else(|| "\u{2014}".into()),
+                        ),
+                        row(
+                            tr("stats.context_tokens"),
+                            match (s.context_tokens, s.context_window) {
+                                (Some(t), Some(w)) => format!("{} / {}", fmt_k(t), fmt_k(w)),
+                                (Some(t), None) => fmt_k(t),
+                                _ => "\u{2014}".into(),
+                            },
+                        ),
+                    ]);
+                }
+            }
+            let mut parts: Vec<gpui::AnyElement> = vec![ctx.into_any_element()];
+            // 分隔线 + 平均缓存命中率（ZCode 面板把命中率收在容量块末尾）
+            if let Some(r) = s.cache_hit_rate() {
+                parts.push(
+                    div()
+                        .border_t_1()
+                        .border_color(rgb(t.border))
+                        .pt(px(10.))
+                        .child(row(tr("stats.cache_hit_rate"), format!("{:.1}%", r * 100.)))
+                        .into_any_element(),
+                );
+            }
             let token_rows = vec![
                 row(tr("stats.input"), fmt_thousand(s.input)),
                 row(tr("stats.output"), fmt_thousand(s.output)),
@@ -187,15 +348,10 @@ fn ctx_usage_panel(
                 row(tr("stats.cache_write"), fmt_thousand(s.cache_write)),
                 row(tr("tokens.total"), fmt_thousand(s.tokens_total)),
             ];
-            let mut cost_rows = vec![row(tr("stats.total_cost"), format!("${:.4}", s.cost))];
-            if let Some(r) = s.cache_hit_rate() {
-                cost_rows.push(row(tr("stats.cache_hit_rate"), format!("{:.1}%", r * 100.)));
-            }
-            vec![
-                section(tr("stats.context_label"), ctx_rows),
-                section(tr("stats.tokens_total"), token_rows),
-                section(tr("stats.cost"), cost_rows),
-            ]
+            let cost_rows = vec![row(tr("stats.total_cost"), format!("${:.4}", s.cost))];
+            parts.push(section(tr("stats.tokens_total"), token_rows).into_any_element());
+            parts.push(section(tr("stats.cost"), cost_rows).into_any_element());
+            parts
         }
     };
 

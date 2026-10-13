@@ -414,8 +414,8 @@ fn fmt_pct(value: u64, total: u64) -> String {
     }
 }
 
-/// 分析块类别名（i18n）。
-fn bucket_label(b: pi_link::transcript::SystemBucket) -> &'static str {
+/// 分析块类别名（i18n）。ctx_tip 用量弹层的分类行同源复用。
+pub(crate) fn bucket_label(b: pi_link::transcript::SystemBucket) -> &'static str {
     use pi_link::transcript::SystemBucket::*;
     match b {
         GlobalPrompt => tr("tokens.global_prompt"),
