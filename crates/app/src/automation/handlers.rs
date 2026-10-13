@@ -594,39 +594,39 @@ pub(super) fn dispatch(
             match params.get("project") {
                 Some(Value::Number(n)) => {
                     let pi = n.as_u64().ok_or_else(|| bad("project 必须是非负整数"))? as usize;
-                    if pi >= chat.projects.len() {
+                    if pi >= chat.psp.projects.len() {
                         return Err(bad(format!(
                             "project {pi} 越界（共 {} 个）",
-                            chat.projects.len()
+                            chat.psp.projects.len()
                         )));
                     }
-                    chat.hovered_project = Some(pi);
+                    chat.psp.hovered_project = Some(pi);
                     let key = crate::services::workspace::same_ws_key(
-                        &chat.projects[pi].path.to_string_lossy(),
+                        &chat.psp.projects[pi].path.to_string_lossy(),
                     );
                     match params.get("collapse") {
                         Some(Value::Bool(true)) => {
-                            chat.collapsed_keys.insert(key);
+                            chat.psp.collapsed_keys.insert(key);
                         }
                         Some(Value::Bool(false)) => {
-                            chat.collapsed_keys.remove(&key);
+                            chat.psp.collapsed_keys.remove(&key);
                         }
                         _ => {}
                     }
                 }
-                _ => chat.hovered_project = None,
+                _ => chat.psp.hovered_project = None,
             }
             cx.notify();
             Ok(json!({
-                "hovered": chat.hovered_project,
+                "hovered": chat.psp.hovered_project,
                 "collapsed": chat
-                    .projects
+                    .psp.projects
                     .iter()
                     .enumerate()
                     .map(|(pi, g)| {
                         (
                             format!("p{pi}"),
-                            json!(chat.collapsed_keys.contains(&crate::services::workspace::same_ws_key(
+                            json!(chat.psp.collapsed_keys.contains(&crate::services::workspace::same_ws_key(
                                 &g.path.to_string_lossy(),
                             ))),
                         )

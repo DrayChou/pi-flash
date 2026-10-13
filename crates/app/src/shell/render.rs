@@ -15,7 +15,7 @@ impl Render for Chat {
     fn render(&mut self, window: &mut gpui::Window, cx: &mut Context<Self>) -> impl IntoElement {
         // 焦点快照（给「agent 结束时窗口没焦点就给点」用）：平台层在每次
         // 激活变化都会 window.refresh() 强制重绘，所以这里的值总是新鲜的
-        self.window_active = window.is_window_active();
+        self.psp.window_active = window.is_window_active();
         static FIRST: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
         if PERF.load(std::sync::atomic::Ordering::Relaxed)
             && !FIRST.swap(true, std::sync::atomic::Ordering::Relaxed)

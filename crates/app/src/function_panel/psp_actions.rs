@@ -59,7 +59,7 @@ impl Chat {
     /// 并重置为新草稿），从 psp 移除该组。
     pub(crate) fn delete_project(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         let sessions: Vec<PathBuf> = self
-            .projects
+            .psp.projects
             .iter()
             .find(|g| same_path(&g.path, &path))
             .map(|g| g.sessions.iter().map(|s| s.path.clone()).collect())
@@ -81,23 +81,23 @@ impl Chat {
             }
             let _ = std::fs::remove_file(p);
         }
-        self.projects.retain(|g| !same_path(&g.path, &path));
+        self.psp.projects.retain(|g| !same_path(&g.path, &path));
         if same_path(&self.cwd, &path) {
             // 当前项目被删：清当前组数据，保留草稿会话
             self.sessions.clear();
             self.sync_current_sessions();
         }
-        self.unread.retain(|p| {
+        self.psp.unread.retain(|p| {
             sessions
                 .iter()
                 .all(|s| !same_path(s, p))
         });
-        self.turn_errors.retain(|p| {
+        self.psp.turn_errors.retain(|p| {
             sessions
                 .iter()
                 .all(|s| !same_path(s, p))
         });
-        self.turn_warnings.retain(|p| {
+        self.psp.turn_warnings.retain(|p| {
             sessions
                 .iter()
                 .all(|s| !same_path(s, p))
@@ -140,7 +140,7 @@ impl Chat {
                     None => msgs_from_tail(read_tail_messages(path, 256 * 1024, 100)),
                 };
                 let cwd = self
-                    .projects
+                    .psp.projects
                     .iter()
                     .find(|g| g.sessions.iter().any(|s| same_path(&s.path, path)))
                     .map(|g| g.path.clone())
@@ -179,7 +179,7 @@ impl Chat {
             }
         }
         // 乐观更新内存中的标题
-        for g in &mut self.projects {
+        for g in &mut self.psp.projects {
             for s in &mut g.sessions {
                 if same_path(&s.path, path) {
                     s.name = Some(name_for_status.clone());

@@ -745,7 +745,7 @@ pub(crate) fn spawn_session_list_load(
             // 项目集确定后，后台把集合内每个项目的项目上下文装好
             // （settings/mcp/skills）——首帧不等它；切项目/开设置页直接命中
             let pending: Vec<PathBuf> = chat
-                .projects
+                .psp.projects
                 .iter()
                 .map(|g| g.path.clone())
                 .filter(|p| !chat.project_ctx.contains_key(&p.to_string_lossy().to_string()))

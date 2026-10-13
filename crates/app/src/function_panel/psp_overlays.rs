@@ -141,7 +141,7 @@ fn hover_card(
 ) -> gpui::AnyElement {
     let card = chat.hover_card.clone().expect("hover_card checked by caller");
     let mut found: Option<(String, u64, std::time::SystemTime, String)> = None;
-    for g in &chat.projects {
+    for g in &chat.psp.projects {
         if let Some(info) = g.sessions.iter().find(|s| same_path(&s.path, &card.path)) {
             let title = info
                 .name
@@ -471,14 +471,14 @@ fn menu_layer(
                         (
                             "icon-grouped",
                             tr("psp.project_groups"),
-                            chat.list_mode == crate::ListMode::Grouped,
-                            Box::new(|c, _cx| c.list_mode = crate::ListMode::Grouped),
+                            chat.psp.list_mode == crate::ListMode::Grouped,
+                            Box::new(|c, _cx| c.psp.list_mode = crate::ListMode::Grouped),
                         ),
                         (
                             "icon-flat",
                             tr("psp.recent_sessions"),
-                            chat.list_mode == crate::ListMode::Flat,
-                            Box::new(|c, _cx| c.list_mode = crate::ListMode::Flat),
+                            chat.psp.list_mode == crate::ListMode::Flat,
+                            Box::new(|c, _cx| c.psp.list_mode = crate::ListMode::Flat),
                         ),
                     ]
                 } else {
@@ -486,14 +486,14 @@ fn menu_layer(
                         (
                             "icon-clock-solid",
                             tr("psp.sort_by_time"),
-                            chat.sort_mode == crate::SortMode::Time,
-                            Box::new(|c, _cx| c.sort_mode = crate::SortMode::Time),
+                            chat.psp.sort_mode == crate::SortMode::Time,
+                            Box::new(|c, _cx| c.psp.sort_mode = crate::SortMode::Time),
                         ),
                         (
                             "icon-hand",
                             tr("psp.sort_manual"),
-                            chat.sort_mode == crate::SortMode::Manual,
-                            Box::new(|c, _cx| c.sort_mode = crate::SortMode::Manual),
+                            chat.psp.sort_mode == crate::SortMode::Manual,
+                            Box::new(|c, _cx| c.psp.sort_mode = crate::SortMode::Manual),
                         ),
                     ]
                 };

@@ -192,7 +192,7 @@ fn app_surface(chat: &Chat, window: &gpui::Window, cx: &Context<Chat>) -> Value 
         "dock_panel": chat.dock_panel.as_str(),
         "content_view": content_view_str(chat.content_view),
         "active_key": chat.active_key,
-        "active_file": opt_path(chat.active_file.as_ref()),
+        "active_file": opt_path(chat.psp.active_file.as_ref()),
         "terminals": chat.terminals.len(),
         "active_terminal": chat.active_terminal,
         // 031/040 full+ 档扩展面板：按钮可用性（full+ 档即可，勾选即生效）
@@ -277,26 +277,26 @@ fn sessions_surface(chat: &Chat) -> Value {
                     .duration_since(UNIX_EPOCH)
                     .map(|d| d.as_millis() as u64)
                     .unwrap_or(0),
-                "unread": chat.unread.contains(&s.path),
+                "unread": chat.psp.unread.contains(&s.path),
                 "loaded": chat.runtimes.contains_key(&s.path.display().to_string()),
             })
         })
         .collect();
     let projects: Vec<Value> = chat
-        .projects
+        .psp.projects
         .iter()
         .map(|g| json!({"name": g.name, "path": g.path.display().to_string(), "sessions": g.sessions.len()}))
         .collect();
     // 伪标签（draft 已发送、pi 未落盘）：验收断言「发送瞬间标签出现」用
     let pending_tabs: Vec<Value> = chat
-        .pending_tabs
+        .psp.pending_tabs
         .iter()
         .map(|e| json!({"key": e.key, "preview": truncate(&e.preview, 120), "cwd": e.cwd}))
         .collect();
     json!({
         "cwd": chat.cwd.display().to_string(),
         "active_key": chat.active_key,
-        "active_file": opt_path(chat.active_file.as_ref()),
+        "active_file": opt_path(chat.psp.active_file.as_ref()),
         "runtimes": chat.runtimes.keys().cloned().collect::<Vec<_>>(),
         "sessions": sessions,
         "projects": projects,
@@ -579,7 +579,7 @@ fn dialogs_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
     // 据此轮询就绪）
     let project_hits: Vec<Value> = match chat.dialog.as_ref() {
         Some(Dialog::ProjectPicker { .. }) => chat
-            .project_hits
+            .psp.project_hits
             .iter()
             .map(|p| json!({"name": p.name, "path": p.path.display().to_string()}))
             .collect(),
@@ -604,7 +604,7 @@ fn dialogs_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
             None => 0,
         },
         "project_hits": project_hits,
-        "project_filter": chat.project_filter,
+        "project_filter": chat.psp.project_filter,
         "confirm_delete": opt_path(chat.confirm_delete.as_ref()),
         // 021 文件树删除确认浮层（Some=开着，值为待删路径；file.delete /
         // file.delete_confirm 两段式 op 断言开合用）+ trash 失败持久弹层

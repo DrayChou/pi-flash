@@ -33,8 +33,8 @@ impl Chat {
                             )
                         };
                         if let Some(f) = file {
-                            if running && !chat.unread.contains(&f) {
-                                chat.unread.insert(f);
+                            if running && !chat.psp.unread.contains(&f) {
+                                chat.psp.unread.insert(f);
                             }
                         }
                     }
@@ -47,7 +47,7 @@ impl Chat {
                     // （length/aborted）→ 黄；正常完成 → 青蓝。在场看见不给。
                     // is_active = 该 runtime key vs 当前活跃 key，结算时刻
                     // 现算即前台/后台判定
-                    if !chat.window_active || !is_active {
+                    if !chat.psp.window_active || !is_active {
                         let (file, turn_error, turn_interrupted) = {
                             let r = rt.read(cx);
                             (r.file.clone(), r.turn_error, r.turn_interrupted)
@@ -56,15 +56,15 @@ impl Chat {
                             // 通知点只表达**最近一轮**的结局：先摘掉上一轮的
                             // 档位再挂新点——否则旧红点（优先级最高）会盖住
                             // 新一轮的完成通知，反之亦然
-                            chat.unread.remove(&f);
-                            chat.turn_errors.remove(&f);
-                            chat.turn_warnings.remove(&f);
+                            chat.psp.unread.remove(&f);
+                            chat.psp.turn_errors.remove(&f);
+                            chat.psp.turn_warnings.remove(&f);
                             if turn_error {
-                                chat.turn_errors.insert(f);
+                                chat.psp.turn_errors.insert(f);
                             } else if turn_interrupted {
-                                chat.turn_warnings.insert(f);
+                                chat.psp.turn_warnings.insert(f);
                             } else {
-                                chat.unread.insert(f);
+                                chat.psp.unread.insert(f);
                             }
                         }
                     }
@@ -83,11 +83,11 @@ impl Chat {
                             let p = p.clone();
                             let cwd = rt.read(cx).cwd.to_string_lossy().to_string();
                             if let Some(e) =
-                                chat.pending_tabs.iter_mut().find(|e| e.key == key)
+                                chat.psp.pending_tabs.iter_mut().find(|e| e.key == key)
                             {
                                 e.preview = p;
                             } else {
-                                chat.pending_tabs.push(PendingTab {
+                                chat.psp.pending_tabs.push(PendingTab {
                                     key,
                                     preview: p,
                                     cwd,
@@ -95,7 +95,7 @@ impl Chat {
                             }
                         }
                         None => {
-                            chat.pending_tabs.retain(|e| e.key != key);
+                            chat.psp.pending_tabs.retain(|e| e.key != key);
                         }
                     }
                     cx.notify();
@@ -203,7 +203,7 @@ impl Chat {
         self.history = history;
         self.history_ix = None;
         self.active_key = key;
-        self.active_file = file.clone();
+        self.psp.active_file = file.clone();
         // 注意力切到会话 ⇒ 内容区必须回到 chat 前台：否则在终端/文件编辑
         // 视图里点会话列表行（或「新会话」）后，内容区还停在 Term/File，
         // 看着像「切了会话但窗口没切过来」。browse_last 不受影响，
@@ -215,9 +215,9 @@ impl Chat {
         if let Some(f) = &file {
             set_last_open(&self.cwd.to_string_lossy(), &f.to_string_lossy());
             // v54: 切入会话清除未读/出错红点
-            self.unread.remove(f);
-            self.turn_errors.remove(f);
-            self.turn_warnings.remove(f);
+            self.psp.unread.remove(f);
+            self.psp.turn_errors.remove(f);
+            self.psp.turn_warnings.remove(f);
         }
         self.pill_menu = None;
         self.menu_ix = 0;
@@ -278,7 +278,7 @@ impl Chat {
             return;
         }
         // 伪标签到此退役：磁盘扫描现在找得到真文件，真标签接管
-        self.pending_tabs.retain(|e| e.key != old_key);
+        self.psp.pending_tabs.retain(|e| e.key != old_key);
         rt.update(cx, |r, _| r.key = path_key.clone());
         // 会话级插件清单跟着身份走（草稿 key → 会话文件路径）：确认时按草稿
         // key 落盘，这里把它搬到真实会话键上，重启后按会话恢复（034）
@@ -295,7 +295,7 @@ impl Chat {
         if self.active_key == old_key {
             self.active_key = path_key.clone();
         }
-        self.active_file = Some(path.clone());
+        self.psp.active_file = Some(path.clone());
         // recents (003-session管理): a fresh session file just landed
         pi_link::recents::touch_recent(&path);
         set_last_open(&rt.read(cx).cwd.to_string_lossy(), &path_key);
@@ -314,7 +314,7 @@ impl Chat {
             .find(|s| s.path == path)
             .map(|s| PathBuf::from(s.cwd.clone()))
             .or_else(|| {
-                self.projects
+                self.psp.projects
                     .iter()
                     .find(|g| g.sessions.iter().any(|s| s.path == path))
                     .map(|g| g.path.clone())
@@ -416,13 +416,13 @@ impl Chat {
                 r.shutdown_process();
             });
         }
-        self.unread.remove(&path);
-        self.turn_errors.remove(&path);
-        self.turn_warnings.remove(&path);
+        self.psp.unread.remove(&path);
+        self.psp.turn_errors.remove(&path);
+        self.psp.turn_warnings.remove(&path);
         // recents (003-session管理): the file is gone, drop the entry
         pi_link::recents::remove_recent(&path);
         if was_active {
-            self.active_file = None;
+            self.psp.active_file = None;
             self.new_session(cx);
         }
         match std::fs::remove_file(&path) {
@@ -431,7 +431,7 @@ impl Chat {
                 self.session_tail_cache.remove(&path);
                 // refresh_sessions 只重扫当前 cwd，其余项目组沿用各组缓存——
                 // 非当前项目的会话也要在这里摘掉，否则列表一直显示已删会话
-                for g in &mut self.projects {
+                for g in &mut self.psp.projects {
                     g.sessions.retain(|s| s.path != path);
                 }
                 self.set_status("session deleted".into(), cx);
@@ -512,7 +512,7 @@ impl Chat {
             .filter(|s| s.modified >= cutoff)
             .cloned()
             .collect();
-        if let Some(active) = &self.active_file {
+        if let Some(active) = &self.psp.active_file {
             if !sessions.iter().any(|s| &s.path == active) {
                 if let Some(info) = full.iter().find(|s| &s.path == active) {
                     sessions.push(info.clone());
@@ -522,7 +522,7 @@ impl Chat {
         self.sessions = sessions;
         // sync the current project's group, then re-pin project order
         let all: Vec<SessionInfo> = self
-            .projects
+            .psp.projects
             .iter()
             .flat_map(|g| {
                 if same_ws(&g.path.to_string_lossy(), &cwd) {
@@ -599,7 +599,7 @@ impl Chat {
             .and_then(|rt| rt.read(cx).file.clone());
         let raw = file
             .and_then(|f| {
-                self.projects
+                self.psp.projects
                     .iter()
                     .flat_map(|g| &g.sessions)
                     .find(|s| same_path(&s.path, &f))

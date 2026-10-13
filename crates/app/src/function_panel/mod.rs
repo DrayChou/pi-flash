@@ -49,31 +49,31 @@ pub(crate) fn psp_rows(chat: &Chat) -> Vec<PspRow> {
     // 活动）；没有任何组可归（该项目还没有已落盘会话）的插在 Title 后。
     // 折叠的组里伪标签照常显示——它正是用户刚发出的那条消息的标签。
     let orphan_pending: Vec<String> = chat
-        .pending_tabs
+        .psp.pending_tabs
         .iter()
-        .filter(|e| !chat.projects.iter().any(|g| same_ws(&g.path.to_string_lossy(), &e.cwd)))
+        .filter(|e| !chat.psp.projects.iter().any(|g| same_ws(&g.path.to_string_lossy(), &e.cwd)))
         .map(|e| e.key.clone())
         .collect();
-    match chat.list_mode {
+    match chat.psp.list_mode {
         ListMode::Grouped => {
-            for (pi, g) in chat.projects.iter().enumerate() {
+            for (pi, g) in chat.psp.projects.iter().enumerate() {
                 rows.push(PspRow::Project(pi));
                 let key = same_ws_key(&g.path.to_string_lossy());
                 for e in chat
-                    .pending_tabs
+                    .psp.pending_tabs
                     .iter()
                     .filter(|e| same_ws(&g.path.to_string_lossy(), &e.cwd))
                 {
                     rows.push(PspRow::Pending { key: e.key.clone() });
                 }
-                if chat.collapsed_keys.contains(&key) {
+                if chat.psp.collapsed_keys.contains(&key) {
                     continue;
                 }
                 if g.sessions.is_empty() {
                     rows.push(PspRow::Empty);
                 } else {
                     let shown = chat
-                        .psp_shown
+                        .psp.psp_shown
                         .get(&key)
                         .copied()
                         .unwrap_or_else(psp_page)
@@ -89,24 +89,24 @@ pub(crate) fn psp_rows(chat: &Chat) -> Vec<PspRow> {
         }
         ListMode::Flat => {
             // Flat：伪标签按插入序排列表最前（最新活动优先）
-            for e in &chat.pending_tabs {
+            for e in &chat.psp.pending_tabs {
                 rows.push(PspRow::Pending { key: e.key.clone() });
             }
             let mut all: Vec<(usize, usize)> = Vec::new();
-            for (pi, g) in chat.projects.iter().enumerate() {
+            for (pi, g) in chat.psp.projects.iter().enumerate() {
                 for si in 0..g.sessions.len() {
                     all.push((pi, si));
                 }
             }
-            if chat.sort_mode == SortMode::Time {
+            if chat.psp.sort_mode == SortMode::Time {
                 all.sort_by(|a, b| {
-                    let ma = chat.projects[a.0].sessions[a.1].modified;
-                    let mb = chat.projects[b.0].sessions[b.1].modified;
+                    let ma = chat.psp.projects[a.0].sessions[a.1].modified;
+                    let mb = chat.psp.projects[b.0].sessions[b.1].modified;
                     mb.cmp(&ma)
                 });
             }
             let key = "__flat__".to_string();
-            let shown = chat.psp_shown.get(&key).copied().unwrap_or_else(psp_page);
+            let shown = chat.psp.psp_shown.get(&key).copied().unwrap_or_else(psp_page);
             let total = all.len();
             all.truncate(shown);
             all.into_iter().for_each(|(p, s)| rows.push(PspRow::Session { p, s }));
@@ -170,7 +170,7 @@ impl Chat {
         });
         // v60: 加载单位是会话（设置.默认加载会话数）——组由这批会话的
         // cwd 自然形成，不再按项目数截断
-        self.projects = groups;
+        self.psp.projects = groups;
         self.sync_current_sessions();
     }
 
@@ -185,7 +185,7 @@ impl Chat {
         let cutoff = std::time::SystemTime::now()
             - std::time::Duration::from_secs(hours * 3600);
         let cwd = self.cwd.to_string_lossy().to_string();
-        for g in &self.projects {
+        for g in &self.psp.projects {
             if g.sessions.is_empty() {
                 continue;
             }
@@ -193,7 +193,7 @@ impl Chat {
                 continue;
             }
             if newest(g) < cutoff {
-                self.collapsed_keys
+                self.psp.collapsed_keys
                     .insert(same_ws_key(&g.path.to_string_lossy()));
             }
         }
@@ -203,7 +203,7 @@ impl Chat {
     pub(crate) fn sync_current_sessions(&mut self) {
         let cwd = self.cwd.to_string_lossy().to_string();
         self.sessions = self
-            .projects
+            .psp.projects
             .iter()
             .find(|g| same_ws(&g.path.to_string_lossy(), &cwd))
             .map(|g| g.sessions.clone())
@@ -279,7 +279,7 @@ pub(crate) fn psp_view(
                     .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                         let key = key_more.clone();
                         let _ = weak_more.update(cx, |chat, cx| {
-                            *chat.psp_shown.entry(key).or_insert_with(psp_page) += psp_page();
+                            *chat.psp.psp_shown.entry(key).or_insert_with(psp_page) += psp_page();
                             cx.notify();
                         });
                     })
@@ -304,11 +304,11 @@ pub(crate) fn psp_view(
                     .id("psp-scroll")
                     .size_full()
                     .overflow_y_scroll()
-                    .track_scroll(&chat.psp_scroll)
+                    .track_scroll(&chat.psp.psp_scroll)
                     // 鼠标进 panel → 滚动条立现；离开 → 3s 后淡出（自绘
                     // psp_scrollbar 读这两个状态自绘透明度）
                     .on_hover(cx.listener(|this, hovered: &bool, _w, cx| {
-                        this.psp_sb_state.set_parent_hovered(*hovered);
+                        this.psp.psp_sb_state.set_parent_hovered(*hovered);
                         cx.notify();
                     }))
                     // 滚动时立刻关掉全部浮层（详情卡/⋯菜单/项目tooltip/删除
@@ -342,8 +342,8 @@ pub(crate) fn psp_view(
                     .right(px(-10.))
                     .w(px(10.))
                     .child(crate::ui::psp_scrollbar::psp_scrollbar(
-                        &chat.psp_sb_state,
-                        &chat.psp_scroll,
+                        &chat.psp.psp_sb_state,
+                        &chat.psp.psp_scroll,
                     )),
             ),
     );
@@ -352,7 +352,7 @@ pub(crate) fn psp_view(
 
 /// title 行（操作行）：左文案（项目/会话），右 4 常显钮。
 fn title_row(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> gpui::AnyElement {
-    let label = match chat.list_mode {
+    let label = match chat.psp.list_mode {
         ListMode::Flat => tr("psp.session_label"),
         _ => tr("scope.project"),
     };
@@ -471,12 +471,12 @@ fn project_row(
     weak: &gpui::WeakEntity<Chat>,
     t: &'static Theme,
 ) -> gpui::AnyElement {
-    let Some(g) = chat.projects.get(pi) else {
+    let Some(g) = chat.psp.projects.get(pi) else {
         return div().into_any_element();
     };
     let active = same_ws(&g.path.to_string_lossy(), &chat.cwd.to_string_lossy());
-    let collapsed = chat.collapsed_keys.contains(&same_ws_key(&g.path.to_string_lossy()));
-    let hovered = chat.hovered_project == Some(pi)
+    let collapsed = chat.psp.collapsed_keys.contains(&same_ws_key(&g.path.to_string_lossy()));
+    let hovered = chat.psp.hovered_project == Some(pi)
         // ⋯ 菜单打开中：按钮保持显示（交互进行中不消失）
         || matches!(
             &chat.psp_menu,
@@ -513,8 +513,8 @@ fn project_row(
         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
             let _ = w_toggle.update(cx, |c, cx| {
                 let key = crate::services::workspace::same_ws_key(&path_toggle.to_string_lossy());
-                if !c.collapsed_keys.remove(&key) {
-                    c.collapsed_keys.insert(key);
+                if !c.psp.collapsed_keys.remove(&key) {
+                    c.psp.collapsed_keys.insert(key);
                 }
                 c.persist_ui();
                 cx.notify();
@@ -524,13 +524,13 @@ fn project_row(
             let _ = w_tip_on.update(cx, |c, cx| {
                 let on = *h;
                 if on {
-                    if c.hovered_project != Some(pi) {
-                        c.hovered_project = Some(pi);
+                    if c.psp.hovered_project != Some(pi) {
+                        c.psp.hovered_project = Some(pi);
                         cx.notify();
                     }
                 } else {
-                    if c.hovered_project == Some(pi) {
-                        c.hovered_project = None;
+                    if c.psp.hovered_project == Some(pi) {
+                        c.psp.hovered_project = None;
                     }
                     if c.proj_tip.is_some() {
                         c.proj_tip = None;
@@ -647,14 +647,14 @@ fn session_row_view(
     window: &gpui::Window,
     cx: &gpui::Context<Chat>,
 ) -> gpui::AnyElement {
-    let Some(g) = chat.projects.get(p) else {
+    let Some(g) = chat.psp.projects.get(p) else {
         return div().into_any_element();
     };
     let Some(info) = g.sessions.get(s) else {
         return div().into_any_element();
     };
     let is_active = chat
-        .active_file
+        .psp.active_file
         .as_deref()
         .is_some_and(|f| crate::services::workspace::same_path(f, &info.path));
     // 运行态**每帧现算**：v54 把它缓存进 chat.running_files，而那份缓存的唯一
@@ -849,21 +849,21 @@ fn session_row_view(
                 .justify_center()
                 .child(if running {
                     spinner(15., t.accent)
-                } else if chat.turn_errors.contains(&info.path) {
+                } else if chat.psp.turn_errors.contains(&info.path) {
                     // 红 = 外部错误/崩溃（t.danger，§6 danger 系唯一表达）
                     div()
                         .size(px(7.))
                         .rounded_full()
                         .bg(rgb(t.danger))
                         .into_any_element()
-                } else if chat.turn_warnings.contains(&info.path) {
+                } else if chat.psp.turn_warnings.contains(&info.path) {
                     // 黄 = 内部中断（上限截断/中止）
                     div()
                         .size(px(7.))
                         .rounded_full()
                         .bg(rgb(crate::appearance::theme::WARN))
                         .into_any_element()
-                } else if chat.unread.contains(&info.path) {
+                } else if chat.psp.unread.contains(&info.path) {
                     // 青蓝 = 完成通知（绿色退出通知语义，仅表达正确性）
                     div()
                         .size(px(7.))
@@ -933,7 +933,7 @@ fn pending_row_view(
     weak: &gpui::WeakEntity<Chat>,
     t: &'static Theme,
 ) -> gpui::AnyElement {
-    let Some(entry) = chat.pending_tabs.iter().find(|e| e.key == key) else {
+    let Some(entry) = chat.psp.pending_tabs.iter().find(|e| e.key == key) else {
         return div().into_any_element();
     };
     let is_active = chat.active_key == entry.key;

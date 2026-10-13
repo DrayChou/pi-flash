@@ -145,15 +145,15 @@ impl Chat {
         st.panel = self.dock_panel.as_str().to_string();
         st.slp_w = self.slp_w;
         st.panes_hidden = self.panes_hidden;
-        st.list_mode = match self.list_mode {
+        st.list_mode = match self.psp.list_mode {
             crate::ListMode::Flat => "flat".to_string(),
             crate::ListMode::Grouped => "grouped".to_string(),
         };
-        st.sort_mode = match self.sort_mode {
+        st.sort_mode = match self.psp.sort_mode {
             crate::SortMode::Manual => "manual".to_string(),
             crate::SortMode::Time => "time".to_string(),
         };
-        st.collapsed = self.collapsed_keys.iter().cloned().collect();
+        st.collapsed = self.psp.collapsed_keys.iter().cloned().collect();
         st.tree_changes_only = self.changes_only;
         save_ui_state(&st);
     }

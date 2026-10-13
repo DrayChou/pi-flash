@@ -863,15 +863,15 @@ fn render_project_picker(
     // 004 v3：列表吃满弹窗剩余高度（面板固定 500，容纳几条就显示几条），
     // 超出出滚动条——不再按固定行数限高
     const ROW_H: f32 = 40.;
-    let needle = chat.project_filter.trim().to_lowercase();
+    let needle = chat.psp.project_filter.trim().to_lowercase();
     let rows: Vec<&crate::ProjectEntry> = chat
-        .project_hits
+        .psp.project_hits
         .iter()
         .filter(|p| needle.is_empty() || p.name.to_lowercase().contains(&needle))
         .collect();
     let mut list = div().flex().flex_col();
     if rows.is_empty() {
-        let empty = if chat.project_hits.is_empty() {
+        let empty = if chat.psp.project_hits.is_empty() {
             tr("project.idle_30d")
         } else {
             tr("project.no_match")
@@ -1008,18 +1008,18 @@ fn render_session_search(
     t: &theme::Theme,
     _cx: &App,
 ) -> Div {
-    let status: SharedString = if chat.search_running {
+    let status: SharedString = if chat.psp.search_running {
         tr("session_search.searching").into()
-    } else if chat.search_needle.is_empty() {
+    } else if chat.psp.search_needle.is_empty() {
         tr("session_search.hint").into()
-    } else if chat.search_hits.is_empty() {
+    } else if chat.psp.search_hits.is_empty() {
         tr("session_search.no_match").into()
     } else {
-        format!("{} 条结果", chat.search_hits.len()).into()
+        format!("{} 条结果", chat.psp.search_hits.len()).into()
     };
     let mut results = div().flex().flex_col();
     let mut last_session: Option<PathBuf> = None;
-    for (hit_ix, hit) in chat.search_hits.iter().enumerate() {
+    for (hit_ix, hit) in chat.psp.search_hits.iter().enumerate() {
         if last_session.as_ref() != Some(&hit.session_path) {
             last_session = Some(hit.session_path.clone());
             let age = time_ago(hit.modified);
@@ -1116,7 +1116,7 @@ fn render_session_search(
                     })
                     .child(input.clone())
                     .child({
-                        let label: SharedString = if chat.search_truncated {
+                        let label: SharedString = if chat.psp.search_truncated {
                             format!("{status} · {partial}", partial = tr("session_search.partial")).into()
                         } else {
                             status
@@ -1170,7 +1170,7 @@ impl Chat {
                 .placeholder(tr("project.search_placeholder"))
                 .on_change(Box::new(move |q: &str, cx: &mut App| {
                     let _ = weak.update(cx, |c, cx| {
-                        c.project_filter = q.to_string();
+                        c.psp.project_filter = q.to_string();
                         cx.notify();
                     });
                 }))
@@ -1181,8 +1181,8 @@ impl Chat {
                     });
                 }))
         });
-        self.project_hits.clear();
-        self.project_filter.clear();
+        self.psp.project_hits.clear();
+        self.psp.project_filter.clear();
         self.dialog = Some(Dialog::ProjectPicker {
             input,
             fresh,
@@ -1218,7 +1218,7 @@ impl Chat {
                     });
                     entries.sort_by(|a, b| project_sort_key(a).cmp(&project_sort_key(b)));
                 }
-                c.project_hits = entries;
+                c.psp.project_hits = entries;
                 cx.notify();
             });
         })
@@ -1242,9 +1242,9 @@ impl Chat {
                     });
                 }))
         });
-        self.search_hits.clear();
-        self.search_truncated = false;
-        self.search_needle.clear();
+        self.psp.search_hits.clear();
+        self.psp.search_truncated = false;
+        self.psp.search_needle.clear();
         self.dialog = Some(Dialog::SessionSearch { input });
         cx.notify();
     }
@@ -1253,24 +1253,24 @@ impl Chat {
     /// this project's session files on the background executor (pi-web
     /// SessionSearch debounce parity; stale responses drop by generation).
     pub(crate) fn search_changed(&mut self, q: &str, cx: &mut Context<Self>) {
-        self.search_gen += 1;
-        let epoch = self.search_gen;
+        self.psp.search_gen += 1;
+        let epoch = self.psp.search_gen;
         let needle = q.trim().to_string();
-        self.search_needle = needle.clone();
-        self.search_hits.clear();
-        self.search_truncated = false;
+        self.psp.search_needle = needle.clone();
+        self.psp.search_hits.clear();
+        self.psp.search_truncated = false;
         if needle.is_empty() {
-            self.search_running = false;
+            self.psp.search_running = false;
             cx.notify();
             return;
         }
-        self.search_running = true;
+        self.psp.search_running = true;
         let cwd = self.cwd.clone();
         cx.spawn(async move |weak, cx| {
             cx.background_executor()
                 .timer(std::time::Duration::from_millis(300))
                 .await;
-            let cancelled = weak.update(cx, |c, _| c.search_gen != epoch).unwrap_or(true);
+            let cancelled = weak.update(cx, |c, _| c.psp.search_gen != epoch).unwrap_or(true);
             if cancelled {
                 return;
             }
@@ -1284,12 +1284,12 @@ impl Chat {
                 })
                 .await;
             let _ = weak.update(cx, |c, cx| {
-                if c.search_gen != epoch {
+                if c.psp.search_gen != epoch {
                     return;
                 }
-                c.search_running = false;
-                c.search_truncated = resp.truncated;
-                c.search_hits = resp.hits;
+                c.psp.search_running = false;
+                c.psp.search_truncated = resp.truncated;
+                c.psp.search_hits = resp.hits;
                 cx.notify();
             });
         })
@@ -1300,7 +1300,7 @@ impl Chat {
     /// matched row — located by payload timestamp, falling back to the first
     /// message containing the needle.
     pub(crate) fn jump_to_hit(&mut self, path: PathBuf, ts: Option<i64>, cx: &mut Context<Self>) {
-        let needle = self.search_needle.clone();
+        let needle = self.psp.search_needle.clone();
         self.dialog = None;
         let key = path.to_string_lossy().to_string();
         let already_open = self.active_key == key || self.runtimes.contains_key(&key);
@@ -1311,7 +1311,7 @@ impl Chat {
         let located = rt.update(cx, |r, cx| r.locate_message(ts, &needle, cx));
         if !located && !already_open {
             // messages still loading (pool miss) — apply after the reconcile
-            self.pending_locate = Some((path, ts, needle));
+            self.psp.pending_locate = Some((path, ts, needle));
         }
         cx.notify();
     }

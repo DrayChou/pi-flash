@@ -578,7 +578,7 @@ fn model_options(chat: &crate::Chat, provider: &str) -> Vec<(String, String)> {
 
 /// `/项目`：工作区清单，标签 = 目录名，载荷 = 绝对路径。
 fn project_options(chat: &crate::Chat) -> Vec<(String, String)> {
-    chat.projects
+    chat.psp.projects
         .iter()
         .map(|p| (p.name.clone(), p.path.to_string_lossy().to_string()))
         .collect()
@@ -787,7 +787,7 @@ impl crate::Chat {
             menu::MenuKind::Project => {
                 // 菜单载荷就是路径；直接 `/项目 <名字>` 时按名字反查
                 let path = self
-                    .projects
+                    .psp.projects
                     .iter()
                     .find(|p| {
                         p.path.to_string_lossy() == value || p.name == value

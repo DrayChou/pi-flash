@@ -68,13 +68,6 @@ pub(crate) struct Chat {
     pub(crate) renaming: Option<PathBuf>,
     pub(crate) rename_input: Option<gpui::Entity<TextInput>>,
     pub(crate) confirm_delete: Option<PathBuf>,
-    // session content search (013): dialog query input + background results
-    pub(crate) search_hits: Vec<pi_link::sessions::SearchHit>,
-    pub(crate) search_truncated: bool,
-    pub(crate) search_running: bool,
-    pub(crate) search_needle: String,
-    pub(crate) search_gen: u64,
-    pub(crate) pending_locate: Option<(PathBuf, Option<i64>, String)>,
     // shell surfaces
     pub(crate) pill_menu: Option<PillMenu>,
     /// 「full+」档的扩展选择面板（勾选即生效；滚动位跨帧复用）
@@ -142,22 +135,6 @@ pub(crate) struct Chat {
     /// 042：inputpanel 模型菜单（锚定 pill 卡片，替代原居中 ModelSelect 弹窗）
     pub(crate) model_picker: Option<crate::session::model_picker::ModelPicker>,
     pub(crate) settings: Option<gpui::Entity<settings::SettingsPanel>>,
-    // ---- v54 shell state ----
-    /// psp 项目组（当前项目钉顶，其余按最近会话倒序；启动只加载
-    /// 设置.默认加载会话数 N 个会话，组由这批会话的 cwd 自然形成）
-    pub(crate) projects: Vec<ProjectGroup>,
-    /// 004 打开项目菜单：最近 30 天活动项目（弹窗打开时后台扫描回填）
-    pub(crate) project_hits: Vec<ProjectEntry>,
-    /// 004 打开项目菜单的搜索词（输入框 on_change 镜像）
-    pub(crate) project_filter: String,
-    /// 当前活跃会话文件（psp 选中态；switch_to 时更新）
-    pub(crate) active_file: Option<PathBuf>,
-    pub(crate) list_mode: ListMode,
-    pub(crate) sort_mode: SortMode,
-    pub(crate) collapsed_keys: HashSet<String>,
-    /// psp 分页：每组已展开的会话数（「显示更多」每次 +10；
-    /// key = 组 ws_key，Flat 模式 = "__flat__"）
-    pub(crate) psp_shown: std::collections::HashMap<String, usize>,
     pub(crate) slp_w: f32,
     pub(crate) panes_hidden: bool,
     pub(crate) slp_drag: Option<(f32, f32)>,
@@ -173,9 +150,6 @@ pub(crate) struct Chat {
     /// reset 归零滚动
     pub(crate) md_preview_list: gpui::ListState,
     pub(crate) md_preview_list_path: Option<PathBuf>,
-    /// psp 会话列表滚动（滚动条数据源）
-    pub(crate) psp_scroll: gpui::ScrollHandle,
-    pub(crate) psp_sb_state: crate::ui::psp_scrollbar::PspScrollbarState,
     pub(crate) nav_open: bool,
     pub(crate) nav_hide_at: Option<std::time::Instant>,
     pub(crate) nav_flyout_hovered: bool,
@@ -187,20 +161,6 @@ pub(crate) struct Chat {
     /// composer 胶囊实时高度（ui::measure_height 每帧写、读到的是上一帧
     /// 值；导航刻度条「屏高 − inputpanel/2」居中用，033）
     pub(crate) composer_h: std::rc::Rc<std::cell::Cell<f32>>,
-    pub(crate) unread: HashSet<PathBuf>,
-    /// 出错红点（agent 结束时窗口无焦点就点亮，重新获得焦点后切入清除）——
-    /// 与 unread 同生命周期管理，区别只是颜色语义
-    pub(crate) turn_errors: HashSet<PathBuf>,
-    /// 内部中断黄点（stopReason = length/aborted：上限截断、中止）
-    pub(crate) turn_warnings: HashSet<PathBuf>,
-    /// 伪标签（draft 首条消息乐观上侧栏）：pi 落盘前 Sidebar 的占位行。
-    /// 挂 = PendingTab(Some)；摘 = FileBound 换真身 / 发送被拒 / 进程死 /
-    /// 轮末确定无文件。纯内存态——没落盘的 draft 重启后本就不存在。
-    pub(crate) pending_tabs: Vec<PendingTab>,
-    /// 窗口焦点快照（render 每帧写；焦点变化本身会触发重绘所以不陈旧）。
-    /// 「agent 结束时窗口没焦点就给点」的判定依据（2026-10-10 定夺）
-    pub(crate) window_active: bool,
-    pub(crate) hovered_project: Option<usize>,
     pub(crate) proj_tip: Option<(PathBuf, f32, f32)>,
     pub(crate) hover_card: Option<HoverCard>,
     pub(crate) psp_menu: Option<PspMenu>,
@@ -234,6 +194,8 @@ pub(crate) struct Chat {
     pub(crate) aux: AuxUi,
     /// 设置面板簇（4ea）：模型/技能/扩展/MCP 配置状态
     pub(crate) cfg: CfgUi,
+    /// psp 列表簇（4ea）：项目/会话列表、搜索、通知点
+    pub(crate) psp: PspUi,
 }
 
 /// 周边面板状态簇（4ea 字段重组）：扩展 UI 面 / 081 自动更新与更新日志 /
@@ -302,6 +264,51 @@ pub(crate) struct CfgUi {
     pub(crate) op_tx: Option<futures::channel::mpsc::UnboundedSender<String>>,
 }
 
+/// psp 列表簇（4ea 字段重组）：项目组/会话列表面板、会话搜索、通知点、
+/// 伪标签与窗口焦点快照。
+pub(crate) struct PspUi {
+    // ---- v54 shell state ----
+    /// psp 项目组（当前项目钉顶，其余按最近会话倒序；启动只加载
+    /// 设置.默认加载会话数 N 个会话，组由这批会话的 cwd 自然形成）
+    pub(crate) projects: Vec<ProjectGroup>,
+    /// 004 打开项目菜单：最近 30 天活动项目（弹窗打开时后台扫描回填）
+    pub(crate) project_hits: Vec<ProjectEntry>,
+    /// 004 打开项目菜单的搜索词（输入框 on_change 镜像）
+    pub(crate) project_filter: String,
+    /// 当前活跃会话文件（psp 选中态；switch_to 时更新）
+    pub(crate) active_file: Option<PathBuf>,
+    pub(crate) list_mode: ListMode,
+    pub(crate) sort_mode: SortMode,
+    pub(crate) collapsed_keys: HashSet<String>,
+    /// psp 分页：每组已展开的会话数（「显示更多」每次 +10；
+    /// key = 组 ws_key，Flat 模式 = "__flat__"）
+    pub(crate) psp_shown: std::collections::HashMap<String, usize>,
+    /// psp 会话列表滚动（滚动条数据源）
+    pub(crate) psp_scroll: gpui::ScrollHandle,
+    pub(crate) psp_sb_state: crate::ui::psp_scrollbar::PspScrollbarState,
+    // session content search (013): dialog query input + background results
+    pub(crate) search_hits: Vec<pi_link::sessions::SearchHit>,
+    pub(crate) search_truncated: bool,
+    pub(crate) search_running: bool,
+    pub(crate) search_needle: String,
+    pub(crate) search_gen: u64,
+    pub(crate) pending_locate: Option<(PathBuf, Option<i64>, String)>,
+    pub(crate) unread: HashSet<PathBuf>,
+    /// 出错红点（agent 结束时窗口无焦点就点亮，重新获得焦点后切入清除）——
+    /// 与 unread 同生命周期管理，区别只是颜色语义
+    pub(crate) turn_errors: HashSet<PathBuf>,
+    /// 内部中断黄点（stopReason = length/aborted：上限截断、中止）
+    pub(crate) turn_warnings: HashSet<PathBuf>,
+    /// 伪标签（draft 首条消息乐观上侧栏）：pi 落盘前 Sidebar 的占位行。
+    /// 挂 = PendingTab(Some)；摘 = FileBound 换真身 / 发送被拒 / 进程死 /
+    /// 轮末确定无文件。纯内存态——没落盘的 draft 重启后本就不存在。
+    pub(crate) pending_tabs: Vec<PendingTab>,
+    /// 窗口焦点快照（render 每帧写；焦点变化本身会触发重绘所以不陈旧）。
+    /// 「agent 结束时窗口没焦点就给点」的判定依据（2026-10-10 定夺）
+    pub(crate) window_active: bool,
+    pub(crate) hovered_project: Option<usize>,
+}
+
 impl Chat {
     pub(crate) fn new(cx: &mut Context<Self>) -> Self {
         let focus = cx.focus_handle();
@@ -368,12 +375,6 @@ impl Chat {
             pending_images: Vec::new(),
             session_tail_cache: std::collections::HashMap::new(),
             sessions: Vec::new(),
-            search_hits: Vec::new(),
-            search_truncated: false,
-            search_running: false,
-            search_needle: String::new(),
-            search_gen: 0,
-            pending_locate: None,
             // v54.4 定案：启动固定会话界面（面板/内容区绑定关系见
             // status_bar；不恢复上次离开时的面板）
             dock_panel: DockPanel::Sessions,
@@ -437,6 +438,30 @@ impl Chat {
             ctx_tip_ring_hover: false,
             ctx_tip_panel_hover: false,
             ctx_tip_closing: None,
+            psp: PspUi {
+                projects: Vec::new(),
+                project_hits: Vec::new(),
+                project_filter: String::new(),
+                active_file: last_open.clone(),
+                list_mode: if ui.list_mode == "flat" { ListMode::Flat } else { ListMode::Grouped },
+                sort_mode: if ui.sort_mode == "manual" { SortMode::Manual } else { SortMode::Time },
+                collapsed_keys: ui.collapsed.iter().cloned().collect(),
+                psp_shown: std::collections::HashMap::new(),
+                psp_scroll: gpui::ScrollHandle::new(),
+                psp_sb_state: crate::ui::psp_scrollbar::PspScrollbarState::new(),
+                search_hits: Vec::new(),
+                search_truncated: false,
+                search_running: false,
+                search_needle: String::new(),
+                search_gen: 0,
+                pending_locate: None,
+                unread: HashSet::new(),
+                turn_errors: HashSet::new(),
+                turn_warnings: HashSet::new(),
+                pending_tabs: Vec::new(),
+                window_active: true,
+                hovered_project: None,
+            },
             cfg: CfgUi {
                 mc_patterns: None,
                 mc_state: EnabledState::default(),
@@ -480,14 +505,6 @@ impl Chat {
             renaming: None,
             rename_input: None,
             confirm_delete: None,
-            projects: Vec::new(),
-            project_hits: Vec::new(),
-            project_filter: String::new(),
-            active_file: last_open.clone(),
-            list_mode: if ui.list_mode == "flat" { ListMode::Flat } else { ListMode::Grouped },
-            sort_mode: if ui.sort_mode == "manual" { SortMode::Manual } else { SortMode::Time },
-            collapsed_keys: ui.collapsed.iter().cloned().collect(),
-            psp_shown: std::collections::HashMap::new(),
             slp_w: ui.slp_w,
             panes_hidden: ui.panes_hidden,
             slp_drag: None,
@@ -497,20 +514,12 @@ impl Chat {
             md_preview_scrollbar: gpui_component::scroll::ScrollbarState::default(),
             md_preview_list: gpui::ListState::new(0, gpui::ListAlignment::Top, px(1000.)),
             md_preview_list_path: None,
-            psp_scroll: gpui::ScrollHandle::new(),
-            psp_sb_state: crate::ui::psp_scrollbar::PspScrollbarState::new(),
             nav_open: false,
             nav_hide_at: None,
             nav_flyout_hovered: false,
             nav_hover_turn: None,
             nav_flyout_list: gpui::ListState::new(0, gpui::ListAlignment::Top, px(1000.)),
             composer_h: std::rc::Rc::new(std::cell::Cell::new(0.)),
-            unread: HashSet::new(),
-            turn_errors: HashSet::new(),
-            turn_warnings: HashSet::new(),
-            pending_tabs: Vec::new(),
-            window_active: true,
-            hovered_project: None,
             proj_tip: None,
             hover_card: None,
             psp_menu: None,
