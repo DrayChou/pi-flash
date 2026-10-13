@@ -74,9 +74,9 @@ pub(super) fn ctx_tip_element(
         .bottom(px(24.)) // 环命中区 26px，压顶 2px 防接缝死区
         // 相对圆环居中：向左/右对称扩张 + flex 居中。手算 left 偏移要跟着
         // 环的 padding(4)+负 margin(-4) 一起走，对称扩张则天然以环为轴，
-        // 环宽变了也不用改常数。±200 > 320/2 保证面板不被压缩。
-        .left(px(-200.))
-        .right(px(-200.))
+        // 环宽变了也不用改常数。±260 > 420/2 保证面板不被压缩。
+        .left(px(-260.))
+        .right(px(-260.))
         .pb(px(12.))
         .flex()
         .flex_row()
@@ -87,7 +87,7 @@ pub(super) fn ctx_tip_element(
         // 无 mousedown handler，点击照常落到下层消息
         .child(
             div()
-                .w(px(320.))
+                .w(px(420.))
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .child(ctx_usage_panel(stats, sys.as_ref(), compacting, can_compact, t, cx)),
         );
@@ -123,7 +123,7 @@ fn ctx_usage_panel(
 ) -> gpui::Div {
     // 上下文用量弹窗：全部文字 = 面板设置值，title 与正文同号
     // （字体大小设置.md §1）
-    let row = |label: &str, value: String| -> gpui::AnyElement {
+    let row = |label: &str, value: String| -> gpui::Div {
         div()
             .flex()
             .items_center()
@@ -141,7 +141,6 @@ fn ctx_usage_panel(
                     .text_color(rgb(t.text))
                     .child(SharedString::from(value)),
             )
-            .into_any_element()
     };
     let section = |title: &str, rows: Vec<gpui::AnyElement>| -> gpui::AnyElement {
         div()
@@ -157,6 +156,21 @@ fn ctx_usage_panel(
             )
             .children(rows)
             .into_any_element()
+    };
+    // 二列数据网格（用户定夺：面板 420 宽、每行 2 列砍高度）：cells 按行
+    // 填充，每格半宽，左格 pr 出列缝——两列的百分比值各自贴半宽右缘对齐。
+    let grid2 = |cells: Vec<gpui::Div>| -> gpui::AnyElement {
+        div().flex().flex_wrap().gap_y(px(8.)).children(
+            cells
+                .into_iter()
+                .enumerate()
+                .map(|(i, c)| {
+                    div()
+                        .w(relative(0.5))
+                        .when(i % 2 == 0, |d| d.pr(px(16.)))
+                        .child(c.w_full())
+                }),
+        ).into_any_element()
     };
 
     /// 分类占比文案：一位小数，尾数 .0 去掉（59.7% / 2%）。
@@ -281,34 +295,37 @@ fn ctx_usage_panel(
             let cats = sys.filter(|_| ctx_total > 0).map(|sys| cat_rows(sys, ctx_total));
             match cats {
                 Some(rows) if !rows.is_empty() => {
-                    ctx = ctx.children(rows.into_iter().map(|(label, color, v)| {
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(8.))
-                            .child(
+                    ctx = ctx.child(grid2(
+                        rows.into_iter()
+                            .map(|(label, color, v)| {
                                 div()
-                                    .size(px(8.))
-                                    .rounded_full()
-                                    .flex_shrink_0()
-                                    .bg(rgb(color)),
-                            )
-                            .child(
-                                div()
-                                    .text_size(crate::appearance::ui_size(12.))
-                                    .text_color(rgb(t.text_dim))
-                                    .child(SharedString::from(label)),
-                            )
-                            .child(
-                                div()
-                                    .ml_auto()
-                                    .text_size(crate::appearance::ui_size(12.))
-                                    .font_family(crate::editor::markdown::MONO_FAMILY)
-                                    .text_color(rgb(t.text))
-                                    .child(SharedString::from(cat_pct(v, ctx_total))),
-                            )
-                            .into_any_element()
-                    }));
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(5.))
+                                    .child(
+                                        div()
+                                            .size(px(8.))
+                                            .rounded_full()
+                                            .flex_shrink_0()
+                                            .bg(rgb(color)),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(crate::appearance::ui_size(12.))
+                                            .text_color(rgb(t.text_dim))
+                                            .child(SharedString::from(label)),
+                                    )
+                                    .child(
+                                        div()
+                                            .ml_auto()
+                                            .text_size(crate::appearance::ui_size(12.))
+                                            .font_family(crate::editor::markdown::MONO_FAMILY)
+                                            .text_color(rgb(t.text))
+                                            .child(SharedString::from(cat_pct(v, ctx_total))),
+                                    )
+                            })
+                            .collect(),
+                    ));
                 }
                 _ => {
                     ctx = ctx.children(vec![
@@ -341,15 +358,15 @@ fn ctx_usage_panel(
                         .into_any_element(),
                 );
             }
-            let token_rows = vec![
+            let token_grid = grid2(vec![
                 row(tr("stats.input"), fmt_thousand(s.input)),
                 row(tr("stats.output"), fmt_thousand(s.output)),
                 row(tr("stats.cache_read"), fmt_thousand(s.cache_read)),
                 row(tr("stats.cache_write"), fmt_thousand(s.cache_write)),
                 row(tr("tokens.total"), fmt_thousand(s.tokens_total)),
-            ];
-            let cost_rows = vec![row(tr("stats.total_cost"), format!("${:.4}", s.cost))];
-            parts.push(section(tr("stats.tokens_total"), token_rows).into_any_element());
+            ]);
+            let cost_rows = vec![row(tr("stats.total_cost"), format!("${:.4}", s.cost)).into_any_element()];
+            parts.push(section(tr("stats.tokens_total"), vec![token_grid]).into_any_element());
             parts.push(section(tr("stats.cost"), cost_rows).into_any_element());
             parts
         }
