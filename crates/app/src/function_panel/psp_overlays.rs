@@ -248,14 +248,16 @@ fn hover_card(
                 .hover(|s| s.bg(rgb(t.bg_hover)))
                 // 点击标题 = 原地进入改名（不切换会话）
                 .on_mouse_down(MouseButton::Left, cx.listener(
-                    move |this, _: &gpui::MouseDownEvent, window, cx| {
+                    move |this, _: &gpui::MouseDownEvent, _window, cx| {
                         let Some(card) = this.dlg.hover_card.as_mut() else { return };
                         let path = card.path.clone();
                         let prefill = title_for_rename.clone();
                         let weak_ok = cx.entity().downgrade();
                         let weak_esc = weak_ok.clone();
+                        // 三行高输入区（2026-10-13 用户定夺）：会话名可长，
+                        // 单行放不下；auto_grow(3,3) 内件自算高
                         let input = cx.new(|cx| {
-                            crate::ui::TextInput::new(cx).select_all_on_focus()
+                            crate::ui::TextInput::new(cx).lines(3).select_all_on_focus()
                         });
                         input.update(cx, |ti, cx| ti.set_value(prefill, cx));
                         input.update(cx, |ti, _cx| {
@@ -274,8 +276,11 @@ fn hover_card(
                                 });
                             }));
                         });
-                        let handle = input.read(cx).focus_handle();
-                        window.focus(&handle);
+                        // 首发聚焦走 focus_soon（内件下一帧建好即聚焦）：
+                        // fallback 句柄不在元素树里，直接 window.focus 是
+                        // 空路径——composer 白白 blur，输入框收不到焦点，
+                        // 全选要再点一下才发生（同文件树行内改名）
+                        input.update(cx, |ti, tcx| ti.focus_soon(tcx));
                         if let Some(card) = this.dlg.hover_card.as_mut() {
                             card.renaming = true;
                             card.rename_input = Some(input);

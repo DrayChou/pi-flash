@@ -1122,6 +1122,19 @@ impl InputState {
         let end = range.end.min(self.text.len());
         let start = range.start.min(end);
         self.selected_range = (start..end).into();
+        self.selection_reversed = false;
+        cx.notify();
+    }
+
+    /// Select a byte range with the caret anchored at the range **start**
+    /// (reversed selection): `cursor()` 返回 start、滚动保起点可见——
+    /// 全选态要露出名称头部的改名框用（PF select_all_on_focus：光标落
+    /// 最前而非最后，2026-10-13）。
+    pub fn set_selected_range_reversed(&mut self, range: Range<usize>, cx: &mut Context<Self>) {
+        let end = range.end.min(self.text.len());
+        let start = range.start.min(end);
+        self.selected_range = (start..end).into();
+        self.selection_reversed = true;
         cx.notify();
     }
 

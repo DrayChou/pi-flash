@@ -14,7 +14,7 @@ use gpui::{
     App, Context, FocusHandle, Focusable as _, KeyDownEvent, ParentElement, Render, SharedString,
     Styled, Window, div, prelude::*,
 };
-use gpui_component::input::{InputEvent, InputState, SelectAll, TextInput as GpInput};
+use gpui_component::input::{InputEvent, InputState, TextInput as GpInput};
 
 use std::ops::Range;
 
@@ -41,6 +41,9 @@ pub struct TextInput {
     masked: bool,
     numeric: bool,
     multiline: bool,
+    /// 多行固定行数档（auto_grow(n, n)，内件自算高）：None = 普通 multiline
+    ///（容器 170px 固定高）。
+    lines: Option<usize>,
     /// 紧凑档（22px 高 + XSmall 内距）：文件树行内改名用，塞进 24px 行
     compact: bool,
     /// 平面档（无组件底色/边框）：行内编辑的 chrome（边框/底色）由所在
@@ -74,6 +77,7 @@ impl TextInput {
             masked: false,
             numeric: false,
             multiline: false,
+            lines: None,
             compact: false,
             flat: false,
             select_all_on_focus: false,
@@ -115,6 +119,14 @@ impl TextInput {
         self
     }
 
+    /// 多行固定 n 行高（auto_grow(n, n)：内件自算高 = n × 行高，超行内滚）。
+    /// 隐含 multiline。会话 hover 卡改名框（三行高）用。
+    pub fn lines(mut self, n: usize) -> Self {
+        self.multiline = true;
+        self.lines = Some(n.max(1));
+        self
+    }
+
     /// 紧凑单行档：22px 高 + XSmall 内距 + 11px 字号，文件树行内改名用。
     pub fn compact(mut self) -> Self {
         self.compact = true;
@@ -128,7 +140,8 @@ impl TextInput {
     }
 
     /// pi-web rename parity: when focus first lands, the whole value is
-    /// selected so typing replaces it (←/→ collapse, Backspace clears).
+    /// selected so typing replaces it（光标锚在选区**起点**——头部可见，
+    /// vendor `set_selected_range_reversed` 缝，2026-10-13 用户定夺）.
     pub fn select_all_on_focus(mut self) -> Self {
         self.select_all_on_focus = true;
         self
@@ -241,7 +254,11 @@ impl TextInput {
                 st = st.masked(true);
             }
             if self.multiline {
-                st = st.multi_line();
+                st = match self.lines {
+                    // auto_grow(n, n)：内件自算高（min = n × 行高），容器不设高
+                    Some(n) => st.auto_grow(n, n),
+                    None => st.multi_line(),
+                };
             }
             st
         });
@@ -327,7 +344,10 @@ impl Render for TextInput {
         }
         if self.want_select_all {
             self.want_select_all = false;
-            window.dispatch_action(Box::new(SelectAll), cx);
+            // 全选 + 光标锚起点（vendor selection_reversed）：头部可见，
+            // 键入仍整段替换
+            let len = state.read(cx).value().len();
+            state.update(cx, |st, scx| st.set_selected_range_reversed(0..len, scx));
         }
         if self.want_focus {
             self.want_focus = false;
@@ -338,8 +358,12 @@ impl Render for TextInput {
         let t = T();
         let focused = state.read(cx).focus_handle(cx).is_focused(window);
         // 多行：容器给足高度，内件 h_full 撑满（单行保持固定 30px；紧凑
-        // 档 22px 塞进文件树 24px 行）
-        let (h, fill) = if self.multiline {
+        // 档 22px 塞进文件树 24px 行）；lines(n) = auto_grow，内件自算高
+        //（min = n × 行高），容器不设高、内件不撑满
+        let auto_h = self.multiline && self.lines.is_some();
+        let (h, fill) = if auto_h {
+            (gpui::px(0.), false)
+        } else if self.multiline {
             (gpui::px(170.), true)
         } else if self.compact {
             (gpui::px(22.), false)
@@ -366,7 +390,7 @@ impl Render for TextInput {
         }
         div()
             .w_full()
-            .h(h)
+            .when(!auto_h, |d| d.h(h))
             // inherit into the inner widget's text shaping
             .font_family(crate::editor::markdown::MONO_FAMILY)
             .text_size(gpui::px(if self.compact { 11. } else { 12. }))
