@@ -12,67 +12,6 @@ use crate::settings::plugins::PkgOp;
 
 
 pub(crate) struct Chat {
-    pub(crate) cwd: PathBuf,
-    pub(crate) branch: String,
-    pub(crate) term_events: Option<futures::channel::mpsc::UnboundedSender<(usize, alacritty_terminal::event::Event)>>,
-    // git panel
-    pub(crate) git_files: Vec<GitFile>,
-    pub(crate) git_add_del: (u64, u64),
-    pub(crate) git_selected: Option<PathBuf>,
-    pub(crate) git_tab: function_panel::git_panel::GitTab,
-    pub(crate) git_log: Vec<GitCommit>,
-    pub(crate) git_error: Option<String>,
-    pub(crate) git_commit_input: gpui::Entity<TextInput>,
-    // workspace / project files
-    pub(crate) project_files: Vec<String>,
-    pub(crate) expanded_dirs: HashSet<PathBuf>,
-    /// 文件树展平缓存（services::file_tree::flatten；渲染只读这份，
-    /// 重建点 = 展开/折叠、git 刷新、fs 事件、切项目）。
-    pub(crate) tree_rows: std::sync::Arc<Vec<services::file_tree::TreeRow>>,
-    pub(crate) file_cache: std::collections::HashMap<PathBuf, FileTab>,
-    // fs watch（services::watcher）：tx 永驻（每次挂 watch clone 一份），
-    // rx 被 startup 的泵取走；watcher 句柄 drop 即解除监听。
-    pub(crate) fs_watch_tx: std::sync::mpsc::Sender<()>,
-    pub(crate) fs_watch_rx: Option<std::sync::mpsc::Receiver<()>>,
-    pub(crate) fs_watch: Option<services::watcher::FsWatcher>,
-    /// 023：**cwd 外**打开文件的单文件监听（key = 文件所在目录，非递归）。
-    /// Zed 对不在任何 worktree 里的文件建 single-file worktree（只监听其
-    /// 所在目录）同款；事件走同一条 fs 通道。打开/关闭/切项目后由
-    /// `retain_file_watches` 重算，不再被需要的目录即卸载。
-    pub(crate) file_watches: std::collections::HashMap<PathBuf, services::watcher::FsWatcher>,
-    // terminals (content-area tabs)
-    pub(crate) terminals: Vec<TerminalTab>,
-    pub(crate) active_terminal: Option<usize>,
-    pub(crate) term_seq: usize,
-    /// caret-blink heartbeat phase (1Hz, term_cursor task) + paint-time
-    /// "a focused terminal is on screen" flag that gates the heartbeat
-    pub(crate) term_cursor_on: bool,
-    pub(crate) term_cursor_focused: bool,
-    pub(crate) panel_tabs: Vec<PanelTab>,
-    pub(crate) active_panel_tab: Option<usize>,
-    // 023 fileView：菜单与面包屑兄弟菜单的弹层状态
-    pub(crate) crumb_menu_dir: Option<PathBuf>,
-    pub(crate) crumb_dd: gpui::Entity<crate::ui::DropdownState>,
-    // TEMP 探针（023 调试）：外部改动检测 运行数/命中数
-    pub(crate) ext_probe: (u32, u32),
-    /// 023：打开文件后待聚焦的编辑器（Zed 行为：开文件即聚焦；渲染帧
-    /// 编辑器实体就绪后消费）
-    pub(crate) pending_focus_file: Option<PathBuf>,
-    /// md 预览滚动条状态（MarkdownKind preview 面板的 v63-6 配方）
-    pub(crate) md_preview_scrollbar: gpui_component::scroll::ScrollbarState,
-    /// md 渲染预览块级虚拟化（抄 zed thread_view 的 list 架构）：MarkdownKind
-    /// preview 面板用，ListState 每帧只建可视块；path 记当前文件，换文件时
-    /// reset 归零滚动
-    pub(crate) md_preview_list: gpui::ListState,
-    pub(crate) md_preview_list_path: Option<PathBuf>,
-    /// 021 操作栏「切换显示变更」：只列 git 变更文件（flatten changes_only）
-    pub(crate) changes_only: bool,
-    /// 021 文件搜索（Dialog::FileSearch）：命中（相对路径清单切片）、
-    /// 查询词镜像与扫描状态（防抖代际同 search_gen）
-    pub(crate) file_search_hits: Vec<String>,
-    pub(crate) file_search_needle: String,
-    pub(crate) file_search_gen: u64,
-    pub(crate) file_search_scanning: bool,
     /// 周边面板簇（4ea）：ext UI / 更新 / 远程 / 系统提示词弹窗
     pub(crate) aux: AuxUi,
     /// 设置面板簇（4ea）：模型/技能/扩展/MCP 配置状态
@@ -87,6 +26,8 @@ pub(crate) struct Chat {
     pub(crate) composer: ComposerUi,
     /// 壳布局簇（4ea）：dock/路由/分隔条/flyout/焦点
     pub(crate) layout: LayoutUi,
+    /// 工作区簇（4ea）：文件树/编辑器/终端/git
+    pub(crate) ws: WsUi,
 }
 
 /// 周边面板状态簇（4ea 字段重组）：扩展 UI 面 / 081 自动更新与更新日志 /
@@ -337,6 +278,72 @@ pub(crate) struct LayoutUi {
     pub(crate) focus: FocusHandle,
 }
 
+/// 工作区簇（4ea 字段重组）：文件树/fs 监听、编辑器 tab/md 预览、终端、
+/// git 面板与 cwd/branch 根（021/022/023）。
+pub(crate) struct WsUi {
+    // workspace / project files
+    pub(crate) project_files: Vec<String>,
+    pub(crate) expanded_dirs: HashSet<PathBuf>,
+    /// 文件树展平缓存（services::file_tree::flatten；渲染只读这份，
+    /// 重建点 = 展开/折叠、git 刷新、fs 事件、切项目）。
+    pub(crate) tree_rows: std::sync::Arc<Vec<services::file_tree::TreeRow>>,
+    // fs watch（services::watcher）：tx 永驻（每次挂 watch clone 一份），
+    // rx 被 startup 的泵取走；watcher 句柄 drop 即解除监听。
+    pub(crate) fs_watch_tx: std::sync::mpsc::Sender<()>,
+    pub(crate) fs_watch_rx: Option<std::sync::mpsc::Receiver<()>>,
+    pub(crate) fs_watch: Option<services::watcher::FsWatcher>,
+    /// 023：**cwd 外**打开文件的单文件监听（key = 文件所在目录，非递归）。
+    /// Zed 对不在任何 worktree 里的文件建 single-file worktree（只监听其
+    /// 所在目录）同款；事件走同一条 fs 通道。打开/关闭/切项目后由
+    /// `retain_file_watches` 重算，不再被需要的目录即卸载。
+    pub(crate) file_watches: std::collections::HashMap<PathBuf, services::watcher::FsWatcher>,
+    /// 021 操作栏「切换显示变更」：只列 git 变更文件（flatten changes_only）
+    pub(crate) changes_only: bool,
+    /// 021 文件搜索（Dialog::FileSearch）：命中（相对路径清单切片）、
+    /// 查询词镜像与扫描状态（防抖代际同 search_gen）
+    pub(crate) file_search_hits: Vec<String>,
+    pub(crate) file_search_needle: String,
+    pub(crate) file_search_gen: u64,
+    pub(crate) file_search_scanning: bool,
+    pub(crate) file_cache: std::collections::HashMap<PathBuf, FileTab>,
+    pub(crate) panel_tabs: Vec<PanelTab>,
+    pub(crate) active_panel_tab: Option<usize>,
+    /// md 预览滚动条状态（MarkdownKind preview 面板的 v63-6 配方）
+    pub(crate) md_preview_scrollbar: gpui_component::scroll::ScrollbarState,
+    /// md 渲染预览块级虚拟化（抄 zed thread_view 的 list 架构）：MarkdownKind
+    /// preview 面板用，ListState 每帧只建可视块；path 记当前文件，换文件时
+    /// reset 归零滚动
+    pub(crate) md_preview_list: gpui::ListState,
+    pub(crate) md_preview_list_path: Option<PathBuf>,
+    // TEMP 探针（023 调试）：外部改动检测 运行数/命中数
+    pub(crate) ext_probe: (u32, u32),
+    /// 023：打开文件后待聚焦的编辑器（Zed 行为：开文件即聚焦；渲染帧
+    /// 编辑器实体就绪后消费）
+    pub(crate) pending_focus_file: Option<PathBuf>,
+    // 023 fileView：菜单与面包屑兄弟菜单的弹层状态
+    pub(crate) crumb_menu_dir: Option<PathBuf>,
+    pub(crate) crumb_dd: gpui::Entity<crate::ui::DropdownState>,
+    // terminals (content-area tabs)
+    pub(crate) terminals: Vec<TerminalTab>,
+    pub(crate) active_terminal: Option<usize>,
+    pub(crate) term_seq: usize,
+    /// caret-blink heartbeat phase (1Hz, term_cursor task) + paint-time
+    /// "a focused terminal is on screen" flag that gates the heartbeat
+    pub(crate) term_cursor_on: bool,
+    pub(crate) term_cursor_focused: bool,
+    pub(crate) term_events: Option<futures::channel::mpsc::UnboundedSender<(usize, alacritty_terminal::event::Event)>>,
+    pub(crate) cwd: PathBuf,
+    pub(crate) branch: String,
+    // git panel
+    pub(crate) git_files: Vec<GitFile>,
+    pub(crate) git_add_del: (u64, u64),
+    pub(crate) git_selected: Option<PathBuf>,
+    pub(crate) git_tab: function_panel::git_panel::GitTab,
+    pub(crate) git_log: Vec<GitCommit>,
+    pub(crate) git_error: Option<String>,
+    pub(crate) git_commit_input: gpui::Entity<TextInput>,
+}
+
 impl Chat {
     pub(crate) fn new(cx: &mut Context<Self>) -> Self {
         let focus = cx.focus_handle();
@@ -398,34 +405,48 @@ impl Chat {
         let mut chat = Self {
             // v54.4 定案：启动固定会话界面（面板/内容区绑定关系见
             // status_bar；不恢复上次离开时的面板）
-            cwd: cwd.clone(),
-            branch,
-            expanded_dirs: HashSet::new(),
-            tree_rows: std::sync::Arc::new(Vec::new()),
-            git_files: Vec::new(),
-            git_selected: None,
-            git_tab: function_panel::git_panel::GitTab::Changes,
-            git_log: Vec::new(),
-            git_error: None,
-            git_commit_input: {
-                let input = cx.new(|cx| TextInput::new(cx).placeholder(tr("git.commit_placeholder")));
-                input
+            ws: WsUi {
+                project_files: Vec::new(),
+                expanded_dirs: HashSet::new(),
+                tree_rows: std::sync::Arc::new(Vec::new()),
+                fs_watch: None,
+                file_watches: std::collections::HashMap::new(),
+                changes_only: ui.tree_changes_only,
+                file_search_hits: Vec::new(),
+                file_search_needle: String::new(),
+                file_search_gen: 0,
+                file_search_scanning: false,
+                file_cache: std::collections::HashMap::new(),
+                panel_tabs: Vec::new(),
+                active_panel_tab: None,
+                crumb_menu_dir: None,
+                crumb_dd: cx.new(|_| crate::ui::DropdownState::new()),
+                ext_probe: (0, 0),
+                pending_focus_file: None,
+                terminals: Vec::new(),
+                active_terminal: None,
+                term_seq: 0,
+                term_cursor_on: true,
+                term_cursor_focused: false,
+                term_events: None,
+                branch,
+                git_files: Vec::new(),
+                git_selected: None,
+                git_tab: function_panel::git_panel::GitTab::Changes,
+                git_log: Vec::new(),
+                git_error: None,
+                git_add_del: (0, 0),
+                md_preview_scrollbar: gpui_component::scroll::ScrollbarState::default(),
+                md_preview_list: gpui::ListState::new(0, gpui::ListAlignment::Top, px(1000.)),
+                md_preview_list_path: None,
+                fs_watch_tx,
+                fs_watch_rx: Some(fs_watch_rx_ch),
+                cwd: cwd.clone(),
+                git_commit_input: {
+                    let input = cx.new(|cx| TextInput::new(cx).placeholder(tr("git.commit_placeholder")));
+                    input
+                },
             },
-            git_add_del: (0, 0),
-            project_files: Vec::new(),
-            terminals: Vec::new(),
-            active_terminal: None,
-            term_seq: 0,
-            term_cursor_on: true,
-            term_cursor_focused: false,
-            term_events: None,
-            panel_tabs: Vec::new(),
-            active_panel_tab: None,
-            file_cache: std::collections::HashMap::new(),
-            fs_watch_tx,
-            fs_watch_rx: Some(fs_watch_rx_ch),
-            fs_watch: None,
-            file_watches: std::collections::HashMap::new(),
             layout: LayoutUi {
                 focus,
                 dock_panel: DockPanel::Sessions,
@@ -563,26 +584,13 @@ impl Chat {
                 decl_open: [false; 7],
                 ext_input: cx.new(|cx| TextInput::new(cx)),
             },
-            // 081：已有合法 staging = Ready（不花网络），否则 Idle
-            md_preview_scrollbar: gpui_component::scroll::ScrollbarState::default(),
-            md_preview_list: gpui::ListState::new(0, gpui::ListAlignment::Top, px(1000.)),
-            md_preview_list_path: None,
-            changes_only: ui.tree_changes_only,
-            file_search_hits: Vec::new(),
-            file_search_needle: String::new(),
-            file_search_gen: 0,
-            file_search_scanning: false,
-            crumb_menu_dir: None,
-            crumb_dd: cx.new(|_| crate::ui::DropdownState::new()),
-            ext_probe: (0, 0),
-            pending_focus_file: None,
         };
         // 启动阶段：全局态一次性装载（010-启动.md §1/§6）——模型清单（磁盘 ∪ 自有
         // 缓存）、命令、默认项、插件、全局 mcp，全部先于第一帧进内存，**不 spawn 进程**。
         chat.pool.globals = startup::load_globals();
-        let cwd_key = chat.cwd.to_string_lossy().to_string();
+        let cwd_key = chat.ws.cwd.to_string_lossy().to_string();
         chat.pool.project_ctx
-            .insert(cwd_key, startup::load_project(&chat.cwd.clone()));
+            .insert(cwd_key, startup::load_project(&chat.ws.cwd.clone()));
         // new-session defaults (default model / thinking / enabledModels
         // scope) before the first frame — the draft pills render from them
         chat.reload_model_defaults();
@@ -597,7 +605,7 @@ impl Chat {
         });
         chat.load_project_files();
         // 文件树：根项目行默认展开
-        chat.expanded_dirs.insert(chat.cwd.clone());
+        chat.ws.expanded_dirs.insert(chat.ws.cwd.clone());
         chat.refresh_git();
 
         // settings panel CLI op pump (pi install/remove runs in background)
@@ -626,7 +634,7 @@ impl Chat {
         // terminal event pump: alacritty EventListener -> Chat (single channel)
         let (term_tx, term_rx) =
             futures::channel::mpsc::unbounded::<(usize, alacritty_terminal::event::Event)>();
-        chat.term_events = Some(term_tx);
+        chat.ws.term_events = Some(term_tx);
         cx.spawn(async move |this, cx| {
             let mut rx = term_rx;
             while let Some((tab_id, event)) = rx.next().await {
@@ -649,11 +657,11 @@ impl Chat {
                     .timer(std::time::Duration::from_millis(500))
                     .await;
                 let focused = this.update(cx, |chat, cx| {
-                    if chat.term_cursor_focused {
-                        chat.term_cursor_on = !chat.term_cursor_on;
+                    if chat.ws.term_cursor_focused {
+                        chat.ws.term_cursor_on = !chat.ws.term_cursor_on;
                         cx.notify();
                     }
-                    chat.term_cursor_focused
+                    chat.ws.term_cursor_focused
                 });
                 if focused.is_err() {
                     break;
@@ -694,7 +702,7 @@ impl Chat {
         // 都由 startup 发起——启动阶段做了什么全在 startup.rs 里可见。
         startup::spawn_boot_tasks(rt.clone(), cx);
         startup::spawn_session_list_load(
-            chat.cwd.to_string_lossy().to_string(),
+            chat.ws.cwd.to_string_lossy().to_string(),
             last_open.clone(),
             cx,
         );
@@ -705,7 +713,7 @@ impl Chat {
         }
         // git panel: Enter in the commit box commits staged changes
         let entity_for_git = cx.entity();
-        chat.git_commit_input.update(cx, |ti, _| {
+        chat.ws.git_commit_input.update(cx, |ti, _| {
             let weak_git = entity_for_git.downgrade();
             ti.set_on_submit(Box::new(move |_, cx| {
                 let _ = weak_git.update(cx, |c, cx| c.git_commit_staged(cx));
@@ -739,7 +747,7 @@ impl Chat {
             return None;
         }
         let path = self.active_file_path()?;
-        let ed = self.file_cache.get(&path)?.editor.clone()?;
+        let ed = self.ws.file_cache.get(&path)?.editor.clone()?;
         let st = ed.read(cx);
         let handle = st.focus_handle(cx);
         // 搜索面板（Ctrl+F）输入框持焦同样不回收——它不是编辑器本体的

@@ -83,22 +83,22 @@ fn focused_str(chat: &Chat, window: &gpui::Window, cx: &Context<Chat>) -> Value 
     if chat.dlg.dialog_focus.is_focused(window) {
         return json!("dialog");
     }
-    if chat.git_commit_input.read(cx).focus_handle().is_focused(window) {
+    if chat.ws.git_commit_input.read(cx).focus_handle().is_focused(window) {
         return json!("git_commit");
     }
     if chat.aux.ext_input.read(cx).focus_handle().is_focused(window) {
         return json!("ext_input");
     }
-    for t in &chat.terminals {
+    for t in &chat.ws.terminals {
         if t.focus.is_focused(window) {
             return json!(format!("terminal:{}", t.id));
         }
     }
     // 文件编辑器（input.focus editor 的对向探针）：此前焦点落在编辑器报
     // "other"，而 other 被文档定义为「不该发生时的线索」——焦点类断言反被误导
-    for tab in &chat.panel_tabs {
+    for tab in &chat.ws.panel_tabs {
         if let crate::PanelTab::File(p) = tab {
-            if let Some(ed) = chat.file_cache.get(p).and_then(|f| f.editor.as_ref()) {
+            if let Some(ed) = chat.ws.file_cache.get(p).and_then(|f| f.editor.as_ref()) {
                 if ed.read(cx).focus_handle(cx).is_focused(window) {
                     return json!("editor");
                 }
@@ -112,7 +112,7 @@ fn focused_str(chat: &Chat, window: &gpui::Window, cx: &Context<Chat>) -> Value 
 /// 提示符出现与否的断言载体）。rows 截前 6 行、cols 全宽；只读不写。
 fn term_surface(chat: &Chat, window: &gpui::Window, _cx: &Context<Chat>) -> Value {
     let tabs = chat
-        .terminals
+        .ws.terminals
         .iter()
         .map(|t| {
             let focused = t.focus.is_focused(window);
@@ -147,7 +147,7 @@ fn term_surface(chat: &Chat, window: &gpui::Window, _cx: &Context<Chat>) -> Valu
         .collect::<Vec<_>>();
     json!({
         "terminals": tabs,
-        "active_terminal": chat.active_terminal,
+        "active_terminal": chat.ws.active_terminal,
         "content_view": content_view_str(chat.layout.content_view),
     })
 }
@@ -180,8 +180,8 @@ fn app_surface(chat: &Chat, window: &gpui::Window, cx: &Context<Chat>) -> Value 
         "version": env!("CARGO_PKG_VERSION"),
         "theme": crate::appearance::theme::theme_name(),
         "lang": crate::i18n::LANG_LABELS[crate::i18n::lang_ix()],
-        "cwd": chat.cwd.display().to_string(),
-        "branch": chat.branch,
+        "cwd": chat.ws.cwd.display().to_string(),
+        "branch": chat.ws.branch,
         "booted": chat.pool.booted,
         "focused": focused_str(chat, window, cx),
         "window": {
@@ -193,8 +193,8 @@ fn app_surface(chat: &Chat, window: &gpui::Window, cx: &Context<Chat>) -> Value 
         "content_view": content_view_str(chat.layout.content_view),
         "active_key": chat.pool.active_key,
         "active_file": opt_path(chat.psp.active_file.as_ref()),
-        "terminals": chat.terminals.len(),
-        "active_terminal": chat.active_terminal,
+        "terminals": chat.ws.terminals.len(),
+        "active_terminal": chat.ws.active_terminal,
         // 031/040 full+ 档扩展面板：按钮可用性（full+ 档即可，勾选即生效）
         "plugin_menu": {
             "available": chat
@@ -294,7 +294,7 @@ fn sessions_surface(chat: &Chat) -> Value {
         .map(|e| json!({"key": e.key, "preview": truncate(&e.preview, 120), "cwd": e.cwd}))
         .collect();
     json!({
-        "cwd": chat.cwd.display().to_string(),
+        "cwd": chat.ws.cwd.display().to_string(),
         "active_key": chat.pool.active_key,
         "active_file": opt_path(chat.psp.active_file.as_ref()),
         "runtimes": chat.pool.runtimes.keys().cloned().collect::<Vec<_>>(),
@@ -413,7 +413,7 @@ fn composer_surface(chat: &Chat) -> Value {
 
 fn files_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
     let rows: Vec<Value> = chat
-        .tree_rows
+        .ws.tree_rows
         .iter()
         .map(|r| {
             json!({
@@ -429,7 +429,7 @@ fn files_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
         })
         .collect();
     let mut expanded: Vec<String> =
-        chat.expanded_dirs.iter().map(|p| p.display().to_string()).collect();
+        chat.ws.expanded_dirs.iter().map(|p| p.display().to_string()).collect();
     expanded.sort();
     // 021 行内编辑（Zed EditState 移植）状态：新建/改名行开合、键入值与
     // 校验态——行内编辑的事务断言全靠这条
@@ -457,18 +457,18 @@ fn files_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
     let crumbs: Vec<String> = active_file
         .as_ref()
         .map(|p| {
-            crate::editor::view::breadcrumb_segments(&chat.cwd, p)
+            crate::editor::view::breadcrumb_segments(&chat.ws.cwd, p)
                 .iter()
                 .map(|(t, _)| t.to_string())
                 .collect()
         })
         .unwrap_or_default();
     let file_tabs: Vec<Value> = chat
-        .panel_tabs
+        .ws.panel_tabs
         .iter()
         .filter_map(|t| match t {
             crate::PanelTab::File(p) => {
-                let f = chat.file_cache.get(p);
+                let f = chat.ws.file_cache.get(p);
                 Some(json!({
                     "file": p.display().to_string(),
                     "active": active_file.as_ref().is_some_and(|a| crate::services::workspace::same_path(a, p)),
@@ -487,13 +487,13 @@ fn files_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
         })
         .collect();
     json!({
-        "cwd": chat.cwd.display().to_string(),
+        "cwd": chat.ws.cwd.display().to_string(),
         "crumbs": crumbs,
         // 023 外部改动检测的监听面：cwd 递归 watch + cwd 外打开文件的
         // 单文件目录 watch（Zed single-file worktree 同款）——断言「工作区外
         // 文件也有监听」就靠这条
         "watch_roots": chat
-            .file_watches
+            .ws.file_watches
             .keys()
             .map(|p| p.display().to_string())
             .collect::<Vec<String>>(),
@@ -501,8 +501,8 @@ fn files_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
         "rows": rows,
         "tree_edit": tree_edit,
         "file_tabs": file_tabs,
-        "ext_probe": {"runs": chat.ext_probe.0, "hits": chat.ext_probe.1},
-        "open_tabs": chat.panel_tabs.iter().map(|t| match t {
+        "ext_probe": {"runs": chat.ws.ext_probe.0, "hits": chat.ws.ext_probe.1},
+        "open_tabs": chat.ws.panel_tabs.iter().map(|t| match t {
             crate::PanelTab::Term(i) => json!({"term": i}),
             crate::PanelTab::File(p) => json!({"file": p.display().to_string()}),
             crate::PanelTab::Changelog => json!({"changelog": true}),
@@ -512,11 +512,11 @@ fn files_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
 
 fn git_surface(chat: &Chat) -> Value {
     json!({
-        "branch": chat.branch,
-        "tab": format!("{:?}", chat.git_tab),
-        "error": chat.git_error,
-        "add_del": {"add": chat.git_add_del.0, "del": chat.git_add_del.1},
-        "files": chat.git_files.iter().map(|f| json!({
+        "branch": chat.ws.branch,
+        "tab": format!("{:?}", chat.ws.git_tab),
+        "error": chat.ws.git_error,
+        "add_del": {"add": chat.ws.git_add_del.0, "del": chat.ws.git_add_del.1},
+        "files": chat.ws.git_files.iter().map(|f| json!({
             "path": f.path.display().to_string(),
             "status": format!("{:?}", f.status),
             "staged": f.staged,
@@ -588,7 +588,7 @@ fn dialogs_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
     // 文件搜索命中随弹窗上报（后台扫盘异步回填，UI 测试据此轮询就绪）
     let file_search_hits: Vec<Value> = match chat.dlg.dialog.as_ref() {
         Some(Dialog::FileSearch { .. }) => chat
-            .file_search_hits
+            .ws.file_search_hits
             .iter()
             .map(|r| json!(r))
             .collect(),

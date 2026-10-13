@@ -37,7 +37,7 @@ impl Chat {
 
     /// psp 项目行 ＋：切换到该项目并新建会话（组展开、选中）。
     pub(crate) fn new_session_in(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        if !same_path(&self.cwd, &path) {
+        if !same_path(&self.ws.cwd, &path) {
             self.switch_project(path, cx);
         }
         self.new_session(cx);
@@ -82,7 +82,7 @@ impl Chat {
             let _ = std::fs::remove_file(p);
         }
         self.psp.projects.retain(|g| !same_path(&g.path, &path));
-        if same_path(&self.cwd, &path) {
+        if same_path(&self.ws.cwd, &path) {
             // 当前项目被删：清当前组数据，保留草稿会话
             self.pool.sessions.clear();
             self.sync_current_sessions();
@@ -144,7 +144,7 @@ impl Chat {
                     .iter()
                     .find(|g| g.sessions.iter().any(|s| same_path(&s.path, path)))
                     .map(|g| g.path.clone())
-                    .unwrap_or_else(|| self.cwd.clone());
+                    .unwrap_or_else(|| self.ws.cwd.clone());
                 let rt = cx.new(|_| {
                     let mut r = session::runtime::SessionRuntime::new(
                         key.clone(),

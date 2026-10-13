@@ -94,18 +94,18 @@ fn render_file_search(
     t: &theme::Theme,
     _cx: &App,
 ) -> Div {
-    let status: SharedString = if chat.file_search_scanning {
+    let status: SharedString = if chat.ws.file_search_scanning {
         tr("file_tree.scanning_files").into()
-    } else if chat.file_search_needle.is_empty() {
+    } else if chat.ws.file_search_needle.is_empty() {
         tr("file_tree.search_hint").into()
-    } else if chat.file_search_hits.is_empty() {
+    } else if chat.ws.file_search_hits.is_empty() {
         tr("composer.no_matching_files").into()
     } else {
-        crate::i18n::tf("file_tree.files", &[("n", chat.file_search_hits.len().to_string())]).into()
+        crate::i18n::tf("file_tree.files", &[("n", chat.ws.file_search_hits.len().to_string())]).into()
     };
-    let cwd = chat.cwd.clone();
+    let cwd = chat.ws.cwd.clone();
     let mut list = div().flex().flex_col();
-    for (ix, rel) in chat.file_search_hits.iter().enumerate() {
+    for (ix, rel) in chat.ws.file_search_hits.iter().enumerate() {
         let abs = cwd.join(rel);
         let name = rel.rsplit('/').next().unwrap_or(rel);
         let dir_part = &rel[..rel.len() - name.len()];
@@ -890,7 +890,7 @@ fn render_project_picker(
         let name: SharedString = p.name.clone().into();
         let selected = crate::services::workspace::same_ws(
             &p.path.to_string_lossy(),
-            &chat.cwd.to_string_lossy(),
+            &chat.ws.cwd.to_string_lossy(),
         );
         list = list.child(
             div()
@@ -1147,10 +1147,10 @@ fn render_session_search(
 impl Chat {
     pub(crate) fn open_git_diff(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         let untracked = self
-            .git_files
+            .ws.git_files
             .iter()
             .any(|f| f.path == path && f.status == GitStatus::Untracked);
-        let patch = git_file_diff(&self.cwd, &path, untracked);
+        let patch = git_file_diff(&self.ws.cwd, &path, untracked);
         self.dlg.dialog = Some(Dialog::GitDiff { path, patch });
         cx.notify();
     }
@@ -1202,19 +1202,19 @@ impl Chat {
                 .await;
             let _ = weak.update(cx, |c, cx| {
                 // 当前项目兜底入选（无 30 天活动也显示，004：默认选中该项目）
-                let cwd_key = c.cwd.to_string_lossy().to_string();
+                let cwd_key = c.ws.cwd.to_string_lossy().to_string();
                 if !entries
                     .iter()
                     .any(|p| crate::services::workspace::same_ws(&p.path.to_string_lossy(), &cwd_key))
                 {
                     let name = c
-                        .cwd
+                        .ws.cwd
                         .file_name()
                         .map(|n| n.to_string_lossy().to_string())
                         .unwrap_or_else(|| cwd_key.clone());
                     entries.push(crate::ProjectEntry {
                         name,
-                        path: c.cwd.clone(),
+                        path: c.ws.cwd.clone(),
                     });
                     entries.sort_by(|a, b| project_sort_key(a).cmp(&project_sort_key(b)));
                 }
@@ -1265,7 +1265,7 @@ impl Chat {
             return;
         }
         self.psp.search_running = true;
-        let cwd = self.cwd.clone();
+        let cwd = self.ws.cwd.clone();
         cx.spawn(async move |weak, cx| {
             cx.background_executor()
                 .timer(std::time::Duration::from_millis(300))

@@ -49,34 +49,34 @@ impl Chat {
         let mut anc = path.parent().map(|p| p.to_path_buf());
         let mut opened = false;
         while let Some(p) = anc {
-            if same_path(&p, &self.cwd) {
+            if same_path(&p, &self.ws.cwd) {
                 break;
             }
-            opened |= self.expanded_dirs.insert(p.clone());
+            opened |= self.ws.expanded_dirs.insert(p.clone());
             anc = p.parent().map(|q| q.to_path_buf());
         }
         if opened {
             self.rebuild_tree();
         }
         // 「只看变更」列表可能不含目标（无 git 变更的文件）：回退树模式
-        if self.changes_only && !self.tree_rows.iter().any(|r| same_path(&r.path, path)) {
-            self.changes_only = false;
+        if self.ws.changes_only && !self.ws.tree_rows.iter().any(|r| same_path(&r.path, path)) {
+            self.ws.changes_only = false;
             self.rebuild_tree();
             self.persist_ui();
         }
-        let Some(row) = self.tree_rows.iter().find(|r| same_path(&r.path, path)) else {
+        let Some(row) = self.ws.tree_rows.iter().find(|r| same_path(&r.path, path)) else {
             return;
         };
         // 滚动落点给 sticky 祖先链留位：行顶对齐到「链高 = 深度×行高」
         // 之下（对齐 Zed scroll_to_item_strict_with_offset 的 sticky_index
         // 语义），祖先全可见后钉住链自然不触发；变更列表 depth 恒 0 恒顶
         let ix = self
-            .tree_rows
+            .ws.tree_rows
             .iter()
             .position(|r| same_path(&r.path, path))
             .unwrap_or(0);
         let y = ix.saturating_sub(row.depth) as f32
-            * if self.changes_only { CHANGES_ROW_H } else { ROW_H };
+            * if self.ws.changes_only { CHANGES_ROW_H } else { ROW_H };
         let handle = crate::ui::vlist::scroll_handle(FILE_TREE_LIST_ID);
         handle.0.borrow().base_handle.set_offset(point(px(0.), px(y)));
     }
@@ -87,8 +87,8 @@ pub(crate) fn files_view(
     weak: &gpui::WeakEntity<Chat>,
     cx: &mut gpui::Context<Chat>,
 ) -> gpui::AnyElement {
-    let rows = chat.tree_rows.clone();
-    let changes_only = chat.changes_only;
+    let rows = chat.ws.tree_rows.clone();
+    let changes_only = chat.ws.changes_only;
     let weak = weak.clone();
     let t = theme::theme();
     // 021 操作栏：项目目录行固定在树顶（高度 40），名字居左、操作钮
@@ -123,7 +123,7 @@ pub(crate) fn files_view(
         // 「只看变更」= 扁平列表（021 二改定稿：不要树状）。头行 =
         // N 个文件 + numstat（+绿 -红，色同 git 徽标盘）；行 = 文件名
         // 前置左对齐 + 目录段后置（目录段可截断、文件名恒可见）。
-        let (add, del) = chat.git_add_del;
+        let (add, del) = chat.ws.git_add_del;
         let n = rows.len();
         if n > 0 {
             let mut head = div()
@@ -157,7 +157,7 @@ pub(crate) fn files_view(
         }
         let weak_c = weak.clone();
         let weak_bg = weak.clone();
-        let cwd_bg = chat.cwd.clone();
+        let cwd_bg = chat.ws.cwd.clone();
         let editing = chat.dlg.tree_edit.clone();
         col = col.child(
             div()
@@ -200,13 +200,13 @@ pub(crate) fn files_view(
         );
     } else {
         let weak_bg = weak.clone();
-        let cwd_bg = chat.cwd.clone();
+        let cwd_bg = chat.ws.cwd.clone();
         let edit = chat.dlg.tree_edit.clone();
         // 新建行的落点（Zed new_entry：虚拟行插在目录行下方、子项之前；
         // 目标 = 项目根时插列表顶）。改名行不注入（原地替换该行）。
         let edit_slot: Option<(usize, usize)> = edit.as_ref().and_then(|e| match &e.kind {
             crate::function_panel::TreeEditKind::New { dir } => {
-                if same_path(dir, &chat.cwd) {
+                if same_path(dir, &chat.ws.cwd) {
                     Some((0, 0))
                 } else {
                     Some(
@@ -390,19 +390,19 @@ fn action_bar(
     t: &'static crate::appearance::theme::Theme,
 ) -> gpui::AnyElement {
     let project: SharedString = chat
-        .cwd
+        .ws.cwd
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| chat.cwd.to_string_lossy().to_string())
+        .unwrap_or_else(|| chat.ws.cwd.to_string_lossy().to_string())
         .into();
-    let changes_only = chat.changes_only;
+    let changes_only = chat.ws.changes_only;
     let w_toggle = weak.clone();
     let w_search = weak.clone();
     let w_term = weak.clone();
     let w_menu = weak.clone();
-    let cwd_menu = chat.cwd.clone();
-    let cwd_explorer = chat.cwd.clone();
-    let cwd_term = chat.cwd.clone();
+    let cwd_menu = chat.ws.cwd.clone();
+    let cwd_explorer = chat.ws.cwd.clone();
+    let cwd_term = chat.ws.cwd.clone();
     // 021 二改定稿：操作栏即根行——项目名居左（粗体）、操作钮右对齐
     // （间距 10px，各带 tooltip）；名字区右键 = 根目录菜单（树体不再有
     // 根行，根下的新建/改名等入口保留下）
@@ -609,8 +609,8 @@ fn tree_row(
         let dir_path = row.path.clone();
         el = el.on_mouse_down(MouseButton::Left, move |_, _, cx| {
             let _ = weak.update(cx, |c, cx| {
-                if !c.expanded_dirs.remove(&dir_path) {
-                    c.expanded_dirs.insert(dir_path.clone());
+                if !c.ws.expanded_dirs.remove(&dir_path) {
+                    c.ws.expanded_dirs.insert(dir_path.clone());
                 }
                 c.rebuild_tree();
                 cx.notify();
@@ -833,7 +833,7 @@ impl StickyAncestors {
         visible_range: Range<usize>,
         scroll_offset: Point<Pixels>,
     ) -> gpui::AnyElement {
-        let rows = &chat.tree_rows;
+        let rows = &chat.ws.tree_rows;
         // Zed show_sticky_entries 门控：未滚动时不钉（否则「深度 < 视口
         // 序号」规则会在兄弟较多的树上于 scroll 0 误触发，把根行钉成重影）
         if scroll_offset.y >= px(0.) {
@@ -1183,18 +1183,18 @@ impl Chat {
     /// 盘 + gitignore 过滤 + Zed 语义排序 + git 徽标回填）。展开/折叠、
     /// git 刷新、fs 事件、切项目后都走这里。
     pub(crate) fn rebuild_tree(&mut self) {
-        self.tree_rows = std::sync::Arc::new(if self.changes_only {
+        self.ws.tree_rows = std::sync::Arc::new(if self.ws.changes_only {
             // 「只看变更」= 扁平表直接吃 git status 结果（不扫盘）
-            services::file_tree::flatten_changes(&self.cwd, &self.git_files)
+            services::file_tree::flatten_changes(&self.ws.cwd, &self.ws.git_files)
         } else {
-            services::file_tree::flatten(&self.cwd, &self.expanded_dirs, &self.git_files)
+            services::file_tree::flatten(&self.ws.cwd, &self.ws.expanded_dirs, &self.ws.git_files)
         });
     }
 
     /// 挂上 fs watcher（递归 watch cwd；旧句柄 drop 即解除）。切项目时
     /// 重挂。事件由 startup::spawn_fs_watch_pump 合批后驱动 refresh_git。
     pub(crate) fn attach_fs_watch(&mut self) {
-        self.fs_watch = services::watcher::watch(&self.cwd, self.fs_watch_tx.clone()).ok();
+        self.ws.fs_watch = services::watcher::watch(&self.ws.cwd, self.ws.fs_watch_tx.clone()).ok();
     }
 
     /// 023 外部改动检测的监听面维护（对齐 Zed 的 worktree 监听面）：
@@ -1208,21 +1208,21 @@ impl Chat {
     /// （句柄 drop = 停止监听），避免长期持有无关目录的监听。
     pub(crate) fn retain_file_watches(&mut self) {
         let mut wanted: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
-        for t in &self.panel_tabs {
+        for t in &self.ws.panel_tabs {
             if let PanelTab::File(p) = t
                 && let Some(dir) = p.parent()
-                && !services::workspace::is_under(dir, &self.cwd)
+                && !services::workspace::is_under(dir, &self.ws.cwd)
             {
                 wanted.insert(dir.to_path_buf());
             }
         }
-        self.file_watches.retain(|dir, _| wanted.contains(dir));
+        self.ws.file_watches.retain(|dir, _| wanted.contains(dir));
         for dir in wanted {
-            if self.file_watches.contains_key(&dir) {
+            if self.ws.file_watches.contains_key(&dir) {
                 continue;
             }
-            if let Ok(w) = services::watcher::watch_dir(&dir, self.fs_watch_tx.clone()) {
-                self.file_watches.insert(dir, w);
+            if let Ok(w) = services::watcher::watch_dir(&dir, self.ws.fs_watch_tx.clone()) {
+                self.ws.file_watches.insert(dir, w);
             }
         }
     }
@@ -1232,7 +1232,7 @@ impl Chat {
     // -----------------------------------------------------------------------
 
     pub(crate) fn load_project_files(&mut self) {
-        self.project_files = walk_files(&self.cwd, 3, 400);
+        self.ws.project_files = walk_files(&self.ws.cwd, 3, 400);
     }
 
 }

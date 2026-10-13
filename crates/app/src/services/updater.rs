@@ -555,14 +555,14 @@ impl crate::Chat {
     /// 打开（或聚焦）topbar「更新日志」tab。
     pub(crate) fn open_changelog_tab(&mut self, cx: &mut gpui::Context<Self>) {
         match self
-            .panel_tabs
+            .ws.panel_tabs
             .iter()
             .position(|t| matches!(t, crate::PanelTab::Changelog))
         {
             Some(ix) => self.activate_panel_tab(ix, cx),
             None => {
-                self.panel_tabs.push(crate::PanelTab::Changelog);
-                let ix = self.panel_tabs.len() - 1;
+                self.ws.panel_tabs.push(crate::PanelTab::Changelog);
+                let ix = self.ws.panel_tabs.len() - 1;
                 self.activate_panel_tab(ix, cx);
             }
         }

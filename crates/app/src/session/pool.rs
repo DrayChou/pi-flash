@@ -213,7 +213,7 @@ impl Chat {
             self.set_content_view(crate::ContentView::Chat);
         }
         if let Some(f) = &file {
-            set_last_open(&self.cwd.to_string_lossy(), &f.to_string_lossy());
+            set_last_open(&self.ws.cwd.to_string_lossy(), &f.to_string_lossy());
             // v54: 切入会话清除未读/出错红点
             self.psp.unread.remove(f);
             self.psp.turn_errors.remove(f);
@@ -249,14 +249,14 @@ impl Chat {
         let key = format!("draft-{}", self.pool.draft_seq);
         self.pool.draft_seq += 1;
         let rt = cx.new(|_| {
-            let mut r = session::runtime::SessionRuntime::new(key.clone(), self.cwd.clone(), None);
+            let mut r = session::runtime::SessionRuntime::new(key.clone(), self.ws.cwd.clone(), None);
             r.default_model = services::workspace::default_model_pref();
             r.status = tr("session.new").to_string();
             r
         });
         self.pool.runtimes.insert(key, rt.clone());
         self.subscribe_runtime(&rt, cx);
-        clear_last_open(&self.cwd.to_string_lossy());
+        clear_last_open(&self.ws.cwd.to_string_lossy());
         self.dlg.renaming = None;
         self.dlg.rename_input = None;
         self.switch_to(rt, cx);
@@ -319,12 +319,12 @@ impl Chat {
                     .find(|g| g.sessions.iter().any(|s| s.path == path))
                     .map(|g| g.path.clone())
             })
-            .unwrap_or_else(|| self.cwd.clone());
+            .unwrap_or_else(|| self.ws.cwd.clone());
         let key = path.to_string_lossy().to_string();
         // pool hit: switch attention — instant, all messages in place
         if let Some(rt) = self.pool.runtimes.get(&key).cloned() {
-            self.cwd = cwd;
-            self.branch = read_branch(&self.cwd);
+            self.ws.cwd = cwd;
+            self.ws.branch = read_branch(&self.ws.cwd);
             self.dlg.renaming = None;
             self.dlg.rename_input = None;
             self.dlg.confirm_delete = None;
@@ -360,12 +360,12 @@ impl Chat {
         });
         self.pool.runtimes.insert(rt.read(cx).key.clone(), rt.clone());
         self.subscribe_runtime(&rt, cx);
-        if !same_ws(&cwd.to_string_lossy(), &self.cwd.to_string_lossy()) {
-            self.cwd = cwd;
-            self.branch = read_branch(&self.cwd);
-            self.expanded_dirs.clear();
+        if !same_ws(&cwd.to_string_lossy(), &self.ws.cwd.to_string_lossy()) {
+            self.ws.cwd = cwd;
+            self.ws.branch = read_branch(&self.ws.cwd);
+            self.ws.expanded_dirs.clear();
             // 文件树：根项目行默认展开
-            self.expanded_dirs.insert(self.cwd.clone());
+            self.ws.expanded_dirs.insert(self.ws.cwd.clone());
             self.refresh_sessions();
             self.load_project_files();
             // 换工作区：git 状态/树缓存/fs watcher 全部跟着 cwd 重挂
@@ -373,7 +373,7 @@ impl Chat {
             self.refresh_git();
             self.attach_fs_watch();
         }
-        set_last_open(&self.cwd.to_string_lossy(), &path.to_string_lossy());
+        set_last_open(&self.ws.cwd.to_string_lossy(), &path.to_string_lossy());
         self.dlg.renaming = None;
         self.dlg.rename_input = None;
         self.dlg.confirm_delete = None;
@@ -497,7 +497,7 @@ impl Chat {
     }
 
     pub(crate) fn refresh_sessions(&mut self) {
-        let cwd = self.cwd.to_string_lossy().to_string();
+        let cwd = self.ws.cwd.to_string_lossy().to_string();
         let full = list_sessions_for_cwd(&cwd, 500)
             .into_iter()
             .filter(|s| same_ws(&s.cwd, &cwd))
@@ -536,21 +536,21 @@ impl Chat {
     }
 
     pub(crate) fn switch_project(&mut self, cwd: PathBuf, cx: &mut Context<Self>) {
-        self.cwd = cwd;
+        self.ws.cwd = cwd;
         // mark as the globally-last active workspace for startup restore
-        set_last_workspace(&self.cwd.to_string_lossy());
-        self.branch = read_branch(&self.cwd);
+        set_last_workspace(&self.ws.cwd.to_string_lossy());
+        self.ws.branch = read_branch(&self.ws.cwd);
         self.refresh_sessions();
         self.dlg.dialog = None;
-        self.expanded_dirs.clear();
+        self.ws.expanded_dirs.clear();
         // 文件树：根项目行默认展开
-        self.expanded_dirs.insert(self.cwd.clone());
+        self.ws.expanded_dirs.insert(self.ws.cwd.clone());
         self.refresh_git();
         self.load_project_files();
         self.attach_fs_watch();
         // cwd 变了：cwd 外单文件监听面跟着重算（旧 cwd 下的文件现在要单挂）
         self.retain_file_watches();
-        if let Some(p) = get_last_open(&self.cwd.to_string_lossy()) {
+        if let Some(p) = get_last_open(&self.ws.cwd.to_string_lossy()) {
             let path = PathBuf::from(&p);
             if path.exists() {
                 self.open_session(path, false, cx);
@@ -581,11 +581,11 @@ impl Chat {
     /// 当前项目的上下文（010-启动.md §5）：命中启动装载的集合就直接返回，
     /// 未命中（新打开的项目）用同一个装载函数现算一次并纳入集合。
     pub(crate) fn project_ctx_now(&mut self) -> startup::ProjectCtx {
-        let key = self.cwd.to_string_lossy().to_string();
+        let key = self.ws.cwd.to_string_lossy().to_string();
         if let Some(ctx) = self.pool.project_ctx.get(&key) {
             return ctx.clone();
         }
-        let ctx = startup::load_project(&self.cwd.clone());
+        let ctx = startup::load_project(&self.ws.cwd.clone());
         self.pool.project_ctx.insert(key, ctx.clone());
         ctx
     }

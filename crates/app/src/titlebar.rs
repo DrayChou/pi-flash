@@ -161,7 +161,7 @@ fn tab_strip(
         .items_end()
         .overflow_x_scroll();
     tabs_host = tabs_host.child(session_tab(chat, cx));
-    for (ix, tab) in chat.panel_tabs.iter().enumerate() {
+    for (ix, tab) in chat.ws.panel_tabs.iter().enumerate() {
         let (label, path, is_file, tab_icon, tab_view): (
             SharedString,
             Option<PathBuf>,
@@ -171,7 +171,7 @@ fn tab_strip(
         ) = match tab {
             crate::PanelTab::Term(id) => {
                 let title = chat
-                    .terminals
+                    .ws.terminals
                     .iter()
                     .find(|t| t.id == *id)
                     .map(|t| {
@@ -207,10 +207,10 @@ fn tab_strip(
         // （脏的已删缓冲仍显示为已修改）
         let deleted = path
             .as_ref()
-            .and_then(|p| chat.file_cache.get(p))
+            .and_then(|p| chat.ws.file_cache.get(p))
             .is_some_and(|f| f.conflict == Some(crate::FileConflict::Deleted));
         let badge: Option<gpui::AnyElement> = path.as_ref().and_then(|p| {
-            let f = chat.file_cache.get(p)?;
+            let f = chat.ws.file_cache.get(p)?;
             Some(
                 if f.conflict == Some(crate::FileConflict::Changed) {
                     div()
@@ -227,7 +227,7 @@ fn tab_strip(
                 .into_any_element(),
             )
         });
-        let active = chat.layout.content_view == tab_view && chat.active_panel_tab == Some(ix);
+        let active = chat.layout.content_view == tab_view && chat.ws.active_panel_tab == Some(ix);
         tabs_host = tabs_host.child(content_tab(
             if is_file { "ctab-file" } else { "ctab-term" },
             ix,
@@ -295,16 +295,16 @@ fn content_tab(
             cx.notify();
             return;
         }
-        let was_active = this.active_panel_tab == Some(ix) && this.layout.content_view == view;
+        let was_active = this.ws.active_panel_tab == Some(ix) && this.layout.content_view == view;
         this.close_panel_tab(ix, cx);
         // 关掉当前 tab 后内容区回退：终端→浏览区遗留→chat；
         // 更新日志（081）→ 剩余 tab 激活最近的，没有则回会话
         if was_active && this.layout.content_view == view {
             if view == ContentView::Changelog {
-                match this.active_panel_tab {
+                match this.ws.active_panel_tab {
                     Some(nix) => {
                         let v = this
-                            .panel_tabs
+                            .ws.panel_tabs
                             .get(nix)
                             .map(|tab| tab.view())
                             .unwrap_or(ContentView::Chat);
@@ -312,15 +312,15 @@ fn content_tab(
                     }
                     None => this.set_content_view(ContentView::Chat),
                 }
-            } else if this.active_panel_tab.is_none() {
-                let v = if this.panel_tabs.is_empty() {
+            } else if this.ws.active_panel_tab.is_none() {
+                let v = if this.ws.panel_tabs.is_empty() {
                     ContentView::Chat
                 } else {
                     this.layout.browse_last
                 };
                 this.set_content_view(v);
-                if this.layout.content_view == ContentView::Term && !this.panel_tabs.is_empty() {
-                    let last = this.panel_tabs.len() - 1;
+                if this.layout.content_view == ContentView::Term && !this.ws.panel_tabs.is_empty() {
+                    let last = this.ws.panel_tabs.len() - 1;
                     this.activate_panel_tab(last, cx);
                 }
             }
@@ -332,15 +332,15 @@ fn content_tab(
         // （终端）/composer 上，键入落空——必须再点一下内容区才生效。
         // 终端 = 直接给焦点句柄；文件 = pending_focus_file（编辑器实体
         // 渲染帧懒建，与 open_file_tab 同一条路径）。
-        let target = this.panel_tabs.get(ix).cloned();
+        let target = this.ws.panel_tabs.get(ix).cloned();
         let focus_term = match target {
             Some(crate::PanelTab::Term(id)) => this
-                .terminals
+                .ws.terminals
                 .iter()
                 .find(|t| t.id == id)
                 .map(|t| t.focus.clone()),
             Some(crate::PanelTab::File(p)) => {
-                this.pending_focus_file = Some(p);
+                this.ws.pending_focus_file = Some(p);
                 None
             }
             _ => None,

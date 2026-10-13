@@ -52,7 +52,7 @@ impl Chat {
     /// 「切换显示变更」：开 = 只列 git 变更文件（flatten changes_only，
     /// 全量下钻无视展开集合）。持久化走 UiState.tree_changes_only。
     pub(crate) fn toggle_changes_only(&mut self, cx: &mut Context<Self>) {
-        self.changes_only = !self.changes_only;
+        self.ws.changes_only = !self.ws.changes_only;
         self.rebuild_tree();
         self.persist_ui();
         cx.notify();
@@ -86,9 +86,9 @@ impl Chat {
                     });
                 }))
         });
-        self.file_search_hits.clear();
-        self.file_search_needle.clear();
-        self.file_search_gen += 1;
+        self.ws.file_search_hits.clear();
+        self.ws.file_search_needle.clear();
+        self.ws.file_search_gen += 1;
         self.dlg.dialog = Some(Dialog::FileSearch {
             input,
             scroll: gpui::ScrollHandle::new(),
@@ -99,24 +99,24 @@ impl Chat {
     /// 查询词变化：防抖 250ms 后台扫盘（load_listing = git ls-files，非
     /// git 目录 BFS 回退），代际丢陈旧响应（search_changed 同款）。
     pub(crate) fn file_search_changed(&mut self, q: &str, cx: &mut Context<Self>) {
-        self.file_search_gen += 1;
-        let epoch = self.file_search_gen;
+        self.ws.file_search_gen += 1;
+        let epoch = self.ws.file_search_gen;
         let needle = q.trim().to_string();
-        self.file_search_needle = needle.clone();
-        self.file_search_hits.clear();
+        self.ws.file_search_needle = needle.clone();
+        self.ws.file_search_hits.clear();
         if needle.is_empty() {
-            self.file_search_scanning = false;
+            self.ws.file_search_scanning = false;
             cx.notify();
             return;
         }
-        self.file_search_scanning = true;
-        let cwd = self.cwd.clone();
+        self.ws.file_search_scanning = true;
+        let cwd = self.ws.cwd.clone();
         cx.spawn(async move |weak, cx| {
             cx.background_executor()
                 .timer(std::time::Duration::from_millis(250))
                 .await;
             let cancelled = weak
-                .update(cx, |c, _| c.file_search_gen != epoch)
+                .update(cx, |c, _| c.ws.file_search_gen != epoch)
                 .unwrap_or(true);
             if cancelled {
                 return;
@@ -128,11 +128,11 @@ impl Chat {
                 })
                 .await;
             let _ = weak.update(cx, |c, cx| {
-                if c.file_search_gen != epoch {
+                if c.ws.file_search_gen != epoch {
                     return;
                 }
-                c.file_search_scanning = false;
-                c.file_search_hits = hits;
+                c.ws.file_search_scanning = false;
+                c.ws.file_search_hits = hits;
                 cx.notify();
             });
         })
@@ -143,7 +143,7 @@ impl Chat {
     /// 10MB/二进制闸同样生效）。
     pub(crate) fn open_file_search_hit(&mut self, rel: &str, cx: &mut Context<Self>) {
         self.dlg.dialog = None;
-        self.open_file_tab(self.cwd.join(rel), cx);
+        self.open_file_tab(self.ws.cwd.join(rel), cx);
     }
 
     // -------------------------------------------------------------------
@@ -158,8 +158,8 @@ impl Chat {
         self.dlg.tree_menu = None;
         self.dlg.editor_menu = None;
         // 「只看变更」列表放不下新建行（列表里没有目录行）：回退树模式
-        if self.changes_only {
-            self.changes_only = false;
+        if self.ws.changes_only {
+            self.ws.changes_only = false;
             self.rebuild_tree();
             self.persist_ui();
         }
@@ -372,10 +372,10 @@ impl Chat {
         let mut anc = Some(dir.to_path_buf());
         let mut opened = false;
         while let Some(p) = anc {
-            if same_path(&p, &self.cwd) {
+            if same_path(&p, &self.ws.cwd) {
                 break;
             }
-            opened |= self.expanded_dirs.insert(p.clone());
+            opened |= self.ws.expanded_dirs.insert(p.clone());
             anc = p.parent().map(|q| q.to_path_buf());
         }
         if opened {
@@ -402,7 +402,7 @@ impl Chat {
             return;
         }
         let target = dir.join(&name);
-        if !target.starts_with(&self.cwd) {
+        if !target.starts_with(&self.ws.cwd) {
             self.set_status(tr("conflict.path_escapes_root").to_string(), cx);
             return;
         }
@@ -418,10 +418,10 @@ impl Chat {
                 // 沿途目录展开，让新条目立即可见（树与变更过滤两态都认）
                 let mut anc = target.parent().map(|p| p.to_path_buf());
                 while let Some(p) = anc {
-                    if same_path(&p, &self.cwd) {
+                    if same_path(&p, &self.ws.cwd) {
                         break;
                     }
-                    self.expanded_dirs.insert(p.clone());
+                    self.ws.expanded_dirs.insert(p.clone());
                     anc = p.parent().map(|q| q.to_path_buf());
                 }
                 self.refresh_git();
@@ -485,18 +485,18 @@ impl Chat {
                 p.clone()
             }
         };
-        for t in &mut self.panel_tabs {
+        for t in &mut self.ws.panel_tabs {
             if let PanelTab::File(p) = t {
                 *p = remap(p);
             }
         }
-        self.file_cache = self.file_cache.drain().map(|(k, v)| (remap(&k), v)).collect();
-        if let Some(f) = self.pending_focus_file.as_mut() {
+        self.ws.file_cache = self.ws.file_cache.drain().map(|(k, v)| (remap(&k), v)).collect();
+        if let Some(f) = self.ws.pending_focus_file.as_mut() {
             *f = remap(f);
         }
         if is_dir {
-            self.expanded_dirs = self
-                .expanded_dirs
+            self.ws.expanded_dirs = self
+                .ws.expanded_dirs
                 .iter()
                 .map(remap)
                 .collect();
@@ -530,7 +530,7 @@ impl Chat {
     pub(crate) fn tree_delete_commit(&mut self, path: &Path, cx: &mut Context<Self>) {
         // 兜底护栏：项目根不可删（操作栏右键菜单已豁免该入口，这里防
         // 其他调用路径误投递）
-        if same_path(path, &self.cwd) {
+        if same_path(path, &self.ws.cwd) {
             self.set_status(tr("tree.delete_root_denied").to_string(), cx);
             cx.notify();
             return;
@@ -538,7 +538,7 @@ impl Chat {
         match trash::delete(path) {
             Ok(_) => {
                 let stale: Vec<PathBuf> = self
-                    .panel_tabs
+                    .ws.panel_tabs
                     .iter()
                     .filter_map(|t| match t {
                         PanelTab::File(p) if same_path(p, path) || p.starts_with(path) => {
@@ -552,9 +552,9 @@ impl Chat {
                 }
                 // 兕底：file_cache 可能残留无 tab 的 FileTab（历史关闭路径
                 // 只摘 tab 没清缓存），按路径一并清，防编辑器还渲染已删文件
-                self.file_cache
+                self.ws.file_cache
                     .retain(|k, _| !(same_path(k, path) || k.starts_with(path)));
-                self.expanded_dirs.retain(|d| !(same_path(d, path) || d.starts_with(path)));
+                self.ws.expanded_dirs.retain(|d| !(same_path(d, path) || d.starts_with(path)));
                 self.refresh_git();
                 // 删除成功静默（同创建：成功不提示，失败才弹）
                 cx.notify();
@@ -585,7 +585,7 @@ impl Chat {
     pub(crate) fn tree_at_insert(&mut self, path: PathBuf, is_dir: bool, cx: &mut Context<Self>) {
         self.dlg.tree_menu = None;
         let rel = path
-            .strip_prefix(&self.cwd)
+            .strip_prefix(&self.ws.cwd)
             .unwrap_or(&path)
             .to_string_lossy()
             .replace('\\', "/");

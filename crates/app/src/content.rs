@@ -137,17 +137,17 @@ pub(crate) fn term_view(
 ) -> Option<gpui::AnyElement> {
     let _t = T();
     let body: Option<gpui::AnyElement> = chat
-        .active_panel_tab
-        .and_then(|ix| chat.panel_tabs.get(ix).cloned())
+        .ws.active_panel_tab
+        .and_then(|ix| chat.ws.panel_tabs.get(ix).cloned())
         .map(|tab| match tab {
             crate::PanelTab::File(_) => div().into_any_element(),
             crate::PanelTab::Changelog => div().into_any_element(),
             crate::PanelTab::Term(id) => {
-                let tix = chat.terminals.iter().position(|t| t.id == id);
+                let tix = chat.ws.terminals.iter().position(|t| t.id == id);
                 let Some(tix) = tix else {
                     return div().into_any_element();
                 };
-                let tab = &chat.terminals[tix];
+                let tab = &chat.ws.terminals[tix];
                 let mut col = div().flex_1().min_h_0().flex().flex_col();
                 match &tab.status {
                     crate::terminal::TermStatus::Exited(code) => {
@@ -176,7 +176,7 @@ pub(crate) fn term_view(
                         .bg(rgb(0x141a17))
                         .child(
                             crate::terminal::TerminalElement::new(tab, weak.clone())
-                                .blink_on(chat.term_cursor_on)
+                                .blink_on(chat.ws.term_cursor_on)
                                 .track_focus(&tab.focus)
                                 .flex_1()
                                 .h_full()

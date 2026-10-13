@@ -130,14 +130,14 @@ pub(super) fn dispatch(
                     .map(|c| c.read(cx).focus_handle_in(cx))
                     .unwrap_or_else(|| chat.layout.focus.clone()),
                 "chat" => chat.layout.focus.clone(),
-                "git_commit" => chat.git_commit_input.read(cx).focus_handle(),
+                "git_commit" => chat.ws.git_commit_input.read(cx).focus_handle(),
                 "terminal" => {
                     // 优先给**当前显示**的终端（渲染面 = active_panel_tab），
                     // 没显示终端时退到 active_terminal 记录的那个
                     chat.shown_terminal_focus()
                         .or_else(|| {
-                            let ix = chat.active_terminal.unwrap_or(0);
-                            chat.terminals.get(ix).map(|t| t.focus.clone())
+                            let ix = chat.ws.active_terminal.unwrap_or(0);
+                            chat.ws.terminals.get(ix).map(|t| t.focus.clone())
                         })
                         .ok_or_else(|| not_found("没有打开的终端"))?
                 }
@@ -148,7 +148,7 @@ pub(super) fn dispatch(
                         .active_file_path()
                         .ok_or_else(|| not_found("没有打开的文件（先 file.open）"))?;
                     let ed = chat
-                        .file_cache
+                        .ws.file_cache
                         .get(&path)
                         .and_then(|f| f.editor.clone())
                         .ok_or_else(|| not_found("文件没有编辑器"))?;
@@ -169,8 +169,8 @@ pub(super) fn dispatch(
             chat.open_terminal(None, window, cx);
             Ok(json!({
                 "ok": true,
-                "terminals": chat.terminals.len(),
-                "active_terminal": chat.active_terminal,
+                "terminals": chat.ws.terminals.len(),
+                "active_terminal": chat.ws.active_terminal,
                 "content_view": match chat.layout.content_view {
                     ContentView::Chat => "chat",
                     ContentView::Term => "term",
@@ -286,7 +286,7 @@ pub(super) fn dispatch(
         method::FILE_CLOSE => {
             let path = params_path(params, "path")?;
             if !chat
-                .panel_tabs
+                .ws.panel_tabs
                 .iter()
                 .any(|t| matches!(t, crate::PanelTab::File(p) if crate::services::workspace::same_path(p, &path)))
             {
@@ -303,7 +303,7 @@ pub(super) fn dispatch(
                 .ok_or_else(|| bad("需要 {\"text\": \"内容\"}"))?
                 .to_string();
             let ed = chat
-                .file_cache
+                .ws.file_cache
                 .get(&path)
                 .and_then(|f| f.editor.clone())
                 .ok_or_else(|| not_found("文件没有编辑器（未渲染）"))?;
@@ -316,7 +316,7 @@ pub(super) fn dispatch(
         // 按钮同一方法，让冲突裁决路径可被自动化断言
         method::FILE_RELOAD => {
             let path = params_path(params, "path")?;
-            if !chat.file_cache.contains_key(&path) {
+            if !chat.ws.file_cache.contains_key(&path) {
                 return Err(not_found(format!("文件 tab 未打开: {}", path.display())));
             }
             chat.file_reload_from_disk(&path, cx);
@@ -326,7 +326,7 @@ pub(super) fn dispatch(
         // 断言菜单渲染/收起；x/y 缺省给视口中上部）
         method::FILE_CONTEXT_MENU => {
             let path = params_path(params, "path")?;
-            if !chat.file_cache.contains_key(&path) {
+            if !chat.ws.file_cache.contains_key(&path) {
                 return Err(not_found(format!("文件 tab 未打开: {}", path.display())));
             }
             let x = params.get("x").and_then(Value::as_f64).unwrap_or(600.) as f32;
@@ -354,7 +354,7 @@ pub(super) fn dispatch(
                 "preview" => false,
                 other => return Err(bad(format!("未知 mode: {other}"))),
             };
-            match chat.file_cache.get_mut(&path) {
+            match chat.ws.file_cache.get_mut(&path) {
                 Some(ft) => {
                     // 双态类型才有视图模式可切（仅 md）：其余静默成功（op
                     // 语义同前——不报错，只是没有可切换的态）
@@ -387,8 +387,8 @@ pub(super) fn dispatch(
         }
         method::FILES_TOGGLE_DIR => {
             let path = params_path(params, "path")?;
-            if !chat.expanded_dirs.remove(&path) {
-                chat.expanded_dirs.insert(path);
+            if !chat.ws.expanded_dirs.remove(&path) {
+                chat.ws.expanded_dirs.insert(path);
             }
             chat.rebuild_tree();
             cx.notify();
@@ -431,23 +431,23 @@ pub(super) fn dispatch(
         // ---- git ----
         method::GIT_STAGE => {
             let r = git_stage_op(chat, params, true);
-            chat.git_error = r.err();
+            chat.ws.git_error = r.err();
             chat.refresh_git();
             cx.notify();
             ok()
         }
         method::GIT_UNSTAGE => {
             let r = git_stage_op(chat, params, false);
-            chat.git_error = r.err();
+            chat.ws.git_error = r.err();
             chat.refresh_git();
             cx.notify();
             ok()
         }
         method::GIT_COMMIT => {
             let msg = params.get("message").and_then(Value::as_str).unwrap_or_default();
-            chat.git_commit_input.update(cx, |ti, cx| ti.set_value(msg.to_string(), cx));
+            chat.ws.git_commit_input.update(cx, |ti, cx| ti.set_value(msg.to_string(), cx));
             chat.git_commit_staged(cx);
-            Ok(json!({"ok": chat.git_error.is_none(), "error": chat.git_error}))
+            Ok(json!({"ok": chat.ws.git_error.is_none(), "error": chat.ws.git_error}))
         }
         method::GIT_PUSH => {
             chat.git_push_branch(cx);
@@ -648,24 +648,24 @@ pub(super) fn dispatch(
 fn git_stage_op(chat: &mut Chat, params: &Value, stage: bool) -> Result<(), String> {
     if params.get("all").and_then(Value::as_bool).unwrap_or(false) && !stage {
         let staged: Vec<PathBuf> = chat
-            .git_files
+            .ws.git_files
             .iter()
             .filter(|f| f.staged)
             .map(|f| f.path.clone())
             .collect();
         let mut last = Ok(());
         for p in staged {
-            last = crate::services::git::git_unstage(&chat.cwd, &p);
+            last = crate::services::git::git_unstage(&chat.ws.cwd, &p);
         }
         last
     } else if params.get("all").and_then(Value::as_bool).unwrap_or(false) {
-        crate::services::git::git_stage_all(&chat.cwd)
+        crate::services::git::git_stage_all(&chat.ws.cwd)
     } else {
         let path = params_path(params, "path").map_err(|e| e.1)?;
         if stage {
-            crate::services::git::git_stage(&chat.cwd, &path)
+            crate::services::git::git_stage(&chat.ws.cwd, &path)
         } else {
-            crate::services::git::git_unstage(&chat.cwd, &path)
+            crate::services::git::git_unstage(&chat.ws.cwd, &path)
         }
     }
 }

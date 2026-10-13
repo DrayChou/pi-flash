@@ -28,12 +28,12 @@ pub(crate) fn view(
 ) -> gpui::Div {
     let t = T();
     let proj: SharedString = chat
-        .cwd
+        .ws.cwd
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default()
         .into();
-    let n_changes = chat.git_files.len();
+    let n_changes = chat.ws.git_files.len();
     let changes_label = format!("Changes ({n_changes})");
 
     let mut col = div()
@@ -69,17 +69,17 @@ pub(crate) fn view(
                 )
                 .child(div().flex_1())
                 .child(
-                    div().flex().child(git_tab(GitTab::Changes, &changes_label, chat.git_tab, weak.clone(), cx))
-                        .child(git_tab(GitTab::History, "History", chat.git_tab, weak.clone(), cx)),
+                    div().flex().child(git_tab(GitTab::Changes, &changes_label, chat.ws.git_tab, weak.clone(), cx))
+                        .child(git_tab(GitTab::History, "History", chat.ws.git_tab, weak.clone(), cx)),
                 ),
         );
 
-    col = match chat.git_tab {
+    col = match chat.ws.git_tab {
         GitTab::Changes => col.child(changes_body(chat, weak, cx)),
         GitTab::History => col.child(history_body(chat, weak, cx)),
     };
 
-    if let Some(err) = &chat.git_error {
+    if let Some(err) = &chat.ws.git_error {
         col = col.child(
             div()
                 .flex_shrink_0()
@@ -139,9 +139,9 @@ enum GitNode {
 }
 
 fn build_git_tree(chat: &Chat) -> Vec<GitNode> {
-    // stable copy with indices into chat.git_files
+    // stable copy with indices into chat.ws.git_files
     let mut files: Vec<(PathBuf, usize)> = chat
-        .git_files
+        .ws.git_files
         .iter()
         .enumerate()
         .map(|(ix, f)| (f.path.clone(), ix))
@@ -172,7 +172,7 @@ fn build_git_tree(chat: &Chat) -> Vec<GitNode> {
     }
     for (path, ix) in files {
         let rel: Vec<String> = path
-            .strip_prefix(&chat.cwd)
+            .strip_prefix(&chat.ws.cwd)
             .unwrap_or(&path)
             .components()
             .map(|c| c.as_os_str().to_string_lossy().to_string())
@@ -189,13 +189,13 @@ fn changes_body(
     cx: &mut gpui::Context<Chat>,
 ) -> gpui::AnyElement {
     let t = T();
-    let branch: SharedString = if chat.branch.is_empty() {
+    let branch: SharedString = if chat.ws.branch.is_empty() {
         "no git".into()
     } else {
-        chat.branch.clone().into()
+        chat.ws.branch.clone().into()
     };
-    let ahead = git::git_ahead_count(&chat.cwd);
-    let last_commit = chat.git_log.first().cloned();
+    let ahead = git::git_ahead_count(&chat.ws.cwd);
+    let last_commit = chat.ws.git_log.first().cloned();
 
     div()
         .id("gv-changes")
@@ -229,10 +229,10 @@ fn changes_body(
                             |this, _: &gpui::MouseDownEvent, _w, cx| {
                                 // 选中行优先，否则第一个变更
                                 let target = this
-                                    .git_files
+                                    .ws.git_files
                                     .iter()
-                                    .find(|f| Some(&f.path) == this.git_selected.as_ref())
-                                    .or_else(|| this.git_files.first())
+                                    .find(|f| Some(&f.path) == this.ws.git_selected.as_ref())
+                                    .or_else(|| this.ws.git_files.first())
                                     .map(|f| f.path.clone());
                                 if let Some(p) = target {
                                     this.open_git_diff(p, cx);
@@ -254,7 +254,7 @@ fn changes_body(
                         .gap(px(5.))
                         .on_mouse_down(MouseButton::Left, cx.listener(
                             |this, _: &gpui::MouseDownEvent, _w, cx| {
-                                this.git_error = git::git_stage_all(&this.cwd).err();
+                                this.ws.git_error = git::git_stage_all(&this.ws.cwd).err();
                                 this.refresh_git();
                                 cx.notify();
                             },
@@ -316,7 +316,7 @@ fn changes_body(
                         ),
                 )
                 // 融入式 commit message 大区（无边框）
-                .child(chat.git_commit_input.clone())
+                .child(chat.ws.git_commit_input.clone())
                 .child(
                     div()
                         .flex()
@@ -375,13 +375,13 @@ fn changes_body(
                                 .hover(|s| s.bg(rgb(t.bg_hover)).text_color(rgb(t.text)))
                                 .on_mouse_down(MouseButton::Left, cx.listener(
                                     |this, _: &gpui::MouseDownEvent, _w, cx| {
-                                        match git::git_uncommit(&this.cwd) {
+                                        match git::git_uncommit(&this.ws.cwd) {
                                             Ok(()) => {
-                                                this.git_error = None;
+                                                this.ws.git_error = None;
                                                 this.refresh_git();
                                                 this.refresh_git_log();
                                             }
-                                            Err(e) => this.git_error = Some(e),
+                                            Err(e) => this.ws.git_error = Some(e),
                                         }
                                         cx.notify();
                                     },
@@ -395,7 +395,7 @@ fn changes_body(
 
 /// 变更树 section：目录嵌套（拍平行）+ 行尾复选。
 fn section(chat: &Chat, weak: gpui::WeakEntity<Chat>, t: &'static Theme) -> gpui::AnyElement {
-    if chat.git_files.is_empty() {
+    if chat.ws.git_files.is_empty() {
         return div()
             .px(px(8.))
             .py(px(6.))
@@ -438,7 +438,7 @@ fn collect_rows(
                 collect_rows(chat, weak, children, depth + 1, t, out);
             }
             GitNode::File { ix } => {
-                let f = &chat.git_files[*ix];
+                let f = &chat.ws.git_files[*ix];
                 let name = f
                     .path
                     .file_name()
@@ -446,7 +446,7 @@ fn collect_rows(
                     .unwrap_or_else(|| f.path.to_string_lossy().to_string());
                 let staged = f.staged;
                 let untracked = f.status == crate::services::git::GitStatus::Untracked;
-                let selected = chat.git_selected.as_deref() == Some(f.path.as_path());
+                let selected = chat.ws.git_selected.as_deref() == Some(f.path.as_path());
                 let weak_row = weak.clone();
                 let path = f.path.clone();
                 out.push(
@@ -469,7 +469,7 @@ fn collect_rows(
                         // 行点击 = 选中（View Diff 目标）
                         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                             let _ = weak_row.update(cx, |c, cx| {
-                                c.git_selected = Some(path.clone());
+                                c.ws.git_selected = Some(path.clone());
                                 cx.notify();
                             });
                         })
@@ -536,7 +536,7 @@ fn history_body(
         .flex_col()
         .px(px(6.))
         .py(px(4.));
-    if chat.git_log.is_empty() {
+    if chat.ws.git_log.is_empty() {
         list = list.child(
             div()
                 .px(px(8.))
@@ -546,7 +546,7 @@ fn history_body(
                 .child(tr("git.no_commits")),
         );
     }
-    for c in &chat.git_log {
+    for c in &chat.ws.git_log {
         let subject: SharedString = c.subject.clone().into();
         let meta: SharedString = format!("{} · {} · {}", c.author, c.date, c.hash).into();
         let weak_push = weak.clone();
@@ -619,55 +619,55 @@ fn history_body(
 
 impl Chat {
     pub(crate) fn git_set_tab(&mut self, tab: GitTab, cx: &mut gpui::Context<Self>) {
-        self.git_tab = tab;
-        if tab == GitTab::History && self.git_log.is_empty() {
+        self.ws.git_tab = tab;
+        if tab == GitTab::History && self.ws.git_log.is_empty() {
             self.refresh_git_log();
         }
         cx.notify();
     }
 
     pub(crate) fn refresh_git_log(&mut self) {
-        self.git_log = git::git_log(&self.cwd, 50);
+        self.ws.git_log = git::git_log(&self.ws.cwd, 50);
     }
 
     fn git_toggle_stage(&mut self, ix: usize, cx: &mut gpui::Context<Self>) {
-        let Some(f) = self.git_files.get(ix) else { return };
+        let Some(f) = self.ws.git_files.get(ix) else { return };
         let (path, staged) = (f.path.clone(), f.staged);
         let r = if staged {
-            git::git_unstage(&self.cwd, &path)
+            git::git_unstage(&self.ws.cwd, &path)
         } else {
-            git::git_stage(&self.cwd, &path)
+            git::git_stage(&self.ws.cwd, &path)
         };
-        self.git_error = r.err();
+        self.ws.git_error = r.err();
         self.refresh_git();
         cx.notify();
     }
 
     pub(crate) fn git_commit_staged(&mut self, cx: &mut gpui::Context<Self>) {
-        let msg = self.git_commit_input.read(cx).value().to_string();
-        match git::git_commit(&self.cwd, &msg) {
+        let msg = self.ws.git_commit_input.read(cx).value().to_string();
+        match git::git_commit(&self.ws.cwd, &msg) {
             Ok(()) => {
-                self.git_error = None;
-                self.git_commit_input.update(cx, |ti, cx| ti.set_value(String::new(), cx));
+                self.ws.git_error = None;
+                self.ws.git_commit_input.update(cx, |ti, cx| ti.set_value(String::new(), cx));
                 self.refresh_git();
                 self.refresh_git_log();
             }
-            Err(e) => self.git_error = Some(e),
+            Err(e) => self.ws.git_error = Some(e),
         }
         cx.notify();
     }
 
     pub(crate) fn git_push_branch(&mut self, cx: &mut Context<Self>) {
-        self.git_error = Some(tr("git.pushing").to_string());
+        self.ws.git_error = Some(tr("git.pushing").to_string());
         cx.notify();
-        let cwd = self.cwd.clone();
+        let cwd = self.ws.cwd.clone();
         cx.spawn(async move |this, cx| {
             // push is network-bound: keep it off the frame path
             let r = cx
                 .background_spawn(async move { git::git_push(&cwd) })
                 .await;
             let _ = this.update(cx, |chat, cx| {
-                chat.git_error = r.err().or_else(|| Some(tr("git.pushed").to_string()));
+                chat.ws.git_error = r.err().or_else(|| Some(tr("git.pushed").to_string()));
                 cx.notify();
             });
         })
@@ -677,8 +677,8 @@ impl Chat {
 
 impl Chat {
     pub(crate) fn refresh_git(&mut self) {
-        self.git_files = git_status_files(&self.cwd);
-        self.git_add_del = git_numstat(&self.cwd);
+        self.ws.git_files = git_status_files(&self.ws.cwd);
+        self.ws.git_add_del = git_numstat(&self.ws.cwd);
         self.rebuild_tree();
     }
 

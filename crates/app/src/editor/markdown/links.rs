@@ -8,7 +8,7 @@
 pub(super) struct MdTarget {
     chat: gpui::WeakEntity<crate::Chat>,
     /// md 预览场景的相对路径基准（预览文件所在目录）；聊天消息 None =
-    /// 点击时按 chat.cwd 解析
+    /// 点击时按 chat.ws.cwd 解析
     base: Option<std::path::PathBuf>,
 }
 
@@ -18,7 +18,7 @@ thread_local! {
 }
 
 /// markdown 渲染入口处由调用方设置；消息区传 `None` base（相对路径按
-/// chat.cwd），文件 md 预览传预览文件所在目录（pi-web baseDir 同型）。
+/// chat.ws.cwd），文件 md 预览传预览文件所在目录（pi-web baseDir 同型）。
 pub(crate) fn set_link_target(
     chat: gpui::WeakEntity<crate::Chat>,
     base: Option<std::path::PathBuf>,
@@ -41,7 +41,7 @@ pub(super) fn open_path_with(target: Option<MdTarget>, path: String, cx: &mut gp
             let p = if p.is_absolute() {
                 p.to_path_buf()
             } else {
-                base.as_deref().unwrap_or(&c.cwd).join(p)
+                base.as_deref().unwrap_or(&c.ws.cwd).join(p)
             };
             c.open_file_tab(p, cx);
         });

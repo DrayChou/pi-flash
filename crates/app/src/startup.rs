@@ -450,7 +450,7 @@ pub(crate) fn spawn_boot_tasks(
 /// 各干各的活，互不阻塞。
 fn spawn_fs_watch_pump(cx: &mut gpui::Context<Chat>) {
     cx.spawn(async move |this, cx| {
-        let rx = match this.update(cx, |c, _| c.fs_watch_rx.take()) {
+        let rx = match this.update(cx, |c, _| c.ws.fs_watch_rx.take()) {
             Ok(Some(rx)) => rx,
             _ => return,
         };

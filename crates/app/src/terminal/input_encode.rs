@@ -259,7 +259,7 @@ impl TermInput {
 
     fn set_preedit(&self, text: Option<String>, cx: &mut gpui::App) {
         let _ = self.weak.update(cx, |chat, cx| {
-            if let Some(tab) = chat.terminals.iter_mut().find(|t| t.id == self.tab_id) {
+            if let Some(tab) = chat.ws.terminals.iter_mut().find(|t| t.id == self.tab_id) {
                 if tab.preedit != text {
                     tab.preedit = text;
                     cx.notify();

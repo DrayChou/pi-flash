@@ -112,16 +112,16 @@ fn tabs(
                     } else if panel == DockPanel::Files {
                         // 浏览操作区：有文件 tab 或终端任一存在才切
                         let any = this
-                            .panel_tabs
+                            .ws.panel_tabs
                             .iter()
                             .any(|t| matches!(t, crate::PanelTab::File(_)))
-                            || !this.panel_tabs.is_empty();
+                            || !this.ws.panel_tabs.is_empty();
                         if any {
                             let v = this.layout.browse_last;
                             this.set_content_view(v);
                             // File 视图需要定位到具体 tab
                             if this.layout.content_view == crate::ContentView::File {
-                                if let Some(ix) = this.panel_tabs.iter().position(
+                                if let Some(ix) = this.ws.panel_tabs.iter().position(
                                     |t| matches!(t, crate::PanelTab::File(_)),
                                 ) {
                                     this.activate_panel_tab(ix, cx);
@@ -154,7 +154,7 @@ impl Chat {
             crate::SortMode::Time => "time".to_string(),
         };
         st.collapsed = self.psp.collapsed_keys.iter().cloned().collect();
-        st.tree_changes_only = self.changes_only;
+        st.tree_changes_only = self.ws.changes_only;
         save_ui_state(&st);
     }
 

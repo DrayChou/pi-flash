@@ -291,7 +291,7 @@ pub(crate) fn render_preview_body(
     // 预览内容真值 = **缓冲区**（Zed 的 markdown preview 渲染 buffer 文本，
     // 不是磁盘文件）：有未保存修改（源码态改完切预览 / 冲突挂着 / 自动保存
     // 还没落地）时取编辑器值，否则用磁盘真值缓存（省一次 Rope 物化）。
-    let content = match chat.file_cache.get(path) {
+    let content = match chat.ws.file_cache.get(path) {
         Some(ft) if ft.dirty => ft
             .editor
             .as_ref()
@@ -305,7 +305,7 @@ pub(crate) fn render_preview_body(
     let abs = if path.is_absolute() {
         path.to_path_buf()
     } else {
-        chat.cwd.join(path)
+        chat.ws.cwd.join(path)
     };
     // 块级虚拟化（抄 zed thread_view 的 list 架构，v60）：ListState 每
     // 帧只建可视块条目（progress.md 784 块全量构建 ≈ 30ms/帧，滚动必
@@ -313,16 +313,16 @@ pub(crate) fn render_preview_body(
     // Scrollbar，仅实际溢出时渲染，且必须是 list 容器的**兄弟**（同
     // 旧滚动层——作为子元素会被连带位移，滚动了滑块跟内容漂出视口）。
     let blocks = doc_blocks(&content);
-    if chat.md_preview_list_path.as_deref() != Some(path) {
-        chat.md_preview_list.reset(blocks.len());
-        chat.md_preview_list_path = Some(path.to_path_buf());
-    } else if chat.md_preview_list.item_count() != blocks.len() {
+    if chat.ws.md_preview_list_path.as_deref() != Some(path) {
+        chat.ws.md_preview_list.reset(blocks.len());
+        chat.ws.md_preview_list_path = Some(path.to_path_buf());
+    } else if chat.ws.md_preview_list.item_count() != blocks.len() {
         // 块数变了（外部改动/编辑动了段落结构）也不能跳回顶部：记下
         // 当前阅读锚点（条目 + 条目内偏移），重建后原样恢复（Zed 的
         // preview 由 buffer anchor 驱动，滚动位跨 reload 不掉）。
-        let anchor = chat.md_preview_list.logical_scroll_top();
-        chat.md_preview_list.reset(blocks.len());
-        chat.md_preview_list.scroll_to(gpui::ListOffset {
+        let anchor = chat.ws.md_preview_list.logical_scroll_top();
+        chat.ws.md_preview_list.reset(blocks.len());
+        chat.ws.md_preview_list.scroll_to(gpui::ListOffset {
             item_ix: anchor.item_ix.min(blocks.len().saturating_sub(1)),
             offset_in_item: anchor.offset_in_item,
         });
@@ -339,7 +339,7 @@ pub(crate) fn render_preview_body(
         .flex_col()
         .bg(rgb(t.bg))
         .child(
-            gpui::list(chat.md_preview_list.clone(), move |ix, _window, _cx| {
+            gpui::list(chat.ws.md_preview_list.clone(), move |ix, _window, _cx| {
                 // 预览内路径点击基准 = 预览文件所在目录（pi-web baseDir 同型）
                 set_link_target(weak_preview.clone(), base.clone());
                 render_doc_item(&blocks_for_list, ix, base.as_deref())
@@ -351,9 +351,9 @@ pub(crate) fn render_preview_body(
             .min_h_0(),
         )
         .when(
-            chat.md_preview_list.max_offset_for_scrollbar().height > px(0.),
+            chat.ws.md_preview_list.max_offset_for_scrollbar().height > px(0.),
             |d| {
-                let handle = crate::ui::list_handle::ListStateHandle(chat.md_preview_list.clone());
+                let handle = crate::ui::list_handle::ListStateHandle(chat.ws.md_preview_list.clone());
                 d.child(
                     div()
                         .absolute()
@@ -362,7 +362,7 @@ pub(crate) fn render_preview_body(
                         .right(px(3.))
                         .w(px(8.))
                         .child(gpui_component::scroll::Scrollbar::vertical(
-                            &chat.md_preview_scrollbar,
+                            &chat.ws.md_preview_scrollbar,
                             &handle,
                         )),
                 )
@@ -382,7 +382,7 @@ pub(crate) fn sync_live_decorations(
     source_mode: bool,
     cx: &mut gpui::Context<crate::Chat>,
 ) {
-    let Some(ed) = chat.file_cache.get(path).and_then(|f| f.editor.clone()) else {
+    let Some(ed) = chat.ws.file_cache.get(path).and_then(|f| f.editor.clone()) else {
         return;
     };
     if ed.read(cx).has_decorations() == source_mode {

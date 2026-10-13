@@ -31,7 +31,7 @@ impl Chat {
     /// Provider ids in available-models display order.
     pub(crate) fn mc_provider_ids(&self) -> Vec<String> {
         let mut out: Vec<String> = Vec::new();
-        for m in self.catalog_for(&self.cwd) {
+        for m in self.catalog_for(&self.ws.cwd) {
             if !out.contains(&m.provider) {
                 out.push(m.provider.clone());
             }
@@ -51,7 +51,7 @@ impl Chat {
         provider: &str,
         enabled_set: &std::collections::HashSet<String>,
     ) -> (usize, usize) {
-        let catalog = self.catalog_for(&self.cwd);
+        let catalog = self.catalog_for(&self.ws.cwd);
         let models: Vec<&pi_link::protocol::ModelInfo> = catalog
             .iter()
             .filter(|m| m.provider == provider)
@@ -80,7 +80,7 @@ impl Chat {
     /// Display name of one catalog model ("name", falling back to
     /// `provider/id` for models the catalog hasn't listed).
     pub(crate) fn model_display_name(&self, provider: &str, id: &str) -> String {
-        self.catalog_for(&self.cwd)
+        self.catalog_for(&self.ws.cwd)
             .iter()
             .find(|m| m.provider == provider && m.id == id)
             .map(|m| m.label())
@@ -97,7 +97,7 @@ impl Chat {
             .map(|s| s.as_str())
             .collect();
         let mut list: Vec<pi_link::protocol::ModelInfo> = self
-            .catalog_for(&self.cwd)
+            .catalog_for(&self.ws.cwd)
             .iter()
             .filter(|m| {
                 all_enabled || {
@@ -119,7 +119,7 @@ impl Chat {
         let settings_path = pi_link::config::settings_path();
         self.cfg.mc_patterns =
             pi_link::config::read_enabled_models(&settings_path).unwrap_or_else(|_| None);
-        let project = pi_link::config::project_settings_path(&self.cwd);
+        let project = pi_link::config::project_settings_path(&self.ws.cwd);
         self.cfg.mc_project_scope =
             pi_link::config::read_enabled_models(&project).unwrap_or_else(|_| None).is_some();
         self.cfg.mc_default_model = services::workspace::default_model_pref();
@@ -130,7 +130,7 @@ impl Chat {
     }
 
     pub(crate) fn new_session_default(&self) -> (Option<(String, String)>, Option<String>) {
-        let catalog = self.catalog_for(&self.cwd);
+        let catalog = self.catalog_for(&self.ws.cwd);
         let in_scope = |m: &pi_link::protocol::ModelInfo| {
             self.cfg.mc_state.all_enabled
                 || {
@@ -194,7 +194,7 @@ impl Chat {
         self.cfg.mc_project_scope = ctx.project_scope;
         // 043：MCP 盘上现读——project_ctx 是启动缓存，本页写盘后重读只会
         // 拷到旧列表（040 globals 内存副本同款教训）
-        let (mcp_servers, mcp_errors) = pi_link::mcp::load(Some(&self.cwd));
+        let (mcp_servers, mcp_errors) = pi_link::mcp::load(Some(&self.ws.cwd));
         self.cfg.mcp_servers = mcp_servers;
         self.cfg.mcp_errors = mcp_errors;
         // 自定义 provider 编辑缓冲（PF 私有账本；面板打开/写盘后重建）
@@ -821,7 +821,7 @@ fn mc_models_detail(
     // catalog provider detail（API Key；OAuth 归 pi，PF 只管自有账本）
     let provider = selected.to_string();
     let models: Vec<pi_link::protocol::ModelInfo> = chat
-        .catalog_for(&chat.cwd)
+        .catalog_for(&chat.ws.cwd)
         .iter()
         .filter(|m| m.provider == provider)
         .cloned()
@@ -1161,7 +1161,7 @@ impl Chat {
     /// `provider/modelId` refs of every available model, display order.
     /// Reads the shared catalog of the current project (models_by_cwd).
     pub(crate) fn mc_refs(&self) -> Vec<String> {
-        self.catalog_for(&self.cwd)
+        self.catalog_for(&self.ws.cwd)
             .iter()
             .map(|m| format!("{}/{}", m.provider, m.id))
             .collect()
@@ -1234,7 +1234,7 @@ impl Chat {
             .collect();
         g.extend(fresh.iter().cloned());
         self.pool.globals.models = pi_link::catalog::dedupe(g);
-        let cwd_key = self.cwd.to_string_lossy().to_string();
+        let cwd_key = self.ws.cwd.to_string_lossy().to_string();
         let mut m: Vec<_> = self
             .pool.models_by_cwd
             .remove(&cwd_key)

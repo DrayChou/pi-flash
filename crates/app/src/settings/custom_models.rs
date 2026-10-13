@@ -190,7 +190,7 @@ impl Chat {
     pub(crate) fn mc_cli_op(&mut self, args: Vec<String>, done: String, cx: &mut Context<Self>) {
         let Some(tx) = self.cfg.op_tx.clone() else { return };
 
-        let cwd = self.cwd.clone();
+        let cwd = self.ws.cwd.clone();
         std::thread::spawn(move || {
             let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
             let msg = match pi_link::vendor::run_cli(&cwd, &arg_refs) {

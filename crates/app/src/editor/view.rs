@@ -31,7 +31,7 @@ fn ensure_file_editor(
         return;
     };
     if chat
-        .file_cache
+        .ws.file_cache
         .get(path)
         .map(|f| f.editor.is_some())
         .unwrap_or(true)
@@ -39,7 +39,7 @@ fn ensure_file_editor(
         return;
     }
     let content = chat
-        .file_cache
+        .ws.file_cache
         .get(path)
         .map(|f| f.content.clone())
         .unwrap_or_default();
@@ -61,7 +61,7 @@ fn ensure_file_editor(
     cx.subscribe(&ed, |this, ed, ev: &gpui_component::input::InputEvent, cx| {
         if matches!(ev, gpui_component::input::InputEvent::Change) {
             let src = ed.entity_id();
-            if let Some((path, ft)) = this.file_cache.iter_mut().find(|(_, f)| {
+            if let Some((path, ft)) = this.ws.file_cache.iter_mut().find(|(_, f)| {
                 f.editor.as_ref().map(|e| e.entity_id()) == Some(src)
             }) {
                 // Rope 与 String 直接比较（ropey PartialEq，零分配 memcmp）；
@@ -83,7 +83,7 @@ fn ensure_file_editor(
         }
     })
     .detach();
-    if let Some(ft) = chat.file_cache.get_mut(path) {
+    if let Some(ft) = chat.ws.file_cache.get_mut(path) {
         ft.editor = Some(ed);
     }
 }
@@ -99,7 +99,7 @@ fn consume_file_reload(
     cx: &mut Context<Chat>,
 ) {
     let pending = chat
-        .file_cache
+        .ws.file_cache
         .get(path)
         .map(|f| f.reload_pending)
         .unwrap_or(false);
@@ -107,14 +107,14 @@ fn consume_file_reload(
         return;
     }
     let content = chat
-        .file_cache
+        .ws.file_cache
         .get(path)
         .map(|f| f.content.clone())
         .unwrap_or_default();
-    if let Some(ed) = chat.file_cache.get(path).and_then(|f| f.editor.clone()) {
+    if let Some(ed) = chat.ws.file_cache.get(path).and_then(|f| f.editor.clone()) {
         ed.update(cx, |st, scx| st.reload_value(content, window, scx));
     }
-    if let Some(ft) = chat.file_cache.get_mut(path) {
+    if let Some(ft) = chat.ws.file_cache.get_mut(path) {
         ft.reload_pending = false;
     }
 }
@@ -130,7 +130,7 @@ pub(crate) fn file_view(
         return empty_hint(tr("file_view.pick_in_tree"), t);
     };
     let conflict = chat
-        .file_cache
+        .ws.file_cache
         .get(&path)
         .map(|f| f.conflict.clone())
         .unwrap_or(None);
@@ -139,9 +139,9 @@ pub(crate) fn file_view(
     ensure_file_editor(chat, &path, window, cx);
     consume_file_reload(chat, &path, window, cx);
     // 开文件即聚焦（Zed 行为；编辑器实体就绪后消费；md 渲染态无实体则丢弃）
-    if chat.pending_focus_file.as_deref() == Some(path.as_path()) {
-        chat.pending_focus_file = None;
-        if let Some(ed) = chat.file_cache.get(&path).and_then(|f| f.editor.clone()) {
+    if chat.ws.pending_focus_file.as_deref() == Some(path.as_path()) {
+        chat.ws.pending_focus_file = None;
+        if let Some(ed) = chat.ws.file_cache.get(&path).and_then(|f| f.editor.clone()) {
             if !ed.read(cx).focus_handle(cx).is_focused(window) {
                 ed.update(cx, |st, scx| st.focus(window, scx));
             }
@@ -224,13 +224,13 @@ fn file_nav_bar(
     cx: &mut Context<Chat>,
 ) -> gpui::AnyElement {
     let t = T();
-    let source_mode = chat.file_cache.get(path).is_some_and(|f| f.md_source);
+    let source_mode = chat.ws.file_cache.get(path).is_some_and(|f| f.md_source);
 
     // 面包屑段：cwd 相对路径；不在 cwd 下（工作区外/别的盘打开的文件）退化
     // 为绝对路径。Windows 盘符前缀与根分隔符合成一段——Zed 面包屑同款：
     // `D:\` 是一个 crumb，此前拆成 `D:` 与 `\` 两段（且目录累积 acc 从 cwd
     // 拼起，盘符段后的兄弟菜单指向错误目录）。
-    let segments = breadcrumb_segments(&chat.cwd, path);
+    let segments = breadcrumb_segments(&chat.ws.cwd, path);
     let mut crumbs = div().min_w_0().flex().items_center().overflow_hidden();
     for (i, (seg_text, dir)) in segments.iter().enumerate() {
         let last = i + 1 == segments.len();
@@ -247,8 +247,8 @@ fn file_nav_bar(
             let dir = dir.clone();
             let weak_crumb = weak.clone();
             let weak_off = weak.clone();
-            let dd = chat.crumb_dd.clone();
-            let open = chat.crumb_menu_dir.as_ref() == Some(&dir);
+            let dd = chat.ws.crumb_dd.clone();
+            let open = chat.ws.crumb_menu_dir.as_ref() == Some(&dir);
             let seg_dir = dir.clone();
             crumbs = crumbs.child(
                 crate::ui::dropdown(
@@ -258,7 +258,7 @@ fn file_nav_bar(
                     move |_w, cx| {
                         let _ = weak_crumb.update(cx, |c, cx| {
                             // 再点同段 = 收起；点别段 = 换目标
-                            c.crumb_menu_dir = if c.crumb_menu_dir.as_ref() == Some(&dir) {
+                            c.ws.crumb_menu_dir = if c.ws.crumb_menu_dir.as_ref() == Some(&dir) {
                                 None
                             } else {
                                 Some(dir.clone())
@@ -268,7 +268,7 @@ fn file_nav_bar(
                     },
                     move |_w, cx| {
                         let _ = weak_off.update(cx, |c, cx| {
-                            c.crumb_menu_dir = None;
+                            c.ws.crumb_menu_dir = None;
                             cx.notify();
                         });
                     },
@@ -293,7 +293,7 @@ fn file_nav_bar(
     }
 
     // 右侧操作区：handler 声明的按钮序列（023/024：默认仅搜索，md 加预览）
-    let ed_for_focus = chat.file_cache.get(path).and_then(|f| f.editor.clone());
+    let ed_for_focus = chat.ws.file_cache.get(path).and_then(|f| f.editor.clone());
     let mut right = div().flex_shrink_0().flex().items_center().gap(px(2.));
     for btn in kind.toolbar() {
         right = match btn {
@@ -351,12 +351,12 @@ fn eye_button(weak: &gpui::WeakEntity<Chat>, source_mode: bool) -> gpui::AnyElem
         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
             let _ = weak_eye.update(cx, |c, cx| {
                 if let Some(p) = c.active_file_path() {
-                    if let Some(ft) = c.file_cache.get_mut(&p) {
+                    if let Some(ft) = c.ws.file_cache.get_mut(&p) {
                         ft.md_source = !source_mode;
                     }
                     // 切到源码态即聚焦编辑器（渲染帧消费）
                     if !source_mode {
-                        c.pending_focus_file = Some(p);
+                        c.ws.pending_focus_file = Some(p);
                     }
                 }
                 cx.notify();
@@ -448,7 +448,7 @@ fn crumb_siblings_menu(weak: &gpui::WeakEntity<Chat>, dir: &Path) -> gpui::AnyEl
                 .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                     let p = target.clone();
                     let _ = weak_row.update(cx, |c, cx| {
-                        c.crumb_menu_dir = None;
+                        c.ws.crumb_menu_dir = None;
                         c.open_file_tab(p, cx);
                     });
                 })
@@ -540,7 +540,7 @@ fn file_editor_body(
     weak: &gpui::WeakEntity<Chat>,
     cx: &mut Context<Chat>,
 ) -> gpui::AnyElement {
-    let source_mode = chat.file_cache.get(path).is_some_and(|f| f.md_source);
+    let source_mode = chat.ws.file_cache.get(path).is_some_and(|f| f.md_source);
     kind.render_body(
         cx,
         BodyCtx { chat, weak, path, source_mode },
@@ -581,7 +581,7 @@ pub(crate) fn render_editor_surface(
     _cx: &mut Context<Chat>,
 ) -> gpui::AnyElement {
     let t = T();
-    let Some(ft) = chat.file_cache.get(path) else {
+    let Some(ft) = chat.ws.file_cache.get(path) else {
         return empty_hint(tr("conflict.file_closed"), t);
     };
     let Some(ed) = ft.editor.clone() else {

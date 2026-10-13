@@ -147,7 +147,7 @@ impl Chat {
                 });
             }
         }
-        let cwd = self.cwd.clone();
+        let cwd = self.ws.cwd.clone();
         if !groups.iter().any(|g| same_ws(&g.path.to_string_lossy(), &cwd.to_string_lossy())) {
             groups.push(crate::ProjectGroup {
                 name: cwd
@@ -184,7 +184,7 @@ impl Chat {
         let hours = crate::services::workspace::auto_collapse_hours();
         let cutoff = std::time::SystemTime::now()
             - std::time::Duration::from_secs(hours * 3600);
-        let cwd = self.cwd.to_string_lossy().to_string();
+        let cwd = self.ws.cwd.to_string_lossy().to_string();
         for g in &self.psp.projects {
             if g.sessions.is_empty() {
                 continue;
@@ -201,7 +201,7 @@ impl Chat {
 
     /// Keep `sessions` (current project) in sync with the matching group.
     pub(crate) fn sync_current_sessions(&mut self) {
-        let cwd = self.cwd.to_string_lossy().to_string();
+        let cwd = self.ws.cwd.to_string_lossy().to_string();
         self.pool.sessions = self
             .psp.projects
             .iter()
@@ -474,7 +474,7 @@ fn project_row(
     let Some(g) = chat.psp.projects.get(pi) else {
         return div().into_any_element();
     };
-    let active = same_ws(&g.path.to_string_lossy(), &chat.cwd.to_string_lossy());
+    let active = same_ws(&g.path.to_string_lossy(), &chat.ws.cwd.to_string_lossy());
     let collapsed = chat.psp.collapsed_keys.contains(&same_ws_key(&g.path.to_string_lossy()));
     let hovered = chat.psp.hovered_project == Some(pi)
         // ⋯ 菜单打开中：按钮保持显示（交互进行中不消失）

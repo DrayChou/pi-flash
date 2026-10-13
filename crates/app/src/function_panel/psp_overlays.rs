@@ -41,7 +41,7 @@ pub(crate) fn psp_overlays(
     }
     // 终端右键菜单（复制/粘贴/全选）；tab 已关则不再挂（防挂到空气里）
     if let Some((tab_id, x, y)) = chat.dlg.term_menu
-        && chat.terminals.iter().any(|t| t.id == tab_id)
+        && chat.ws.terminals.iter().any(|t| t.id == tab_id)
     {
         el = el.child(term_menu_layer(chat, tab_id, x, y, vp, t, cx));
     }
@@ -65,7 +65,7 @@ pub(crate) fn psp_overlays(
         // 删除确认（一次确认 = 删文件 + 弃缓冲）；目录删除统计其子树内
         // 全部打开中的脏 tab（zed 对整个待删集合数 dirty_buffers）
         let dirty_count = chat
-            .file_cache
+            .ws.file_cache
             .iter()
             .filter(|(p, f)| f.dirty && (same_path(p, &path) || p.starts_with(&path)))
             .count();
@@ -807,7 +807,7 @@ fn tree_menu_layer(
                 ));
             // 根目录（操作栏名字区右键）不出现 改名/删除——项目根本身不是
             // 可操作对象（改名会拖走整个工作区、删除等于删项目）
-            if !same_path(&path, &chat.cwd) {
+            if !same_path(&path, &chat.ws.cwd) {
                 card = card
                     .child(menu_sep())
                     .child(tree_item(
@@ -850,7 +850,7 @@ fn tree_menu_layer(
                             let dir = path
                                 .parent()
                                 .map(|p| p.to_path_buf())
-                                .unwrap_or_else(|| c.cwd.clone());
+                                .unwrap_or_else(|| c.ws.cwd.clone());
                             c.open_file_new(dir, false, cx)
                         }
                     },
@@ -867,7 +867,7 @@ fn tree_menu_layer(
                             let dir = path
                                 .parent()
                                 .map(|p| p.to_path_buf())
-                                .unwrap_or_else(|| c.cwd.clone());
+                                .unwrap_or_else(|| c.ws.cwd.clone());
                             c.open_file_new(dir, true, cx)
                         }
                     },
@@ -975,7 +975,7 @@ fn editor_menu_layer(
         });
     });
     let ed = chat
-        .file_cache
+        .ws.file_cache
         .get(&path)
         .and_then(|f| f.editor.clone());
     let mut card = menu_card(edges, t);
@@ -1016,7 +1016,7 @@ fn editor_menu_layer(
     // 文件动作块：条目与顺序由 kind handler 声明（含分隔线）——默认骨架 =
     // 资源管理器/终端 + 改名/删除；md 源码态带预览项；「在浏览器中打开」
     // 是路径判据（html/htm，同文件树菜单），保留在动作块首位
-    let source_mode = chat.file_cache.get(&path).is_some_and(|f| f.md_source);
+    let source_mode = chat.ws.file_cache.get(&path).is_some_and(|f| f.md_source);
     if crate::editor::kind::browser_openable(&path) {
         card = card.child(editor_item(
             &weak,
@@ -1041,7 +1041,7 @@ fn editor_menu_layer(
                 {
                     let path = path.clone();
                     move |c, cx| {
-                        if let Some(ft) = c.file_cache.get_mut(&path) {
+                        if let Some(ft) = c.ws.file_cache.get_mut(&path) {
                             ft.md_source = false;
                         }
                         cx.notify();
@@ -1106,7 +1106,7 @@ fn term_menu_layer(
     let weak_layer = weak.clone();
     let edges = PopupEdges::around((x, y), vp, 0., 12.);
     let has_sel = chat
-        .terminals
+        .ws.terminals
         .iter()
         .find(|t| t.id == tab_id)
         .is_some_and(|t| t.selection.is_some());
@@ -1171,7 +1171,7 @@ fn term_menu_item(
                 apply(c, tab_id, cx);
                 c.dlg.term_menu = None;
                 // 焦点回终端：菜单收起后键盘接着用（与打开菜单时的聚焦对称）
-                if let Some(tab) = c.terminals.iter().find(|t| t.id == tab_id) {
+                if let Some(tab) = c.ws.terminals.iter().find(|t| t.id == tab_id) {
                     let f = tab.focus.clone();
                     window.focus(&f);
                 }

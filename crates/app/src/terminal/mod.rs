@@ -357,7 +357,7 @@ impl gpui::Element for TerminalElement {
             let pty = self.pty.clone();
             let (cell_w, line_h, font_size) = (self.cell_w, self.line_h, self.font_size);
             let _ = self.weak.update(cx, |chat, cx| {
-                if let Some(tab) = chat.terminals.iter_mut().find(|t| t.id == tab_id) {
+                if let Some(tab) = chat.ws.terminals.iter_mut().find(|t| t.id == tab_id) {
                     tab.cols = cols;
                     tab.rows = rows;
                     tab.cell_w = cell_w;
@@ -482,7 +482,7 @@ impl gpui::Element for TerminalElement {
                 // caret bar: 2px vertical line in the fg color at the shaped
                 // pixel x of the cursor, ~1Hz blink while focused (heartbeat
                 // from the term_cursor task); dim static bar when unfocused
-                let _ = shared.weak.update(cx, |chat, _| chat.term_cursor_focused = focused);
+                let _ = shared.weak.update(cx, |chat, _| chat.ws.term_cursor_focused = focused);
                 if let (Some((row_ix, _)), Some(x)) = (caret, caret_x) {
                     let (alpha, visible) = if focused {
                         (1.0, blink_on)
@@ -674,7 +674,7 @@ impl TermShared {
             _ => None,
         };
         let _ = self.weak.update(cx, |chat, cx| {
-            if let Some(tab) = chat.terminals.iter_mut().find(|t| t.id == self.tab_id) {
+            if let Some(tab) = chat.ws.terminals.iter_mut().find(|t| t.id == self.tab_id) {
                 match ranged {
                     Some((a, b)) => {
                         tab.selection = Some((a, b));
@@ -722,7 +722,7 @@ impl TermShared {
         }
         let head = self.cell_at_shared(bounds, pos);
         let _ = self.weak.update(cx, |chat, cx| {
-            if let Some(tab) = chat.terminals.iter_mut().find(|t| t.id == self.tab_id) {
+            if let Some(tab) = chat.ws.terminals.iter_mut().find(|t| t.id == self.tab_id) {
                 if let Some(anchor) = tab.sel_anchor {
                     let sel = if anchor == head { None } else { Some((anchor, head)) };
                     if tab.selection != sel {
@@ -737,7 +737,7 @@ impl TermShared {
     /// 松开左键 = 拖动结束：清锚点（选区保留）。
     fn end_selection(&self, cx: &mut gpui::App) {
         let _ = self.weak.update(cx, |chat, cx| {
-            if let Some(tab) = chat.terminals.iter_mut().find(|t| t.id == self.tab_id)
+            if let Some(tab) = chat.ws.terminals.iter_mut().find(|t| t.id == self.tab_id)
                 && tab.sel_anchor.take().is_some()
             {
                 cx.notify();
@@ -1198,12 +1198,12 @@ impl Chat {
         window: &mut gpui::Window,
         cx: &mut Context<Self>,
     ) {
-        let term_cwd = cwd_override.unwrap_or_else(|| self.cwd.clone());
-        let Some(tx) = self.term_events.clone() else { return };
+        let term_cwd = cwd_override.unwrap_or_else(|| self.ws.cwd.clone());
+        let Some(tx) = self.ws.term_events.clone() else { return };
         let (cell_w, line_h) = terminal::measure_cell(window);
         let font_size = terminal::font_size();
-        self.term_seq += 1;
-        let id = self.term_seq;
+        self.ws.term_seq += 1;
+        let id = self.ws.term_seq;
         let focus = cx.focus_handle();
         let proxy = terminal::Proxy { tab: id, tx };
         match terminal::spawn_terminal(
@@ -1216,13 +1216,13 @@ impl Chat {
             proxy,
         ) {
             Ok(tab) => {
-                self.terminals.push(tab);
-                self.active_terminal = Some(self.terminals.len() - 1);
-                self.panel_tabs.push(PanelTab::Term(id));
-                let tix = self.panel_tabs.len() - 1;
+                self.ws.terminals.push(tab);
+                self.ws.active_terminal = Some(self.ws.terminals.len() - 1);
+                self.ws.panel_tabs.push(PanelTab::Term(id));
+                let tix = self.ws.panel_tabs.len() - 1;
                 self.activate_panel_tab(tix, cx);
                 self.set_content_view(ContentView::Term);
-                let focus = self.terminals[self.terminals.len() - 1].focus.clone();
+                let focus = self.ws.terminals[self.ws.terminals.len() - 1].focus.clone();
                 window.focus(&focus);
                 cx.notify();
             }
@@ -1237,17 +1237,17 @@ impl Chat {
     /// panel tab 不是终端）。`term_view` 就是按 `active_panel_tab` 渲染的，
     /// 所以这条是「渲染面」的唯一口径。
     pub(crate) fn shown_terminal_index(&self) -> Option<usize> {
-        let id = match self.active_panel_tab.and_then(|ix| self.panel_tabs.get(ix))? {
+        let id = match self.ws.active_panel_tab.and_then(|ix| self.ws.panel_tabs.get(ix))? {
             PanelTab::Term(id) => *id,
             _ => return None,
         };
-        self.terminals.iter().position(|t| t.id == id)
+        self.ws.terminals.iter().position(|t| t.id == id)
     }
 
     /// 当前显示终端的焦点句柄（渲染帧焦点仲裁用）。
     pub(crate) fn shown_terminal_focus(&self) -> Option<gpui::FocusHandle> {
         self.shown_terminal_index()
-            .and_then(|ix| self.terminals.get(ix))
+            .and_then(|ix| self.ws.terminals.get(ix))
             .map(|t| t.focus.clone())
     }
 
@@ -1256,7 +1256,7 @@ impl Chat {
     /// 是否真的删了（false = 这个选区删不了，调用方按原语义处理）。
     pub(crate) fn term_delete_selection(&mut self, tab_id: usize, cx: &mut Context<Self>) -> bool {
         use alacritty_terminal::event_loop::Msg;
-        let Some(tab) = self.terminals.iter_mut().find(|t| t.id == tab_id) else {
+        let Some(tab) = self.ws.terminals.iter_mut().find(|t| t.id == tab_id) else {
             return false;
         };
         let Some(sel) = tab.selection else { return false };
@@ -1284,7 +1284,7 @@ impl Chat {
     /// （无选区 = false，调用方据此决定 Ctrl+C 是否回落为 ^C）。
     /// 选区**不**清掉（xterm/浏览器语义：复制后还能看到选中的东西）。
     pub(crate) fn term_copy(&mut self, tab_id: usize, cx: &mut Context<Self>) -> bool {
-        let Some(tab) = self.terminals.iter_mut().find(|t| t.id == tab_id) else {
+        let Some(tab) = self.ws.terminals.iter_mut().find(|t| t.id == tab_id) else {
             return false;
         };
         let Some(sel) = tab.selection else { return false };
@@ -1305,18 +1305,18 @@ impl Chat {
         };
         // 有选区 = 粘贴替换：先删选区（删不掉就只清选区），再写入
         let had_sel = self
-            .terminals
+            .ws.terminals
             .iter()
             .find(|t| t.id == tab_id)
             .is_some_and(|t| t.selection.is_some());
         if had_sel && !self.term_delete_selection(tab_id, cx) {
-            if let Some(tab) = self.terminals.iter_mut().find(|t| t.id == tab_id) {
+            if let Some(tab) = self.ws.terminals.iter_mut().find(|t| t.id == tab_id) {
                 tab.selection = None;
                 tab.sel_anchor = None;
                 cx.notify();
             }
         }
-        let Some(tab) = self.terminals.iter().find(|t| t.id == tab_id) else {
+        let Some(tab) = self.ws.terminals.iter().find(|t| t.id == tab_id) else {
             return false;
         };
         let mode = *tab.term.lock().mode();
@@ -1328,7 +1328,7 @@ impl Chat {
     /// 全选：可见屏 + 回滚缓冲（选区坐标与 [`terminal::selection_text`]
     /// 的钳位口径一致，-history..screen）。
     pub(crate) fn term_select_all(&mut self, tab_id: usize, cx: &mut Context<Self>) {
-        let Some(tab) = self.terminals.iter_mut().find(|t| t.id == tab_id) else {
+        let Some(tab) = self.ws.terminals.iter_mut().find(|t| t.id == tab_id) else {
             return;
         };
         let (screen, total, cols) = {
@@ -1355,10 +1355,10 @@ impl Chat {
     /// then the keystroke → escape-sequence table. 目标恒为**当前显示**的终端。
     pub(crate) fn terminal_key(&mut self, ev: &KeyDownEvent, cx: &mut Context<Self>) {
         use alacritty_terminal::event_loop::Msg;
-        let Some(tix) = self.shown_terminal_index().or(self.active_terminal) else {
+        let Some(tix) = self.shown_terminal_index().or(self.ws.active_terminal) else {
             return;
         };
-        let Some(tab) = self.terminals.get(tix) else { return };
+        let Some(tab) = self.ws.terminals.get(tix) else { return };
         let tab_id = tab.id;
         let k = &ev.keystroke;
         let ctrl = k.modifiers.control;
@@ -1379,7 +1379,7 @@ impl Chat {
                 cx.stop_propagation();
                 return;
             }
-            if let Some(tab) = self.terminals.iter_mut().find(|t| t.id == tab_id)
+            if let Some(tab) = self.ws.terminals.iter_mut().find(|t| t.id == tab_id)
                 && tab.selection.take().is_some()
             {
                 tab.sel_anchor = None;
@@ -1408,7 +1408,7 @@ impl Chat {
             cx.stop_propagation();
             return;
         }
-        let Some(tab) = self.terminals.get(tix) else { return };
+        let Some(tab) = self.ws.terminals.get(tix) else { return };
         if let Some(bytes) = terminal::keystroke_to_pty(k, &mode) {
             let _ = tab.pty.send(Msg::Input(bytes.into()));
             cx.stop_propagation();
@@ -1425,7 +1425,7 @@ impl Chat {
         cx: &mut Context<Self>,
     ) {
         use alacritty_terminal::event_loop::Msg;
-        let Some(tab) = self.terminals.iter_mut().find(|t| t.id == tab_id) else {
+        let Some(tab) = self.ws.terminals.iter_mut().find(|t| t.id == tab_id) else {
             return;
         };
         match event {

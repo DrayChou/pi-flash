@@ -165,7 +165,7 @@ fn action_bar(
     t: &'static crate::appearance::theme::Theme,
 ) -> AnyElement {
     let project: SharedString = chat
-        .cwd
+        .ws.cwd
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .filter(|n| !n.is_empty())

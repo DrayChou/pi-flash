@@ -69,7 +69,7 @@ impl Chat {
     /// app-settings.json，默认 60s / 10 项目）。
     pub(crate) fn ensure_at_index(&mut self, cx: &mut Context<Self>) {
         let ttl = std::time::Duration::from_secs(services::workspace::at_index_ttl_secs());
-        let key = self.cwd.to_string_lossy().to_string();
+        let key = self.ws.cwd.to_string_lossy().to_string();
         let fresh = match self.composer.at_index.get(&key) {
             Some(e) => {
                 e.building || e.built.is_some_and(|t| t.elapsed() < ttl)
@@ -86,7 +86,7 @@ impl Chat {
         if self.composer.at_index.len() >= services::workspace::at_index_max_projects() {
             self.composer.at_index.clear();
         }
-        let cwd = self.cwd.clone();
+        let cwd = self.ws.cwd.clone();
         let key = cwd.to_string_lossy().to_string();
         cx.spawn(async move |this, cx| {
             // entries 派生也在后台：大仓库（20 万条）下主线程只做 Arc 换手
@@ -184,7 +184,7 @@ impl Chat {
         }
         let mut out: Vec<pi_link::protocol::SlashCommand> = self
             .pool.project_ctx
-            .get(&self.cwd.to_string_lossy().to_string())
+            .get(&self.ws.cwd.to_string_lossy().to_string())
             .map(|ctx| ctx.skill_commands.clone())
             .unwrap_or_default();
         out.extend(self.pool.globals.commands.iter().cloned());

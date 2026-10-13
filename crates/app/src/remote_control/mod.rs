@@ -539,7 +539,7 @@ fn provider_options(chat: &crate::Chat) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = Vec::new();
     let live = chat
         .pool.models_by_cwd
-        .get(&chat.cwd.to_string_lossy().to_string())
+        .get(&chat.ws.cwd.to_string_lossy().to_string())
         .map(|v| v.as_slice())
         .unwrap_or(&[]);
     let removed = crate::services::workspace::removed_providers();
@@ -558,7 +558,7 @@ fn provider_options(chat: &crate::Chat) -> Vec<(String, String)> {
 fn model_options(chat: &crate::Chat, provider: &str) -> Vec<(String, String)> {
     let live = chat
         .pool.models_by_cwd
-        .get(&chat.cwd.to_string_lossy().to_string())
+        .get(&chat.ws.cwd.to_string_lossy().to_string())
         .map(|v| v.as_slice())
         .unwrap_or(&[]);
     let mut out: Vec<(String, String)> = Vec::new();
@@ -828,7 +828,7 @@ impl crate::Chat {
     fn provider_of_model(&self, id: &str) -> Option<String> {
         let live = self
             .pool.models_by_cwd
-            .get(&self.cwd.to_string_lossy().to_string())
+            .get(&self.ws.cwd.to_string_lossy().to_string())
             .map(|v| v.as_slice())
             .unwrap_or(&[]);
         let removed = crate::services::workspace::removed_providers();
