@@ -249,7 +249,7 @@ fn tab_strip(
 /// 置顶会话 tab（016）：中段第一位（距条左缘 10px），无 × 无 ⋯（2026-10-11
 /// 定夺：⋯ 菜单三入口改到会话 tab 下方的功能栏，见 session::session_fn_bar），
 /// label = 会话标题（≤30 字截断不变），前置 bot-message-square icon。激活 =
-/// 会话视图（Obsidian 卡片融底）；点击回会话视图（status_bar 会话 tab 同语义）。
+/// 会话视图（Obsidian 卡片融底）；点击回会话视图。
 fn session_tab(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyElement {
     let t = T();
     let active = chat.layout.content_view == ContentView::Chat;

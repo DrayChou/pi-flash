@@ -104,31 +104,9 @@ fn tabs(
                         this.refresh_git();
                         this.refresh_git_log();
                     }
-                    // 绑定关系：会话 tab = 会话内容区（chat）；
-                    // files tab = 浏览操作区（终端/文件预览的最后状态）；
-                    // git tab = 只切面板
-                    if panel == DockPanel::Sessions {
-                        this.layout.content_view = crate::ContentView::Chat;
-                    } else if panel == DockPanel::Files {
-                        // 浏览操作区：有文件 tab 或终端任一存在才切
-                        let any = this
-                            .ws.panel_tabs
-                            .iter()
-                            .any(|t| matches!(t, crate::PanelTab::File(_)))
-                            || !this.ws.panel_tabs.is_empty();
-                        if any {
-                            let v = this.layout.browse_last;
-                            this.set_content_view(v);
-                            // File 视图需要定位到具体 tab
-                            if this.layout.content_view == crate::ContentView::File {
-                                if let Some(ix) = this.ws.panel_tabs.iter().position(
-                                    |t| matches!(t, crate::PanelTab::File(_)),
-                                ) {
-                                    this.activate_panel_tab(ix, cx);
-                                }
-                            }
-                        }
-                    }
+                    // 2026-10-13 用户定夺：功能面板切换与主窗口（内容区）解绑——
+                    // 旧的「会话 tab=chat / files tab=浏览区」绑定过时，面板归
+                    // 面板，内容区归内容区（titlebar 的 tab 条管内容区）。
                     this.persist_ui();
                     cx.notify();
                 },
