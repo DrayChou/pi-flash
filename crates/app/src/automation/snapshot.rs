@@ -254,6 +254,14 @@ fn app_surface(chat: &Chat, window: &gpui::Window, cx: &Context<Chat>) -> Value 
                 | crate::services::updater::UpdateState::Available { version } => Some(version.clone()),
                 crate::services::updater::UpdateState::Idle => None,
             },
+            "progress": if matches!(
+                &chat.aux.update,
+                crate::services::updater::UpdateState::Downloading { .. }
+            ) {
+                crate::services::updater::download_percent()
+            } else {
+                None
+            },
             "auto_update": crate::services::workspace::auto_update(),
             "changelog_open": chat.aux.changelog.as_ref().map(|p| p.version.clone()),
         },

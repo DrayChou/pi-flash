@@ -209,16 +209,21 @@ fn action_bar(
     {
         use crate::services::updater::UpdateState;
         let version_el: gpui::AnyElement = match &chat.aux.update {
-            UpdateState::Downloading { version } => div()
-                .flex()
-                .items_center()
-                .gap(px(5.))
-                .child(crate::ui::spinner(11., t.text_faint))
-                .child(SharedString::from(crate::i18n::tf(
-                    "about.downloading_v",
-                    &[("v", version.clone())],
-                )))
-                .into_any_element(),
+            UpdateState::Downloading { version } => {
+                // 百分比来自下载线程的原子量；spinner 动画每帧触发本臂重跑，
+                // 文案随之刷新（无 content-length 时省略百分比）
+                let mut text = crate::i18n::tf("about.downloading_v", &[("v", version.clone())]);
+                if let Some(pct) = crate::services::updater::download_percent() {
+                    text = format!("{text} {pct}%");
+                }
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(5.))
+                    .child(crate::ui::spinner(11., t.text_faint))
+                    .child(SharedString::from(text))
+                    .into_any_element()
+            }
             UpdateState::Ready { version } => SharedString::from(crate::i18n::tf(
                 "update.restart_required",
                 &[("v", version.clone())],

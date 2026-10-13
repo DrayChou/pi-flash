@@ -17,6 +17,7 @@
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Duration;
 
 /// 下载/检查仓库坐标（与 npm/bin/lib.js releaseBase 同源）。
@@ -307,6 +308,24 @@ fn locate_content_root(extract_dir: &Path) -> Option<PathBuf> {
     None
 }
 
+/// 下载进度（0-100），None = 无进度数据（未在下载 / 响应无 content-length）。
+/// 下载线程 store、新会话页版本号位渲染 load——spinner 动画每帧触发重绘，
+/// 原子读足够，无需实体通知。
+static DOWNLOAD_PCT: AtomicU8 = AtomicU8::new(PCT_UNKNOWN);
+const PCT_UNKNOWN: u8 = 255;
+
+/// 当前下载进度（0-100），供版本号位 UI 与 pif-ui snapshot 读取。
+pub(crate) fn download_percent() -> Option<u8> {
+    match DOWNLOAD_PCT.load(Ordering::Relaxed) {
+        PCT_UNKNOWN => None,
+        pct => Some(pct),
+    }
+}
+
+fn set_download_percent(pct: u8) {
+    DOWNLOAD_PCT.store(pct.min(100), Ordering::Relaxed);
+}
+
 /// 下载到文件，边下边算 SHA-256（单遍）。返回 hex 摘要。
 fn download_and_hash(url: &str, dest: &Path) -> Result<String, String> {
     use sha2::Digest;
@@ -319,14 +338,29 @@ fn download_and_hash(url: &str, dest: &Path) -> Result<String, String> {
         .set("User-Agent", UA)
         .call()
         .map_err(|e| format!("{e}"))?;
+    let total: u64 = resp
+        .header("content-length")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    set_download_percent(if total > 0 { 0 } else { PCT_UNKNOWN });
     let mut reader = resp.into_reader();
     let mut out = std::fs::File::create(dest).map_err(|e| format!("{e}"))?;
     let mut h = sha2::Sha256::new();
     let mut buf = [0u8; 64 * 1024];
+    let mut got: u64 = 0;
+    let mut last_pct: u8 = 0;
     loop {
         let n = reader.read(&mut buf).map_err(|e| format!("{e}"))?;
         if n == 0 {
             break;
+        }
+        got += n as u64;
+        if total > 0 {
+            let pct = ((got as f64 / total as f64) * 100.0).min(100.0) as u8;
+            if pct != last_pct {
+                set_download_percent(pct);
+                last_pct = pct;
+            }
         }
         h.update(&buf[..n]);
         out.write_all(&buf[..n]).map_err(|e| format!("{e}"))?;
