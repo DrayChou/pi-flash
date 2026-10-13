@@ -31,8 +31,8 @@ const DEFAULT_MIRRORS: [&str; 3] = [
     "https://ghfast.top/https://github.com/danielbill/pi-flash/releases/download",
     "https://ghproxy.net/https://github.com/danielbill/pi-flash/releases/download",
 ];
-/// 测速切换（与 npm 薄壳 lib.js 同参数）：开传满 PROBE 平均速度仍低于阈值即弃源。
-const SPEED_PROBE: Duration = Duration::from_secs(3);
+/// 测速切换（与 npm 薄壳 lib.js 同参数）：开传满 probe（`PI_FLASH_PROBE_MS`，
+/// 默认 3s）平均速度仍低于阈值（`PI_FLASH_MIN_KBPS`，默认 128KB/s）即弃源。
 const MIN_SPEED_BPS: f64 = 128.0 * 1024.0;
 const RELEASES_API_BASE: &str = "https://api.github.com/repos/danielbill/pi-flash/releases";
 const UA: &str = "pi-flash-updater";
@@ -350,13 +350,46 @@ pub(crate) fn download_percent() -> Option<u8> {
     }
 }
 
-fn set_download_percent(pct: u8) {
-    DOWNLOAD_PCT.store(pct.min(100), Ordering::Relaxed);
+/// 写进度：None = 未知（哨兵 255）。已知值钳到 100。
+fn set_download_percent(pct: Option<u8>) {
+    let v = match pct {
+        Some(p) => p.min(100),
+        None => PCT_UNKNOWN,
+    };
+    DOWNLOAD_PCT.store(v, Ordering::Relaxed);
 }
 
-/// 下载到文件，边下边算 SHA-256（单遍）。开传满 SPEED_PROBE 平均速度仍低于
-/// MIN_SPEED_BPS 即 Err（测速不过，由上层换源）。返回 hex 摘要。
+/// 测速参数（env 可调，与 npm/bin/lib.js 同名变量同默认值；测试注入更小的
+/// probe/阈值以秒级完成）。
+fn speed_probe() -> Duration {
+    Duration::from_millis(
+        std::env::var("PI_FLASH_PROBE_MS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(3000),
+    )
+}
+
+fn min_speed_bps() -> f64 {
+    std::env::var("PI_FLASH_MIN_KBPS")
+        .ok()
+        .and_then(|v| v.parse::<f64>().ok())
+        .map(|kbps| kbps * 1024.0)
+        .unwrap_or(MIN_SPEED_BPS)
+}
+
+/// 下载到文件，边下边算 SHA-256（单遍）。开传满 probe 平均速度仍低于 min_bps
+/// 即 Err（测速不过，由上层换源）。返回 hex 摘要。
 fn download_and_hash(url: &str, dest: &Path) -> Result<String, String> {
+    download_and_hash_cfg(url, dest, speed_probe(), min_speed_bps())
+}
+
+fn download_and_hash_cfg(
+    url: &str,
+    dest: &Path,
+    probe: Duration,
+    min_bps: f64,
+) -> Result<String, String> {
     use sha2::Digest;
     let agent = ureq::AgentBuilder::new()
         .timeout_connect(CHECK_TIMEOUT)
@@ -371,7 +404,7 @@ fn download_and_hash(url: &str, dest: &Path) -> Result<String, String> {
         .header("content-length")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
-    set_download_percent(if total > 0 { 0 } else { PCT_UNKNOWN });
+    set_download_percent((total > 0).then_some(0));
     let mut reader = resp.into_reader();
     let mut out = std::fs::File::create(dest).map_err(|e| format!("{e}"))?;
     let mut h = sha2::Sha256::new();
@@ -386,16 +419,20 @@ fn download_and_hash(url: &str, dest: &Path) -> Result<String, String> {
         }
         got += n as u64;
         let elapsed = t0.elapsed();
-        if elapsed >= SPEED_PROBE && got as f64 / elapsed.as_secs_f64() < MIN_SPEED_BPS {
-            return Err(format!(
-                "测速不过（{}KB/s < 128KB/s）",
-                (got as f64 / elapsed.as_secs_f64() / 1024.0) as u64
-            ));
+        if elapsed >= probe {
+            let speed = got as f64 / elapsed.as_secs_f64();
+            if speed < min_bps {
+                return Err(format!(
+                    "测速不过（{}KB/s < {}KB/s）",
+                    (speed / 1024.0) as u64,
+                    (min_bps / 1024.0) as u64
+                ));
+            }
         }
         if total > 0 {
             let pct = ((got as f64 / total as f64) * 100.0).min(100.0) as u8;
             if pct != last_pct {
-                set_download_percent(pct);
+                set_download_percent(Some(pct));
                 last_pct = pct;
             }
         }
@@ -408,11 +445,29 @@ fn download_and_hash(url: &str, dest: &Path) -> Result<String, String> {
 /// 按候选源逐个试下载（每源一次，测速不过/网络错误都换下一个），全灭才报错。
 /// 返回（zip 的 SHA-256，命中源 base——校验和钉官方优先时兜底用）。
 fn download_mirrored(asset: &str, dest: &Path, ver: &str) -> Result<(String, String), String> {
+    download_mirrored_cfg(
+        asset,
+        dest,
+        ver,
+        &download_bases(),
+        speed_probe(),
+        min_speed_bps(),
+    )
+}
+
+fn download_mirrored_cfg(
+    asset: &str,
+    dest: &Path,
+    ver: &str,
+    bases: &[String],
+    probe: Duration,
+    min_bps: f64,
+) -> Result<(String, String), String> {
     let mut errors = Vec::new();
-    for base in download_bases() {
+    for base in bases {
         eprintln!("[updater] 下载源：{base}");
-        match download_and_hash(&format!("{base}/v{ver}/{asset}"), dest) {
-            Ok(h) => return Ok((h, base)),
+        match download_and_hash_cfg(&format!("{base}/v{ver}/{asset}"), dest, probe, min_bps) {
+            Ok(h) => return Ok((h, base.clone())),
             Err(e) => {
                 eprintln!("[updater] 源不可用（{e}），换下一个");
                 errors.push(format!("{base}：{e}"));
@@ -829,6 +884,131 @@ mod tests {
         std::fs::remove_dir_all(staging_dir(&pkg, "0.1.2")).unwrap();
         assert!(read_staged_in(&pkg).is_none());
         assert!(!marker_path(&pkg).exists(), "残缺标记一并清除");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // --- 下载引擎功能测试（本地裸 TCP 假源，真下载真哈希真守卫） ------------
+
+    /// 起一次性 HTTP 服务返回 base；trickle_ms = 每 1KB 间隔（模拟慢源）；
+    /// with_length = false 时无 content-length（close 分隔）。
+    fn serve(body: Vec<u8>, trickle_ms: Option<u64>, with_length: bool) -> String {
+        use std::io::Write as _;
+        use std::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            let Ok((mut s, _)) = listener.accept() else {
+                return;
+            };
+            let mut req = [0u8; 4096];
+            let _ = std::io::Read::read(&mut s, &mut req);
+            let len_head = if with_length {
+                format!("Content-Length: {}\r\n", body.len())
+            } else {
+                String::new()
+            };
+            let _ = write!(s, "HTTP/1.1 200 OK\r\n{len_head}Connection: close\r\n\r\n");
+            for chunk in body.chunks(1024) {
+                if s.write_all(chunk).is_err() {
+                    return; // 测试端测速中止断开属预期
+                }
+                if let Some(ms) = trickle_ms {
+                    std::thread::sleep(Duration::from_millis(ms));
+                }
+            }
+        });
+        format!("http://{addr}")
+    }
+
+    /// 已关闭的端口（连接拒绝），当挂掉的源。
+    fn dead_base() -> String {
+        use std::net::TcpListener;
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = l.local_addr().unwrap();
+        drop(l);
+        format!("http://{addr}")
+    }
+
+    fn test_dest(name: &str) -> std::path::PathBuf {
+        let p = std::env::temp_dir().join(format!("pf-upd-test-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_file(&p);
+        p
+    }
+
+    /// 顺序跑三种场景（共用全局百分比原子量，避免并行互扰）：
+    /// ① 测速守卫弃慢源；② 死源在前自动切换，哈希正确、百分比到 100；
+    /// ③ 无 content-length 成功但无百分比。
+    #[test]
+    fn download_speed_guard_and_failover() {
+        use sha2::Digest as _;
+        let probe = Duration::from_millis(300);
+        let min_bps = 128.0 * 1024.0;
+
+        // ① 20KB/s 慢源 → 快速中止，错误信息含"测速不过"
+        let slow = serve(vec![0xAB; 64 * 1024], Some(50), true);
+        let t0 = std::time::Instant::now();
+        let r = download_and_hash_cfg(
+            &format!("{slow}/v0.0.1/x.zip"),
+            &test_dest("slow"),
+            probe,
+            min_bps,
+        );
+        assert!(r.is_err(), "慢源应被测速守卫拒绝");
+        assert!(r.unwrap_err().contains("测速不过"));
+        assert!(
+            t0.elapsed() < Duration::from_secs(5),
+            "应秒级中止而非拖到整体超时"
+        );
+
+        // ② 死端口在前 → 切到可用源；命中源正确、SHA-256 正确、百分比 100
+        let body = vec![0x5Au8; 256 * 1024];
+        let good = serve(body.clone(), None, true);
+        let bases = vec![dead_base(), good.clone()];
+        let (hash, chosen) = download_mirrored_cfg(
+            "x.zip",
+            &test_dest("fo"),
+            "0.0.1",
+            &bases,
+            probe,
+            min_bps,
+        )
+        .unwrap();
+        assert_eq!(chosen, good, "应命中可用源");
+        let mut h = sha2::Sha256::new();
+        h.update(&body);
+        assert_eq!(hash, format!("{:x}", h.finalize()), "边下边算哈希正确");
+        assert_eq!(download_percent(), Some(100));
+
+        // ③ 无 content-length：下载成功但百分比保持未知
+        let stream = serve(b"no-length-body".to_vec(), None, false);
+        let (_h3, chosen3) = download_mirrored_cfg(
+            "x.zip",
+            &test_dest("nl"),
+            "0.0.1",
+            &[stream.clone()],
+            probe,
+            min_bps,
+        )
+        .unwrap();
+        assert_eq!(chosen3, stream);
+        assert_eq!(download_percent(), None, "无 content-length 无百分比");
+    }
+
+    /// 真实网络端到端（发版前手动跑一次）：
+    /// `cargo test -p app updater_real_download -- --ignored --nocapture`
+    #[test]
+    #[ignore = "真实网络下载整个载荷（约 85MB），手动验证用"]
+    fn updater_real_download() {
+        let rel = fetch_latest().unwrap_or_else(|e| panic!("fetch_latest 失败：{e}"));
+        let asset = asset_name(&rel.version);
+        let dir = std::env::temp_dir().join(format!("pf-upd-real-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let dest = dir.join(&asset);
+        let (hash, chosen) =
+            download_mirrored(&asset, &dest, &rel.version).unwrap_or_else(|e| panic!("下载失败：{e}"));
+        eprintln!("v{} 命中源：{chosen}\nsha256={hash}\n文件：{}", rel.version, dest.display());
+        assert_eq!(download_percent(), Some(100));
+        assert!(dest.metadata().unwrap().len() > 0);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
