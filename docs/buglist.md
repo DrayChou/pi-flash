@@ -20,6 +20,16 @@
   （段数/字节 len/y 槽位全保留，光标/点击/选区定位按 len 累加，x 取 0
   只发生在屏外行）；`closest_index_for_*`/`index_for_position` 字节累加
   改用覆写后的 `len()`；`LineLayout::paint` 跳空 text 段。
+- ✅ 首轮修复的回归（用户实测抓到）：开 js 不卡了，接着开含中文注释的
+  py 文件崩（`direct_write.rs shape_text: byte index 67 is not a char
+  boundary`，0xc0000409）。根因：视口窗裁剪后 `highlight_lines` 返回的
+  样式区间不再**从 visible 文本 0 起连续平铺**，而消费端
+  （layout_lines → runs_for_range → shape_text）按顺序吃 `run.len`、
+  不读 `range.start`——缺口让所有 run 边界相对文本整体错位；纯 ASCII
+  的 min.js 错位不炸（高亮悄悄错位，肉眼难察），py 的中文字符被从字节
+  中间切开直接 panic。修法：窗前/窗后各补一段默认样式 filler，恢复
+  平铺不变式（`combine_highlights` 是边界扫描线、输入有缺口输出就丢段，
+  filler 必须自己补）。此修复同时纠正了滚动后高亮整体错位的暗病。
 - ✅ 顺带修一个被掩住的 panic：`calculate_visible_range` 非等高路径
   `visible_range` 初始值用了 `text_wrapper.len()`（**软换行行数**），
   与循环赋值的逻辑行号混用——滚到文件底部 break 不触发时 end 跑到几千，
@@ -29,7 +39,10 @@
   45-70ms（修复前分钟级假死）；pagedown×45 到文件底 + pageup 折返，
   94 万字符行整屏软换行 + 高亮渲染正常；大行内方向键移动正常；普通
   rust 文件无回归；`cargo test -p app`(4) + `cargo test -p pi-link`(134+3)
-  全绿。已知边界：在超长行内打字仍整行 rewrap（~0.1-0.5s/键），打开
+  全绿。回归场景复测（filler 补丁后）：gen.py（182 行含中文注释）开文件
+  /pagedown×12/pageup×12/方向键/连续开 js+html+md+csv+py 六文件 全程
+  存活，CJK 注释与 Python 高亮渲染正确；js 深处高亮锚定正确。
+  已知边界：在超长行内打字仍整行 rewrap（~0.1-0.5s/键），打开
   （全量 wrap + 首次 tree-sitter parse）一次 ~1-2s（debug 口径）。
 
 ## 待验证（本轮修复）——外部改动不同步：cwd 外文件根本没挂监听

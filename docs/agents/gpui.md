@@ -47,7 +47,15 @@
   几何算「视口字节窗」（上下各留 2 行余量供方向键/选区端点取 x），
   `highlight_lines` 逐行查询范围与窗求交；`layout_lines` 窗外段垫等 len 的
   空 `ShapedLine`（段数/字节 len/y 槽位全保留——光标/点击/选区的行内定位
-  按 len 累加，x 取 0 只发生在屏外行）。配套：`closest_index_for_*`/
+  按 len 累加，x 取 0 只发生在屏外行）。**配套不变式（2026-10-15 补，缺它
+  必炸）**：`highlight_lines` 返回的样式区间必须**从 visible 文本 0 起连续
+  平铺**——消费端（layout_lines → runs_for_range → shape_text）按顺序吃
+  run.len，不读 range.start；窗裁剪后窗前/窗后要补默认样式 filler 段，否则
+  run 边界相对文本整体错位：ASCII 文件只是高亮悄悄错位不易察觉，含 CJK
+  的文件在 direct_write shape_text 里被从多字节字符中间切开直接 panic
+  （`byte index is not a char boundary`，0xc0000409）。另注意
+  `gpui::combine_highlights` 是边界扫描线，输入有缺口输出就丢段——filler
+  必须自己补，它不会兜底。配套：`closest_index_for_*`/
   `index_for_position` 的字节累加改用覆写后的 `len()`（垫段 text 为空）；
   `LineLayout::paint` 跳过空 text 段（省 ~6000 次 paint_layer/帧）。
   量法同注入修复：隔离实例开 echarts.min.js（1MB/45 行/末行 94 万字符），
@@ -90,4 +98,4 @@
 - 杂项：prepaint/paint 第 5 参是 prepaint state 非 hitbox；Pixels 字段私有（f32::from/除法）；move 闭包捕获 `&WeakEntity` 参数 E0521（闭包外 clone）；`unbounded()` 返回值不能别解构。
 - **vendor 本地改动（升级必须重套）**：`elements/div.rs` `TOOLTIP_SHOW_DELAY` 500→350ms（用户定夺 2026-10-13，350ms 弹出体感更跟手；源码处有注释标记）。
 - **vendor 本地改动（升级必须重套）**：`input/state.rs` `set_selected_range` 显式清 `selection_reversed`（不变式：该 setter 光标恒在选区尾）+ 新增 `set_selected_range_reversed`（光标锚选区**起点**，滚动保起点可见）——app `TextInput::select_all_on_focus` 全选改走它（改名框头部可见，2026-10-13 用户定夺）；`cursor()`/滚动早有 reversed 分支，此补丁只补公开设置口。
-- **vendor 本地改动（升级必须重套）**：`input/element.rs` 视口字节窗（`viewport_byte_window` + `EXTRA_SHAPE_ROWS`：`highlight_lines` 逐行查询与窗求交、`layout_lines` 窗外软换行段垫等 len 空 ShapedLine、`calculate_visible_range` 非等高路径钳逻辑行数）+ `input/text_wrapper.rs`（`LineLayout::paint` 跳空 text 段；`closest_index_for_x`/`closest_index_for_position`/`index_for_position` 字节累加改用覆写后 `len()`）——超大单行（minified js）每帧假死修复，2026-10-14，pi-flash-jtt。
+- **vendor 本地改动（升级必须重套）**：`input/element.rs` 视口字节窗（`viewport_byte_window` + `EXTRA_SHAPE_ROWS`：`highlight_lines` 逐行查询与窗求交 + 窗前/窗后默认样式 filler 保「从 0 连续平铺」不变式、`layout_lines` 窗外软换行段垫等 len 空 ShapedLine、`calculate_visible_range` 非等高路径钳逻辑行数）+ `input/text_wrapper.rs`（`LineLayout::paint` 跳空 text 段；`closest_index_for_x`/`closest_index_for_position`/`index_for_position` 字节累加改用覆写后 `len()`）——超大单行（minified js）每帧假死修复，2026-10-14，pi-flash-jtt；平铺 filler 补丁 2026-10-15（CJK 文件 char boundary panic）。

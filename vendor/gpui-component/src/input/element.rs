@@ -808,6 +808,19 @@ impl TextElement {
         let mut offset = visible_byte_range.start;
         let mut styles = vec![];
 
+        // PF 修复（2026-10-15）：runs 的消费端（layout_lines → runs_for_range
+        // → shape_text）假设样式区间**从 visible 文本 0 起连续平铺**（旧实现
+        // 逐行 styles 恰好平铺全部可见行）。视口窗裁剪后窗前/窗后有缺口，
+        // 必须补默认样式段——否则所有 run 边界相对文本整体错位：ASCII 文件
+        // 只是高亮悄悄错位，含 CJK 的文件在 shape_text 里被从多字节字符
+        // 中间切开直接 panic（"byte index is not a char boundary"）。
+        if shape_window.start > visible_byte_range.start {
+            styles.push((
+                visible_byte_range.start..shape_window.start,
+                HighlightStyle::default(),
+            ));
+        }
+
         for line in text
             .iter_lines()
             .skip(visible_range.start)
@@ -825,6 +838,13 @@ impl TextElement {
             }
             let line_styles = highlighter.styles(&(start..end), &cx.theme().highlight_theme);
             styles = gpui::combine_highlights(styles, line_styles).collect();
+        }
+
+        if shape_window.end < visible_byte_range.end {
+            styles.push((
+                shape_window.end..visible_byte_range.end,
+                HighlightStyle::default(),
+            ));
         }
 
         let diagnostic_styles = diagnostics.styles_for_range(&visible_byte_range, cx);
