@@ -105,6 +105,24 @@ pub mod row {
     pub const PICKER: f32 = 40.;
 }
 
+/// §7 图标对齐线（px）：topbar 收放钮图标与 psp 列表行图标（项目 folder /
+/// 会话 / 伪标签）共用的视觉左缘。单一来源——**只调 ICON_LINE 一个数**，
+/// 两侧边距按下面的推导常量自动跟随；推导值由锁定测试看守。
+pub mod align {
+    /// 对齐线，距 dock/窗左缘（2026-10-13 定夺 11）。
+    pub const ICON_LINE: f32 = 11.;
+    /// 收放钮钮盒 30 / 图标 18，居中 → 图标内边 6。
+    pub const TOGGLE_BTN: f32 = 30.;
+    pub const TOGGLE_ICON: f32 = super::icon::LG;
+    /// 收放钮贴左距离（推导 = ICON_LINE − 图标内边）。收起态右段的
+    /// panes-toggle-r 不在此线（竖线镜像位，独立 4px）。
+    pub const TOGGLE_ML: f32 = ICON_LINE - (TOGGLE_BTN - TOGGLE_ICON) / 2.;
+    /// psp 列容器唯一水平留白（行/标题行的 pr 右线同值）。
+    pub const LIST_PX: f32 = super::space::SP5;
+    /// 列表行/标题行的 pl——对齐补偿，非留白（推导 = ICON_LINE − LIST_PX）。
+    pub const ROW_PL: f32 = ICON_LINE - LIST_PX;
+}
+
 /// §5.9 滚动条（px）：容器统一 w10，thumb 6→悬停 10。
 pub mod scrollbar {
     pub const W: f32 = 10.;
@@ -202,6 +220,18 @@ mod tests {
         assert_eq!(
             [scrollbar::W, scrollbar::THUMB, scrollbar::THUMB_ACTIVE],
             [10., 6., 10.]
+        );
+        // §7 图标对齐线（含推导值）
+        assert_eq!(
+            [
+                align::ICON_LINE,
+                align::TOGGLE_BTN,
+                align::TOGGLE_ICON,
+                align::TOGGLE_ML,
+                align::LIST_PX,
+                align::ROW_PL,
+            ],
+            [11., 30., 18., 5., 10., 1.]
         );
         // §2 渲染特例固定字号（markdown chrome）
         assert_eq!(

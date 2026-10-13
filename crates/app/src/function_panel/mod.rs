@@ -21,6 +21,7 @@ use crate::services::workspace::{same_ws, same_ws_key};
 use crate::ListMode;
 use crate::SortMode;
 use crate::appearance::theme::{Theme, theme as T};
+use crate::ui::tokens::align;
 use crate::ui::{WithTip, icon, icon_hover, spinner};
 
 /// Flattened psp row model (one virtual list over all rows).
@@ -234,17 +235,17 @@ pub(crate) fn psp_view(
     // 之前 title 行放滚动容器内时，其按钮 hitbox 被 scroll mask 裁掉，
     // 点击全部失效——这也是设计的本意：title 行不是列表内容。
     let t = T();
-    // 统一对齐线（2026-10-13 定稿）：topbar 收放钮贴左 5px（30px 钮盒、
-    // 18px 图标居中）→ 图标视觉线 = 5+6 = 11px。列表侧 col 外层 px 10 是
-    // 唯一水平留白源，行内 pl 1 是对齐补偿 = 10+1 = 11px，与钮图标同线；
-    // title 行挂 pl 1（文字同线）。右线不动（行 pr 10 / title pr 10）。
+    // 统一对齐线（§7 / tokens::align）：topbar 收放钮图标与列表行图标共
+    // 用视觉左缘 ICON_LINE（现值 11）。容器 px = LIST_PX 是唯一水平留白源，
+    // 行内 pl = ROW_PL 是对齐补偿（LIST_PX + ROW_PL = ICON_LINE）；右线 =
+    // LIST_PX。改线只改 tokens 里 ICON_LINE，这里全自动跟随。
     let mut col = div()
         .flex_1()
         .min_h_0()
         .w_full()
         .flex()
         .flex_col()
-        .px(px(10.))
+        .px(px(align::LIST_PX))
         .pt(px(6.))
         .child(title_row(chat, &weak, t));
     let rows: Vec<gpui::AnyElement> = psp_rows(chat)
@@ -365,8 +366,8 @@ fn title_row(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> g
         .h(px(30.))
         .flex()
         .items_center()
-        .pl(px(1.))
-        .pr(px(10.))
+        .pl(px(align::ROW_PL))
+        .pr(px(align::LIST_PX))
 
         .text_size(crate::appearance::ui_size(12.))
         .font_weight(gpui::FontWeight::SEMIBOLD)
@@ -504,8 +505,8 @@ fn project_row(
         .flex()
         .items_center()
         .gap(px(8.))
-        .pl(px(1.))
-        .pr(px(10.))
+        .pl(px(align::ROW_PL))
+        .pr(px(align::LIST_PX))
         .rounded(px(8.))
         .cursor_pointer()
         // v55：项目行悬停不给背景色（避免与会话行选中态混淆）
@@ -713,8 +714,10 @@ fn session_row_view(
         gpui::linear_color_stop(fade_hover_to, 1.),
     );
 
-    // 溢出测量：标题真实排版宽 vs 行内可用宽（容器 px 10×2 + 行 pl 1/pr 10
-    // + slot 15 + 两个 gap 16 + 时间列 38）
+    // 溢出测量：标题真实排版宽 vs 行内可用宽。chrome 全部走 align 令牌
+    // （容器 LIST_PX×2 + 行 ROW_PL/LIST_PX），其余 = slot 15 + 两个 gap 16
+    // + 时间列 38；对齐线改动时此处自动跟随
+    let chrome_w = align::LIST_PX * 2. + align::ROW_PL + align::LIST_PX;
     let panel_family = crate::appearance::panel_font().family;
     let measure_font = gpui::Font {
         family: panel_family.clone().into(),
@@ -739,7 +742,7 @@ fn session_row_view(
             .text_system()
             .layout_line(&title, measure_size, &[measure_run], None)
             .width;
-        let available = px(chat.layout.slp_w - 20. - 11. - 15. - 16. - 38.);
+        let available = px(chat.layout.slp_w - chrome_w - 15. - 16. - 38.);
         title_w > available
     };
 
@@ -783,8 +786,8 @@ fn session_row_view(
         .flex()
         .items_center()
         .gap(px(8.))
-        .pl(px(1.))
-        .pr(px(10.))
+        .pl(px(align::ROW_PL))
+        .pr(px(align::LIST_PX))
         .rounded(px(8.))
         .cursor_pointer()
         .when(is_active, |d| d.bg(row_sel).hover(|s| s.bg(row_sel)))
@@ -956,8 +959,8 @@ fn pending_row_view(
                 .flex()
                 .items_center()
                 .gap(px(8.))
-                .pl(px(1.))
-                .pr(px(10.))
+                .pl(px(align::ROW_PL))
+                .pr(px(align::LIST_PX))
                 .rounded(px(8.))
                 .cursor_pointer()
                 .when(is_active, |d| d.bg(row_sel).hover(|s| s.bg(row_sel)))

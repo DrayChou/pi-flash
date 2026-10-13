@@ -17,6 +17,7 @@ use crate::Chat;
 use crate::ContentView;
 use crate::i18n::tr;
 use crate::appearance::theme::theme as T;
+use crate::ui::tokens::align;
 
 /// topbar 高（两段同高；窗口控制钮高度跟随；2026-10-10 定夺 36→38）。
 pub(crate) const HEIGHT: f32 = 38.;
@@ -24,10 +25,9 @@ pub(crate) const HEIGHT: f32 = 38.;
 /// Caption-button glyph font (Win11; MDL2 covers Win10).
 pub const CAPTION_FONT: &str = "Segoe Fluent Icons";
 
-/// 左段（015 功能面板侧）：收放钮（贴左 5px——2026-10-13 定夺回到原位，
-/// 图标视觉线 5+6=11px，psp 列表图标线对齐到此，见 function_panel/mod.rs
-/// psp_view 注释）+ 拖拽填充。原右端手机遥控钮已隐藏（2026-10-10 用户定
-/// 夺；重开走 git 历史找回 wx_btn）。
+/// 左段（015 功能面板侧）：收放钮贴左 = `tokens::align::TOGGLE_ML`（图标
+/// 视觉线 ICON_LINE 与 psp 列表图标对齐，2026-10-13 定稿）+ 拖拽填充。原
+/// 右端手机遥控钮已隐藏（2026-10-10 用户定夺；重开走 git 历史找回 wx_btn）。
 pub(crate) fn topbar_l(_chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> impl gpui::IntoElement {
     let t = T();
     div()
@@ -37,7 +37,7 @@ pub(crate) fn topbar_l(_chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> impl g
         .flex()
         .items_center()
         .bg(rgb(t.chrome))
-        .child(div().ml(px(5.)).child(icon_btn(
+        .child(div().ml(px(align::TOGGLE_ML)).child(icon_btn(
             "panes-toggle",
             "panel-left",
             tr("titlebar.toggle_sidebar"),
@@ -118,7 +118,7 @@ pub(crate) fn topbar_r(
     ))
 }
 
-/// 30×30 图标钮（topbar 通用；hover chrome-hover）。
+/// 30×30 图标钮（topbar 通用；hover chrome-hover）。钮盒/图标走 align 令牌。
 fn icon_btn(
     id: &'static str,
     icon_name: &'static str,
@@ -128,7 +128,7 @@ fn icon_btn(
     let t = T();
     div()
         .id(id)
-        .size(px(30.))
+        .size(px(align::TOGGLE_BTN))
         .flex()
         .items_center()
         .justify_center()
@@ -137,7 +137,7 @@ fn icon_btn(
         .cursor_pointer()
         .hover(|s| s.bg(rgb(t.bg_hover)).text_color(rgb(t.text)))
         .on_mouse_down(MouseButton::Left, handler)
-        .child(crate::ui::icon_hover(icon_name, 18., t.text_muted))
+        .child(crate::ui::icon_hover(icon_name, align::TOGGLE_ICON, t.text_muted))
 }
 
 /// 内容区 tab（Obsidian 式）：激活 = 凸起卡片（bg 色、顶圆角、下缘融入
