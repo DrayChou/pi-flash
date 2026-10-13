@@ -13,6 +13,7 @@ use gpui::{Context, Entity, MouseButton, SharedString, div, prelude::*, px, rgb}
 
 use std::path::PathBuf;
 
+use crate::ui::TextInput;
 use crate::Chat;
 use crate::DockPanel;
 use crate::i18n::tr;
@@ -449,7 +450,7 @@ fn title_row(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> g
                             let _ = w_sort.update(cx, |c, cx| {
                                 // 存原始点击点；方向与间距由渲染期统一弹出
                                 // 算法（ui::popup）决定，此处不再手工偏移
-                                c.psp_menu = Some(crate::PspMenu::Sort {
+                                c.psp_menu = Some(crate::function_panel::PspMenu::Sort {
                                     sub: None,
                                     x: f32::from(ev.position.x),
                                     y: f32::from(ev.position.y),
@@ -479,7 +480,7 @@ fn project_row(
         // ⋯ 菜单打开中：按钮保持显示（交互进行中不消失）
         || matches!(
             &chat.psp_menu,
-            Some(crate::PspMenu::Project { path: mp, .. })
+            Some(crate::function_panel::PspMenu::Project { path: mp, .. })
             if crate::services::workspace::same_path(mp, &g.path)
         );
     let path = g.path.clone();
@@ -599,7 +600,7 @@ fn project_row(
                                     cx.stop_propagation();
                                     let _ = w_menu.update(cx, |c, cx| {
                                         // 同排序菜单：存原始点击点，定向交统一算法
-                                        c.psp_menu = Some(crate::PspMenu::Project {
+                                        c.psp_menu = Some(crate::function_panel::PspMenu::Project {
                                             path: path_menu.clone(),
                                             x: f32::from(ev.position.x),
                                             y: f32::from(ev.position.y),
@@ -816,7 +817,7 @@ fn session_row_view(
                     .as_ref()
                     .is_some_and(|card| crate::services::workspace::same_path(&card.path, &path_card));
                 if !same {
-                    c.hover_card = Some(crate::HoverCard {
+                    c.hover_card = Some(crate::function_panel::HoverCard {
                         path: path_card.clone(),
                         // 临时估计（鼠标 y - 半行高）；prepaint 钩子会把
                         // y 校正为本行的真实顶部（bounds.origin.y），行高
@@ -1034,4 +1035,67 @@ pub(crate) fn files_view(
     _cx: &mut Context<Chat>,
 ) -> gpui::AnyElement {
     file_tree::files_view(chat, weak, _cx)
+}
+
+// ---- psp/文件树 overlay 状态类型（自 shell/types.rs 下沉，本域自持）----
+
+#[derive(Debug, Clone)]
+pub(crate) struct HoverCard {
+    pub path: PathBuf,
+    /// 悬停行的真实顶部（prepaint 钩子校正，初始为鼠标 y − 半行高估计值）
+    pub y: f32,
+    /// 悬停行高（prepaint 钩子随 y 同步校正）：详情卡向上弹时卡底 = y + h
+    /// （贴行底），向下弹卡顶 = y（贴行顶）——精准对齐是调用方语义
+    pub h: f32,
+    pub hide_at: Option<std::time::Instant>,
+    /// 创建时刻：悬停满 300ms 才显示（快速滑过列表不弹卡、不干扰行悬停）
+    pub show_at: std::time::Instant,
+    /// show_at 到期后由 120ms tick 置 true 并渲染一次
+    pub shown: bool,
+    pub confirming: bool,
+    /// 鼠标当前是否在卡上（gpui 的行退出/卡进入事件顺序不保证，
+    /// 行退出只在 !card_hovered 时才启动消失宽限）
+    pub card_hovered: bool,
+    /// 标题点击后原地改名（设计稿：卡内变输入框，Enter 提交 / Esc 取消）
+    pub renaming: bool,
+    pub rename_input: Option<gpui::Entity<crate::ui::TextInput>>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum PspMenu {
+    /// sub: 0=列表方式, 1=排序方式
+    Sort { sub: Option<u8>, x: f32, y: f32 },
+    Project { path: PathBuf, x: f32, y: f32 },
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum TreeMenu {
+    Dir { path: PathBuf, x: f32, y: f32 },
+    File { path: PathBuf, x: f32, y: f32 },
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct TreeEdit {
+    pub(crate) kind: TreeEditKind,
+    pub(crate) is_dir: bool,
+    pub(crate) input: gpui::Entity<TextInput>,
+    /// 实时校验态（键入即查，Zed populate_validation_error 移植）
+    pub(crate) validation: TreeValidation,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum TreeEditKind {
+    /// 在该目录下新建（Zed leaf_entry_id: None——is_new_entry 判据）
+    New { dir: PathBuf },
+    /// 同目录改名该条目
+    Rename { path: PathBuf },
+}
+
+/// Zed ValidationState 移植：错误（重名/非法）拦 Enter 提交，警告放行。
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) enum TreeValidation {
+    #[default]
+    None,
+    Error(String),
+    Warning(String),
 }

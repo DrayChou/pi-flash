@@ -1285,3 +1285,10 @@ impl Chat {
     }
 
 }
+
+/// 042：provider 通路探查状态（保存 key 自动一次 + 详情页【重新探查】）。
+#[derive(Debug, Clone)]
+pub(crate) enum McProbe {
+    Running,
+    Done,
+}

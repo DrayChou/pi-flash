@@ -416,8 +416,8 @@ fn menu_layer(
 ) -> gpui::AnyElement {
     let weak = cx.entity().downgrade();
     let (x, y) = match chat.psp_menu.clone().expect("checked by caller") {
-        crate::PspMenu::Sort { x, y, .. } => (x, y),
-        crate::PspMenu::Project { x, y, .. } => (x, y),
+        crate::function_panel::PspMenu::Sort { x, y, .. } => (x, y),
+        crate::function_panel::PspMenu::Project { x, y, .. } => (x, y),
     };
     // 统一弹出定位（2026-10-11）：锚点 = ⋯ 按钮点击点，向下弹距 12px、
     // 向上弹同样让 12px；左右象限决定横向展开方向。
@@ -433,11 +433,11 @@ fn menu_layer(
     });
     let mut card = menu_card(parent_edges, t);
     match chat.psp_menu.clone().expect("re-checked") {
-        crate::PspMenu::Sort { sub, .. } => {
+        crate::function_panel::PspMenu::Sort { sub, .. } => {
             let mut view = menu_item("m-list", "icon-organize", tr("psp.list_mode"), false, false);
             view = view.on_hover(cx.listener(|this, h: &bool, _w, cx| {
                 if *h {
-                    if let Some(crate::PspMenu::Sort { sub, .. }) = this.psp_menu.as_mut() {
+                    if let Some(crate::function_panel::PspMenu::Sort { sub, .. }) = this.psp_menu.as_mut() {
                         *sub = Some(0);
                     }
                     cx.notify();
@@ -446,7 +446,7 @@ fn menu_layer(
             let mut sort = menu_item("m-sort", "icon-sort", tr("psp.sort_mode"), false, false);
             sort = sort.on_hover(cx.listener(|this, h: &bool, _w, cx| {
                 if *h {
-                    if let Some(crate::PspMenu::Sort { sub, .. }) = this.psp_menu.as_mut() {
+                    if let Some(crate::function_panel::PspMenu::Sort { sub, .. }) = this.psp_menu.as_mut() {
                         *sub = Some(1);
                     }
                     cx.notify();
@@ -520,7 +520,7 @@ fn menu_layer(
                 layer = layer.child(sub_card);
             }
         }
-        crate::PspMenu::Project { path, .. } => {
+        crate::function_panel::PspMenu::Project { path, .. } => {
             card = card
                 .child(
                     menu_item(
@@ -732,7 +732,7 @@ fn tree_menu_layer(
 ) -> gpui::AnyElement {
     let weak = cx.entity().downgrade();
     let (x, y) = match chat.tree_menu.clone().expect("checked by caller") {
-        crate::TreeMenu::Dir { x, y, .. } | crate::TreeMenu::File { x, y, .. } => (x, y),
+        crate::function_panel::TreeMenu::Dir { x, y, .. } | crate::function_panel::TreeMenu::File { x, y, .. } => (x, y),
     };
     // 与 psp 菜单同参：向下弹让 12px，左右象限决定横向方向
     let edges = PopupEdges::around((x, y), vp, 0., 12.);
@@ -745,7 +745,7 @@ fn tree_menu_layer(
     });
     let mut card = menu_card(edges, t);
     match chat.tree_menu.clone().expect("re-checked") {
-        crate::TreeMenu::Dir { path, .. } => {
+        crate::function_panel::TreeMenu::Dir { path, .. } => {
             card = card
                 .child(tree_item(
                     &weak,
@@ -834,7 +834,7 @@ fn tree_menu_layer(
                     ));
             }
         }
-        crate::TreeMenu::File { path, .. } => {
+        crate::function_panel::TreeMenu::File { path, .. } => {
             // 新建对齐目录菜单语义：落点 = 文件所在目录（parent 取不到时
             // 兜底项目根）
             card = card

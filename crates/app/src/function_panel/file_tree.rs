@@ -174,7 +174,7 @@ pub(crate) fn files_view(
                     move |ev: &gpui::MouseDownEvent, _, cx| {
                         cx.stop_propagation();
                         let _ = weak_bg.update(cx, |c, cx| {
-                            c.tree_menu = Some(crate::TreeMenu::Dir {
+                            c.tree_menu = Some(crate::function_panel::TreeMenu::Dir {
                                 path: cwd_bg.clone(),
                                 x: f32::from(ev.position.x),
                                 y: f32::from(ev.position.y),
@@ -205,7 +205,7 @@ pub(crate) fn files_view(
         // 新建行的落点（Zed new_entry：虚拟行插在目录行下方、子项之前；
         // 目标 = 项目根时插列表顶）。改名行不注入（原地替换该行）。
         let edit_slot: Option<(usize, usize)> = edit.as_ref().and_then(|e| match &e.kind {
-            crate::TreeEditKind::New { dir } => {
+            crate::function_panel::TreeEditKind::New { dir } => {
                 if same_path(dir, &chat.cwd) {
                     Some((0, 0))
                 } else {
@@ -216,7 +216,7 @@ pub(crate) fn files_view(
                     )
                 }
             }
-            crate::TreeEditKind::Rename { .. } => None,
+            crate::function_panel::TreeEditKind::Rename { .. } => None,
         });
         let edit_ix = edit_slot.map(|(ix, _)| ix);
         let total = rows.len() + edit_slot.map_or(0, |_| 1);
@@ -239,7 +239,7 @@ pub(crate) fn files_view(
                     move |ev: &gpui::MouseDownEvent, _, cx| {
                         cx.stop_propagation();
                         let _ = weak_bg.update(cx, |c, cx| {
-                            c.tree_menu = Some(crate::TreeMenu::Dir {
+                            c.tree_menu = Some(crate::function_panel::TreeMenu::Dir {
                                 path: cwd_bg.clone(),
                                 x: f32::from(ev.position.x),
                                 y: f32::from(ev.position.y),
@@ -311,7 +311,7 @@ const CHANGES_ROW_H: f32 = 28.;
 /// 让位给输入框。
 fn changes_row(
     row: crate::services::file_tree::TreeRow,
-    editing: Option<crate::TreeEdit>,
+    editing: Option<crate::function_panel::TreeEdit>,
     weak: gpui::WeakEntity<Chat>,
 ) -> gpui::AnyElement {
     let t = theme::theme();
@@ -319,7 +319,7 @@ fn changes_row(
     let file_name = rel.rsplit('/').next().unwrap_or(&rel).to_string();
     let dir_part = rel[..rel.len() - file_name.len()].to_string();
     let editing = editing.filter(|e| {
-        matches!(&e.kind, crate::TreeEditKind::Rename { path } if same_path(path, &row.path))
+        matches!(&e.kind, crate::function_panel::TreeEditKind::Rename { path } if same_path(path, &row.path))
     });
     // 021 三改：徽标与文件图标都去掉（信息冗余——变更态整表皆然，
     // 数量/增删在头行 numstat），行 = 纯路径
@@ -434,7 +434,7 @@ fn action_bar(
                     move |ev: &gpui::MouseDownEvent, _, cx| {
                         cx.stop_propagation();
                         let _ = w_menu.update(cx, |c, cx| {
-                            c.tree_menu = Some(crate::TreeMenu::Dir {
+                            c.tree_menu = Some(crate::function_panel::TreeMenu::Dir {
                                 path: cwd_menu.clone(),
                                 x: f32::from(ev.position.x),
                                 y: f32::from(ev.position.y),
@@ -532,7 +532,7 @@ fn tree_row(
     row: TreeRow,
     prev_depth: Option<usize>,
     next_depth: Option<usize>,
-    editing: Option<crate::TreeEdit>,
+    editing: Option<crate::function_panel::TreeEdit>,
     weak: gpui::WeakEntity<Chat>,
 ) -> gpui::AnyElement {
     let t = theme::theme();
@@ -540,7 +540,7 @@ fn tree_row(
     // 本行处于行内改名（Zed EditState 命中该行）：名字标签换输入框，点
     // 击展开/打开让位给输入框
     let editing = editing.filter(|e| {
-        matches!(&e.kind, crate::TreeEditKind::Rename { path } if same_path(path, &row.path))
+        matches!(&e.kind, crate::function_panel::TreeEditKind::Rename { path } if same_path(path, &row.path))
     });
     let mut el = div()
         .id(SharedString::from(format!("tree-{}", row.path.display())))
@@ -669,11 +669,11 @@ fn name_label(name: &str) -> gpui::AnyElement {
 }
 
 /// 编辑态 chrome：边框色（校验错误红 / 警告黄 / 常态 accent）+ 校验消息。
-fn edit_chrome(e: &crate::TreeEdit, t: &'static crate::appearance::theme::Theme) -> (u32, Option<SharedString>) {
+fn edit_chrome(e: &crate::function_panel::TreeEdit, t: &'static crate::appearance::theme::Theme) -> (u32, Option<SharedString>) {
     match &e.validation {
-        crate::TreeValidation::Error(m) => (t.danger, Some(SharedString::from(m.clone()))),
-        crate::TreeValidation::Warning(m) => (theme::WARN, Some(SharedString::from(m.clone()))),
-        crate::TreeValidation::None => (t.accent, None),
+        crate::function_panel::TreeValidation::Error(m) => (t.danger, Some(SharedString::from(m.clone()))),
+        crate::function_panel::TreeValidation::Warning(m) => (theme::WARN, Some(SharedString::from(m.clone()))),
+        crate::function_panel::TreeValidation::None => (t.accent, None),
     }
 }
 
@@ -714,7 +714,7 @@ fn edit_input_slot(input: gpui::Entity<crate::ui::TextInput>) -> gpui::AnyElemen
 /// 行内新建行（Zed NEW_ENTRY_ID 虚拟行）：目录行下方、子项之前，缩进 =
 /// 目录深度 + 1；文件图标随键入名实时变化；行带编辑边框 + 校验消息。
 /// 无点击动作（行体点击 = 点别处，冒泡到面板收场，同 Zed blur）。
-fn tree_edit_row(edit: crate::TreeEdit, depth: usize, live_name: &str) -> gpui::AnyElement {
+fn tree_edit_row(edit: crate::function_panel::TreeEdit, depth: usize, live_name: &str) -> gpui::AnyElement {
     let t = theme::theme();
     let (border, message) = edit_chrome(&edit, t);
     let icon = if edit.is_dir {
@@ -978,13 +978,13 @@ fn tree_right_click(weak: &gpui::WeakEntity<Chat>, row: &TreeRow) -> gpui::AnyEl
             let path = path.clone();
             let _ = weak.update(cx, |c, cx| {
                 c.tree_menu = Some(if is_dir {
-                    crate::TreeMenu::Dir {
+                    crate::function_panel::TreeMenu::Dir {
                         path,
                         x: f32::from(ev.position.x),
                         y: f32::from(ev.position.y),
                     }
                 } else {
-                    crate::TreeMenu::File {
+                    crate::function_panel::TreeMenu::File {
                         path,
                         x: f32::from(ev.position.x),
                         y: f32::from(ev.position.y),

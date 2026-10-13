@@ -3,6 +3,7 @@
 //! @ 插入会话输入框（资源管理器定位在 services::shell_open）。
 //! （P2 自根 actions_files.rs 归并入 function_panel 域。）
 
+use super::{TreeEdit, TreeEditKind, TreeValidation};
 use crate::*;
 
 /// 文件搜索命中上限（pi-web file-index 打分截断同量级；500×500 弹窗

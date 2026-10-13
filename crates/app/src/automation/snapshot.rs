@@ -435,8 +435,8 @@ fn files_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
     // 校验态——行内编辑的事务断言全靠这条
     let tree_edit = chat.tree_edit.as_ref().map(|e| {
         let (kind, subject) = match &e.kind {
-            crate::TreeEditKind::New { dir } => ("new", dir.display().to_string()),
-            crate::TreeEditKind::Rename { path } => ("rename", path.display().to_string()),
+            crate::function_panel::TreeEditKind::New { dir } => ("new", dir.display().to_string()),
+            crate::function_panel::TreeEditKind::Rename { path } => ("rename", path.display().to_string()),
         };
         json!({
             "kind": kind,
@@ -444,9 +444,9 @@ fn files_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
             "is_dir": e.is_dir,
             "value": e.input.read(cx).value(),
             "validation": match &e.validation {
-                crate::TreeValidation::None => "none",
-                crate::TreeValidation::Error(_) => "error",
-                crate::TreeValidation::Warning(_) => "warning",
+                crate::function_panel::TreeValidation::None => "none",
+                crate::function_panel::TreeValidation::Error(_) => "error",
+                crate::function_panel::TreeValidation::Warning(_) => "warning",
             },
         })
     });

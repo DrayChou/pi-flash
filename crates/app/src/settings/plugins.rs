@@ -92,7 +92,7 @@ impl Chat {
             self.mc_set_error(&tr("extensions.source_placeholder"), cx);
             return;
         }
-        self.pkg_op = Some(crate::PkgOp::Install);
+        self.pkg_op = Some(crate::settings::plugins::PkgOp::Install);
         self.mc_cli_op(
             vec!["install".to_string(), source.clone()],
             crate::i18n::tf("extensions.installed", &[("source", source.clone())]),
@@ -106,7 +106,7 @@ impl Chat {
             return;
         }
         self.mc_clear_error(cx);
-        self.pkg_op = Some(crate::PkgOp::Remove(source.clone()));
+        self.pkg_op = Some(crate::settings::plugins::PkgOp::Remove(source.clone()));
         self.mc_cli_op(
             vec!["remove".to_string(), source.clone()],
             crate::i18n::tf("extensions.removed", &[("source", source.clone())]),
@@ -157,7 +157,7 @@ pub(crate) fn mc_plugins_view(
             weak,
             install_input,
             error,
-            matches!(chat.pkg_op, Some(crate::PkgOp::Install)),
+            matches!(chat.pkg_op, Some(crate::settings::plugins::PkgOp::Install)),
             t,
         ))
         .child(two_pane(
@@ -395,7 +395,7 @@ fn pl_detail(
     let weak_trash = weak.clone();
     let trash_src = src.clone();
     // 转圈落点：正在卸载本包 → 垃圾桶转圈；有任一 op → 垃圾桶禁用
-    let removing_this = matches!(chat.pkg_op.as_ref(), Some(crate::PkgOp::Remove(s)) if *s == src);
+    let removing_this = matches!(chat.pkg_op.as_ref(), Some(crate::settings::plugins::PkgOp::Remove(s)) if *s == src);
     let mut trash = div()
         .id("pkg-remove")
         .size(px(28.))
@@ -526,4 +526,12 @@ pub(crate) fn remove_confirm_overlay(
             let _ = weak.update(cx, |c, cx| c.mc_remove_dialog_close(true, cx));
         },
     ))
+}
+
+/// 扩展页后台 CLI op（040）：转圈落点不同——Install 在安装按钮，
+/// Remove 在对应包的垃圾桶上；op 泵收到完成消息即清零。
+#[derive(Debug, Clone)]
+pub(crate) enum PkgOp {
+    Install,
+    Remove(String),
 }

@@ -192,3 +192,21 @@ impl Chat {
     }
 
 }
+
+// ---- @ 文件索引状态类型（自 shell/types.rs 下沉，composer 域自持）----
+
+#[derive(Clone, Default)]
+pub(crate) struct AtIndexState {
+    pub(crate) built: Option<std::time::Instant>,
+    pub(crate) files: std::sync::Arc<Vec<String>>,
+    pub(crate) entries: std::sync::Arc<Vec<crate::services::at_file::FileEntry>>,
+    pub(crate) building: bool,
+}
+
+
+/// 索引重建整体换新 Arc → `Arc::ptr_eq` 失配自然失效，无需手动清。
+pub(crate) type AtFilterCache = (
+    std::sync::Arc<Vec<crate::services::at_file::FileEntry>>,
+    String,
+    Vec<crate::services::at_file::FileEntry>,
+);

@@ -5,13 +5,6 @@
 use gpui::*;
 use crate::*;
 
-/// 扩展页后台 CLI op（040）：转圈落点不同——Install 在安装按钮，
-/// Remove 在对应包的垃圾桶上；op 泵收到完成消息即清零。
-pub(crate) enum PkgOp {
-    Install,
-    Remove(String),
-}
-
 #[derive(Debug, Clone)]
 pub(crate) enum Dialog {
     /// 042：新增 Provider 清单弹窗（两组：自定义 / API KEY；订阅组缓行）
@@ -118,29 +111,6 @@ pub(crate) struct ProjectEntry {
     pub path: PathBuf,
 }
 
-/// 会话 hover 详情卡状态（300ms 离行宽限 + 进卡取消隐藏）。
-#[derive(Debug, Clone)]
-pub(crate) struct HoverCard {
-    pub path: PathBuf,
-    /// 悬停行的真实顶部（prepaint 钩子校正，初始为鼠标 y − 半行高估计值）
-    pub y: f32,
-    /// 悬停行高（prepaint 钩子随 y 同步校正）：详情卡向上弹时卡底 = y + h
-    /// （贴行底），向下弹卡顶 = y（贴行顶）——精准对齐是调用方语义
-    pub h: f32,
-    pub hide_at: Option<std::time::Instant>,
-    /// 创建时刻：悬停满 300ms 才显示（快速滑过列表不弹卡、不干扰行悬停）
-    pub show_at: std::time::Instant,
-    /// show_at 到期后由 120ms tick 置 true 并渲染一次
-    pub shown: bool,
-    pub confirming: bool,
-    /// 鼠标当前是否在卡上（gpui 的行退出/卡进入事件顺序不保证，
-    /// 行退出只在 !card_hovered 时才启动消失宽限）
-    pub card_hovered: bool,
-    /// 标题点击后原地改名（设计稿：卡内变输入框，Enter 提交 / Esc 取消）
-    pub renaming: bool,
-    pub rename_input: Option<gpui::Entity<crate::ui::TextInput>>,
-}
-
 /// 伪标签（draft 首条消息乐观上侧栏）：pi 还没落盘、没有真实 SessionInfo
 /// 时的占位行。FileBound 落地时摘除换真身；prompt 被拒 / 进程死 / 轮末无
 /// 文件时撤除。Chat 侧 Vec 保插入序（侧栏按挂标签先后排）。
@@ -154,50 +124,7 @@ pub(crate) struct PendingTab {
     pub cwd: String,
 }
 
-/// psp 菜单（⋯ 排序两级 / 项目菜单）；(x, y) 为事件坐标锚点。
-#[derive(Debug, Clone)]
-pub(crate) enum PspMenu {
-    /// sub: 0=列表方式, 1=排序方式
-    Sort { sub: Option<u8>, x: f32, y: f32 },
-    Project { path: PathBuf, x: f32, y: f32 },
-}
 
-/// 021 文件树右键菜单（目录/文件两套条目）；(x, y) 为事件坐标锚点。
-#[derive(Debug, Clone)]
-pub(crate) enum TreeMenu {
-    Dir { path: PathBuf, x: f32, y: f32 },
-    File { path: PathBuf, x: f32, y: f32 },
-}
-
-/// 021 行内新建/改名（Zed project_panel `EditState` 移植）：面板同一时刻
-/// 至多一个行内编辑器——Enter 提交 / Esc 取消 / 点击别处（面板 mouse-down
-/// 或焦点迁走）按 Zed 语义收场。`is_dir` 可被提交时的尾随 `/` 升级（仅
-/// 新建，Zed filename_indicates_dir 同款）。
-#[derive(Debug, Clone)]
-pub(crate) struct TreeEdit {
-    pub(crate) kind: TreeEditKind,
-    pub(crate) is_dir: bool,
-    pub(crate) input: gpui::Entity<TextInput>,
-    /// 实时校验态（键入即查，Zed populate_validation_error 移植）
-    pub(crate) validation: TreeValidation,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) enum TreeEditKind {
-    /// 在该目录下新建（Zed leaf_entry_id: None——is_new_entry 判据）
-    New { dir: PathBuf },
-    /// 同目录改名该条目
-    Rename { path: PathBuf },
-}
-
-/// Zed ValidationState 移植：错误（重名/非法）拦 Enter 提交，警告放行。
-#[derive(Debug, Clone, Default, PartialEq)]
-pub(crate) enum TreeValidation {
-    #[default]
-    None,
-    Error(String),
-    Warning(String),
-}
 
 #[derive(Debug, Clone)]
 pub(crate) struct AttachedImage {
@@ -222,28 +149,7 @@ pub(crate) struct MenuItem {
     pub(crate) is_dir: bool,
 }
 
-/// @ 文件索引的每-cwd 缓存条目（pi-web file-index route.ts cache parity：
-/// 后台构建、每 cwd 一份；TTL/容量可配置——services::workspace 的
-/// `at_index_ttl_secs`（默认 60s）/ `at_index_max_projects`（默认 10））。
-/// `files` = git ls-files 原始清单；`entries` = 派生条目（目录 + 文件，
-/// 浅层优先）——菜单打分输入。
-#[derive(Clone, Default)]
-pub(crate) struct AtIndexState {
-    pub(crate) built: Option<std::time::Instant>,
-    pub(crate) files: std::sync::Arc<Vec<String>>,
-    pub(crate) entries: std::sync::Arc<Vec<crate::services::at_file::FileEntry>>,
-    pub(crate) building: bool,
-}
 
-/// @ 菜单过滤记忆化条目：entries 的 Arc 身份 + 查询词 + 上次过滤结果。
-/// 索引重建整体换新 Arc → `Arc::ptr_eq` 失配自然失效，无需手动清。
-pub(crate) type AtFilterCache = (
-    std::sync::Arc<Vec<crate::services::at_file::FileEntry>>,
-    String,
-    Vec<crate::services::at_file::FileEntry>,
-);
-
-/// 042：provider 通路探查状态（保存 key 自动一次 + 详情页【重新探查】）。
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum PillMenu {
@@ -374,10 +280,4 @@ impl FileTab {
             last_edit: None,
         }
     }
-}
-
-#[derive(Debug, Clone)]
-pub(crate) enum McProbe {
-    Running,
-    Done,
 }

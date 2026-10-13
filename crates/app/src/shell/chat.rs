@@ -5,6 +5,10 @@
 //! 字段数与 impl 块数不写死在注释里（随演进漂移，查数用 grep）。
 
 use crate::*;
+use crate::function_panel::{HoverCard, PspMenu, TreeEdit, TreeMenu};
+use crate::session::input::{AtFilterCache, AtIndexState};
+use crate::settings::models::McProbe;
+use crate::settings::plugins::PkgOp;
 
 
 pub(crate) struct Chat {
