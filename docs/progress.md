@@ -12,7 +12,7 @@
 > （2025-09，…）」两节的 2025 日期为早期 agent 幻觉，已随压缩删除——
 > **项目实际始于 2026-09-24**（首次提交 80d80d2）。
 
-## 当前状态（2026-10-10）
+## 当前状态（2026-10-13）
 
 - workspace：`crates/pi-link`（协议层，127+3 测试）+ `crates/app`（GPUI 界面，
   ~173 测试）+ `vendor/pi`（**钉版 1.1.0**，2026-10-10）；gpui 0.2.2 vendored。
@@ -29,6 +29,16 @@
   `docs/bugs.md`（bug 追踪）。beads 清空，新工作 `bd create`。
 
 ## 里程碑索引（新 → 旧；一行一条，细节看对应提交）
+
+- 2026-10-13 **架构整理下半场（bead pzy/4ea/o5z，发版前整理续）**：五巨石
+  拆分（messages/runtime/input/terminal/markdown 全部入红线，protocol.rs
+  假超标随口径修正消除）+ input_area/composer_bar 内切破 300；RPC 直发
+  收口 `SessionRuntime::rpc` 门面（域外 12 处归零）；shell/types.rs 单域
+  类型十枚下沉；Chat 158 直属字段重组为 8 簇子结构（pool/composer/layout/
+  psp/ws/dlg/cfg/aux，跨域摸字段自此在代码里可见可查）；check_arch 口径
+  改非测试行数并挂进发版 checklist；ARCHITECTURE.md §2/§3/§8 对齐实际
+  （草稿双宿主镜像协议、RPC 纪律成文）。全程纯搬家零行为变更，cargo
+  零警告 + app 262+4 / pi-link 133 测试全绿；UI 验收留给用户。
 
 - 2026-10-12 **终端选区可编辑（实机反馈）**：有选区时 Backspace/Delete = 删
   选中内容、粘贴 = 用它替换选区（不再只能删行尾）。PTY 的行缓冲归 shell，

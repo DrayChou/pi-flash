@@ -28,39 +28,43 @@
 
 ```
 crates/app/src/
-├── main.rs            bootstrap(<300 行)
-├── startup.rs         启动编排:恢复层/骨架先行/后台填充管线(§4)
-├── appearance/        主题注册表 + ActiveTheme + icon theme + 字体(§5)
-├── shell.rs           AppShell:布局组装/页面路由(welcome|newSession|session)/
-│                      dock 位置/焦点仲裁 (= 005)
-├── titlebar.rs        顶栏:logo + settings + 窗口控制三按钮 (= 005 上段;
-│                      源:zed platform_title_bar/platform_windows.rs 直搬+stub)
-├── function_panel/    ZED 式 dock(= 015;源:zed workspace/dock.rs 剪裁)
-│   ├── mod.rs         容器:视图互斥切换 + 左右 dock 位置(018 状态栏驱动)
-│   ├── sessions.rs    projectSessionList(= 020;设计规格:ZCode)
-│   ├── file_tree.rs   dirTreeView(= 021;源:zed project_panel 骨架移植)
-│   ├── git_panel.rs   gitPanel(= 022;源:zed git_panel 行渲染,简化版:
-│   │                  Changes|History 双列表 + commit/push,无 diff 视图)
-│   └── (terminal)     终端宿主(第 4 视图;alacritty_terminal 不变)
-├── status_bar.rs      statusControlBar(= 018;源:zed status_bar.rs StatusItemView)
-├── pages/             welcome(= 011)+ new_session(= 012,复用 inputPanel)
-├── session/
-│   ├── mod.rs         sessionView 容器(= 030)
-│   ├── messages.rs    sessionMessagePanel:render_msg/render_block/流式(= 032)
-│   └── input.rs       inputPanel 专用 Composer 实体:编辑器基座+工具栏
-│                      (发送/停止/steer/排队+模型/思考/skill/权限/工具/压缩/
-│                       上下文/图片 pill)+补全菜单(= 031)
-├── agent_session.rs   无头实体:PiSession/事件泵/epoch/on_event 分发;
-│                      单次 spawn + 磁盘直读消息(pi ready 前 RPC 对账)
-├── zed_ui/            vendored zed ui 原语(Icon/Button/ListItem/ContextMenu/
-│                      Tooltip/IndentGuides/Scrollbar/DiffStat 等,剪裁版)
-├── dialogs.rs         ModelSelect/BranchTree/ProjectSelect/GitDiff/文件预览弹窗
-├── ext_ui.rs          扩展 widgets/statusbar/dialog/notice(自 settings/tools.rs 归位)
-├── session_search.rs  搜索弹窗 + 结果页(= 013,细节后置)
-├── settings/          设置 modal(= SettingsPanel;模型/技能/插件/工具/子代理/通用)
-├── ui/                text_input.rs(全 app 唯一文本输入,§6)+ 图标原语
-├── services/          workspace(状态+app_settings)/git/title/branch/format
-└── theme.rs i18n.rs markdown.rs models_config.rs terminal.rs assets.rs
+├── main.rs            mod 树 + 根 re-export + main()（~200 行）
+├── shell/             应用壳域：chat.rs（Chat 实体本体：8 个状态子结构簇
+│                      PoolUi/ComposerUi/LayoutUi/PspUi/WsUi/DlgUi/CfgUi/AuxUi
+│                      + 构造器）+ render.rs（渲染根/焦点仲裁）+ types.rs
+│                      （跨域壳类型 Dialog/PanelTab/DockPanel/ContentView/
+│                      Pill 三件套/FileTab…；单域类型已下沉所属域）
+├── startup.rs         启动唯一入口(010)
+├── agent_session.rs   无头实体:PiSession/事件泵/epoch/on_event 分发
+├── appearance/        主题注册表 + ActiveTheme + 字体(theme.rs,rgba_a 等色助手)
+├── content.rs         内容区状态机 chat/term/md(v54)
+├── dialogs.rs         弹窗域渲染 + 打开器
+├── ext_ui.rs          扩展 UI 面
+├── terminal/          内置终端(alacritty+ConPTY):mod(Element/paint/impl Chat)
+│                      + palette + snapshot + input_encode(键盘/IME→PTY)
+├── i18n.rs assets.rs status_bar.rs titlebar.rs top_panels.rs
+├── automation/        pif-ui 自动化服务(snapshot/handlers)
+├── editor/            编辑器域:kind FileTypeHandler 注册表 + view + tabs +
+│                      markdown/(mod 渲染入口 + highlight syntect + parse
+│                      pulldown + links + doc 文档模式 + wysiwyg/ + render/
+│                      + tests)
+├── function_panel/    左 dock 域:mod(psp 列表渲染 + HoverCard/PspMenu/Tree*
+│                      overlay 状态类型) + psp_actions + psp_overlays +
+│                      file_tree + file_actions + git_panel
+├── remote_control/    微信桥(060;mod/menu/pipeline)
+├── services/          无 UI 助手(pi-web lib/ parity)
+├── session/           会话域:mod(sessionView 组装/列表) + runtime/(mod 结构+
+│                      生命周期+泵、events 事件臂、send 发送路径+rpc 门面、
+│                      nav 定位对账、ingest 摄入) + messages/(mod、model 类型
+│                      与尾窗解码、cards 工具/压缩卡、turn 行轮渲染、images
+│                      解码缓存) + input/(mod Chat 委托层、area 主输入区+
+│                      键路由、bar 控件行、ctx_tip 用量面板) + pool + chat_list
+│                      + menu + attachments + fork + diff + pickers +
+│                      new_session + tools_recipe
+├── settings/          设置六页(models/general/plugins/skills/mcp/
+│                      custom_models/misc/remote;McProbe/PkgOp 各归其页)
+└── ui/                通用件:tokens/button/text_input/composer_input/dropdown/
+                       overlay/popup/vlist/psp_scrollbar/tooltip
 ```
 
 pi-link:sessions.rs 索引化扫描(group 目录定位 + tail-seek 摘要 + (mtime,size)
@@ -81,17 +85,34 @@ Chat 是壳:池(runtimes map)+ 注意力指针 + 侧栏/git/文件/终端/设置
 
 ## 3. 状态所有权
 
+Chat 是壳实体，**直属字段只有 8 个子结构**（4ea，2026-10-13）：`pool`（会话池/
+指针/缓存/启动闸门）、`composer`（输入面板 031）、`layout`（dock/路由/分隔条/
+flyout/焦点）、`psp`（项目/会话列表/搜索/通知点）、`ws`（文件树/编辑器/终端/
+git/cwd）、`dlg`（弹窗/悬浮层/右键菜单/toast/设置句柄）、`cfg`（设置页配置状态）、
+`aux`（扩展 UI/更新/远程/系统提示词弹窗）。跨域字段访问在代码里可见可查：
+`chat.ws.tree_rows` vs `chat.dlg.tree_menu` 一眼可辨归属。
+
 | 状态 | 属主 |
 |---|---|
-| RPC 会话/事件泵/epoch/消息数据 | AgentSession(无头) |
-| 消息渲染/折叠/流式状态 | session/messages |
-| 编辑器草稿/附件/pill 菜单/history | session/input(Composer 实体) |
-| 会话列表/搜索/改名/删除确认/分钟 ticker | function_panel/sessions |
-| cwd/branch/git 状态/页面路由/dock 位置 | shell |
+| RPC 会话/事件泵/epoch | AgentSession（无头）+ `session/runtime/`（泵在 runtime/mod.rs） |
+| 消息数据/折叠/流式状态 | SessionRuntime 字段（`session/runtime/`）；**渲染**是
+  `session/messages/`（model/cards/turn/images 四件，无状态自由函数）；
+  列表组装在 session/mod.rs |
+| 编辑器草稿/附件/历史（**双宿主镜像**） | Chat.composer（UI 侧）+ SessionRuntime
+  （会话侧）各一份；镜像协议两个写入点：切会话 `pool.rs switch_to`（flush/load）、
+  发送前 `input/mod.rs with_active_editor`（Chat→Runtime 刷草稿）。改镜像协议
+  只动这两个方法 |
+| 会话列表渲染/搜索弹窗 | Chat.psp（状态）+ function_panel（psp 渲染）+ dialogs.rs（搜索弹窗） |
+| cwd/branch/git/文件树/终端/编辑器 tab | Chat.ws |
+| 弹窗/右键菜单/toast/设置面板句柄 | Chat.dlg |
+| 设置页配置状态（mc_*/provider registry/mcp） | Chat.cfg；面板实体渲染在 settings/ |
 | 窗口 bounds/布局状态 | 状态文件(services/workspace,shell 恢复) |
-| settings 面板全部状态 | Settings 实体(自持) |
-| 扩展 UI 状态 | ExtUi |
+| 扩展 UI/自动更新/远程桥 | Chat.aux |
 | 主题/语言/字体 | 全局(appearance/i18n) |
+
+**RPC 发送纪律**（2026-10-13 收口）：`Command` 直发只允许出现在
+`session/runtime/` 域内与 agent_session.rs；域外一律走 `SessionRuntime::rpc()`
+门面（无进程返回 false）。新命令接入只改 runtime 域。
 
 ## 4. 启动(pi-web 启动清单 × zed 机制)
 
@@ -174,10 +195,14 @@ clear+替换对账(权威投影替换预渲染,修复叠加翻倍)。已知偏�
 
 ## 8. 守护规则(scripts/check_arch.sh,阶段 F 落地)
 
-1. 单文件 ≤1500 行;render 函数 ≤300 行
+1. 单文件**非测试行数** ≤1500（`#[cfg(test)]` 块与文件式测试模块不计；
+   2026-10-13 改口径——测试体量不再惩罚生产代码）；顶层视图函数 ≤300 行
+   （仅扫 crates/app；视图函数在本仓均为顶层自由函数）
 2. 禁止 `on_key_down` 字符匹配输入模式
 3. `cargo build` 无新警告;`cargo test` 全绿
 4. 新 UI 字符串走 `tr()`
+
+守卫挂进发版 checklist（RELEASE.md §2）——发版前必跑 `scripts/check_arch.sh`。
 
 ## 9. 迁移记录
 
@@ -226,7 +251,19 @@ clear+替换对账(权威投影替换预渲染,修复叠加翻倍)。已知偏�
   用户本机 Zed 扩展目录),`tmp/gen_themes.py` 移植进 theme.rs(半透明色按
   主题底色烘焙);registry() 凑齐 006 定案 7 套;PI_FLASH_THEME 实测
   nord-dark/one-light 截图通过。
+- **发版前整理 P1–P4(2026-10-12;0dc29a0/3a9b52c/ac79fa3+6e95584/0565d3d)**:
+  theme 归并 appearance、9 个 actions_* 动词切片按调用图归并域目录、
+  main.rs 2326→204(Chat 实体/渲染根/域方法搬家,shell/{chat,render,types})。
+- **巨石拆分+边界纪律(2026-10-13,bead pzy/4ea/o5z)**:messages 2840→五件
+  (model/cards/turn/images/tests 外移)、runtime 2407→五件(mod/events/send/
+  nav/ingest)、input 1404→四件(area/bar/ctx_tip/mod)、terminal 2119→四件
+  (palette/snapshot/input_encode/mod)、markdown 3106→六件(mod/highlight/
+  parse/links/doc/测试外移);input_area 392→286、composer_bar 327→286
+  (wire_composer_keys 键路由、bar_left_group 内切);RPC 直发收口
+  SessionRuntime::rpc 门面(域外 9 文件 12 处归零);shell/types.rs 单域类型
+  十枚下沉;Chat 158 直属字段重组为 8 簇子结构(pool/composer/layout/psp/
+  ws/dlg/cfg/aux,跨域摸字段自此在代码里可见);check_arch 口径改非测试
+  行数并挂发版 checklist。
 - 待做:G+(功能细化,等详细要求;含 InputPanel/SessionsPanel/FunctionPanel
-  实体升级、外观字体设置 tab、032 气泡控制栏、013 会话搜索、check_arch
-  超标函数拆分:main.rs 2252 行 + 7 个 >300 行视图)。
+  实体升级、外观字体设置 tab、032 气泡控制栏、013 会话搜索)。
   待补交互实测:dock 换边/git 面板操作/池多会话并发场景。

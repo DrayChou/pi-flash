@@ -72,18 +72,22 @@ crates/pi-link/src/     钉版 pi RPC 协议层（typed bridge，测试在此）
   automation.rs           pif-ui 自动化协议（NDJSON over TCP 127.0.0.1）
   bin/                    附属可执行（pif-ui CLI 等）
 
-crates/app/src/         GPUI 界面（Chat = 全应用状态实体，域方法以 impl Chat
-                        块形式住在各领域文件——这是本仓的核心组织方式）
+crates/app/src/         GPUI 界面（Chat = 全应用状态实体：直属字段只有 8 个
+                        状态子结构 pool/composer/layout/psp/ws/dlg/cfg/aux——
+                        跨域摸字段在代码里可见；域方法以 impl Chat 块形式住在
+                        各领域文件——这是本仓的核心组织方式）
   main.rs                 只剩 mod 树 + 根 re-export（shell::{Chat,types::*}）+ main()
   shell/                  应用壳域（P3 自 main.rs 拆出）：types 界面类型簇
-                          （Dialog/PanelTab/FileTab/HoverCard/Pill*）/ chat Chat
-                          实体本体+构造器 / render 渲染根（焦点仲裁+overlay 叠放）
+                          （Dialog/PanelTab/FileTab/Pill*，单域类型已下沉）/
+                          chat Chat 实体本体（8 簇子结构+构造器）/ render Chat
+                          渲染根（焦点仲裁+overlay 叠放）
   startup.rs              启动唯一入口（010）：Globals/ProjectCtx、boot 泵、splash
   agent_session.rs        AgentSession：RPC 进程所有权、事件泵、状态机
   content.rs              内容区状态机 chat / term / md（v54）
   dialogs.rs              弹窗域：模态渲染（ModelSelect/GitDiff/SessionSearch/…）+ 打开器
   ext_ui.rs               扩展 UI 面 + 协议动作 on_ext_ui/ext_respond（040）
-  terminal.rs             内置终端（alacritty+ConPTY）+ Chat 终端方法
+  terminal/               内置终端（alacritty+ConPTY）：mod 渲染/impl Chat +
+                          palette + snapshot + input_encode（键盘/IME→PTY）
   i18n.rs                 三语（zh-CN 为源）
   models_config.rs        enabledModels 白名单编辑（pi-web port）
   assets.rs               图标编入二进制；status_bar.rs 状态栏；titlebar.rs topbar；
@@ -101,10 +105,15 @@ crates/app/src/         GPUI 界面（Chat = 全应用状态实体，域方法�
   services/               无 UI 助手（pi-web lib/ parity）：file_icons / at_file /
                           file_index / file_tree / format / git / paths_sort / sound /
                           token_probe / updater / watcher / workspace / shell_open
-  session/                会话域：runtime 会话池实体（030）+ pool 池 Chat 方法、
-                          messages、chat_list 滚屏、input composer（031）+ menu
-                          补全菜单 + attachments 附件、fork、diff、model/plugin/mcp
-                          picker、new_session（012）、tools_recipe 档位配方（034）
+  session/                会话域：runtime/ 会话池实体（030；mod 生命周期+泵、
+                          events 事件臂、send 发送+rpc 门面、nav 定位对账、
+                          ingest 摄入）+ messages/（032；mod、model 类型与尾窗
+                          解码、cards 工具/压缩卡、turn 行轮渲染、images 解码
+                          缓存）+ input/（031 composer；mod 委托层、area 主输入
+                          区、bar 控件行、ctx_tip 用量面板）+ pool 池 Chat 方法、
+                          chat_list 滚屏、menu 补全菜单 + attachments 附件、
+                          fork、diff、model/plugin/mcp picker、new_session（012）、
+                          tools_recipe 档位配方（034）
   settings/               设置面板六页（界面/模型/技能/扩展/MCP/其他）+ widgets 公共件
   ui/                     通用件：tokens（UI组件规范唯一代码落点）、button、text_input、
                           composer_input、dropdown、overlay、popup、vlist、psp_scrollbar
