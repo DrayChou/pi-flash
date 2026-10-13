@@ -909,6 +909,7 @@ pub fn measure_cell(window: &Window) -> (f32, f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gpui::Keystroke;
     use alacritty_terminal::vte::ansi::Processor;
 
     fn test_term(cols: usize, rows: usize, text: &[u8]) -> Term<Proxy> {
