@@ -36,9 +36,9 @@ fn plugin_button(
         )
     };
     let active = is_custom;
-    // 2026-10-13 用户定夺：去掉「扩展」二字——按钮 = plug 图标 + 计数
-    // `(n)`；n=0 时仅图标（点开菜单勾选扩展的入口仍在）
-    let label = if n > 0 { format!("({n})") } else { String::new() };
+    // 2026-10-13 用户定夺：去掉「扩展」二字 + 方括号计数——按钮 = plug 图标
+    // + `[n]`；n=0 也显示 `[0]`（已挂载扩展数的常驻视觉提示）
+    let label = format!("[{n}]");
     let color = if !active {
         t.text_faint
     } else if open {
@@ -52,6 +52,7 @@ fn plugin_button(
         .flex()
         .items_center()
         .gap(px(5.))
+        .px(px(8.))
         .rounded(px(8.))
         .text_size(ui(BAR_FONT))
         .text_color(rgb(color))
@@ -108,6 +109,7 @@ fn mcp_button(
         .flex()
         .items_center()
         .gap(px(5.))
+        .px(px(8.))
         .rounded(px(8.))
         .text_size(ui(BAR_FONT))
         .text_color(rgb(color))
@@ -396,12 +398,14 @@ fn bar_left_group(
                 )
                 .into_any_element()
         } else {
-        // 左侧：图片 + 工具预设（内容裸宽，组内间距 10px，与右侧一致）
+        // 左侧：图片 + 工具预设（组内盒间隔 10px；按钮盒 8px 内边距不再贴字
+        // ——2026-10-13 用户定夺，贴字时 10px 间隔观感拥挤）
         div().flex().items_center().gap(px(10.)).child(
             // 图片
             div()
                 .id("attach-image")
                 .pl(px(8.)) // 图片与正文首行左对齐：正文=编辑行6+组件12=18，图片=栏10+8=18
+                .pr(px(8.))
                 .flex()
                 .items_center()
                 .text_color(rgb(if locked { t.text_faint } else { t.text_muted }))
@@ -427,6 +431,7 @@ fn bar_left_group(
                 .flex()
                 .items_center()
                 .gap(px(5.))
+                .px(px(8.))
                 .rounded(px(8.))
                 .text_size(crate::appearance::ui_size(BAR_FONT))
                 .text_color(rgb(if tools_locked {
