@@ -2,6 +2,32 @@
 
 All notable changes to released versions live here; see `docs/CHANGELOG规范.md` for the format.
 
+## [0.1.5] - 2026-10-13
+
+In-app updates gain mirror failover and a download percentage, the context usage popup gets a redesign, plus a batch of chrome alignment tweaks.
+
+### Install & Update
+
+```bash
+npm install -g pi-flash@latest   # first install; re-run the same command to update
+pi-flash
+```
+
+Requires Node.js ≥ 22.19.
+Or download the zip, unzip it and double-click `pi-flash.exe` — no Node needed.
+Windows x64 only.
+
+### New
+- In-app update mirror failover: payload downloads speed-test the direct connection (abandoned after a 3s average below 128KB/s) and walk through mirrors until one hits; checksums are pinned to the official hash over a direct connection to prevent cross-packed downloads. `PI_FLASH_MIRROR` / `PI_FLASH_MIRRORS` share the installer's rules. (6734db6)
+- In-app update download percentage: the version slot now refreshes in place with NN% (omitted when the server sends no content-length). (8e82205)
+- Context usage popup redesign: a title line (used / window · %) with an accent progress bar, a per-category breakdown row (7-bucket estimate, descending color dots) and the cache-hit rate, in a 420px two-column grid with thousand-separated token counts. (bf03158, c17247c, 6b6c827, a618b1c)
+
+### Bug fixes
+- Phantom keybinding hints: the tooltips for Ctrl+P / N / K could show fake keys like Win+P (gpui's cmd is a platform modifier); the cmd-* twin bindings were removed. (d63039e)
+
+### Improvements
+- A batch of chrome alignment (owner-decided): topbar and statusbar are now equal height at 40px (window control buttons follow at 42×40); bar tabs fit the bar height; the statusbar settings button's right edge aligns with the list right line and the first tab card's left edge sits on the icon alignment line; the icon alignment line collapses into a single token (11→12px); composer right-group button spacing matches the left group (15px). (d2760c5, c100b22, 61981c5, 418512c, d00de94, e015300, 189008a)
+
 ## [0.1.4] - 2026-10-13
 
 A UI polish batch: bundled pi upgraded to 1.2.0, global shortcuts and keybinding hints, a set of completion-menu / cross-project fixes, and several owner-decided UI tweaks.
