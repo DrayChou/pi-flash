@@ -641,7 +641,12 @@ impl crate::Chat {
 
     /// 揭幕后的两个延迟加载钩子（010 §延迟加载「版本更新检查」）：
     /// ① 新版本首启 → 自动开「更新日志」tab；② 后台检查更新。
+    /// 关闭时（debug 默认）全程不动，含 last_seen 记账——dev 构建跑一版就
+    /// 写 last_seen=新版，正式版更新后首启便永远不算「新版本首启」。
     pub(crate) fn spawn_startup_update_hooks(&mut self, cx: &mut gpui::Context<Self>) {
+        if !Self::checks_enabled() {
+            return;
+        }
         let cur = current_version().to_string();
         match read_last_seen() {
             Some(seen) if version_gt(&cur, &seen) => {
