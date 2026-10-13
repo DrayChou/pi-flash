@@ -2,6 +2,39 @@
 
 All notable changes to released versions live here; see `docs/CHANGELOG规范.md` for the format.
 
+## [0.1.4] - 2026-10-13
+
+A UI polish batch: bundled pi upgraded to 1.2.0, global shortcuts and keybinding hints, a set of completion-menu / cross-project fixes, and several owner-decided UI tweaks.
+
+### Install & Update
+
+```bash
+npm install -g pi-flash@latest   # first install; re-run the same command to update
+pi-flash
+```
+
+Requires Node.js ≥ 22.19.
+Or download the zip, unzip it and double-click `pi-flash.exe` — no Node needed.
+Windows x64 only.
+
+### New
+- Global shortcuts: Ctrl+P open project, Ctrl+N new session, Ctrl+K search sessions — available anywhere in the app. (ec16a1e)
+- Keybinding hints: sidebar header and project-row buttons now have tooltips with a keybinding chip that follows rebinds automatically; tooltip delay shortened to 350ms. (ec16a1e, 670869a, c55c993)
+- Binary file handling: unparseable files open a tab with a gray page showing the detected type plus an "open with default app" fallback (Zed-style). (25e9965)
+- Markdown WYSIWYG toggle: new switch on the Settings > Interface page, off by default. (bcb8e04)
+- Session rename box upgraded: three auto-growing lines, selects all on open with the cursor anchored at the start, so typing replaces the whole name. (04cbbb2)
+
+### Bug fixes
+- @ / slash completion menu: menu items were not clickable (clicking did nothing and the raw query was sent, losing the directory prefix), and Enter accepted item 0 regardless of the selection. Both fixed. (7913e03, 3fe693c)
+- Cross-project session switching: opening a session from another project left the file tree / changes panel on the previous project (empty tree, wrong changes); ghost-tab clicks and the automation entry are covered too. (5d708ff, 1e46aaa)
+- Session rename box opened blank (text scrolled horizontally off-screen); the first frame now shows the full text selected. (72e0dfc)
+- About page author name went missing (a call site dropped in the semantic-key migration). (63516a3)
+
+### Improvements
+- Bundled pi upgraded from 1.1.0 to 1.2.0, with all protocol review points passing. (3695715)
+- Panels decoupled from the content area: switching the left dock no longer swaps the content view — switching to the file tree on a chat page no longer replaces the conversation with a document. (a7eca88)
+- A batch of UI tweaks (owner-decided): composer extensions button becomes a plug icon + [n] count; dock collapse button aligned with the list icon line; terminal icon unified to the boxed style; "more" icon switched to a bare lucide ellipsis; eye/search toolbar buttons brought up to spec; v5 wordmark enlarged and the welcome logo +20%. (1a2121a, b7e7a71, 0583b77, 7c2024b, 9c03115, 3d3b656, dd985f6, f84e8c5, 91c51d0, c0ab7fa)
+
 ## [0.1.3] - 2026-10-13
 
 Instant sidebar feedback + a faster download path: ghost tabs appear the moment you send, and slow downloads switch mirrors automatically.
