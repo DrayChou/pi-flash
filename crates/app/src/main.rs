@@ -132,18 +132,15 @@ fn main() {
                 // 图片粘贴：同深度后注册者优先（覆盖组件 ctrl-v→Paste），
                 // composer 内层处理图片附件，其余输入框由根节点兜底重派发
                 KeyBinding::new("ctrl-v", ComposerPaste, Some("Input")),
-                KeyBinding::new("cmd-v", ComposerPaste, Some("Input")),
                 // 023 fileView：编辑器里 Ctrl+S 保存（composer 等其他 Input
                 // 上下文内无人监听该 action，自然空转）
                 KeyBinding::new("ctrl-s", FileSave, Some("Input")),
-                KeyBinding::new("cmd-s", FileSave, Some("Input")),
                 // psp 全局三键（无上下文 = 任意焦点可用；组件输入框未占这三个键）
+                // 禁注册 cmd-*：gpui 的 cmd 是 platform 修饰键（≠ctrl 别名），
+                // 后注册会赢得 tooltip 键位反查，Windows 上显示成 Win+P
                 KeyBinding::new("ctrl-p", OpenProjectPicker, None),
-                KeyBinding::new("cmd-p", OpenProjectPicker, None),
                 KeyBinding::new("ctrl-n", NewSession, None),
-                KeyBinding::new("cmd-n", NewSession, None),
                 KeyBinding::new("ctrl-k", OpenSessionSearch, None),
-                KeyBinding::new("cmd-k", OpenSessionSearch, None),
             ]);
             appearance::sync_gpui_tokens(cx);
             // startup restore (§4)：每次启动默认最大化（位置不持久化——
