@@ -101,9 +101,9 @@ assets! {
     "icons/rotate-ccw.svg",
     // v54 UI: lucide additions
     "icons/sliders-horizontal.svg",
-    // 「更多」唯一图标：lucide circle-ellipsis（2026-10-10 统一，
-    // 原横/竖 ellipsis 两枚废除）
-    "icons/circle-ellipsis.svg",
+    // 「更多」唯一图标：lucide ellipsis 裸三点（2026-10-13 用户定夺，
+    // 取代 2026-10-10 的 circle-ellipsis）
+    "icons/ellipsis.svg",
     "icons/info.svg",
     "icons/folder-open.svg",
     "icons/folder-closed.svg",

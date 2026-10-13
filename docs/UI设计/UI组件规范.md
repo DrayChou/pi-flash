@@ -102,7 +102,7 @@
 规则：
 - 图标↔文字 gap 8（SP4）；图标在按钮内默认 ICON_SM，图标按钮走 §5.2 的方形槽。
 - 关闭 × 全项目统一 ICON_XS（12）——存量 8/11/13 三种杂值收敛掉。
-- **「更多」图标全项目唯一 = lucide circle-ellipsis（带圈三点）**，横/竖 ellipsis 两枚已废除（2026-10-10 定夺）；禁止再引入第二种 more 变体。
+- **「更多」图标全项目唯一 = lucide ellipsis（裸三点）**（2026-10-13 用户定夺，取代 2026-10-10 的 circle-ellipsis 带圈三点）；禁止再引入第二种 more 变体。
 - iconfont「新建会话」19px 等**品牌特例**仅限 startup logo（88）与该处，不得扩散。
 - icon hover 动效（scale 1.06 + 上抬 1px）按 v55 既有规格，见 `docs/UI设计/主界面UI设计说明.md` §14。
 
