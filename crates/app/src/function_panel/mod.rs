@@ -234,11 +234,10 @@ pub(crate) fn psp_view(
     // 之前 title 行放滚动容器内时，其按钮 hitbox 被 scroll mask 裁掉，
     // 点击全部失效——这也是设计的本意：title 行不是列表内容。
     let t = T();
-    // 统一对齐线（v55）：col 外层 px 10 是唯一的水平留白源——title 行与
-    // 列表同处一个坐标系；行内 pl/pr 10 叠加其上（图标列 = 10+10），
-    // title 行自身 px 0（文字 = 10，与下方 folder 图标…不对，folder 图标
-    // 在行内 pl 10 → 20px）。title 文字要与 folder 图标同线 → title 行
-    // 也挂 pl 10（= 10 容器 + 10 行 = 20px 同线）。右线同理。
+    // 统一对齐线（2026-10-13 改）：topbar 收放钮贴左 12px（30px 钮盒、
+    // 18px 图标居中）→ 图标视觉线 = 12+6 = 18px。列表侧 col 外层 px 10 是
+    // 唯一水平留白源，行内 pl 8 叠加其上 = 10+8 = 18px，与钮图标同线；
+    // title 行挂 pl 8（文字同线）。右线不动（行 pr 10 / title pr 10）。
     let mut col = div()
         .flex_1()
         .min_h_0()
@@ -366,7 +365,7 @@ fn title_row(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> g
         .h(px(30.))
         .flex()
         .items_center()
-        .pl(px(10.))
+        .pl(px(8.))
         .pr(px(10.))
 
         .text_size(crate::appearance::ui_size(12.))
@@ -505,7 +504,7 @@ fn project_row(
         .flex()
         .items_center()
         .gap(px(8.))
-        .pl(px(10.))
+        .pl(px(8.))
         .pr(px(10.))
         .rounded(px(8.))
         .cursor_pointer()
@@ -784,7 +783,7 @@ fn session_row_view(
         .flex()
         .items_center()
         .gap(px(8.))
-        .pl(px(10.))
+        .pl(px(8.))
         .pr(px(10.))
         .rounded(px(8.))
         .cursor_pointer()
@@ -957,7 +956,7 @@ fn pending_row_view(
                 .flex()
                 .items_center()
                 .gap(px(8.))
-                .pl(px(10.))
+                .pl(px(8.))
                 .pr(px(10.))
                 .rounded(px(8.))
                 .cursor_pointer()
