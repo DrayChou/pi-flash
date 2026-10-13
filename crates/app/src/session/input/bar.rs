@@ -52,8 +52,7 @@ fn plugin_button(
         .flex()
         .items_center()
         .gap(px(5.))
-        .px(px(8.))
-        .rounded(px(8.))
+                .rounded(px(8.))
         .text_size(ui(BAR_FONT))
         .text_color(rgb(color))
         .child(icon_hover("plug", 13., color))
@@ -109,8 +108,7 @@ fn mcp_button(
         .flex()
         .items_center()
         .gap(px(5.))
-        .px(px(8.))
-        .rounded(px(8.))
+                .rounded(px(8.))
         .text_size(ui(BAR_FONT))
         .text_color(rgb(color))
         .cursor_pointer()
@@ -398,14 +396,13 @@ fn bar_left_group(
                 )
                 .into_any_element()
         } else {
-        // 左侧：图片 + 工具预设（组内盒间隔 10px；按钮盒 8px 内边距不再贴字
-        // ——2026-10-13 用户定夺，贴字时 10px 间隔观感拥挤）
-        div().flex().items_center().gap(px(10.)).child(
+        // 左侧：图片 + 工具预设（内容裸宽，组内间距 15px——2026-10-13 用户
+        // 定夺；盒间距即字形间距，不做按钮内边距）
+        div().flex().items_center().gap(px(15.)).child(
             // 图片
             div()
                 .id("attach-image")
                 .pl(px(8.)) // 图片与正文首行左对齐：正文=编辑行6+组件12=18，图片=栏10+8=18
-                .pr(px(8.))
                 .flex()
                 .items_center()
                 .text_color(rgb(if locked { t.text_faint } else { t.text_muted }))
@@ -431,8 +428,7 @@ fn bar_left_group(
                 .flex()
                 .items_center()
                 .gap(px(5.))
-                .px(px(8.))
-                .rounded(px(8.))
+                                .rounded(px(8.))
                 .text_size(crate::appearance::ui_size(BAR_FONT))
                 .text_color(rgb(if tools_locked {
                     t.text_faint
