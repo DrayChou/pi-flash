@@ -206,7 +206,7 @@ pub(super) fn dispatch(
                 .get(&key)
                 .cloned()
                 .ok_or_else(|| not_found(format!("池里没有 key={key:?} 的会话（runtimes 见 ui.snapshot sessions 面）")))?;
-            chat.switch_to(rt, cx);
+            chat.switch_pool_rt(rt, cx);
             ok()
         }
         method::SESSION_DELETE => {

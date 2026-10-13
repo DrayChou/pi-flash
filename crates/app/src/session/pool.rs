@@ -303,10 +303,27 @@ impl Chat {
         cx.notify();
     }
 
+    /// 池内直切（会话行点击/伪标签行/自动化 session.switch）：目标会话属
+    /// 别的项目时先重挂工作区再切注意力——switch_to 本身是纯注意力切换，
+    /// 跨项目场景绕过 open_session 的入口都必须走这里（用户实测
+    /// 2026-10-13：池命中跨项目只改 cwd 不重建，树/变更面板停在上一项目）。
+    pub(crate) fn switch_pool_rt(
+        &mut self,
+        rt: gpui::Entity<session::runtime::SessionRuntime>,
+        cx: &mut Context<Self>,
+    ) {
+        let cwd = rt.read(cx).cwd.clone();
+        if !same_ws(&cwd.to_string_lossy(), &self.ws.cwd.to_string_lossy()) {
+            self.ws.cwd = cwd;
+            self.remount_workspace();
+        }
+        self.switch_to(rt, cx);
+    }
+
     /// 跨项目切换的工作区重挂（cwd 已由调用方写入 self.ws.cwd）：树根/
     /// git/文件树/fs watcher/cwd 外单文件监听全套跟着新 cwd 重建。
     /// open_session 的池命中与新运行时两条路径共用。
-    fn remount_workspace(&mut self) {
+    pub(crate) fn remount_workspace(&mut self) {
         self.ws.branch = read_branch(&self.ws.cwd);
         self.ws.expanded_dirs.clear();
         // 文件树：根项目行默认展开
@@ -341,20 +358,13 @@ impl Chat {
         let key = path.to_string_lossy().to_string();
         // pool hit: switch attention — instant, all messages in place
         if let Some(rt) = self.pool.runtimes.get(&key).cloned() {
-            // 跨项目池命中同样要重挂工作区（此前只改 cwd 不重建，常驻池下
-            // 第二次访问别项目的会话必走这里——树/变更面板停留在上一个
-            // 项目，用户实测 2026-10-13）
-            if !same_ws(&cwd.to_string_lossy(), &self.ws.cwd.to_string_lossy()) {
-                self.ws.cwd = cwd;
-                self.remount_workspace();
-            }
             self.dlg.renaming = None;
             self.dlg.rename_input = None;
             self.dlg.confirm_delete = None;
             if rename {
                 rt.update(cx, |r, _| r.pending_rename = true);
             }
-            self.switch_to(rt, cx);
+            self.switch_pool_rt(rt, cx);
             return;
         }
         // new runtime: tail render first (cache or disk), process spawns in

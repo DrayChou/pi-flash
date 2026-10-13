@@ -967,7 +967,7 @@ fn pending_row_view(
                     let key = key_click.clone();
                     let _ = w_click.update(cx, |c, cx| {
                         if let Some(rt) = c.pool.runtimes.get(&key).cloned() {
-                            c.switch_to(rt, cx);
+                            c.switch_pool_rt(rt, cx);
                         }
                     });
                 })
