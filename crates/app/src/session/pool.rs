@@ -303,6 +303,24 @@ impl Chat {
         cx.notify();
     }
 
+    /// 跨项目切换的工作区重挂（cwd 已由调用方写入 self.ws.cwd）：树根/
+    /// git/文件树/fs watcher/cwd 外单文件监听全套跟着新 cwd 重建。
+    /// open_session 的池命中与新运行时两条路径共用。
+    fn remount_workspace(&mut self) {
+        self.ws.branch = read_branch(&self.ws.cwd);
+        self.ws.expanded_dirs.clear();
+        // 文件树：根项目行默认展开
+        self.ws.expanded_dirs.insert(self.ws.cwd.clone());
+        self.refresh_sessions();
+        self.load_project_files();
+        // 换工作区：git 状态/树缓存/fs watcher 全部跟着 cwd 重挂
+        //（此前这里漏 refresh_git，git 面板会显示上一个项目的状态）
+        self.refresh_git();
+        self.attach_fs_watch();
+        // cwd 变了：cwd 外单文件监听面跟着重算（对齐 switch_project）
+        self.retain_file_watches();
+    }
+
     pub(crate) fn open_session(&mut self, path: PathBuf, rename: bool, cx: &mut Context<Self>) {
         // recents (003-session管理): opening is activity — promote to the
         // top of the recent-activity list (persist throttled)
@@ -323,8 +341,13 @@ impl Chat {
         let key = path.to_string_lossy().to_string();
         // pool hit: switch attention — instant, all messages in place
         if let Some(rt) = self.pool.runtimes.get(&key).cloned() {
-            self.ws.cwd = cwd;
-            self.ws.branch = read_branch(&self.ws.cwd);
+            // 跨项目池命中同样要重挂工作区（此前只改 cwd 不重建，常驻池下
+            // 第二次访问别项目的会话必走这里——树/变更面板停留在上一个
+            // 项目，用户实测 2026-10-13）
+            if !same_ws(&cwd.to_string_lossy(), &self.ws.cwd.to_string_lossy()) {
+                self.ws.cwd = cwd;
+                self.remount_workspace();
+            }
             self.dlg.renaming = None;
             self.dlg.rename_input = None;
             self.dlg.confirm_delete = None;
@@ -362,16 +385,7 @@ impl Chat {
         self.subscribe_runtime(&rt, cx);
         if !same_ws(&cwd.to_string_lossy(), &self.ws.cwd.to_string_lossy()) {
             self.ws.cwd = cwd;
-            self.ws.branch = read_branch(&self.ws.cwd);
-            self.ws.expanded_dirs.clear();
-            // 文件树：根项目行默认展开
-            self.ws.expanded_dirs.insert(self.ws.cwd.clone());
-            self.refresh_sessions();
-            self.load_project_files();
-            // 换工作区：git 状态/树缓存/fs watcher 全部跟着 cwd 重挂
-            //（此前这里漏 refresh_git，git 面板会显示上一个项目的状态）
-            self.refresh_git();
-            self.attach_fs_watch();
+            self.remount_workspace();
         }
         set_last_open(&self.ws.cwd.to_string_lossy(), &path.to_string_lossy());
         self.dlg.renaming = None;
