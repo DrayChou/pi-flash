@@ -476,6 +476,9 @@ fn files_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
                     "conflict": f.and_then(|f| f.conflict.as_ref()).map(|c| format!("{c:?}")),
                     "md_source": f.map(|f| f.md_source).unwrap_or(false),
                     "has_editor": f.map(|f| f.editor.is_some()).unwrap_or(false),
+                    // 二进制占位 tab（无法打开灰屏）：has_editor 恒 false 的
+                    // 区分位，pif-ui 断言「ttf 开出灰屏 tab」用
+                    "binary": f.map(|f| f.binary).unwrap_or(false),
                     "content_len": f.map(|f| f.content.len()).unwrap_or(0),
                     "editor_len": f.and_then(|f| f.editor.as_ref()).map(|e| e.read(cx).value().len()).unwrap_or(0),
                     // 024 P2：光标 doc 字节偏移（pif-ui 原子跳词/reveal 断言）

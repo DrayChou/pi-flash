@@ -254,8 +254,11 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("file_view.name_label", "文件名（可含子目录）", "檔案名（可含子目錄）", "File name (subdirs allowed)"),
     ("file_view.create_hint", "在项目根下创建；Enter 确认，Esc 取消", "在專案根下建立；Enter 確認，Esc 取消", "Created under the project root; Enter to confirm, Esc to cancel"),
     ("file_view.too_large", "文件超过 10MB，不打开", "檔案超過 10MB，不開啟", "File exceeds 10MB, not opening"),
-    ("file_view.binary", "二进制文件，不打开", "二進位檔案，不開啟", "Binary file, not opening"),
     ("file_view.read_failed", "读取失败", "讀取失敗", "Read failed"),
+    // 无法打开灰屏（二进制占位 tab，仿 Zed Could not open file）
+    ("file_view.unsupported_type", "无法打开 {ext} 类型文件", "無法開啟 {ext} 類型的檔案", "Cannot open {ext} files"),
+    ("file_view.binary_unsupported", "二进制文件不受支持", "不支援二進位檔案", "Binary files are not supported"),
+    ("file_view.open_in_default_app", "在默认应用中打开", "以預設應用程式開啟", "Open in Default App"),
     ("file_view.save_failed", "保存失败", "儲存失敗", "Save failed"),
     // 051-apikey管理
     ("conflict.configured_vault", "已配置 · 系统凭据库", "已設定 · 系統憑證庫", "Configured · OS vault"),

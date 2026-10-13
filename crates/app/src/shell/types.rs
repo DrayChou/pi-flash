@@ -261,6 +261,10 @@ pub(crate) struct FileTab {
     pub(crate) reload_pending: bool,
     /// 最后一次用户编辑时刻（自动保存静默期判定）
     pub(crate) last_edit: Option<std::time::Instant>,
+    /// 二进制占位 tab（仿 Zed Could not open file：二进制照开 tab，主体
+    /// 渲染「无法打开 {ext} 类型文件」灰屏）：无文本缓冲无编辑器——保存/
+    /// 自动保存/外部改动检测按此位全跳过
+    pub(crate) binary: bool,
 }
 
 
@@ -278,6 +282,7 @@ impl FileTab {
             disk_sig: None,
             reload_pending: false,
             last_edit: None,
+            binary: false,
         }
     }
 }

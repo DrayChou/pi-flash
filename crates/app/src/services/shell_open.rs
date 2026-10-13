@@ -20,6 +20,13 @@ pub(crate) fn open_in_browser(path: &std::path::Path) {
     }
 }
 
+/// 用系统默认应用打开文件（editor「无法打开」灰屏的兜底动作）：cmd start /
+/// macOS open 本就按文件关联选应用，与 open_in_browser 同实现异名——
+/// 调用点语义是「默认应用」而非「浏览器」。
+pub(crate) fn open_in_default_app(path: &Path) {
+    open_in_browser(path);
+}
+
 /// 在系统文件浏览器中打开目录（Windows explorer / macOS open）。
 pub(crate) fn open_in_explorer(path: &std::path::Path) {
     #[cfg(windows)]

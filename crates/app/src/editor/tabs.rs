@@ -57,10 +57,19 @@ impl Chat {
             }
         };
         if bytes.contains(&0) {
-            self.set_status(
-                format!("{}：{}", crate::i18n::tr("file_view.binary"), path.display()),
-                cx,
-            );
+            // 仿 Zed（Could not open file）：二进制不再 toast 拒开——tab 照
+            // 开让用户看见是哪个文件，主体渲染「无法打开 {ext} 类型文件」
+            // 灰屏 + 默认应用兜底入口（view.rs unsupported_body）。无缓冲：
+            // 保存/外部改动检测按 binary 位门控跳过。
+            let mut ft = FileTab::from_disk(String::new());
+            ft.binary = true;
+            self.ws.file_cache.insert(path.clone(), ft);
+            self.ws.panel_tabs.push(PanelTab::File(path));
+            self.retain_file_watches();
+            let ix = self.ws.panel_tabs.len() - 1;
+            self.activate_panel_tab(ix, cx);
+            self.set_content_view(ContentView::File);
+            cx.notify();
             return;
         }
         let content = String::from_utf8_lossy(&bytes).to_string();
@@ -145,6 +154,10 @@ impl Chat {
     /// 保存文件 tab（Ctrl+S / 关闭确认「保存并关闭」共用）：编辑器在则取
     /// 编辑器值，写盘成功后刷新磁盘真值缓存与外部改动基准。
     pub(crate) fn save_file(&mut self, path: &Path, cx: &mut Context<Self>) {
+        // 二进制占位 tab 无缓冲可存，直接短路（不弹「已保存」假提示）
+        if self.ws.file_cache.get(path).is_some_and(|f| f.binary) {
+            return;
+        }
         let err = self.write_file_back(path, cx);
         if let Some(e) = err {
             self.set_status(format!("{}: {e}", crate::i18n::tr("file_view.save_failed")), cx);
@@ -270,6 +283,9 @@ impl Chat {
             let Some(ft) = self.ws.file_cache.get_mut(&path) else {
                 continue;
             };
+            if ft.binary {
+                continue; // 二进制占位 tab 无缓冲，磁盘变化不参与冲突/重载裁决
+            }
             match std::fs::metadata(&path) {
                 Err(_) => {
                     // 文件已从磁盘消失：标 Deleted（zed DiskState::Deleted 同构

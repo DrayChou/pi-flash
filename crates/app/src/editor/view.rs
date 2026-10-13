@@ -134,16 +134,21 @@ pub(crate) fn file_view(
         .get(&path)
         .map(|f| f.conflict.clone())
         .unwrap_or(None);
+    // 二进制占位 tab（open_file_tab 开的「无法打开」灰屏）：无缓冲无编辑器
+    // ——懒创建/重载灌入/聚焦三件套全部跳过
+    let binary = chat.ws.file_cache.get(&path).is_some_and(|f| f.binary);
 
     // 渲染帧副作用区：编辑器懒创建 + 自动重载灌入（见两 fn 文档）
-    ensure_file_editor(chat, &path, window, cx);
-    consume_file_reload(chat, &path, window, cx);
-    // 开文件即聚焦（Zed 行为；编辑器实体就绪后消费；md 渲染态无实体则丢弃）
-    if chat.ws.pending_focus_file.as_deref() == Some(path.as_path()) {
-        chat.ws.pending_focus_file = None;
-        if let Some(ed) = chat.ws.file_cache.get(&path).and_then(|f| f.editor.clone()) {
-            if !ed.read(cx).focus_handle(cx).is_focused(window) {
-                ed.update(cx, |st, scx| st.focus(window, scx));
+    if !binary {
+        ensure_file_editor(chat, &path, window, cx);
+        consume_file_reload(chat, &path, window, cx);
+        // 开文件即聚焦（Zed 行为；编辑器实体就绪后消费；md 渲染态无实体则丢弃）
+        if chat.ws.pending_focus_file.as_deref() == Some(path.as_path()) {
+            chat.ws.pending_focus_file = None;
+            if let Some(ed) = chat.ws.file_cache.get(&path).and_then(|f| f.editor.clone()) {
+                if !ed.read(cx).focus_handle(cx).is_focused(window) {
+                    ed.update(cx, |st, scx| st.focus(window, scx));
+                }
             }
         }
     }
@@ -166,13 +171,21 @@ pub(crate) fn file_view(
 
     // zed 同款：只有「磁盘被改 + 本地有未保存修改」（Changed）才横幅裁决；
     // Deleted（文件从磁盘消失）不弹横幅——缓冲保留可继续编辑，tab 删除线
-    // 是唯一标记，保存即重建（DiskState::Deleted 语义）
-    if let Some(c @ crate::FileConflict::Changed) = conflict.as_ref() {
-        host = host.child(conflict_banner(weak, &path, c));
+    // 是唯一标记，保存即重建（DiskState::Deleted 语义）。二进制占位 tab
+    // 无缓冲，不参与冲突裁决（check_external_file_changes 同步跳过）
+    if !binary {
+        if let Some(c @ crate::FileConflict::Changed) = conflict.as_ref() {
+            host = host.child(conflict_banner(weak, &path, c));
+        }
     }
-    // 主体渲染算法由 kind handler 决定（md 双态/图片查看器/代码编辑器）
-    host.child(file_editor_body(chat, kind, &path, weak, cx))
-        .into_any_element()
+    // 主体渲染算法由 kind handler 决定（md 双态/图片查看器/代码编辑器）；
+    // 二进制占位 tab 例外——「无法打开 {ext} 类型文件」灰屏（仿 Zed）
+    host.child(if binary {
+        unsupported_body(&path)
+    } else {
+        file_editor_body(chat, kind, &path, weak, cx)
+    })
+    .into_any_element()
 }
 
 /// 导航操作栏面包屑的路径分段：`(显示文本, 该段绝对路径)`。
@@ -292,14 +305,20 @@ fn file_nav_bar(
         }
     }
 
-    // 右侧操作区：handler 声明的按钮序列（023/024：默认仅搜索，md 加预览）
+    // 右侧操作区：handler 声明的按钮序列（023/024：默认仅搜索，md 加预览）。
+    // 对齐 caption 格网（2026-10-14）：容器无 gap 无右距，每钮自占 42px 格
+    // （与 titlebar 窗口控制同宽同贴缘），search/eye 中心线 = 21/63px，与
+    // close/max 上下垂直对齐
     let ed_for_focus = chat.ws.file_cache.get(path).and_then(|f| f.editor.clone());
-    let mut right = div().flex_shrink_0().flex().items_center().gap(px(2.));
-    for btn in kind.toolbar() {
-        right = match btn {
-            ToolButton::Eye => right.child(eye_button(weak, source_mode)),
-            ToolButton::Search => right.child(search_button(ed_for_focus.clone())),
-        };
+    let mut right = div().flex_shrink_0().flex().items_center();
+    // 二进制占位 tab 无编辑器：search/eye 都是死钮，整列不渲染
+    if !chat.ws.file_cache.get(path).is_some_and(|f| f.binary) {
+        for btn in kind.toolbar() {
+            right = match btn {
+                ToolButton::Eye => right.child(eye_button(weak, source_mode)),
+                ToolButton::Search => right.child(search_button(ed_for_focus.clone())),
+            };
+        }
     }
 
     // 操作栏整体（zed 同构）：第一行 = 面包屑 + eye/search 图标；第二行 =
@@ -322,7 +341,6 @@ fn file_nav_bar(
                 .items_center()
                 .gap(px(8.))
                 .pl(px(12.))
-                .pr(px(8.))
                 .child(crumbs)
                 .child(div().flex_1())
                 .child(right),
@@ -335,62 +353,82 @@ fn file_nav_bar(
 
 /// 预览切换按钮（ToolButton::Eye，双态类型工具栏；024）：图标 = 点击后的
 /// 动作——源码态显示 eye（回预览），渲染态显示 eye-off（进源码）。
-/// 2026-10-13 用户定夺：eye/eye-off 字形本身已表意，切换钮不上色，
-/// 恒用 text_muted（原源码态 accent 上色取消）。
+/// 2026-10-14 用户定夺：源码态不再画 bg_selected 选中底色（md 默认源码
+/// 态，进去即高亮块观感突兀），hover 底色保留。
+/// 2026-10-13 用户定夺：eye/eye-off 字形本身已表意，不再用 accent 上色
+/// 区分状态，恒用 text_muted。
 fn eye_button(weak: &gpui::WeakEntity<Chat>, source_mode: bool) -> gpui::AnyElement {
     let t = T();
     let weak_eye = weak.clone();
+    // 42px 定位格（与 caption_button 同宽）：内部保留 24px 圆角命中区做
+    // hover 底色，视觉语言不变，仅列位对齐窗口控制
     div()
-        .id("fv-eye")
-        .size(px(24.))
+        .w(px(42.))
+        .h(px(32.))
         .flex()
         .items_center()
         .justify_center()
-        .rounded(px(5.))
-        .cursor_pointer()
-        .when(source_mode, |d| d.bg(rgb(t.bg_selected)))
-        .hover(|s| s.bg(rgb(t.bg_hover)))
-        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-            let _ = weak_eye.update(cx, |c, cx| {
-                if let Some(p) = c.active_file_path() {
-                    if let Some(ft) = c.ws.file_cache.get_mut(&p) {
-                        ft.md_source = !source_mode;
-                    }
-                    // 切到源码态即聚焦编辑器（渲染帧消费）
-                    if !source_mode {
-                        c.ws.pending_focus_file = Some(p);
-                    }
-                }
-                cx.notify();
-            });
-        })
-        .child(icon(
-            if source_mode { "eye" } else { "eye-off" },
-            crate::ui::tokens::icon::LG,
-            t.text_muted,
-        ))
+        .child(
+            div()
+                .id("fv-eye")
+                .size(px(24.))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(5.))
+                .cursor_pointer()
+                .hover(|s| s.bg(rgb(t.bg_hover)))
+                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                    let _ = weak_eye.update(cx, |c, cx| {
+                        if let Some(p) = c.active_file_path() {
+                            if let Some(ft) = c.ws.file_cache.get_mut(&p) {
+                                ft.md_source = !source_mode;
+                            }
+                            // 切到源码态即聚焦编辑器（渲染帧消费）
+                            if !source_mode {
+                                c.ws.pending_focus_file = Some(p);
+                            }
+                        }
+                        cx.notify();
+                    });
+                })
+                .child(icon(
+                    if source_mode { "eye" } else { "eye-off" },
+                    crate::ui::tokens::icon::LG,
+                    t.text_muted,
+                )),
+        )
         .into_any_element()
 }
 
 /// 搜索按钮（ToolButton::Search）：聚焦编辑器并派发内置搜索（Ctrl+F 弹层）。
 fn search_button(ed: Option<gpui::Entity<gpui_component::input::InputState>>) -> gpui::AnyElement {
     let t = T();
+    // 42px 定位格同 eye_button：search 中心线贴 close（距右缘 21px）
     div()
-        .id("fv-search")
-        .size(px(24.))
+        .w(px(42.))
+        .h(px(32.))
         .flex()
         .items_center()
         .justify_center()
-        .rounded(px(5.))
-        .cursor_pointer()
-        .hover(|s| s.bg(rgb(t.bg_hover)))
-        .on_mouse_down(MouseButton::Left, move |_, window, cx| {
-            if let Some(ed) = &ed {
-                ed.update(cx, |s, scx| s.focus(window, scx));
-                window.dispatch_action(Box::new(gpui_component::input::Search), cx);
-            }
-        })
-        .child(icon("search", crate::ui::tokens::icon::LG, t.text_muted))
+        .child(
+            div()
+                .id("fv-search")
+                .size(px(24.))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(5.))
+                .cursor_pointer()
+                .hover(|s| s.bg(rgb(t.bg_hover)))
+                .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                    if let Some(ed) = &ed {
+                        ed.update(cx, |s, scx| s.focus(window, scx));
+                        window.dispatch_action(Box::new(gpui_component::input::Search), cx);
+                    }
+                })
+                .child(icon("search", crate::ui::tokens::icon::LG, t.text_muted)),
+        )
         .into_any_element()
 }
 
@@ -573,6 +611,63 @@ pub(crate) fn render_image_surface(path: &Path, format: gpui::ImageFormat) -> gp
     }
 }
 
+/// 「无法打开 {ext} 类型文件」的类型名：后缀优先（如 ttf）；无后缀的
+/// 二进制（裸名可执行等）退文件名兜底。
+fn unsupported_type_name(path: &Path) -> String {
+    if let Some(e) = path.extension().and_then(|e| e.to_str()) {
+        return e.to_string();
+    }
+    path.file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "?".into())
+}
+
+/// 无法打开灰屏（binary tab 主体，仿 Zed Could not open file）：tab 照开
+/// 让用户看见是哪个文件，主体居中「无法打开 {ext} 类型文件」+「二进制文件
+/// 不受支持」+ 默认应用兜底按钮。纯展示无编辑器——工具栏按钮整列不渲染
+/// （file_nav_bar）。
+fn unsupported_body(path: &Path) -> gpui::AnyElement {
+    let t = T();
+    let type_name = unsupported_type_name(path);
+    let p = path.to_path_buf();
+    div()
+        .id("fv-unsupported")
+        .flex_1()
+        .min_h_0()
+        .flex()
+        .flex_col()
+        .items_center()
+        .justify_center()
+        .gap(px(8.))
+        .bg(rgb(t.bg))
+        .child(
+            div()
+                .text_size(crate::appearance::ui_size(13.))
+                .text_color(rgb(t.text))
+                .child(SharedString::from(crate::i18n::tf(
+                    "file_view.unsupported_type",
+                    &[("ext", type_name)],
+                ))),
+        )
+        .child(
+            div()
+                .text_size(crate::appearance::ui_size(11.))
+                .text_color(rgb(t.text_dim))
+                .child(SharedString::from(
+                    tr("file_view.binary_unsupported").to_string(),
+                )),
+        )
+        .child(crate::ui::button(
+            "fv-unsupported-open",
+            tr("file_view.open_in_default_app"),
+            crate::ui::BtnSize::Md,
+            crate::ui::BtnVariant::Secondary,
+            false,
+            move |_, _, _| crate::services::shell_open::open_in_default_app(&p),
+        ))
+        .into_any_element()
+}
+
 /// 编辑器面板（TextKind/CodeKind render_body 与 MarkdownKind 源码态共用）：
 /// gpui-component CodeEditor——tree-sitter 高亮 + 行号 + Ctrl+F 搜索替换，
 /// 右键菜单（zed）：编辑块 + 文件动作块，渲染挂 psp_overlays 同层。
@@ -670,4 +765,17 @@ mod tests {
     }
 
     // 扩展名 → kind 路由断言迁至 kind.rs 注册表测试（ext_routing 等）。
+
+    /// 「无法打开 {ext} 类型文件」的类型名：后缀优先（ttf 灰屏正例）；
+    /// 无后缀二进制退文件名。
+    #[test]
+    fn unsupported_type_name_prefers_ext() {
+        use super::unsupported_type_name;
+        assert_eq!(
+            unsupported_type_name(Path::new("fonts/JetBrainsMono-Bold.ttf")),
+            "ttf"
+        );
+        assert_eq!(unsupported_type_name(Path::new("bin\\app")), "app");
+        assert_eq!(unsupported_type_name(Path::new("Makefile")), "Makefile");
+    }
 }
