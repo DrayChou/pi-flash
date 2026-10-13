@@ -147,8 +147,8 @@ pub(super) fn composer_bar(
     let bash_running = chat.rt().read(cx).bash_running;
     let running = streaming || bash_running;
     // `!` shell 模式（与 input_area 边框同判定）：左组控件整组换成提示
-    let bash_mode = chat.pending_images.is_empty() && chat.input.trim_start().starts_with('!');
-    let bash_excluded = chat.input.trim_start().starts_with("!!");
+    let bash_mode = chat.composer.pending_images.is_empty() && chat.composer.input.trim_start().starts_with('!');
+    let bash_excluded = chat.composer.input.trim_start().starts_with("!!");
     let thinking_open = chat.dlg.pill_menu == Some(PillMenu::Thinking);
     let tools_open = chat.dlg.pill_menu == Some(PillMenu::Tools);
     // 工具预设 = spawn 参数（--tools/--no-tools），换它要重绑会话进程 +

@@ -60,11 +60,11 @@ pub(crate) fn main_column(
     let new_session_page = rt.read(cx).messages.is_empty() && !streaming;
     // composer 焦点态来自输入组件（chat.focus 仅是组件创建前的回退）
     let input_focused = chat
-        .composer
+        .composer.composer
         .as_ref()
         .map(|c| c.read(cx).focus_handle_in(cx).is_focused(window))
         .unwrap_or(false);
-    chat.input_focused = input_focused;
+    chat.composer.input_focused = input_focused;
     let chat_entity = entity.clone();
     let rt_entity = rt.clone();
     let rt_list = rt.read(cx).pager.state();
@@ -328,13 +328,13 @@ fn session_list(
                             m,
                             ix,
                             &weak,
-                            &chat.expanded_skills,
-                            &chat.bubble_scrolls,
+                            &chat.composer.expanded_skills,
+                            &chat.composer.bubble_scrolls,
                             &rt_view.collapsed,
                             t,
                             None,
                             compute_meta(&rt_view.messages, ix),
-                            chat.bar_hover == Some(ix),
+                            chat.composer.bar_hover == Some(ix),
                             // 复制反馈（032 恢复）：copy_flash 点亮且未超 1.5s
                             rt_view.copy_flash.is_some_and(|(cix, at)| {
                                 cix == ix && at.elapsed().as_millis() < 1500
@@ -427,7 +427,7 @@ fn session_list(
                                 stream_est,
                                 stream_tps,
                                 compute_meta(&rt_view.messages, ix),
-                                chat.bar_hover == Some(ix),
+                                chat.composer.bar_hover == Some(ix),
                                 // 复制反馈（032 恢复）：copy_flash 点亮且未超 1.5s
                                 // （键 = 轮头 start_ix，与用户栏的 msg_ix 互不重叠）
                                 rt_view.copy_flash.is_some_and(|(cix, at)| {
@@ -683,7 +683,7 @@ fn nav_gutter(
     // 10px + 右侧 4px 透明可点（2026-10-10：命中不满宽会点穿下方内容
     // 误收面板）
     if !summary.turns.is_empty() {
-        let composer_h = chat.composer_h.get();
+        let composer_h = chat.composer.composer_h.get();
         let active_tick = active_turn.map(tick_of_turn);
         let mut rail = div()
             .id("nav-rail")

@@ -279,7 +279,7 @@ impl Chat {
                 // window title is fixed in this shell (pi-web sets document.title)
             }
             ExtUiMethod::SetEditorText { text } => {
-                self.input = text;
+                self.composer.input = text;
                 cx.notify();
             }
             blocking => {

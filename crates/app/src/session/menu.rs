@@ -11,10 +11,10 @@ use crate::*;
 impl Chat {
     pub(crate) fn active_menu(&self, cx: &gpui::App) -> Option<MenuKind> {
         // 点外收起后保持关闭，直到输入再次变化（set_input 复位）
-        if self.menu_dismissed {
+        if self.composer.menu_dismissed {
             return None;
         }
-        let input = &self.input;
+        let input = &self.composer.input;
         if input.starts_with('/') && !input[1..].contains(char::is_whitespace) {
             return Some(MenuKind::Slash);
         }
@@ -27,9 +27,9 @@ impl Chat {
     /// 光标前的 @ token（含字节起点/查询词/引号形态）。与 active_menu 不同，
     /// 这里不看 menu_dismissed——确认补全需要 token 位置本身。
     pub(crate) fn at_token(&self, cx: &gpui::App) -> Option<crate::services::at_file::AtQueryMatch> {
-        let input = &self.input;
+        let input = &self.composer.input;
         let mut cursor = self
-            .composer
+            .composer.composer
             .as_ref()
             .map(|c| c.read(cx).cursor(cx))
             .unwrap_or(input.len())
@@ -43,7 +43,7 @@ impl Chat {
     pub(crate) fn menu_items(&self, cx: &gpui::App) -> Vec<MenuItem> {
         match self.active_menu(cx) {
             Some(MenuKind::Slash) => {
-                let q = self.input[1..].to_lowercase();
+                let q = self.composer.input[1..].to_lowercase();
                 // 命令清单 = 会话进程答案优先，否则启动装载的（项目 skill + 扩展缓存）
                 self.slash_commands(cx).iter()
                     .filter(|c| q.is_empty() || c.name.to_lowercase().starts_with(&q))
@@ -60,23 +60,23 @@ impl Chat {
                 // 超过索引上限时深层文件仍可搜到）。索引没就绪 → 空列表，
                 // 后台构建完成的通知会把菜单刷出来
                 let key = self.cwd.to_string_lossy().to_string();
-                let Some(entry) = self.at_index.get(&key) else {
+                let Some(entry) = self.composer.at_index.get(&key) else {
                     return Vec::new();
                 };
                 let query = self.at_token(cx).map(|m| m.query).unwrap_or_default();
                 // 记忆化：同一份 entries（Arc 身份）+ 同查询词直接复用上次
                 // 过滤——@ 菜单打开期间每次渲染都会走到这里，全量打分只该
                 // 在输入或索引变化时发生。渲染期 &self，写缓存走 RefCell
-                let hit = self.at_filter_cache.borrow().as_ref().is_some_and(
+                let hit = self.composer.at_filter_cache.borrow().as_ref().is_some_and(
                     |(arc, q, _)| std::sync::Arc::ptr_eq(arc, &entry.entries) && q == &query,
                 );
                 if !hit {
                     let hits =
                         crate::services::at_file::filter_file_entries(&entry.entries, &query);
-                    *self.at_filter_cache.borrow_mut() =
+                    *self.composer.at_filter_cache.borrow_mut() =
                         Some((entry.entries.clone(), query, hits));
                 }
-                self.at_filter_cache
+                self.composer.at_filter_cache
                     .borrow()
                     .as_ref()
                     .map(|(_, _, v)| v.clone())
@@ -108,23 +108,23 @@ impl Chat {
                 // 插入形态见 build_at_insert_text（目录不闭合 → 菜单继续钻取）
                 let (text, cur_off) = crate::services::at_file::build_at_insert_text(&insert, is_dir);
                 let mut v = String::new();
-                v.push_str(&self.input[..m.start]);
+                v.push_str(&self.composer.input[..m.start]);
                 v.push_str(&text);
                 let cursor_byte = m.start + cur_off;
-                let tail = self.composer.as_ref().map(|c| c.read(cx).cursor(cx)).unwrap_or(self.input.len());
-                let mut tail = tail.min(self.input.len());
-                while tail > 0 && !self.input.is_char_boundary(tail) {
+                let tail = self.composer.composer.as_ref().map(|c| c.read(cx).cursor(cx)).unwrap_or(self.composer.input.len());
+                let mut tail = tail.min(self.composer.input.len());
+                while tail > 0 && !self.composer.input.is_char_boundary(tail) {
                     tail -= 1;
                 }
                 if tail > m.start {
-                    v.push_str(&self.input[tail..]);
+                    v.push_str(&self.composer.input[tail..]);
                 }
                 self.set_input_with_cursor(v, cursor_byte, cx);
             }
             None => {}
         }
-        self.menu_ix = 0;
-        self.menu_scroll.set_offset(gpui::point(px(0.), px(0.)));
+        self.composer.menu_ix = 0;
+        self.composer.menu_scroll.set_offset(gpui::point(px(0.), px(0.)));
         cx.notify();
     }
 }
@@ -149,7 +149,7 @@ pub(crate) fn slash_menu_view(
     let n = items.len();
 
     let card = |ix: usize, c: &MenuItem| -> gpui::AnyElement {
-        let active = ix == chat.menu_ix;
+        let active = ix == chat.composer.menu_ix;
         let weak = weak.clone();
         let name = c.insert.clone();
         let desc = c.desc.replace('\n', " ");
@@ -191,9 +191,9 @@ pub(crate) fn slash_menu_view(
                 // 悬停跟随高亮（pi-web onMouseEnter 更新 highlight parity）
                 if *h {
                     let _ = weak_hover.update(cx, |chat, cx| {
-                        if chat.menu_ix != ix {
-                            chat.menu_ix = ix;
-                            chat.menu_scroll.scroll_to_item(ix);
+                        if chat.composer.menu_ix != ix {
+                            chat.composer.menu_ix = ix;
+                            chat.composer.menu_scroll.scroll_to_item(ix);
                             cx.notify();
                         }
                     });
@@ -262,7 +262,7 @@ pub(crate) fn slash_menu_view(
             let weak = weak.clone();
             move |_, _, cx| {
                 let _ = weak.update(cx, |c, cx| {
-                    c.menu_dismissed = true;
+                    c.composer.menu_dismissed = true;
                     cx.notify();
                 });
             }
@@ -314,7 +314,7 @@ pub(crate) fn slash_menu_view(
                         .flex_1()
                         .min_h_0()
                         .overflow_y_scroll()
-                        .track_scroll(&chat.menu_scroll)
+                        .track_scroll(&chat.composer.menu_scroll)
                         // 右侧比左侧多 4px：给滚动条让位（用户定稿）
                         .pt(px(10.))
                         .pb(px(10.))
@@ -349,7 +349,7 @@ pub(crate) fn slash_menu_view(
                             .right(px(0.))
                             .w(px(10.))
                             .child(crate::ui::psp_scrollbar::menu_scrollbar(
-                                &chat.menu_scroll,
+                                &chat.composer.menu_scroll,
                             )),
                     )
                 }),

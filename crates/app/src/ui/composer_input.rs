@@ -90,7 +90,7 @@ pub struct ComposerInput {
     on_submit: Option<Submitted>,
     /// 锁态（如上下文压缩中）：编辑器组件**不挂载**——无焦点、无 IME、
     /// 无粘贴、无点击定位，整块输入区替换为 placeholder 样式提示。
-    /// 草稿仍留在 self.value / chat.input，解锁即恢复。
+    /// 草稿仍留在 self.value / chat.composer.input，解锁即恢复。
     read_only: bool,
 }
 
@@ -130,7 +130,7 @@ impl ComposerInput {
     }
 
     /// 外部写入（草稿切换/历史/清空/菜单接受）。与镜像同值时跳过，避免回环。
-    /// 收 &str：调用方（input_area 每帧镜像 chat.input）不必先克隆全文，
+    /// 收 &str：调用方（input_area 每帧镜像 chat.composer.input）不必先克隆全文，
     /// 同值跳过路径零分配。
     pub fn set_value(&mut self, v: &str, cx: &mut Context<Self>) {
         if self.value == v && self.token == split_token(v, &self.commands) {

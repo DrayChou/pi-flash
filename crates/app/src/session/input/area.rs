@@ -26,7 +26,7 @@ pub(crate) fn input_area(
     cx: &mut Context<Chat>,
 ) -> gpui::AnyElement {
     let t = T();
-    let can_queue = !chat.input.is_empty() || !chat.pending_images.is_empty();
+    let can_queue = !chat.composer.input.is_empty() || !chat.composer.pending_images.is_empty();
     // 新会话默认值（pi selectInitialModelScope parity：settings 默认模型
     // 在 scope 内 → 用它，否则 scope 首个；思考档 pin > per-model > 全局）
     // ——草稿态（无 state）的 pill 显示就落在它身上，进程起来后由 pi 的
@@ -73,7 +73,7 @@ pub(crate) fn input_area(
     let composer = ensure_composer(chat, weak, cx);
     // `!` shell 模式（031 pi-web bashMode parity）：去前导空白后以 ! 开头且
     // 无图片附着——边框着色 + 提示行（!! = 输出仅本地）
-    let bash_mode = chat.pending_images.is_empty() && chat.input.trim_start().starts_with('!');
+    let bash_mode = chat.composer.pending_images.is_empty() && chat.composer.input.trim_start().starts_with('!');
     // @ 菜单可能打开：预热/续期文件索引（TTL 内幂等，后台构建）
     if chat.active_menu(cx) == Some(MenuKind::At) {
         chat.ensure_at_index(cx);
@@ -89,15 +89,15 @@ pub(crate) fn input_area(
     };
     composer.update(cx, |f, _| f.set_placeholder(Some(ph)));
     // 压缩锁：编辑器组件整块不挂载（无焦点/IME/粘贴），显示 placeholder
-    // 样式的压缩提示；草稿保留在 chat.input，解锁即恢复
+    // 样式的压缩提示；草稿保留在 chat.composer.input，解锁即恢复
     composer.update(cx, |f, fcx| f.set_read_only(compacting, fcx));
     // 镜像只传借用：长草稿（粘贴的大段日志）下每键一帧的全量 String 拷贝
     // 就是打字延迟
-    composer.update(cx, |f, fcx| f.set_value(&chat.input, fcx));
+    composer.update(cx, |f, fcx| f.set_value(&chat.composer.input, fcx));
     // 命令名同步给组件：仅 '/' 前缀输入时需要（chip 派生只消费 '/' 前缀），
     // 普通打字每键不再克隆整张命令表；会话进程答案优先，否则启动装载的
     //（项目 skill + 扩展缓存）
-    if chat.input.starts_with('/') {
+    if chat.composer.input.starts_with('/') {
         let names: Vec<String> = chat.slash_commands(cx).iter().map(|c| c.name.clone()).collect();
         composer.update(cx, |f, fcx| f.set_command_names(names, fcx));
     }
@@ -131,9 +131,9 @@ pub(crate) fn input_area(
     // 附加图片缩略图（v58 图片粘贴）：56×56 圆角方块，panel 左上角并列、
     // 间隔 5px；右上角悬浮 16px 圆形 X 点击删除（pi-web ImagePreview 布局
     // parity：X 偏移 -4,-4 半嵌在缩略图角上）
-    if !chat.pending_images.is_empty() {
+    if !chat.composer.pending_images.is_empty() {
         let thumbs: Vec<gpui::AnyElement> = chat
-            .pending_images
+            .composer.pending_images
             .iter()
             .enumerate()
             .map(|(i, img)| {
@@ -194,8 +194,8 @@ pub(crate) fn input_area(
                                 // 片盒的"开大图"handler（实测删除前弹预览）
                                 cx.stop_propagation();
                                 let _ = weak_i.update(cx, |c, cx| {
-                                    if i < c.pending_images.len() {
-                                        c.pending_images.remove(i);
+                                    if i < c.composer.pending_images.len() {
+                                        c.composer.pending_images.remove(i);
                                     }
                                     cx.notify();
                                 });
@@ -255,8 +255,8 @@ pub(crate) fn input_area(
     let show_scroll_btn = !chat.rt().read(cx).pager.is_at_bottom()
         && !chat.rt().read(cx).messages.is_empty();
     // 胶囊高度测量槽（导航刻度条 033 居中用）；先克隆引用再拼元素，
-    // 避免 &chat.composer_h 与下方 slash_menu_view(&mut chat) 借用冲突
-    let composer_h_slot = chat.composer_h.clone();
+    // 避免 &chat.composer.composer_h 与下方 slash_menu_view(&mut chat) 借用冲突
+    let composer_h_slot = chat.composer.composer_h.clone();
     let inner = div()
         .relative()
         // 必须撑满父宽：为 `w_full`+`max_w(920)` 的测量元素提供宽度基准，
@@ -319,12 +319,12 @@ fn wire_composer_keys(
                     // 无需组合守卫
                     let streaming = this.rt().read(cx).agent_running;
                     let can_queue =
-                        !this.input.is_empty() || !this.pending_images.is_empty();
+                        !this.composer.input.is_empty() || !this.composer.pending_images.is_empty();
                     if streaming {
                         if can_queue {
                             this.follow_up_input(cx);
                         }
-                    } else if let Some(c) = &this.composer {
+                    } else if let Some(c) = &this.composer.composer {
                         c.update(cx, |f, fcx| f.insert_newline(window, fcx));
                     }
                     cx.stop_propagation();
@@ -335,14 +335,14 @@ fn wire_composer_keys(
                     // 草稿）并传播；这里做 app 层语义：菜单取消 / 中止
                     let menu = this.active_menu(cx);
                     if let Some(kind) = menu {
-                        if kind == MenuKind::Slash && !this.input.is_empty() {
-                            let v = format!("{} ", this.input);
+                        if kind == MenuKind::Slash && !this.composer.input.is_empty() {
+                            let v = format!("{} ", this.composer.input);
                             this.set_input(v, cx);
                         }
                         // @ 菜单 Esc = 只收起（pi-web parity：token 原样保留，
                         // 下一次输入变化重新打开）
-                        this.menu_dismissed = true;
-                        this.menu_ix = 0;
+                        this.composer.menu_dismissed = true;
+                        this.composer.menu_ix = 0;
                         cx.notify();
                     } else {
                         // `!` 执行中优先中止 bash（rpc abort_bash），其次模型流
@@ -361,16 +361,16 @@ fn wire_composer_keys(
         .on_action(cx.listener(|this, _: &ComposerUp, window, cx| {
             let items = this.menu_items(cx);
             if this.active_menu(cx).is_some() && !items.is_empty() {
-                this.menu_ix = this.menu_ix.saturating_sub(1);
-                this.menu_scroll.scroll_to_item(this.menu_ix);
+                this.composer.menu_ix = this.composer.menu_ix.saturating_sub(1);
+                this.composer.menu_scroll.scroll_to_item(this.composer.menu_ix);
                 cx.notify();
-            } else if this.input.is_empty() && !this.history.is_empty() {
-                let ix = match this.history_ix {
-                    None => this.history.len() - 1,
+            } else if this.composer.input.is_empty() && !this.composer.history.is_empty() {
+                let ix = match this.composer.history_ix {
+                    None => this.composer.history.len() - 1,
                     Some(i) => i.saturating_sub(1),
                 };
-                this.history_ix = Some(ix);
-                let v = this.history[ix].clone();
+                this.composer.history_ix = Some(ix);
+                let v = this.composer.history[ix].clone();
                 this.set_input(v, cx);
             } else {
                 // 非空多行：上移一行交还组件
@@ -380,17 +380,17 @@ fn wire_composer_keys(
         .on_action(cx.listener(|this, _: &ComposerDown, window, cx| {
             let items = this.menu_items(cx);
             if this.active_menu(cx).is_some() && !items.is_empty() {
-                this.menu_ix = (this.menu_ix + 1).min(items.len() - 1);
-                this.menu_scroll.scroll_to_item(this.menu_ix);
+                this.composer.menu_ix = (this.composer.menu_ix + 1).min(items.len() - 1);
+                this.composer.menu_scroll.scroll_to_item(this.composer.menu_ix);
                 cx.notify();
-            } else if this.input.is_empty() {
-                if let Some(i) = this.history_ix {
-                    if i + 1 < this.history.len() {
-                        this.history_ix = Some(i + 1);
-                        let v = this.history[i + 1].clone();
+            } else if this.composer.input.is_empty() {
+                if let Some(i) = this.composer.history_ix {
+                    if i + 1 < this.composer.history.len() {
+                        this.composer.history_ix = Some(i + 1);
+                        let v = this.composer.history[i + 1].clone();
                         this.set_input(v, cx);
                     } else {
-                        this.history_ix = None;
+                        this.composer.history_ix = None;
                         this.set_input(String::new(), cx);
                     }
                 }
@@ -401,7 +401,7 @@ fn wire_composer_keys(
         .on_action(cx.listener(|this, _: &ComposerTab, _window, cx| {
             let items = this.menu_items(cx);
             if this.active_menu(cx).is_some() && !items.is_empty() {
-                let ix = this.menu_ix.min(items.len() - 1);
+                let ix = this.composer.menu_ix.min(items.len() - 1);
                 let insert = items[ix].insert.clone();
                 this.accept_menu(insert, cx);
             }
@@ -468,7 +468,7 @@ fn ensure_composer(
     weak: &gpui::WeakEntity<Chat>,
     cx: &mut Context<Chat>,
 ) -> gpui::Entity<ComposerInput> {
-    if let Some(c) = &chat.composer {
+    if let Some(c) = &chat.composer.composer {
         return c.clone();
     }
     let weak_change = weak.clone();
@@ -478,14 +478,14 @@ fn ensure_composer(
         let mut f = ComposerInput::new(icx);
         f.set_on_change(Rc::new(move |v, cx| {
             let _ = weak_change.update(cx, |chat, cx| {
-                if chat.input != v {
-                    chat.input = v.to_string();
+                if chat.composer.input != v {
+                    chat.composer.input = v.to_string();
                     // 输入再次变化 = 解除点外/Esc 收起（active_menu 门控的
                     // 声明语义；打字不走 set_input，必须在此复位）
-                    chat.menu_dismissed = false;
-                    chat.menu_ix = 0;
+                    chat.composer.menu_dismissed = false;
+                    chat.composer.menu_ix = 0;
                     // 过滤集变了回顶部，避免新列表停留在旧滚动深处
-                    chat.menu_scroll
+                    chat.composer.menu_scroll
                         .set_offset(gpui::point(px(0.), px(0.)));
                     cx.notify();
                 }
@@ -497,25 +497,25 @@ fn ensure_composer(
                     return;
                 }
                 // 先落到剥离换行后的 v 再判菜单：组件 enter() 会先插一个
-                // 换行并经 Change 污染 chat.input（含空白使菜单判定失败，
+                // 换行并经 Change 污染 chat.composer.input（含空白使菜单判定失败，
                 // 回车被误当发送）
-                chat.input = v.to_string();
+                chat.composer.input = v.to_string();
                 // chip 激活（命令已确认成胶囊）时 Enter=发送——裸 "/命令"
                 // 的输入形态与菜单过滤态相同，必须以 chip 态区分，否则
                 // Enter 会走"接受补全"永远发不出去
                 let chip = chat
-                    .composer
+                    .composer.composer
                     .as_ref()
                     .map(|c| c.read(cx).chip_active())
                     .unwrap_or(false);
                 let items = chat.menu_items(cx);
                 if !chip && chat.active_menu(cx).is_some() && !items.is_empty() {
-                    let ix = chat.menu_ix.min(items.len() - 1);
+                    let ix = chat.composer.menu_ix.min(items.len() - 1);
                     let insert = items[ix].insert.clone();
                     chat.accept_menu(insert, cx);
                     return;
                 }
-                let can_queue = !chat.input.is_empty() || !chat.pending_images.is_empty();
+                let can_queue = !chat.composer.input.is_empty() || !chat.composer.pending_images.is_empty();
                 let streaming = chat.rt().read(cx).agent_running;
                 if streaming {
                     if can_queue {
@@ -536,6 +536,6 @@ fn ensure_composer(
         }));
         f
     });
-    chat.composer = Some(c.clone());
+    chat.composer.composer = Some(c.clone());
     c
 }

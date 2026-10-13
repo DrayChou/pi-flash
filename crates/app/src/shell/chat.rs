@@ -14,34 +14,9 @@ use crate::settings::plugins::PkgOp;
 pub(crate) struct Chat {
     pub(crate) focus: FocusHandle,
     pub(crate) dock_panel: DockPanel,
-    pub(crate) input: String,
-    pub(crate) pending_images: Vec<AttachedImage>,
-    pub(crate) history: Vec<String>,
-    pub(crate) history_ix: Option<usize>,
     pub(crate) cwd: PathBuf,
     pub(crate) branch: String,
-    pub(crate) menu_ix: usize,
-    /// / 菜单滚动句柄（按键选中 scroll_to_item 行跟随；输入变化回顶）
-    pub(crate) menu_scroll: gpui::ScrollHandle,
-    /// 斜杠/@ 菜单被点外收起（active_menu 据此返回 None；改输入即复位）
-    pub(crate) menu_dismissed: bool,
     pub(crate) term_events: Option<futures::channel::mpsc::UnboundedSender<(usize, alacritty_terminal::event::Event)>>,
-    // editor view state（输入组件实体在 composer 首次渲染时惰性创建；
-    // 真输入框 = gpui-component InputState，光标/选区/IME/滚动条全内置）
-    pub(crate) composer: Option<gpui::Entity<ComposerInput>>,
-    /// 技能展开消息的展开态（key = entry_id 或序号键）
-    pub(crate) expanded_skills: std::collections::HashSet<String>,
-    /// 消息气泡滚动句柄（key 同 expanded_skills；跨帧保持滚动位置并供
-    /// gpui-component Scrollbar 读取）
-    pub(crate) bubble_scrolls: std::rc::Rc<std::cell::RefCell<
-        std::collections::HashMap<String, gpui::ScrollHandle>,
-    >>,
-    /// 操作栏悬停态（pi-web onMouseEnter/Leave parity，状态驱动而非
-    /// group_hover）：用户消息行与 agent 轮块**共用**这一个字段，值是行在
-    /// 列表里的索引（用户行 = msg_ix，agent 轮 = 轮首 msg_ix；角色不同故
-    /// 永不撞车）。唯一写入点 = messages::bar_hover_wired。
-    pub bar_hover: Option<usize>,
-    pub(crate) input_focused: bool,
     // git panel
     pub(crate) git_files: Vec<GitFile>,
     pub(crate) git_add_del: (u64, u64),
@@ -52,11 +27,6 @@ pub(crate) struct Chat {
     pub(crate) git_commit_input: gpui::Entity<TextInput>,
     // workspace / project files
     pub(crate) project_files: Vec<String>,
-    /// @ 文件索引缓存（key = cwd 字符串；031 输入面板）
-    pub(crate) at_index: std::collections::HashMap<String, AtIndexState>,
-    /// @ 菜单过滤结果记忆化（menu_items 渲染期是 &self，走 RefCell 内部
-    /// 可变性，先例 bubble_scrolls；见 AtFilterCache）
-    pub(crate) at_filter_cache: std::cell::RefCell<Option<AtFilterCache>>,
     pub(crate) expanded_dirs: HashSet<PathBuf>,
     /// 文件树展平缓存（services::file_tree::flatten；渲染只读这份，
     /// 重建点 = 展开/折叠、git 刷新、fs 事件、切项目）。
@@ -113,9 +83,6 @@ pub(crate) struct Chat {
     /// 导航 flyout 卡片列表虚拟化句柄（v63-6：只建可视卡片；跨开合保持
     /// 滚动位）
     pub(crate) nav_flyout_list: gpui::ListState,
-    /// composer 胶囊实时高度（ui::measure_height 每帧写、读到的是上一帧
-    /// 值；导航刻度条「屏高 − inputpanel/2」居中用，033）
-    pub(crate) composer_h: std::rc::Rc<std::cell::Cell<f32>>,
     /// 021 操作栏「切换显示变更」：只列 git 变更文件（flatten changes_only）
     pub(crate) changes_only: bool,
     /// 021 文件搜索（Dialog::FileSearch）：命中（相对路径清单切片）、
@@ -134,6 +101,8 @@ pub(crate) struct Chat {
     pub(crate) dlg: DlgUi,
     /// 会话池簇（4ea）：runtimes 池 + 指针 + 缓存 + 启动闸门
     pub(crate) pool: PoolUi,
+    /// composer 输入面板簇（4ea，031）
+    pub(crate) composer: ComposerUi,
 }
 
 /// 周边面板状态簇（4ea 字段重组）：扩展 UI 面 / 081 自动更新与更新日志 /
@@ -323,6 +292,44 @@ pub(crate) struct PoolUi {
     pub(crate) pending_zoom: bool,
 }
 
+/// composer 输入面板簇（4ea 字段重组，031）：草稿/附件/历史、输入实体
+/// 惰性槽、@·斜杠补全菜单状态、消息气泡渲染辅助。
+pub(crate) struct ComposerUi {
+    pub(crate) input: String,
+    pub(crate) pending_images: Vec<AttachedImage>,
+    pub(crate) history_ix: Option<usize>,
+    pub(crate) history: Vec<String>,
+    // editor view state（输入组件实体在 composer 首次渲染时惰性创建；
+    // 真输入框 = gpui-component InputState，光标/选区/IME/滚动条全内置）
+    pub(crate) composer: Option<gpui::Entity<ComposerInput>>,
+    /// composer 胶囊实时高度（ui::measure_height 每帧写、读到的是上一帧
+    /// 值；导航刻度条「屏高 − inputpanel/2」居中用，033）
+    pub(crate) composer_h: std::rc::Rc<std::cell::Cell<f32>>,
+    pub(crate) input_focused: bool,
+    pub(crate) menu_ix: usize,
+    /// / 菜单滚动句柄（按键选中 scroll_to_item 行跟随；输入变化回顶）
+    pub(crate) menu_scroll: gpui::ScrollHandle,
+    /// 斜杠/@ 菜单被点外收起（active_menu 据此返回 None；改输入即复位）
+    pub(crate) menu_dismissed: bool,
+    /// @ 文件索引缓存（key = cwd 字符串；031 输入面板）
+    pub(crate) at_index: std::collections::HashMap<String, AtIndexState>,
+    /// @ 菜单过滤结果记忆化（menu_items 渲染期是 &self，走 RefCell 内部
+    /// 可变性，先例 bubble_scrolls；见 AtFilterCache）
+    pub(crate) at_filter_cache: std::cell::RefCell<Option<AtFilterCache>>,
+    /// 技能展开消息的展开态（key = entry_id 或序号键）
+    pub(crate) expanded_skills: std::collections::HashSet<String>,
+    /// 操作栏悬停态（pi-web onMouseEnter/Leave parity，状态驱动而非
+    /// group_hover）：用户消息行与 agent 轮块**共用**这一个字段，值是行在
+    /// 列表里的索引（用户行 = msg_ix，agent 轮 = 轮首 msg_ix；角色不同故
+    /// 永不撞车）。唯一写入点 = messages::bar_hover_wired。
+    pub bar_hover: Option<usize>,
+    /// 消息气泡滚动句柄（key 同 expanded_skills；跨帧保持滚动位置并供
+    /// gpui-component Scrollbar 读取）
+    pub(crate) bubble_scrolls: std::rc::Rc<std::cell::RefCell<
+        std::collections::HashMap<String, gpui::ScrollHandle>,
+    >>,
+}
+
 impl Chat {
     pub(crate) fn new(cx: &mut Context<Self>) -> Self {
         let focus = cx.focus_handle();
@@ -383,8 +390,6 @@ impl Chat {
 
         let mut chat = Self {
             focus,
-            input: String::new(),
-            pending_images: Vec::new(),
             // v54.4 定案：启动固定会话界面（面板/内容区绑定关系见
             // status_bar；不恢复上次离开时的面板）
             dock_panel: DockPanel::Sessions,
@@ -403,13 +408,6 @@ impl Chat {
             },
             git_add_del: (0, 0),
             project_files: Vec::new(),
-            at_index: std::collections::HashMap::new(),
-            at_filter_cache: std::cell::RefCell::new(None),
-            history: Vec::new(),
-            history_ix: None,
-            menu_ix: 0,
-            menu_scroll: gpui::ScrollHandle::new(),
-            menu_dismissed: false,
             terminals: Vec::new(),
             active_terminal: None,
             term_seq: 0,
@@ -423,13 +421,25 @@ impl Chat {
             fs_watch_rx: Some(fs_watch_rx_ch),
             fs_watch: None,
             file_watches: std::collections::HashMap::new(),
-            composer: None,
-            expanded_skills: std::collections::HashSet::new(),
-            bubble_scrolls: std::rc::Rc::new(std::cell::RefCell::new(
+            composer: ComposerUi {
+                input: String::new(),
+                pending_images: Vec::new(),
+                history: Vec::new(),
+                history_ix: None,
+                composer: None,
+                input_focused: false,
+                menu_ix: 0,
+                menu_scroll: gpui::ScrollHandle::new(),
+                menu_dismissed: false,
+                at_index: std::collections::HashMap::new(),
+                at_filter_cache: std::cell::RefCell::new(None),
+                expanded_skills: std::collections::HashSet::new(),
+                bar_hover: None,
+                composer_h: std::rc::Rc::new(std::cell::Cell::new(0.)),
+                bubble_scrolls: std::rc::Rc::new(std::cell::RefCell::new(
                 std::collections::HashMap::new(),
             )),
-            bar_hover: None,
-            input_focused: false,
+            },
             pool: PoolUi {
                 runtimes: std::collections::HashMap::new(),
                 active_key: String::new(),
@@ -548,7 +558,6 @@ impl Chat {
             nav_flyout_hovered: false,
             nav_hover_turn: None,
             nav_flyout_list: gpui::ListState::new(0, gpui::ListAlignment::Top, px(1000.)),
-            composer_h: std::rc::Rc::new(std::cell::Cell::new(0.)),
             changes_only: ui.tree_changes_only,
             file_search_hits: Vec::new(),
             file_search_needle: String::new(),
@@ -735,7 +744,7 @@ impl Focusable for Chat {
     fn focus_handle(&self, cx: &App) -> FocusHandle {
         // composer 就绪后，"聚焦聊天"即落到输入组件（真输入框：光标/
         // 选区/IME 全可用），chat.focus 仅作组件创建前的回退
-        self.composer
+        self.composer.composer
             .as_ref()
             .map(|c| c.read(cx).focus_handle_in(cx))
             .unwrap_or_else(|| self.focus.clone())

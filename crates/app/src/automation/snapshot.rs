@@ -72,7 +72,7 @@ pub(crate) fn app_info(chat: &Chat, window: &gpui::Window, cx: &Context<Chat>) -
 /// 当前焦点落在谁身上（焦点类 bug 的数据化探针）：与已知句柄逐一比对。
 /// "other" = 焦点在未登记的输入上——正是不该发生时的线索。
 fn focused_str(chat: &Chat, window: &gpui::Window, cx: &Context<Chat>) -> Value {
-    if let Some(c) = &chat.composer {
+    if let Some(c) = &chat.composer.composer {
         if c.read(cx).focus_handle_in(cx).is_focused(window) {
             return json!("composer");
         }
@@ -404,10 +404,10 @@ fn messages_json(r: &SessionRuntime) -> Value {
 
 fn composer_surface(chat: &Chat) -> Value {
     json!({
-        "text": truncate(&chat.input, 2000),
-        "pending_images": chat.pending_images.len(),
-        "history_len": chat.history.len(),
-        "composer_open": chat.composer.is_some(),
+        "text": truncate(&chat.composer.input, 2000),
+        "pending_images": chat.composer.pending_images.len(),
+        "history_len": chat.composer.history.len(),
+        "composer_open": chat.composer.composer.is_some(),
     })
 }
 

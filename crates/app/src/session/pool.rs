@@ -177,9 +177,9 @@ impl Chat {
         if let Some(old) = self.pool.runtimes.get(&self.pool.active_key).cloned() {
             if old != rt {
                 let (input, images, history) = (
-                    std::mem::take(&mut self.input),
-                    std::mem::take(&mut self.pending_images),
-                    std::mem::take(&mut self.history),
+                    std::mem::take(&mut self.composer.input),
+                    std::mem::take(&mut self.composer.pending_images),
+                    std::mem::take(&mut self.composer.history),
                 );
                 old.update(cx, |r, _| {
                     r.input = input;
@@ -198,10 +198,10 @@ impl Chat {
                     r.file.clone(),
                 )
             });
-        self.input = input;
-        self.pending_images = images;
-        self.history = history;
-        self.history_ix = None;
+        self.composer.input = input;
+        self.composer.pending_images = images;
+        self.composer.history = history;
+        self.composer.history_ix = None;
         self.pool.active_key = key;
         self.psp.active_file = file.clone();
         // 注意力切到会话 ⇒ 内容区必须回到 chat 前台：否则在终端/文件编辑
@@ -220,10 +220,10 @@ impl Chat {
             self.psp.turn_warnings.remove(f);
         }
         self.dlg.pill_menu = None;
-        self.menu_ix = 0;
+        self.composer.menu_ix = 0;
         // 「点外/Esc 收起」不能跨会话泄漏：否则上个会话收起过菜单，切过来
         // 后 / @ 永远弹不出（active_menu 第一行就短路）
-        self.menu_dismissed = false;
+        self.composer.menu_dismissed = false;
         // surface queued permission requests of the incoming session
         let queued = rt.update(cx, |r, _| {
             let q = std::mem::take(&mut r.ext_queue);

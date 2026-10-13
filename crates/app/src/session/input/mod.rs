@@ -36,13 +36,13 @@ use ctx_tip::*;
 // ---------------------------------------------------------------------------
 
 impl Chat {
-    /// chat.input 唯一写入口：同步镜像进输入组件（组件是渲染真值源，
+    /// chat.composer.input 唯一写入口：同步镜像进输入组件（组件是渲染真值源，
     /// 手写 input 不再存在）。历史/草稿/清空/补全改写都走这里。
     pub(crate) fn set_input(&mut self, v: String, cx: &mut Context<Self>) {
-        self.input = v;
-        self.menu_dismissed = false;
-        if let Some(c) = &self.composer {
-            c.update(cx, |f, fcx| f.set_value(&self.input, fcx));
+        self.composer.input = v;
+        self.composer.menu_dismissed = false;
+        if let Some(c) = &self.composer.composer {
+            c.update(cx, |f, fcx| f.set_value(&self.composer.input, fcx));
         }
         cx.notify();
     }
@@ -55,10 +55,10 @@ impl Chat {
         cursor_byte: usize,
         cx: &mut Context<Self>,
     ) {
-        self.input = v;
-        self.menu_dismissed = false;
-        if let Some(c) = &self.composer {
-            let v = self.input.clone();
+        self.composer.input = v;
+        self.composer.menu_dismissed = false;
+        if let Some(c) = &self.composer.composer {
+            let v = self.composer.input.clone();
             c.update(cx, |f, fcx| f.set_value_with_cursor(v, cursor_byte, fcx));
         }
         cx.notify();
@@ -70,7 +70,7 @@ impl Chat {
     pub(crate) fn ensure_at_index(&mut self, cx: &mut Context<Self>) {
         let ttl = std::time::Duration::from_secs(services::workspace::at_index_ttl_secs());
         let key = self.cwd.to_string_lossy().to_string();
-        let fresh = match self.at_index.get(&key) {
+        let fresh = match self.composer.at_index.get(&key) {
             Some(e) => {
                 e.building || e.built.is_some_and(|t| t.elapsed() < ttl)
             }
@@ -79,12 +79,12 @@ impl Chat {
         if fresh {
             return;
         }
-        let entry = self.at_index.entry(key).or_default();
+        let entry = self.composer.at_index.entry(key).or_default();
         entry.building = true;
         entry.built = None;
         // 缓存上限（pi-web：超限整表清空——每 cwd 一份，重建很便宜）
-        if self.at_index.len() >= services::workspace::at_index_max_projects() {
-            self.at_index.clear();
+        if self.composer.at_index.len() >= services::workspace::at_index_max_projects() {
+            self.composer.at_index.clear();
         }
         let cwd = self.cwd.clone();
         let key = cwd.to_string_lossy().to_string();
@@ -101,7 +101,7 @@ impl Chat {
                 .await;
             let _ = this.update(cx, |chat, cx| {
                 // key = 构建时的 cwd（期间切项目也不会写错条目）
-                let e = chat.at_index.entry(key).or_default();
+                let e = chat.composer.at_index.entry(key).or_default();
                 e.files = std::sync::Arc::new(files);
                 e.entries = std::sync::Arc::new(entries);
                 e.built = Some(std::time::Instant::now());
@@ -119,9 +119,9 @@ impl Chat {
     ) {
         let rt = self.rt();
         let (input, images, history) = (
-            self.input.clone(),
-            self.pending_images.clone(),
-            self.history.clone(),
+            self.composer.input.clone(),
+            self.composer.pending_images.clone(),
+            self.composer.history.clone(),
         );
         rt.update(cx, |r, cx| {
             r.input = input;
@@ -135,9 +135,9 @@ impl Chat {
             (r.input.clone(), r.pending_images.clone(), r.history.clone())
         };
         self.set_input(input, cx);
-        self.pending_images = images;
-        self.history = history;
-        self.history_ix = None;
+        self.composer.pending_images = images;
+        self.composer.history = history;
+        self.composer.history_ix = None;
         cx.notify();
     }
 

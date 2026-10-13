@@ -224,8 +224,8 @@ fn bar_hover_wired<E: StatefulInteractiveElement>(
     el.on_hover(move |hovered, _, cx| {
         let _ = weak.update(cx, |c, cx| {
             let next = if *hovered { Some(ix) } else { None };
-            if c.bar_hover != next {
-                c.bar_hover = next;
+            if c.composer.bar_hover != next {
+                c.composer.bar_hover = next;
                 cx.notify();
             }
         });
@@ -357,8 +357,8 @@ pub(crate) fn render_msg(
                             .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
                                 let key = skill_key.clone();
                                 let _ = weak_skill.update(cx, |c, cx| {
-                                    if !c.expanded_skills.remove(&key) {
-                                        c.expanded_skills.insert(key);
+                                    if !c.composer.expanded_skills.remove(&key) {
+                                        c.composer.expanded_skills.insert(key);
                                     }
                                     cx.notify();
                                 });

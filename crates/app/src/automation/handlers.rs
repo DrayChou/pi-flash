@@ -125,7 +125,7 @@ pub(super) fn dispatch(
                 .ok_or_else(|| bad("需要 {\"target\": \"composer|chat|git_commit|terminal|editor\"}"))?;
             let handle = match target {
                 "composer" => chat
-                    .composer
+                    .composer.composer
                     .as_ref()
                     .map(|c| c.read(cx).focus_handle_in(cx))
                     .unwrap_or_else(|| chat.focus.clone()),

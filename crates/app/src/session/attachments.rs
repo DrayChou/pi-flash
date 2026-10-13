@@ -39,10 +39,10 @@ impl Chat {
                 for path in paths {
                     let Ok(bytes) = std::fs::read(&path) else { continue };
                     let mime = mime_from_ext(&path);
-                    chat.pending_images
+                    chat.composer.pending_images
                         .push(attached_image_from_bytes(mime, bytes));
                 }
-                if !chat.pending_images.is_empty() {
+                if !chat.composer.pending_images.is_empty() {
                     cx.notify();
                 }
             });
@@ -75,10 +75,10 @@ impl Chat {
             _ => return true,
         };
         let bytes = image.bytes;
-        if bytes.len() > MAX_IMAGE_BYTES || self.pending_images.len() >= MAX_ATTACHED_IMAGES {
+        if bytes.len() > MAX_IMAGE_BYTES || self.composer.pending_images.len() >= MAX_ATTACHED_IMAGES {
             return true;
         }
-        self.pending_images
+        self.composer.pending_images
             .push(attached_image_from_bytes(mime.into(), bytes));
         cx.notify();
         true
