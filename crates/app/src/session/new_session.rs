@@ -206,7 +206,7 @@ fn action_bar(
     // 关自动更新且有新版 = 可点击「↑」开 release 页（青蓝）。
     {
         use crate::services::updater::UpdateState;
-        let version_el: gpui::AnyElement = match &chat.update {
+        let version_el: gpui::AnyElement = match &chat.aux.update {
             UpdateState::Downloading { version } => div()
                 .flex()
                 .items_center()
@@ -243,7 +243,7 @@ fn action_bar(
                 SharedString::from(format!("v{}", env!("CARGO_PKG_VERSION"))).into_any_element()
             }
         };
-        let version_color = match &chat.update {
+        let version_color = match &chat.aux.update {
             // 下载中保持淡色（设计文档：下载信息仍为 faint 字体颜色）；
             // 就绪/有新版 = 青蓝（NOTICE，通知点三色之「完成通知」）
             UpdateState::Ready { .. } | UpdateState::Available { .. } => crate::appearance::theme::NOTICE,

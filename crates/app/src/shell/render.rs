@@ -90,16 +90,16 @@ impl Render for Chat {
             if !handle.is_focused(window) {
                 window.focus(&handle);
             }
-        } else if self.ext_dialog.is_some() {
+        } else if self.aux.ext_dialog.is_some() {
             let ext_text = matches!(
-                self.ext_dialog.as_ref().map(|r| &r.method),
+                self.aux.ext_dialog.as_ref().map(|r| &r.method),
                 Some(
                     pi_link::protocol::ExtUiMethod::Input { .. }
                         | pi_link::protocol::ExtUiMethod::Editor { .. }
                 )
             );
             let handle = if ext_text {
-                self.ext_input.read(cx).focus_handle()
+                self.aux.ext_input.read(cx).focus_handle()
             } else {
                 self.dialog_focus.clone()
             };
@@ -569,7 +569,7 @@ impl Render for Chat {
         }
         // extension notify toast (top-right)。上限与 status toast 对齐
         // （max 600×200、超高滚动、自动换行；2026-10-10 定夺）；不加阴影
-        if let Some((message, ty)) = &self.ext_notice {
+        if let Some((message, ty)) = &self.aux.ext_notice {
             let color = match ty {
                 1 => 0xfacc15,
                 2 => 0xf87171,
@@ -612,7 +612,7 @@ impl Render for Chat {
             );
         }
         // blocking extension dialog (select/confirm/input/editor)
-        if let Some(req) = &self.ext_dialog {
+        if let Some(req) = &self.aux.ext_dialog {
             root = root.child(render_ext_dialog(self, req.clone(), &weak_for_dialog));
         }
         root

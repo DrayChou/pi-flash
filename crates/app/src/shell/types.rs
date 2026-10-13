@@ -32,7 +32,7 @@ pub(crate) enum Dialog {
     FileDirty { path: PathBuf },
     /// 060 远程控制：扫码弹窗（二维码 + 绑定码）。topbar 手机图标与设置
     /// 「远程控制」页签入口已隐藏（2026-10-10 定），自动化 WX_QR_OPEN 仍可打开。
-    /// 不持数据 —— 内容全从 `chat.remote.qr` 现读，泵更新即重绘。
+    /// 不持数据 —— 内容全从 `chat.aux.remote.qr` 现读，泵更新即重绘。
     WxQr,
     /// 021 文件树操作栏「搜索文件」：500×500 居中窗，按文件名过滤当前项目
     /// 清单（load_listing 现扫，命中在 `file_search_hits`）。`scroll` 挂

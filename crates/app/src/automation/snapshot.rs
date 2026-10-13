@@ -86,7 +86,7 @@ fn focused_str(chat: &Chat, window: &gpui::Window, cx: &Context<Chat>) -> Value 
     if chat.git_commit_input.read(cx).focus_handle().is_focused(window) {
         return json!("git_commit");
     }
-    if chat.ext_input.read(cx).focus_handle().is_focused(window) {
+    if chat.aux.ext_input.read(cx).focus_handle().is_focused(window) {
         return json!("ext_input");
     }
     for t in &chat.terminals {
@@ -242,20 +242,20 @@ fn app_surface(chat: &Chat, window: &gpui::Window, cx: &Context<Chat>) -> Value 
         })),
         // 081 自动更新（新会话页版本号位状态断言）
         "update": {
-            "state": match &chat.update {
+            "state": match &chat.aux.update {
                 crate::services::updater::UpdateState::Idle => "idle",
                 crate::services::updater::UpdateState::Downloading { .. } => "downloading",
                 crate::services::updater::UpdateState::Ready { .. } => "ready",
                 crate::services::updater::UpdateState::Available { .. } => "available",
             },
-            "target": match &chat.update {
+            "target": match &chat.aux.update {
                 crate::services::updater::UpdateState::Downloading { version }
                 | crate::services::updater::UpdateState::Ready { version }
                 | crate::services::updater::UpdateState::Available { version } => Some(version.clone()),
                 crate::services::updater::UpdateState::Idle => None,
             },
             "auto_update": crate::services::workspace::auto_update(),
-            "changelog_open": chat.changelog.as_ref().map(|p| p.version.clone()),
+            "changelog_open": chat.aux.changelog.as_ref().map(|p| p.version.clone()),
         },
     })
 }
@@ -620,11 +620,11 @@ fn dialogs_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
             "x": x,
             "y": y,
         })),
-        "ext_dialog": chat.ext_dialog.is_some(),
+        "ext_dialog": chat.aux.ext_dialog.is_some(),
         "toast": chat.status_toast.as_ref().map(|(t, _)| truncate(t, 200)),
         "settings_open": chat.settings.is_some(),
         // 060 远程控制：扫码弹窗的实时状态（pif-ui 可据此断言 UI 状态）
-        "wx_qr": match &chat.remote.qr {
+        "wx_qr": match &chat.aux.remote.qr {
             crate::remote_control::QrState::Idle => "idle",
             crate::remote_control::QrState::Loading => "loading",
             crate::remote_control::QrState::Ready { .. } => "ready",
@@ -633,9 +633,9 @@ fn dialogs_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
             crate::remote_control::QrState::Expired => "expired",
             crate::remote_control::QrState::Error(_) => "error",
         },
-        "wx_running": chat.remote.is_running(),
-        "wx_bound": chat.remote.bound,
-        "wx_bind_code": chat.remote.bind_code(&chat.active_key),
+        "wx_running": chat.aux.remote.is_running(),
+        "wx_bound": chat.aux.remote.bound,
+        "wx_bind_code": chat.aux.remote.bind_code(&chat.active_key),
     })
 }
 

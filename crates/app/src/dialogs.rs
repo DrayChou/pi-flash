@@ -215,7 +215,7 @@ fn render_file_search(
 /// 头注写明「不要再自造窗体」，这里照做：`layer` 负责遮挡/外点/ESC，
 /// `big_card` 负责 chrome 顶条 + × + 0.7×0.98 尺寸。
 ///
-/// **不持数据** —— 内容全从 `chat.remote.qr` 现读，扫码 worker 的事件由 200ms
+/// **不持数据** —— 内容全从 `chat.aux.remote.qr` 现读，扫码 worker 的事件由 200ms
 /// 泵 drain 后 `cx.notify()`，弹窗随之重绘。
 fn render_wx_qr(
     chat: &Chat,
@@ -252,7 +252,7 @@ fn render_wx_qr(
             .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                 let _ = weak_b.update(cx, |c, cx| {
                     if go {
-                        c.remote.begin_qr(); // 幂等：已在扫码/已出码时不重发
+                        c.aux.remote.begin_qr(); // 幂等：已在扫码/已出码时不重发
                     } else {
                         c.dialog = None;
                     }
@@ -311,7 +311,7 @@ fn render_wx_qr(
         .py(px(8.))
         .child(body_text("远程控制 · 微信".into(), true));
 
-    match &chat.remote.qr {
+    match &chat.aux.remote.qr {
         QrState::Idle => {
             body = body.child(body_text(
                 "点下面的按钮取二维码，用手机微信扫一扫。".into(),
@@ -353,10 +353,10 @@ fn render_wx_qr(
     }
 
     // 绑定码：微信里 `/bind <code>` 用
-    let code = chat.remote.bind_code(&chat.active_key);
+    let code = chat.aux.remote.bind_code(&chat.active_key);
     // 上面的「绑定成功」说的是**渠道**（扫码授权）；这里说的是 `/bind`，
     // 两者别混 —— 用户被「已绑定/未绑定」并排显示搞糊涂过
-    let bind_line = match chat.remote.bound.as_deref() {
+    let bind_line = match chat.aux.remote.bound.as_deref() {
         Some(k) => format!("/bind 已确认 · 当前会话 {k}"),
         None => format!("可选：微信里发 /bind {code} 确认授权（不影响选会话）"),
     };

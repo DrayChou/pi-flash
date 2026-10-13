@@ -46,7 +46,7 @@ pub(crate) fn session_info_dialog(
     };
     let body = match kind {
         TopPanel::System => {
-            system_prompt_panel(sys.as_ref(), chat, weak, &chat.sysprompt_scroll, t)
+            system_prompt_panel(sys.as_ref(), chat, weak, &chat.aux.sysprompt_scroll, t)
         }
         TopPanel::Tools => tool_detail(
             selected_tool(
@@ -79,7 +79,7 @@ fn selected_tool<'a>(
     chat: &Chat,
     tools: Option<&'a [pi_link::transcript::ToolDecl]>,
 ) -> Option<&'a pi_link::transcript::ToolDecl> {
-    chat.tool_sel
+    chat.aux.tool_sel
         .as_deref()
         .and_then(|name| tools.and_then(|list| list.iter().find(|t| t.name == name)))
         .or_else(|| tools.and_then(|list| list.first()))
@@ -146,7 +146,7 @@ fn system_prompt_panel(
                         seg = seg.child(decl_block(
                             idx,
                             decl_list,
-                            chat.decl_open[idx],
+                            chat.aux.decl_open[idx],
                             weak,
                             t,
                         ));
@@ -279,7 +279,7 @@ fn decl_block(
                 .hover(|s| s.bg(gpui::rgba((color << 8) | 0x1e)))
                 .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
                     let _ = weak_toggle.update(cx, |c, cx| {
-                        c.decl_open[idx] = !c.decl_open[idx];
+                        c.aux.decl_open[idx] = !c.aux.decl_open[idx];
                         cx.notify();
                     });
                 })
@@ -626,7 +626,7 @@ fn tool_row(
         .hover(|s| s.bg(rgb(t.bg_hover)).text_color(rgb(t.text)))
         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
             let _ = weak.update(cx, |c, cx| {
-                c.tool_sel = Some(name.clone());
+                c.aux.tool_sel = Some(name.clone());
                 cx.notify();
             });
         })

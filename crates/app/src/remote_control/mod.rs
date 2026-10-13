@@ -626,7 +626,7 @@ pub(crate) fn spawn_wx_pump(cx: &mut gpui::Context<crate::Chat>) {
 impl crate::Chat {
     /// 收一批 → 逐条解析并执行 → **整批处理完才 ack 游标**。
     pub(crate) fn pump_wx(&mut self, cx: &mut gpui::Context<Self>) {
-        self.remote.ensure_transport();
+        self.aux.remote.ensure_transport();
         // 060 档 1 回推：空闲/轮次结束时把 assistant 缓冲发干净。
         // 每拍都调，flush 在缓冲为空时是 no-op。
         let running = self
@@ -635,30 +635,30 @@ impl crate::Chat {
             .map(|rt| rt.read(cx).agent_running)
             .unwrap_or(false);
         // 回填给 route() —— /task 的两个守卫要用（route 拿不到 cx）
-        self.remote.active_running = running;
-        for text in self.remote.on_running(running) {
-            self.remote.send(&text);
+        self.aux.remote.active_running = running;
+        for text in self.aux.remote.on_running(running) {
+            self.aux.remote.send(&text);
         }
         // 设置页扫码结果 —— **成功即关弹窗落回工作界面**（ZCode 扫完就进
         // 工作台选会话；留个弹窗把人挡在外面是错的）
-        if self.remote.poll_qr() {
-            if matches!(self.remote.qr, QrState::Done { .. })
+        if self.aux.remote.poll_qr() {
+            if matches!(self.aux.remote.qr, QrState::Done { .. })
                 && matches!(self.dialog, Some(crate::Dialog::WxQr))
             {
                 self.dialog = None;
             }
             cx.notify();
         }
-        let batches = self.remote.take_batches();
+        let batches = self.aux.remote.take_batches();
         if batches.is_empty() {
             return;
         }
         for batch in &batches {
             for m in &batch.messages {
-                let action = self.remote.route(&m.text);
+                let action = self.aux.remote.route(&m.text);
                 self.run_wx_action(action, cx);
             }
-            self.remote.ack(batch);
+            self.aux.remote.ack(batch);
         }
         cx.notify();
     }
@@ -666,7 +666,7 @@ impl crate::Chat {
     fn run_wx_action(&mut self, action: Action, cx: &mut gpui::Context<Self>) {
         match action {
             Action::None => {}
-            Action::Send(text) => self.remote.send(&text),
+            Action::Send(text) => self.aux.remote.send(&text),
             Action::Prompt(message) => self.send_wx(
                 &Command::Prompt {
                     message,
@@ -678,29 +678,29 @@ impl crate::Chat {
             Action::Status => {
                 let lang = Lang::from_ix(crate::i18n::lang_ix());
                 if let Some(text) = self.status_reply(cx, lang) {
-                    self.remote.send(&text);
+                    self.aux.remote.send(&text);
                 }
             }
             Action::New => {
                 let lang = Lang::from_ix(crate::i18n::lang_ix());
                 if self.agent_running_now(cx) {
                     // ZCode `case "new"`：任务运行中不让新建
-                    self.remote.send(&t(lang, TASK_RUNNING));
+                    self.aux.remote.send(&t(lang, TASK_RUNNING));
                 } else {
                     self.new_session(cx);
                     // 同上：建完草稿回状态卡（`return createStatusReply(...)`）
                     if let Some(text) = self.status_reply(cx, lang) {
-                        self.remote.send(&text);
+                        self.aux.remote.send(&text);
                     }
                 }
             }
             Action::OpenMenu(kind, sub) => self.open_wx_menu(kind, sub, cx),
             Action::Bind(code) => {
                 let lang = Lang::from_ix(crate::i18n::lang_ix());
-                if self.remote.accept_bind(&code, &self.active_key) {
-                    self.remote.send(&t(lang, "绑定成功。发送 **/帮助** 查看可用命令。"));
+                if self.aux.remote.accept_bind(&code, &self.active_key) {
+                    self.aux.remote.send(&t(lang, "绑定成功。发送 **/帮助** 查看可用命令。"));
                 } else {
-                    self.remote.send(&bind_invalid(lang));
+                    self.aux.remote.send(&bind_invalid(lang));
                 }
             }
             Action::SetThink(level) => {
@@ -752,12 +752,12 @@ impl crate::Chat {
         };
         if options.is_empty() {
             // 没有可选项时给回执而不是发一张空菜单
-            self.remote.send(&t(lang, "未找到回复颗粒度。"));
+            self.aux.remote.send(&t(lang, "未找到回复颗粒度。"));
             return;
         }
         let (prompt, pending) = menu::PendingMenu::build(kind, sub, &title, options, lang);
-        self.remote.pending_menu = Some(pending);
-        self.remote.send(&prompt);
+        self.aux.remote.pending_menu = Some(pending);
+        self.aux.remote.send(&prompt);
     }
 
     /// 菜单选中后的落地动作。
@@ -802,8 +802,8 @@ impl crate::Chat {
                 // ZCode botsService.ts:6039 Bugfix：旧 task 在跑时改 activeTaskId
                 // 会让后续输入落到新 task，但旧 task 输出仍回同一 bot 会话 ——
                 // 用户会误以为消息串线。运行中一律拒绝切换。
-                if self.remote.active_running {
-                    self.remote.send(&t(Lang::from_ix(crate::i18n::lang_ix()), TASK_RUNNING));
+                if self.aux.remote.active_running {
+                    self.aux.remote.send(&t(Lang::from_ix(crate::i18n::lang_ix()), TASK_RUNNING));
                     return;
                 }
                 if let Some(info) = self.sessions.iter().find(|s| s.id == value) {
@@ -819,7 +819,7 @@ impl crate::Chat {
     fn reply_status(&self, cx: &gpui::App) {
         let lang = Lang::from_ix(crate::i18n::lang_ix());
         if let Some(text) = self.status_reply(cx, lang) {
-            self.remote.send(&text);
+            self.aux.remote.send(&text);
         }
     }
 
@@ -841,7 +841,7 @@ impl crate::Chat {
 
     fn send_wx(&mut self, cmd: &Command, cx: &mut gpui::Context<Self>) {
         // `/bind` 钉住的会话优先，否则当前活跃会话（§4.2 active_session）
-        let key = self.remote.target_key(&self.active_key).to_string();
+        let key = self.aux.remote.target_key(&self.active_key).to_string();
         let Some(rt) = self.runtimes.get(&key).cloned() else {
             // 找不到目标会话也要出声 —— 静默丢弃已经坑过一次（微信没回执）
             eprintln!("[wx] 命令未送达：没有 key = {key} 的会话");

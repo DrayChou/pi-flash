@@ -901,7 +901,7 @@ fn nav_card(
 /// Extension setWidget rows above/below the composer (ext protocol surface).
 fn ext_widget_rows(chat: &Chat, t: &'static crate::appearance::theme::Theme, above: bool) -> Option<gpui::AnyElement> {
     let rows: Vec<gpui::AnyElement> = chat
-        .ext_widgets
+        .aux.ext_widgets
         .iter()
         .filter(|(_, _, a)| *a == above)
         .map(|(_, lines, _)| render_ext_widget(lines, t))

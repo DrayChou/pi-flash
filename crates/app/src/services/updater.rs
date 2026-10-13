@@ -514,7 +514,7 @@ impl crate::Chat {
         match read_last_seen() {
             Some(seen) if version_gt(&cur, &seen) => {
                 let cached = read_changelog_cache(&cur);
-                self.changelog = Some(ChangelogPage {
+                self.aux.changelog = Some(ChangelogPage {
                     version: cur.clone(),
                     fetching: cached.is_none(),
                     body: cached,
@@ -522,7 +522,7 @@ impl crate::Chat {
                 self.open_changelog_tab(cx);
                 write_last_seen(&cur);
                 // 缓存缺失：后台按 tag 现拉一份
-                if self.changelog.as_ref().is_some_and(|p| p.fetching) {
+                if self.aux.changelog.as_ref().is_some_and(|p| p.fetching) {
                     self.spawn_changelog_fetch(cur, cx);
                 }
             }
@@ -539,7 +539,7 @@ impl crate::Chat {
                 .spawn(async move { fetch_release_body(&version) })
                 .await;
             let _ = this.update(cx, |c, cx| {
-                if let Some(p) = &mut c.changelog {
+                if let Some(p) = &mut c.aux.changelog {
                     match body {
                         Ok(b) if !b.trim().is_empty() => p.body = Some(b),
                         _ => {}
@@ -577,7 +577,7 @@ impl crate::Chat {
             return;
         }
         // 已有 staging：不花网络，等重启
-        if matches!(self.update, UpdateState::Ready { .. }) {
+        if matches!(self.aux.update, UpdateState::Ready { .. }) {
             return;
         }
         cx.spawn(async move |this, cx| {
@@ -611,7 +611,7 @@ impl crate::Chat {
                 .unwrap_or(true);
             if !auto {
                 let _ = this.update(cx, |c, cx| {
-                    c.update = UpdateState::Available {
+                    c.aux.update = UpdateState::Available {
                         version: rel.version.clone(),
                     };
                     cx.notify();
@@ -620,7 +620,7 @@ impl crate::Chat {
             }
             // ③ 后台下载 → staging
             let _ = this.update(cx, |c, cx| {
-                c.update = UpdateState::Downloading {
+                c.aux.update = UpdateState::Downloading {
                     version: rel.version.clone(),
                 };
                 cx.notify();
@@ -630,7 +630,7 @@ impl crate::Chat {
                 .spawn(async move { stage_update(&rel) })
                 .await;
             let _ = this.update(cx, |c, cx| {
-                c.update = match &outcome {
+                c.aux.update = match &outcome {
                     Ok(v) => UpdateState::Ready {
                         version: v.clone(),
                     },

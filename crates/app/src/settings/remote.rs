@@ -29,7 +29,7 @@ fn qr_panel(chat: &mut Chat, weak: &gpui::WeakEntity<Chat>) -> Vec<gpui::AnyElem
     let t = T();
     let mut out: Vec<gpui::AnyElement> = Vec::new();
     out.push(section_title("扫码绑定"));
-    match chat.remote.qr.clone() {
+    match chat.aux.remote.qr.clone() {
         QrState::Idle => {
             out.push(note("用手机微信扫码，把当前聊天绑定到这台机器的 pi-flash。"));
             out.push(config_button(
@@ -40,7 +40,7 @@ fn qr_panel(chat: &mut Chat, weak: &gpui::WeakEntity<Chat>) -> Vec<gpui::AnyElem
                 false,
                 false,
                 |c, cx| {
-                    c.remote.begin_qr();
+                    c.aux.remote.begin_qr();
                     cx.notify();
                 },
             ));
@@ -62,7 +62,7 @@ fn qr_panel(chat: &mut Chat, weak: &gpui::WeakEntity<Chat>) -> Vec<gpui::AnyElem
                 false,
                 false,
                 |c, cx| {
-                    c.remote.begin_qr();
+                    c.aux.remote.begin_qr();
                     cx.notify();
                 },
             ));
@@ -86,7 +86,7 @@ fn qr_panel(chat: &mut Chat, weak: &gpui::WeakEntity<Chat>) -> Vec<gpui::AnyElem
                 false,
                 false,
                 |c, cx| {
-                    c.remote.begin_qr();
+                    c.aux.remote.begin_qr();
                     cx.notify();
                 },
             ));
@@ -108,9 +108,9 @@ pub(crate) fn mc_remote_view(chat: &mut Chat, weak: &gpui::WeakEntity<Chat>) -> 
     // ── 开关：关停即停线程（P4 验收项） ──────────────────────────────
     col = col.child(field(
         "启用远程控制",
-        config_switch("wx-enable", weak, chat.remote.is_running(), false, |c, cx| {
-            let on = !c.remote.is_running();
-            c.remote.set_enabled(on);
+        config_switch("wx-enable", weak, chat.aux.remote.is_running(), false, |c, cx| {
+            let on = !c.aux.remote.is_running();
+            c.aux.remote.set_enabled(on);
             cx.notify();
         }),
     ));
@@ -119,7 +119,7 @@ pub(crate) fn mc_remote_view(chat: &mut Chat, weak: &gpui::WeakEntity<Chat>) -> 
     ));
 
     // ── 渠道状态 ────────────────────────────────────────────────────
-    let running = chat.remote.is_running();
+    let running = chat.aux.remote.is_running();
     let token = wxprobe::state::load();
     let has_token = wxprobe::transport::require_token(&token).is_ok();
     let bot_id = wxprobe::state::get_str(&token, "bot_id").unwrap_or_default();
@@ -145,9 +145,9 @@ pub(crate) fn mc_remote_view(chat: &mut Chat, weak: &gpui::WeakEntity<Chat>) -> 
 
     // ── 绑定码：设置页展示，用户在微信里 `/bind <code>` 回填 ──────────
     let active = chat.active_key.clone();
-    let code = chat.remote.bind_code(&active);
+    let code = chat.aux.remote.bind_code(&active);
     let mut bind_lines = vec![format!("绑定码：{code}")];
-    match chat.remote.bound.as_deref() {
+    match chat.aux.remote.bound.as_deref() {
         Some(k) => bind_lines.push(format!("已绑定会话：{k}")),
         None => bind_lines.push("未绑定 —— 在微信里发 /bind 上面这串数字".into()),
     }

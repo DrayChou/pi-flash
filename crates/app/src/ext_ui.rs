@@ -79,7 +79,7 @@ pub(crate) fn render_ext_dialog(
             )
         }
         ExtUiMethod::Input { title, .. } | ExtUiMethod::Editor { title, .. } => {
-            (title.clone(), chat.ext_input.clone().into_any_element())
+            (title.clone(), chat.aux.ext_input.clone().into_any_element())
         }
         _ => (String::new(), div().into_any_element()),
     };
@@ -195,7 +195,7 @@ pub(crate) fn render_ext_dialog(
                                                 c.ext_respond(None, Some(true), false, cx);
                                             } else {
                                                 let v =
-                                                    c.ext_input.read(cx).value().to_string();
+                                                    c.aux.ext_input.read(cx).value().to_string();
                                                 c.ext_respond(Some(v), None, false, cx);
                                             }
                                         });
@@ -229,13 +229,13 @@ impl Chat {
             ExtUiMethod::SetStatus { status_key, status_text } => {
                 match status_text {
                     Some(text) if !text.is_empty() => {
-                        if let Some(item) = self.ext_status.iter_mut().find(|(k, _)| *k == status_key) {
+                        if let Some(item) = self.aux.ext_status.iter_mut().find(|(k, _)| *k == status_key) {
                             item.1 = text;
                         } else {
-                            self.ext_status.push((status_key, text));
+                            self.aux.ext_status.push((status_key, text));
                         }
                     }
-                    _ => self.ext_status.retain(|(k, _): &(String, String)| *k != status_key),
+                    _ => self.aux.ext_status.retain(|(k, _): &(String, String)| *k != status_key),
                 }
                 cx.notify();
             }
@@ -243,14 +243,14 @@ impl Chat {
                 let above = placement.as_deref() != Some("belowEditor");
                 match widget_lines {
                     Some(lines) if !lines.is_empty() => {
-                        if let Some(w) = self.ext_widgets.iter_mut().find(|(k, _, _)| *k == widget_key) {
+                        if let Some(w) = self.aux.ext_widgets.iter_mut().find(|(k, _, _)| *k == widget_key) {
                             w.1 = lines;
                             w.2 = above;
                         } else {
-                            self.ext_widgets.push((widget_key, lines, above));
+                            self.aux.ext_widgets.push((widget_key, lines, above));
                         }
                     }
-                    _ => self.ext_widgets.retain(|(k, _, _)| *k != widget_key),
+                    _ => self.aux.ext_widgets.retain(|(k, _, _)| *k != widget_key),
                 }
                 cx.notify();
             }
@@ -260,7 +260,7 @@ impl Chat {
                     Some("error") => 2,
                     _ => 0,
                 };
-                self.ext_notice = Some((message, ty));
+                self.aux.ext_notice = Some((message, ty));
                 cx.notify();
                 // auto-dismiss (pi-web notice toast)
                 cx.spawn(async move |this, cx| {
@@ -268,7 +268,7 @@ impl Chat {
                         .timer(std::time::Duration::from_secs(4))
                         .await;
                     let _ = this.update(cx, |c, cx| {
-                        if c.ext_notice.take().is_some() {
+                        if c.aux.ext_notice.take().is_some() {
                             cx.notify();
                         }
                     });
@@ -293,12 +293,12 @@ impl Chat {
                     }
                     _ => None,
                 };
-                let input = self.ext_input.clone();
+                let input = self.aux.ext_input.clone();
                 input.update(cx, |ti, cx| {
                     ti.set_placeholder(placeholder);
                     ti.set_value(prefill, cx);
                 });
-                self.ext_dialog = Some(pi_link::protocol::ExtensionUiRequest {
+                self.aux.ext_dialog = Some(pi_link::protocol::ExtensionUiRequest {
                     id: req.id,
                     method: blocking,
                 });
@@ -315,9 +315,9 @@ impl Chat {
         cancelled: bool,
         cx: &mut Context<Self>,
     ) {
-        if let Some(req) = self.ext_dialog.take() {
+        if let Some(req) = self.aux.ext_dialog.take() {
             // 桌面端先应答 → 微信端放弃同一请求（060 §8 档 2 不重复消费）
-            self.remote.clear_pending(&req.id);
+            self.aux.remote.clear_pending(&req.id);
             self.rt().read(cx).rpc(&pi_link::protocol::Command::ExtensionUiResponse {
                 id: req.id,
                 value,

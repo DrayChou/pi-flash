@@ -176,19 +176,7 @@ pub(crate) struct Chat {
     /// mcp.json 全局 + 项目服务器（设置·MCP 页）
     pub(crate) mcp_servers: Vec<pi_link::mcp::ServerEntry>,
     pub(crate) mcp_errors: Vec<String>,
-    // extension UI surface (active session)
-    pub(crate) ext_status: Vec<(String, String)>,
-    pub(crate) ext_widgets: Vec<(String, Vec<String>, bool)>,
-    pub(crate) ext_dialog: Option<pi_link::protocol::ExtensionUiRequest>,
-    pub(crate) ext_input: gpui::Entity<TextInput>,
-    pub(crate) ext_notice: Option<(String, u8)>,
     pub(crate) settings: Option<gpui::Entity<settings::SettingsPanel>>,
-    /// 081 自动更新状态（新会话页 inputpanel 右下版本号位消费）
-    pub(crate) update: services::updater::UpdateState,
-    /// 081 更新日志 tab 数据（新版本首启自动打开；None = 无页）
-    pub(crate) changelog: Option<services::updater::ChangelogPage>,
-    /// 更新日志页滚动句柄
-    pub(crate) changelog_scroll: gpui::ScrollHandle,
     // ---- v54 shell state ----
     /// psp 项目组（当前项目钉顶，其余按最近会话倒序；启动只加载
     /// 设置.默认加载会话数 N 个会话，组由这批会话的 cwd 自然形成）
@@ -247,8 +235,6 @@ pub(crate) struct Chat {
     /// 窗口焦点快照（render 每帧写；焦点变化本身会触发重绘所以不陈旧）。
     /// 「agent 结束时窗口没焦点就给点」的判定依据（2026-10-10 定夺）
     pub(crate) window_active: bool,
-    /// 微信远程控制桥（060）：transport + 待答 ExtUi 请求
-    pub(crate) remote: remote_control::RemoteControl,
     pub(crate) hovered_project: Option<usize>,
     pub(crate) proj_tip: Option<(PathBuf, f32, f32)>,
     pub(crate) hover_card: Option<HoverCard>,
@@ -279,6 +265,27 @@ pub(crate) struct Chat {
     pub(crate) file_search_gen: u64,
     pub(crate) file_search_scanning: bool,
     pub(crate) status_toast: Option<(String, std::time::Instant)>,
+    /// 周边面板簇（4ea）：ext UI / 更新 / 远程 / 系统提示词弹窗
+    pub(crate) aux: AuxUi,
+}
+
+/// 周边面板状态簇（4ea 字段重组）：扩展 UI 面 / 081 自动更新与更新日志 /
+/// 060 远程控制桥 / 系统提示词·工具定义弹窗。
+pub(crate) struct AuxUi {
+    // extension UI surface (active session)
+    pub(crate) ext_status: Vec<(String, String)>,
+    pub(crate) ext_widgets: Vec<(String, Vec<String>, bool)>,
+    pub(crate) ext_dialog: Option<pi_link::protocol::ExtensionUiRequest>,
+    pub(crate) ext_input: gpui::Entity<TextInput>,
+    pub(crate) ext_notice: Option<(String, u8)>,
+    /// 081 自动更新状态（新会话页 inputpanel 右下版本号位消费）
+    pub(crate) update: services::updater::UpdateState,
+    /// 081 更新日志 tab 数据（新版本首启自动打开；None = 无页）
+    pub(crate) changelog: Option<services::updater::ChangelogPage>,
+    /// 更新日志页滚动句柄
+    pub(crate) changelog_scroll: gpui::ScrollHandle,
+    /// 微信远程控制桥（060）：transport + 待答 ExtUi 请求
+    pub(crate) remote: remote_control::RemoteControl,
     /// 工具定义弹窗左列表选中的工具名（pi-web ToolDefinitionsPanel 的
     /// selectedToolName）
     pub(crate) tool_sel: Option<String>,
@@ -287,7 +294,6 @@ pub(crate) struct Chat {
     /// 系统提示词面板各桶「调用声明」折叠块的展开态（按 SYSTEM_BUCKETS 下标）
     pub(crate) decl_open: [bool; 7],
 }
-
 
 impl Chat {
     pub(crate) fn new(cx: &mut Context<Self>) -> Self {
@@ -423,11 +429,6 @@ impl Chat {
             mcp_servers: Vec::new(),
             mcp_errors: Vec::new(),
             op_tx: None,
-            ext_status: Vec::new(),
-            ext_widgets: Vec::new(),
-            ext_dialog: None,
-            ext_input: cx.new(|cx| TextInput::new(cx)),
-            ext_notice: None,
             panel_tabs: Vec::new(),
             active_panel_tab: None,
             file_cache: std::collections::HashMap::new(),
@@ -451,11 +452,22 @@ impl Chat {
             ctx_tip_ring_hover: false,
             ctx_tip_panel_hover: false,
             ctx_tip_closing: None,
+            aux: AuxUi {
+                ext_status: Vec::new(),
+                ext_widgets: Vec::new(),
+                ext_dialog: None,
+                ext_notice: None,
+                update: services::updater::initial_state(),
+                changelog: None,
+                changelog_scroll: gpui::ScrollHandle::new(),
+                remote: remote_control::RemoteControl::new(),
+                tool_sel: None,
+                sysprompt_scroll: gpui::ScrollHandle::new(),
+                decl_open: [false; 7],
+                ext_input: cx.new(|cx| TextInput::new(cx)),
+            },
             settings: None,
             // 081：已有合法 staging = Ready（不花网络），否则 Idle
-            update: services::updater::initial_state(),
-            changelog: None,
-            changelog_scroll: gpui::ScrollHandle::new(),
             renaming: None,
             rename_input: None,
             confirm_delete: None,
@@ -489,7 +501,6 @@ impl Chat {
             turn_warnings: HashSet::new(),
             pending_tabs: Vec::new(),
             window_active: true,
-            remote: remote_control::RemoteControl::new(),
             hovered_project: None,
             proj_tip: None,
             hover_card: None,
@@ -511,9 +522,6 @@ impl Chat {
             crumb_dd: cx.new(|_| crate::ui::DropdownState::new()),
             ext_probe: (0, 0),
             pending_focus_file: None,
-            tool_sel: None,
-            sysprompt_scroll: gpui::ScrollHandle::new(),
-            decl_open: [false; 7],
         };
         // 启动阶段：全局态一次性装载（010-启动.md §1/§6）——模型清单（磁盘 ∪ 自有
         // 缓存）、命令、默认项、插件、全局 mcp，全部先于第一帧进内存，**不 spawn 进程**。
@@ -526,7 +534,7 @@ impl Chat {
         chat.reload_model_defaults();
         // wire input callbacks that need the root entity handle
         let weak_ext = cx.entity().downgrade();
-        chat.ext_input.update(cx, |ti, _| {
+        chat.aux.ext_input.update(cx, |ti, _| {
             ti.set_on_submit(Box::new(move |v, cx| {
                 let _ = weak_ext.update(cx, |c, cx| {
                     c.ext_respond(Some(v.to_string()), None, false, cx);

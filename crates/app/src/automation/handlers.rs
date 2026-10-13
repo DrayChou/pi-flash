@@ -104,10 +104,10 @@ pub(super) fn dispatch(
             let keys = params.get("keys").and_then(Value::as_str).ok_or_else(|| bad("需要 {\"keys\": \"ctrl-s\"}"))?;
             let ks = Keystroke::parse(keys).map_err(|e| ("bad_params".to_string(), e.to_string()))?;
             // keystroke 会进真实 UI 事件链（输入框/弹层回调里 weak.update
-            // Chat），而本 op 自身已包在 chat.update 里——同步派发必触发
+            // Chat），而本 op 自身已包在 chat.aux.update 里——同步派发必触发
             // entity_map 重入断言（entity_map.rs "already being updated"，
             // 004 项目菜单弹窗的 ESC 首次暴露）。推迟到本效果周期尾（逃出
-            // chat.update）再派发；真实用户按键本就不在 chat.update 里，
+            // chat.aux.update）再派发；真实用户按键本就不在 chat.aux.update 里，
             // 此改动只是让自动化路径与之一致。dispatched 无法同步取得，
             // 改报 deferred（事务范式照旧：exec → wait/snapshot 断言效果）。
             window.defer(cx, move |window, cx| {
@@ -117,7 +117,7 @@ pub(super) fn dispatch(
         }
         method::INPUT_FOCUS => {
             // 元素级 focus（非坐标点击）：焦点/键位类 bug 的自动化入口。
-            // window.focus 只设焦点 id + refresh，无同步回调，chat.update
+            // window.focus 只设焦点 id + refresh，无同步回调，chat.aux.update
             // 内直调安全（与 dispatch_keystroke 的 defer 不同因）。
             let target = params
                 .get("target")
@@ -508,7 +508,7 @@ pub(super) fn dispatch(
             ok()
         }
         method::WX_QR_OPEN => {
-            chat.remote.begin_qr();
+            chat.aux.remote.begin_qr();
             chat.dialog = Some(crate::Dialog::WxQr);
             cx.notify();
             ok()

@@ -58,7 +58,7 @@ pub(crate) fn empty_hint(text: &str, t: &'static crate::appearance::theme::Theme
 
 fn changelog_view(chat: &mut Chat) -> gpui::AnyElement {
     let t = T();
-    let Some(page) = &chat.changelog else {
+    let Some(page) = &chat.aux.changelog else {
         return empty_hint(tr("about.no_changelog_available"), t);
     };
     let version = page.version.clone();
@@ -95,7 +95,7 @@ fn changelog_view(chat: &mut Chat) -> gpui::AnyElement {
                 .flex_1()
                 .min_h_0()
                 .overflow_y_scroll()
-                .track_scroll(&chat.changelog_scroll)
+                .track_scroll(&chat.aux.changelog_scroll)
                 .restrict_scroll_to_axis()
                 .child(
                     div()

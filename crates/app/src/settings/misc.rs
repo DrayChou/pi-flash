@@ -112,7 +112,7 @@ pub(crate) fn mc_misc_view(
                         s.auto_update = Some(on);
                         crate::services::workspace::save_app_settings(&s);
                         // 关→开：立即补一次检查（Idle 才发，避免与进行中的流程叠加）
-                        if on && matches!(c.update, crate::services::updater::UpdateState::Idle) {
+                        if on && matches!(c.aux.update, crate::services::updater::UpdateState::Idle) {
                             c.spawn_update_check(cx);
                         }
                         cx.notify();
