@@ -99,7 +99,6 @@ assets! {
     "icons/star-filled.svg",
     // 042 可用模型【获取模型】图标钮：lucide rotate-ccw（逆时针刷新）
     "icons/rotate-ccw.svg",
-    "icons/terminal.svg",
     // v54 UI: lucide additions
     "icons/sliders-horizontal.svg",
     // 「更多」唯一图标：lucide circle-ellipsis（2026-10-10 统一，

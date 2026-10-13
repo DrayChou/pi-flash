@@ -346,7 +346,7 @@ impl Render for ComposerInput {
                 .border_color(gpui::rgba(((t.accent as u64) << 8) as u32 | 0x4d))
                 .bg(rgb(t.bg_selected))
                 .child(crate::ui::icon(
-                    if *skill { "wand" } else { "terminal" },
+                    if *skill { "wand" } else { "icon-terminal-solid" },
                     13.,
                     t.accent,
                 ))

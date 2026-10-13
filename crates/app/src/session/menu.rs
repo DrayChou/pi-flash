@@ -219,7 +219,7 @@ pub(crate) fn slash_menu_view(
                 .into_any_element()
             } else {
                 crate::ui::icon(
-                    if name.starts_with("skill:") { "wand" } else { "terminal" },
+                    if name.starts_with("skill:") { "wand" } else { "icon-terminal-solid" },
                     13.,
                     if active { t.accent } else { t.text_dim },
                 )

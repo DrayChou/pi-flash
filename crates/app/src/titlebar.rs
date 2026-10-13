@@ -181,7 +181,7 @@ fn tab_strip(
                             .unwrap_or_default()
                     })
                     .unwrap_or_default();
-                (title.into(), None, false, Some("terminal"), ContentView::Term)
+                (title.into(), None, false, Some("icon-terminal-solid"), ContentView::Term)
             }
             crate::PanelTab::File(p) => (
                 p.file_name()

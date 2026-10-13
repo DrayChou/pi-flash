@@ -146,6 +146,15 @@ pub(crate) fn main_column(
 /// 面板/视图开着时该钮点亮 accent（原 ⋯ 菜单打勾语义的条上形态）。
 fn session_fn_bar(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyElement {
     let t = T();
+    // 栏首项目名（2026-10-14）：当前工作区基名（ws.cwd），粗体亮色，后随
+    // 淡色 chevron（编辑器面包屑同款 ">"），再接原有三钮
+    let project: SharedString = chat
+        .ws
+        .cwd
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| chat.ws.cwd.to_string_lossy().to_string())
+        .into();
     div()
         .id("session-fn-bar")
         .h(px(32.))
@@ -156,6 +165,21 @@ fn session_fn_bar(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyEle
         .pr(px(8.))
         .border_b_1()
         .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x66)))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(5.))
+                .mr(px(4.))
+                .child(
+                    div()
+                        .text_size(crate::appearance::ui_size(11.5))
+                        .font_weight(gpui::FontWeight::BOLD)
+                        .text_color(rgb(t.text))
+                        .child(project),
+                )
+                .child(crate::ui::icon("chevron-right", 10., t.text_faint)),
+        )
         .child(fn_bar_btn(
             "sfbar-prompt",
             "file-sliders",
@@ -178,7 +202,7 @@ fn session_fn_bar(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyEle
         .child(fn_bar_sep(t))
         .child(fn_bar_btn(
             "sfbar-term",
-            "terminal",
+            "icon-terminal-solid",
             tr("session.open_terminal"),
             chat.layout.content_view == crate::ContentView::Term,
             cx.listener(|this, _: &gpui::MouseDownEvent, window, cx| {

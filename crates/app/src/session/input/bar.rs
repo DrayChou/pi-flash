@@ -385,7 +385,7 @@ fn bar_left_group(
                 .gap(px(6.))
                 .pl(px(8.))
                 .h(px(28.))
-                .child(icon("terminal", 13., t.text_dim))
+                .child(icon("icon-terminal-solid", 13., t.text_dim))
                 .child(
                     div()
                         .text_size(crate::appearance::ui_size(BAR_FONT))
