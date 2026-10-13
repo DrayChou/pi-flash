@@ -56,15 +56,20 @@ cp "$NODE_BIN" dist/pi-flash/node.exe
 cp -r vendor/pi dist/pi-flash/vendor/
 
 # 裁掉非宿主平台 esbuild 二进制（vendor/pi 416MB 里 284MB 是 26 个平台副本，
-# 每包只用 win32-x64 一个 → 下载体积 200MB+ → ≈120MB；见 080 §1.2）
+# 每包只用 win32-x64 一个 → 下载体积 200MB+ → ≈120MB；见 080 §1.2）。
+# pi 1.2.0 起不再依赖 esbuild（bundle 零引用、依赖树无平台包）——目录不存在
+# 即跳过裁剪，包里本来也没有可裁的东西。
 ESBUILD_DIR="dist/pi-flash/vendor/pi/node_modules/@earendil-works/pi-coding-agent/node_modules/@esbuild"
 # npm 提升（hoist）后 @esbuild 可能落在 vendor/pi/node_modules 顶层，两处都认
 [[ -d "$ESBUILD_DIR/win32-x64" ]] || ESBUILD_DIR="dist/pi-flash/vendor/pi/node_modules/@esbuild"
-[[ -d "$ESBUILD_DIR/win32-x64" ]] || { echo "✗ 找不到 @esbuild/win32-x64"; exit 1; }
-for d in "$ESBUILD_DIR"/*; do
-  [[ "$(basename "$d")" == "win32-x64" ]] || rm -rf "$d"
-done
-echo "    esbuild 裁剪完成（保留 win32-x64）"
+if [[ -d "$ESBUILD_DIR/win32-x64" ]]; then
+  for d in "$ESBUILD_DIR"/*; do
+    [[ "$(basename "$d")" == "win32-x64" ]] || rm -rf "$d"
+  done
+  echo "    esbuild 裁剪完成（保留 win32-x64）"
+else
+  echo "    无 @esbuild 平台目录（pi 1.2.0+ 已不依赖 esbuild），跳过裁剪"
+fi
 
 cat > dist/pi-flash/启动说明.txt <<EOF
 pi-flash v${VERSION} — pi coding agent 的桌面壳（Windows x64）
