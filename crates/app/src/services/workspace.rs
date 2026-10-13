@@ -443,6 +443,9 @@ pub struct AppSettings {
     pub removed_providers: Option<Vec<String>>,
     /// 081 其他页: 自动更新（默认 on——off 时只提示新版本号 ↑ 不下载）
     pub auto_update: Option<bool>,
+    /// 界面页: Markdown 所见即所得（024 Live Preview 装饰；默认关——
+    /// 已知回车崩溃与标题行距问题未修，用户显式开启才挂装饰）
+    pub md_live_preview: Option<bool>,
 }
 
 fn app_settings_path() -> Option<PathBuf> {
@@ -525,6 +528,7 @@ pub fn app_settings() -> AppSettings {
                         )
                     }),
                     auto_update: map.get("auto_update").and_then(|v| v.as_bool()),
+                    md_live_preview: map.get("md_live_preview").and_then(|v| v.as_bool()),
                 }
             }
             None => AppSettings::default(),
@@ -601,6 +605,9 @@ pub fn save_app_settings(s: &AppSettings) {
     }
     if let Some(v) = s.auto_update {
         obj.insert("auto_update".into(), Value::Bool(v));
+    }
+    if let Some(v) = s.md_live_preview {
+        obj.insert("md_live_preview".into(), Value::Bool(v));
     }
     save_map_to(&path, &obj);
 }
@@ -700,6 +707,12 @@ pub fn git_markers() -> bool {
 /// 081 其他页: 自动更新开关（默认 on）。
 pub fn auto_update() -> bool {
     app_settings().auto_update.unwrap_or(true)
+}
+
+/// 界面页: Markdown 所见即所得（024 Live Preview 装饰；默认关 = md 源码态
+/// 走普通编辑器路径。已知回车崩溃与标题行距问题未修，显式开启才挂装饰）。
+pub fn md_live_preview() -> bool {
+    app_settings().md_live_preview.unwrap_or(false)
 }
 
 // ---------------------------------------------------------------------------

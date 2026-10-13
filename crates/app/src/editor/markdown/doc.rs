@@ -371,25 +371,28 @@ pub(crate) fn render_preview_body(
         .into_any_element()
 }
 
-/// 024: md 源码态 WYSIWYG 装饰幂等同步——`source_mode=true`（eye 切源码）
-/// 挂装饰 provider（非光标行折叠语法字符 + 渲染器同款着色；preview
-/// 渲染页不渲染编辑器，无需装饰）。行号保持默认（024 新设计：源码视图
-/// 既有能力不丢）。鼠标 eye 与 `file.view_mode` op 都只改 ft.md_source，
-/// 状态差异在此收口防漂移。
+/// 024: md 源码态 WYSIWYG 装饰幂等同步——`source_mode=true` 且「界面页
+/// Markdown 所见即所得」开关开启时挂装饰 provider（非光标行折叠语法字符 +
+/// 渲染器同款着色；preview 渲染页不渲染编辑器，无需装饰）。开关默认关
+/// （2026-10-13 用户定夺：回车崩溃 + 标题行距两缺陷未修，默认退普通编辑
+/// 路径），关 = 摘 provider 即 stock 编辑器。行号保持默认（024 新设计：
+/// 源码视图既有能力不丢）。鼠标 eye 与 `file.view_mode` op 都只改
+/// ft.md_source，状态差异在此收口防漂移。
 pub(crate) fn sync_live_decorations(
     chat: &mut crate::Chat,
     path: &std::path::Path,
     source_mode: bool,
     cx: &mut gpui::Context<crate::Chat>,
 ) {
+    let live = source_mode && crate::services::workspace::md_live_preview();
     let Some(ed) = chat.ws.file_cache.get(path).and_then(|f| f.editor.clone()) else {
         return;
     };
-    if ed.read(cx).has_decorations() == source_mode {
+    if ed.read(cx).has_decorations() == live {
         return;
     }
     ed.update(cx, |st, _| {
-        st.set_decorations(if source_mode {
+        st.set_decorations(if live {
             Some(std::rc::Rc::new(wysiwyg::MdLiveProvider))
         } else {
             None
