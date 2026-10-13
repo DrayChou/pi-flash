@@ -19,8 +19,9 @@ use crate::i18n::tr;
 use crate::appearance::theme::theme as T;
 use crate::ui::tokens::align;
 
-/// topbar 高（两段同高；窗口控制钮高度跟随；2026-10-10 定夺 36→38）。
-pub(crate) const HEIGHT: f32 = 38.;
+/// topbar 高（两段同高；窗口控制钮高度跟随；2026-10-10 定夺 36→38，
+/// 2026-10-13 定夺 38→40 与 statusbar 等高）。
+pub(crate) const HEIGHT: f32 = 40.;
 
 /// Caption-button glyph font (Win11; MDL2 covers Win10).
 pub const CAPTION_FONT: &str = "Segoe Fluent Icons";

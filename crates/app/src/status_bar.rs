@@ -1,4 +1,4 @@
-//! statusbar (v54): 36px，只在面板段（panel-col 内），三个面板 tab
+//! statusbar (v54): 40px，只在面板段（panel-col 内），三个面板 tab
 //! （psp / 文件树 / Git）46px 宽 icon 即标签。激活 tab = nav 色连体卡
 //! （顶无边、底圆角、accent 色），与 dock 背景连成一体。右端 = 设置钮
 //! （016 下放，原手机图标位；手机遥控迁 topbar 左段）。收起态整个隐藏
@@ -12,7 +12,7 @@ use crate::services::workspace::{save_ui_state, ui_state};
 use crate::appearance::theme::theme as T;
 use crate::ui::tokens::align;
 
-const HEIGHT: f32 = 36.;
+const HEIGHT: f32 = 40.;
 
 pub(crate) fn control_bar(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> impl gpui::IntoElement {
     let t = T();
