@@ -58,7 +58,7 @@ pub(crate) fn mc_skills_view(
         (tr("scope.global"), pi_link::skills::SkillScope::Global),
     ] {
         let items: Vec<&pi_link::skills::SkillEntry> =
-            chat.mc_skills.iter().filter(|s| s.scope == scope).collect();
+            chat.cfg.mc_skills.iter().filter(|s| s.scope == scope).collect();
         if items.is_empty() {
             continue;
         }
@@ -105,7 +105,7 @@ pub(crate) fn mc_skills_view(
             );
         }
     }
-    if chat.mc_skills.is_empty() {
+    if chat.cfg.mc_skills.is_empty() {
         list = list.child(
             div()
                 .p(px(12.))
@@ -116,10 +116,10 @@ pub(crate) fn mc_skills_view(
     }
 
     let selected = chat
-        .mc_skills
+        .cfg.mc_skills
         .iter()
         .find(|s| s.path.to_string_lossy() == section)
-        .or_else(|| chat.mc_skills.first());
+        .or_else(|| chat.cfg.mc_skills.first());
     let detail = match selected {
         None => div()
             .flex_1()

@@ -136,8 +136,8 @@ impl Chat {
                             &chat.globals.commands,
                         );
                     }
-                    chat.mc_state =
-                        models_config::compute_state(chat.mc_patterns.as_ref(), &chat.mc_refs());
+                    chat.cfg.mc_state =
+                        models_config::compute_state(chat.cfg.mc_patterns.as_ref(), &chat.mc_refs());
                     cx.notify();
                 }
                 SessionEvent::Commands(commands) => {

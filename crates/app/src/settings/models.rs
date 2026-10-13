@@ -38,7 +38,7 @@ impl Chat {
         }
         // auth.json 凭据 provider 也算一行（TypeSafe 奇偶校验：有 key、0 个
         // 可用模型也显示，pi-web activeApiKey parity）
-        for (p, _) in &self.mc_creds {
+        for (p, _) in &self.cfg.mc_creds {
             if !out.contains(p) {
                 out.push(p.clone());
             }
@@ -89,9 +89,9 @@ impl Chat {
 
     /// 启用模型按显示名序（下列表数据源）。
     pub(crate) fn mc_sorted_enabled(&self) -> Vec<pi_link::protocol::ModelInfo> {
-        let all_enabled = self.mc_state.all_enabled;
+        let all_enabled = self.cfg.mc_state.all_enabled;
         let enabled: std::collections::HashSet<&str> = self
-            .mc_state
+            .cfg.mc_state
             .enabled
             .iter()
             .map(|s| s.as_str())
@@ -117,25 +117,25 @@ impl Chat {
     /// Cheap (one settings.json read) — also called at startup.
     pub(crate) fn reload_model_defaults(&mut self) {
         let settings_path = pi_link::config::settings_path();
-        self.mc_patterns =
+        self.cfg.mc_patterns =
             pi_link::config::read_enabled_models(&settings_path).unwrap_or_else(|_| None);
         let project = pi_link::config::project_settings_path(&self.cwd);
-        self.mc_project_scope =
+        self.cfg.mc_project_scope =
             pi_link::config::read_enabled_models(&project).unwrap_or_else(|_| None).is_some();
-        self.mc_default_model = services::workspace::default_model_pref();
-        self.mc_default_thinking = pi_link::config::read_default_thinking_level(&settings_path);
-        self.mc_model_thinking = pi_link::config::read_model_thinking_levels(&settings_path);
-        self.mc_state =
-            models_config::compute_state(self.mc_patterns.as_ref(), &self.mc_refs());
+        self.cfg.mc_default_model = services::workspace::default_model_pref();
+        self.cfg.mc_default_thinking = pi_link::config::read_default_thinking_level(&settings_path);
+        self.cfg.mc_model_thinking = pi_link::config::read_model_thinking_levels(&settings_path);
+        self.cfg.mc_state =
+            models_config::compute_state(self.cfg.mc_patterns.as_ref(), &self.mc_refs());
     }
 
     pub(crate) fn new_session_default(&self) -> (Option<(String, String)>, Option<String>) {
         let catalog = self.catalog_for(&self.cwd);
         let in_scope = |m: &pi_link::protocol::ModelInfo| {
-            self.mc_state.all_enabled
+            self.cfg.mc_state.all_enabled
                 || {
                     let r = format!("{}/{}", m.provider, m.id);
-                    self.mc_state.enabled.iter().any(|e| e == &r)
+                    self.cfg.mc_state.enabled.iter().any(|e| e == &r)
                 }
         };
         // pi: patterns that resolve to nothing fall back to every model
@@ -146,7 +146,7 @@ impl Chat {
         // PF 默认在 scope 内才用；无默认/默认失效 → 显示名序第一个（与
         // 下列表排序同一把尺子）
         let default = self
-            .mc_default_model
+            .cfg.mc_default_model
             .as_ref()
             .and_then(|(p, id)| {
                 scope
@@ -162,18 +162,18 @@ impl Chat {
             });
         let thinking = default.as_ref().and_then(|(p, id)| {
             let r = format!("{p}/{id}");
-            self.mc_state
+            self.cfg.mc_state
                 .pins
                 .iter()
                 .find(|(pr, _)| pr == &r)
                 .map(|(_, l)| l.clone())
                 .or_else(|| {
-                    self.mc_model_thinking
+                    self.cfg.mc_model_thinking
                         .iter()
                         .find(|(pr, _)| pr == &r)
                         .map(|(_, l)| l.clone())
                 })
-        }).or_else(|| self.mc_default_thinking.clone());
+        }).or_else(|| self.cfg.mc_default_thinking.clone());
         (default, thinking)
     }
 
@@ -184,28 +184,28 @@ impl Chat {
     pub(crate) fn reload_settings_panel(&mut self) {
         self.reload_model_defaults();
         // 凭据（PF 自有账本 pf-auth.json；auth.json 归 pi，PF 不读）
-        self.mc_creds = pi_link::pf_auth::kinds();
+        self.cfg.mc_creds = pi_link::pf_auth::kinds();
         // 会话预设 `configured` 对应的工具清单（settings.json defaultTools）
-        self.mc_default_tools = self.globals.default_tools.clone();
-        self.mc_pkgs_global = self.globals.packages.clone();
+        self.cfg.mc_default_tools = self.globals.default_tools.clone();
+        self.cfg.mc_pkgs_global = self.globals.packages.clone();
         let ctx = self.project_ctx_now();
-        self.mc_skills = ctx.skills;
-        self.mc_pkgs_project = ctx.packages;
-        self.mc_project_scope = ctx.project_scope;
+        self.cfg.mc_skills = ctx.skills;
+        self.cfg.mc_pkgs_project = ctx.packages;
+        self.cfg.mc_project_scope = ctx.project_scope;
         // 043：MCP 盘上现读——project_ctx 是启动缓存，本页写盘后重读只会
         // 拷到旧列表（040 globals 内存副本同款教训）
         let (mcp_servers, mcp_errors) = pi_link::mcp::load(Some(&self.cwd));
-        self.mcp_servers = mcp_servers;
-        self.mcp_errors = mcp_errors;
+        self.cfg.mcp_servers = mcp_servers;
+        self.cfg.mcp_errors = mcp_errors;
         // 自定义 provider 编辑缓冲（PF 私有账本；面板打开/写盘后重建）
         match pi_link::pf_providers::read() {
             Ok(v) => {
-                self.mc_models_json = v;
-                self.mc_mj_error = None;
+                self.cfg.mc_models_json = v;
+                self.cfg.mc_mj_error = None;
             }
             Err(e) => {
-                self.mc_models_json = serde_json::json!({});
-                self.mc_mj_error = Some(e);
+                self.cfg.mc_models_json = serde_json::json!({});
+                self.cfg.mc_mj_error = Some(e);
             }
         }
     }
@@ -231,7 +231,7 @@ impl Chat {
 
     /// Apply a pattern edit: persist to settings.json, refresh panel state.
     pub(crate) fn apply_pattern_edit(&mut self, edit: models_config::Edit, cx: &mut Context<Self>) {
-        if self.mc_project_scope {
+        if self.cfg.mc_project_scope {
             self.mc_set_error(tr("models.project_override_dotpi"), cx);
             return;
         }
@@ -244,15 +244,15 @@ impl Chat {
             self.mc_set_error(&crate::i18n::tf("settings.write_failed", &[("e", e)]), cx);
             return;
         }
-        self.mc_patterns = edit.patterns;
-        self.mc_state =
-            models_config::compute_state(self.mc_patterns.as_ref(), &self.mc_refs());
+        self.cfg.mc_patterns = edit.patterns;
+        self.cfg.mc_state =
+            models_config::compute_state(self.cfg.mc_patterns.as_ref(), &self.mc_refs());
         cx.notify();
     }
 
     pub(crate) fn mc_toggle_model(&mut self, r: String, enable: bool, cx: &mut Context<Self>) {
         self.mc_clear_error(cx);
-        match models_config::set_models_enabled(self.mc_patterns.as_ref(), &self.mc_refs(), &[r], enable) {
+        match models_config::set_models_enabled(self.cfg.mc_patterns.as_ref(), &self.mc_refs(), &[r], enable) {
             Ok(edit) => self.apply_pattern_edit(edit, cx),
             Err(_) => self.mc_set_error(tr("model.keep_one"), cx),
         }
@@ -260,7 +260,7 @@ impl Chat {
 
     pub(crate) fn mc_toggle_provider(&mut self, provider: &str, enable: bool, cx: &mut Context<Self>) {
         self.mc_clear_error(cx);
-        match models_config::set_provider_enabled(self.mc_patterns.as_ref(), &self.mc_refs(), provider, enable) {
+        match models_config::set_provider_enabled(self.cfg.mc_patterns.as_ref(), &self.mc_refs(), provider, enable) {
             Ok(edit) => self.apply_pattern_edit(edit, cx),
             Err(_) => self.mc_set_error(tr("model.keep_one"), cx),
         }
@@ -270,15 +270,15 @@ impl Chat {
     /// 共用）。落 app-settings.json，并扇出到全部 runtime——全新 draft
     /// spawn 时以 `--model` 带上（重绑/恢复的会话不动）。
     pub(crate) fn mc_set_default(&mut self, provider: String, id: String, cx: &mut Context<Self>) {
-        let next = if self.mc_default_model.as_ref() == Some(&(provider.clone(), id.clone())) {
+        let next = if self.cfg.mc_default_model.as_ref() == Some(&(provider.clone(), id.clone())) {
             None
         } else {
             Some((provider, id))
         };
         services::workspace::set_default_model_pref(next.clone());
-        self.mc_default_model = next;
+        self.cfg.mc_default_model = next;
         for (_, rt) in &self.runtimes {
-            rt.update(cx, |r, _| r.default_model = self.mc_default_model.clone());
+            rt.update(cx, |r, _| r.default_model = self.cfg.mc_default_model.clone());
         }
         cx.notify();
     }
@@ -321,7 +321,7 @@ impl Chat {
         let Some(target) = pi_link::probe::catalog_target(&provider) else {
             return;
         };
-        self.mc_probe.insert(provider.clone(), McProbe::Running);
+        self.cfg.mc_probe.insert(provider.clone(), McProbe::Running);
         cx.notify();
         cx.spawn(async move |this, cx| {
             let provider_bg = provider.clone();
@@ -362,7 +362,7 @@ impl Chat {
                     ),
                     pi_link::probe::ProbeOutcome::Ok { .. } => {}
                 }
-                c.mc_probe.insert(provider, McProbe::Done);
+                c.cfg.mc_probe.insert(provider, McProbe::Done);
                 cx.notify();
             });
         })
@@ -372,7 +372,7 @@ impl Chat {
     /// Whether the provider has an api_key credential（detail 头部状态点用；
     /// 侧栏已改 provider logo，不再用凭据状态点缀行）。
     pub(crate) fn mc_configured(&self, provider: &str) -> bool {
-        self.mc_creds
+        self.cfg.mc_creds
             .iter()
             .any(|(p, k)| p == provider && *k == pi_link::config::CredentialKind::ApiKey)
     }
@@ -402,12 +402,12 @@ impl Chat {
     /// 042 详情头【移除】：确认后删 key + 合并列表除名。仅内置商走这里
     /// （自定义商的【移除】在表单头，删整条账本）。
     pub(crate) fn mc_ask_remove_provider(&mut self, provider: String, cx: &mut Context<Self>) {
-        self.mc_remove_confirm = Some(provider);
+        self.cfg.mc_remove_confirm = Some(provider);
         cx.notify();
     }
 
     pub(crate) fn mc_remove_provider_close(&mut self, ok: bool, cx: &mut Context<Self>) {
-        let Some(provider) = self.mc_remove_confirm.take() else {
+        let Some(provider) = self.cfg.mc_remove_confirm.take() else {
             return;
         };
         if !ok {
@@ -420,7 +420,7 @@ impl Chat {
             self.mc_set_error(&e, cx);
             return;
         }
-        self.mc_probe.remove(&provider);
+        self.cfg.mc_probe.remove(&provider);
         let mut removed = crate::services::workspace::removed_providers();
         if !removed.contains(&provider) {
             removed.push(provider.clone());
@@ -469,7 +469,7 @@ pub(crate) fn mc_models_view(
     let t = T();
     // models.json 不可读：错误条常挂详情区顶部（无页面级 footer 了）
     let mut detail_error = error.clone();
-    if let Some(e) = &chat.mc_mj_error {
+    if let Some(e) = &chat.cfg.mc_mj_error {
         detail_error = Some(crate::i18n::tf(
             "models.json_read_failed",
             &[("e", e.clone())],
@@ -484,7 +484,7 @@ pub(crate) fn mc_models_view(
     };
     // 本帧的启用集合（O(1) 行查询；一次构建，上下列表/详情共用）
     let enabled_set: std::collections::HashSet<String> =
-        chat.mc_state.enabled.iter().cloned().collect();
+        chat.cfg.mc_state.enabled.iter().cloned().collect();
     let sb = mc_models_sidebar(
         chat, &weak.clone(), &enabled_set, enabled_filter, enabled_filter_value, t,
     );
@@ -521,7 +521,7 @@ fn mc_models_sidebar(
 ) -> gpui::AnyElement {
     // ---- Provider 全集（内置目录 + models.json 自定义）与计数 -------------
     let custom: Vec<(String, &serde_json::Value)> =
-        pi_link::models_json::providers(&chat.mc_models_json);
+        pi_link::models_json::providers(&chat.cfg.mc_models_json);
     let mut provs: Vec<String> = chat
         .mc_provider_ids()
         .into_iter()
@@ -534,7 +534,7 @@ fn mc_models_sidebar(
         .collect();
 
     // 三档：0 = 默认模型所在商，1 = 有启用模型，2 = 无；档内显示名字典序
-    let default_prov = chat.mc_default_model.as_ref().map(|(p, _)| p.clone());
+    let default_prov = chat.cfg.mc_default_model.as_ref().map(|(p, _)| p.clone());
     let mut order: Vec<usize> = (0..provs.len()).collect();
     order.sort_by_key(|&ix| {
         let tier = match default_prov.as_deref() {
@@ -597,9 +597,9 @@ fn mc_models_sidebar(
             is_custom,
             enabled_n: en,
             total,
-            on: chat.mc_state.all_enabled || en > 0,
-            switchable: !chat.mc_project_scope && total > 0 && configured,
-            show_count: !chat.mc_state.all_enabled,
+            on: chat.cfg.mc_state.all_enabled || en > 0,
+            switchable: !chat.cfg.mc_project_scope && total > 0 && configured,
+            show_count: !chat.cfg.mc_state.all_enabled,
         });
         let mut ms: Vec<pi_link::protocol::ModelInfo> = enabled_models
             .iter()
@@ -616,10 +616,10 @@ fn mc_models_sidebar(
     // 行距统一：全表（Provider 行 + 模型行）同一行高，严格等距
     let row_h = (f32::from(crate::appearance::ui_size(11.)) + 19.).max(30.);
     let default_ref = chat
-        .mc_default_model
+        .cfg.mc_default_model
         .as_ref()
         .map(|(p, id)| format!("{p}/{id}"));
-    let pins = chat.mc_state.pins.clone();
+    let pins = chat.cfg.mc_state.pins.clone();
     let weak_rows = weak.clone();
 
     let list = vlist(
@@ -968,7 +968,7 @@ fn mc_enabled_section(
         })
         .count();
     // 标题行：可用模型 N/总数（左） + rotate-ccw 图标钮（右，实拉该商目录）
-    let running = matches!(chat.mc_probe.get(provider), Some(McProbe::Running));
+    let running = matches!(chat.cfg.mc_probe.get(provider), Some(McProbe::Running));
     let fetch_provider = provider.to_string();
     let fetch_weak = weak.clone();
     let mut section = div().flex().flex_col().gap(px(8.)).pt(px(10.)).child(
@@ -1002,7 +1002,7 @@ fn mc_enabled_section(
                 }
             }),
     );
-    if chat.mc_project_scope {
+    if chat.cfg.mc_project_scope {
         section = section.child(note(
             "当前项目的 .pi/settings.json 设置了 enabledModels 并覆盖全局配置，此处只读",
         ));
@@ -1030,11 +1030,11 @@ fn mc_enabled_section(
         + f32::from(crate::appearance::ui_size(10.)))
         * 1.25
         + 12.;
-    let all_enabled = chat.mc_state.all_enabled;
-    let project_scope = chat.mc_project_scope;
+    let all_enabled = chat.cfg.mc_state.all_enabled;
+    let project_scope = chat.cfg.mc_project_scope;
     let last_guard = enabled_count == 1;
     let enabled_rows = enabled_set.clone();
-    let pins = chat.mc_state.pins.clone();
+    let pins = chat.cfg.mc_state.pins.clone();
     let weak_rows = weak.clone();
     let list = vlist(
         "mc-model-list",
@@ -1131,7 +1131,7 @@ pub(crate) fn remove_provider_confirm_overlay(
     chat: &Chat,
     cx: &mut Context<Chat>,
 ) -> Option<gpui::AnyElement> {
-    let provider = chat.mc_remove_confirm.clone()?;
+    let provider = chat.cfg.mc_remove_confirm.clone()?;
     let name = crate::ui::provider_display_name(&provider).to_string();
     let weak = cx.entity().downgrade();
     let message = crate::i18n::tf(

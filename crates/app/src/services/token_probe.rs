@@ -410,7 +410,7 @@ impl Chat {
     pub(crate) fn spawn_token_probe(&mut self, cx: &mut gpui::Context<Self>) {
         let mut targets: Vec<ProbePkg> = Vec::new();
         let mut seen = std::collections::HashSet::new();
-        for v in self.mc_pkgs_global.iter().chain(self.mc_pkgs_project.iter()) {
+        for v in self.cfg.mc_pkgs_global.iter().chain(self.cfg.mc_pkgs_project.iter()) {
             let src = pi_link::skills::entry_source(v);
             if src.is_empty() || !seen.insert(src.clone()) {
                 continue;

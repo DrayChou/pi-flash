@@ -43,16 +43,16 @@ impl Chat {
     /// 否则后台起一次性 node 走 SDK dump 并落缓存。幂等——Loading 中
     /// 重复调用直接返回。失败置 [`RegistryState::Failed`]，下次调用重试。
     pub(crate) fn ensure_registry(&mut self, cx: &mut Context<Self>) {
-        if self.provider_registry.is_some() || matches!(self.registry_state, RegistryState::Loading)
+        if self.cfg.provider_registry.is_some() || matches!(self.cfg.registry_state, RegistryState::Loading)
         {
             return;
         }
         if let Some(d) = pi_link::registry::read_cache() {
-            self.provider_registry = Some(std::sync::Arc::new(d));
+            self.cfg.provider_registry = Some(std::sync::Arc::new(d));
             cx.notify();
             return;
         }
-        self.registry_state = RegistryState::Loading;
+        self.cfg.registry_state = RegistryState::Loading;
         cx.notify();
         cx.spawn(async move |this, cx| {
             let outcome = cx
@@ -62,10 +62,10 @@ impl Chat {
             let _ = this.update(cx, |c, cx| {
                 match outcome {
                     Ok(d) => {
-                        c.provider_registry = Some(std::sync::Arc::new(d));
-                        c.registry_state = RegistryState::Idle;
+                        c.cfg.provider_registry = Some(std::sync::Arc::new(d));
+                        c.cfg.registry_state = RegistryState::Idle;
                     }
-                    Err(e) => c.registry_state = RegistryState::Failed(e),
+                    Err(e) => c.cfg.registry_state = RegistryState::Failed(e),
                 }
                 cx.notify();
             });
@@ -146,14 +146,14 @@ impl Chat {
     /// 收窄；过滤文本仅在总数 ≥ [`MODEL_FILTER_MIN`] 时生效（阈值以下不渲染
     /// 过滤框，文本也不参与过滤——两处列表同规则）。返回 (可见, 总数)。
     pub(crate) fn picker_models(&self, cx: &gpui::App) -> (Vec<pi_link::protocol::ModelInfo>, usize) {
-        let picker_enabled = !self.mc_state.all_enabled;
+        let picker_enabled = !self.cfg.mc_state.all_enabled;
         let scoped: Vec<pi_link::protocol::ModelInfo> = self
             .catalog_for(&self.rt().read(cx).cwd)
             .iter()
             .filter(|m| {
                 !picker_enabled || {
                     let r = format!("{}/{}", m.provider, m.id);
-                    self.mc_state.enabled.iter().any(|e| e == &r)
+                    self.cfg.mc_state.enabled.iter().any(|e| e == &r)
                 }
             })
             .cloned()
@@ -386,7 +386,7 @@ pub(crate) fn view(
         .and_then(|s| s.model.as_ref())
         .map(|m| format!("{}/{}", m.provider, m.id));
     let default_ref = chat
-        .mc_default_model
+        .cfg.mc_default_model
         .as_ref()
         .map(|(p, id)| format!("{p}/{id}"));
 

@@ -217,15 +217,15 @@ fn app_surface(chat: &Chat, window: &gpui::Window, cx: &Context<Chat>) -> Value 
                 "pending": p.pending.len(),
                 "pending_sources": pending_sources,
                 "selected": chat
-                    .mc_pkgs_global
+                    .cfg.mc_pkgs_global
                     .iter()
-                    .chain(chat.mc_pkgs_project.iter())
+                    .chain(chat.cfg.mc_pkgs_project.iter())
                     .map(pi_link::skills::entry_source)
                     .filter(|s| !s.is_empty() && sel(s))
                     .collect::<std::collections::BTreeSet<_>>()
                     .len(),
-                "project_unselected": count(&chat.mc_pkgs_project, false),
-                "global_unselected": count(&chat.mc_pkgs_global, false),
+                "project_unselected": count(&chat.cfg.mc_pkgs_project, false),
+                "global_unselected": count(&chat.cfg.mc_pkgs_global, false),
             })
         }),
         // 瞬时提示（set_status）：运行中拦截 / 对话中途禁改 等断言用
@@ -535,17 +535,17 @@ fn settings_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
                 "section": p.section,
                 "error": p.error,
                 // 040 扩展页：op 进行中 + 当前列表（安装后刷新断言用）
-                "busy": chat.pkg_op.is_some(),
+                "busy": chat.cfg.pkg_op.is_some(),
                 "pkg_sources": chat
-                    .mc_pkgs_global
+                    .cfg.mc_pkgs_global
                     .iter()
                     .map(pi_link::skills::entry_source)
                     .collect::<Vec<String>>(),
-                "mc_state": format!("{:?}", chat.mc_state),
-                "mc_project_scope": chat.mc_project_scope,
+                "mc_state": format!("{:?}", chat.cfg.mc_state),
+                "mc_project_scope": chat.cfg.mc_project_scope,
                 // 043 MCP 页：列表 + 表单字段快照（列表断言 / 保存回读用）
                 "mcp_servers": chat
-                    .mcp_servers
+                    .cfg.mcp_servers
                     .iter()
                     .map(|s| {
                         json!({
@@ -611,7 +611,7 @@ fn dialogs_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
         "tree_confirm_del": opt_path(chat.tree_confirm_del.as_ref()),
         "tree_del_error": chat.tree_del_error.clone(),
         // 040 扩展页卸载确认浮层（Some=开着，值为待卸载来源）
-        "pkg_confirm_remove": chat.pkg_confirm_remove.clone(),
+        "pkg_confirm_remove": chat.cfg.pkg_confirm_remove.clone(),
         "renaming": opt_path(chat.renaming.as_ref()),
         // 编辑区右键菜单（file.context_menu 置槽；null=关）——开合/收起
         // 断言的数据化出口（此前只能开，断言靠 shot 像素）

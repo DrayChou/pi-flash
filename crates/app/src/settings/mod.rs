@@ -230,12 +230,12 @@ impl SettingsPanel {
     pub(crate) fn prefill_section(chat: &Chat, tab: u8) -> String {        match tab {
             TAB_MODELS => chat.mc_provider_ids().first().cloned().unwrap_or_default(),
             TAB_SKILLS => chat
-                .mc_skills
+                .cfg.mc_skills
                 .first()
                 .map(|s| s.path.to_string_lossy().to_string())
                 .unwrap_or_default(),
             TAB_PLUGINS => chat
-                .mc_pkgs_global
+                .cfg.mc_pkgs_global
                 .first()
                 .map(pi_link::skills::entry_source)
                 .unwrap_or_default(),

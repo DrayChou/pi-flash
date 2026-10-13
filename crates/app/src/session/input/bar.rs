@@ -85,14 +85,14 @@ fn mcp_button(
 ) -> gpui::AnyElement {
     let ui = crate::appearance::ui_size;
     let has_global = chat
-        .mcp_servers
+        .cfg.mcp_servers
         .iter()
         .any(|s| s.scope == pi_link::mcp::Scope::Global);
     if !has_global {
         return div().into_any_element();
     }
     let (n, open) = (
-        chat.mcp_servers
+        chat.cfg.mcp_servers
             .iter()
             .filter(|s| s.scope == pi_link::mcp::Scope::Global && s.enabled)
             .count(),

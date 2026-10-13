@@ -57,7 +57,7 @@ impl Chat {
     /// 勾选即生效：写 mcp.json enabled；运行中标记重绑（下一轮发送前）。
     pub(crate) fn mcp_picker_toggle(&mut self, name: &str, cx: &mut gpui::Context<Self>) {
         let Some(entry) = self
-            .mcp_servers
+            .cfg.mcp_servers
             .iter()
             .find(|s| s.scope == pi_link::mcp::Scope::Global && s.name == name)
             .cloned()
@@ -87,7 +87,7 @@ pub(crate) fn view(chat: &Chat, weak: &gpui::WeakEntity<Chat>, window: &gpui::Wi
 
     // ---- 全局条目：按名称排序，再稳定地把已勾选置顶 ----
     let mut items: Vec<&pi_link::mcp::ServerEntry> = chat
-        .mcp_servers
+        .cfg.mcp_servers
         .iter()
         .filter(|s| s.scope == pi_link::mcp::Scope::Global)
         .collect();

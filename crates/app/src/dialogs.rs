@@ -507,12 +507,12 @@ fn render_file_dirty(
 fn render_provider_picker(chat: &Chat, weak: &gpui::WeakEntity<Chat>, input: &gpui::Entity<TextInput>, scroll: &gpui::ScrollHandle, t: &theme::Theme, cx: &App) -> Div {
     let q = input.read(cx).value().trim().to_lowercase();
 
-    let dump = chat.provider_registry.clone();
-    let reg_state = chat.registry_state.clone();
+    let dump = chat.cfg.provider_registry.clone();
+    let reg_state = chat.cfg.registry_state.clone();
 
     // PF 自定义账本的 provider 不进 API KEY 网格（pi-web 排除 custom
     // sources 同款：自定义入口只有「自定义」卡）
-    let custom_names: Vec<String> = pi_link::models_json::providers(&chat.mc_models_json)
+    let custom_names: Vec<String> = pi_link::models_json::providers(&chat.cfg.mc_models_json)
         .into_iter()
         .map(|(n, _)| n)
         .collect();

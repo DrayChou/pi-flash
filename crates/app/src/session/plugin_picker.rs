@@ -94,7 +94,7 @@ impl Chat {
         // 宇宙序 = 全局 → 项目，去重（同一来源出现在两个 scope 时 `-e` 只发一次），
         // 再按展示名排序，与面板呈现一致
         let mut sources: Vec<String> = Vec::new();
-        for v in self.mc_pkgs_global.iter().chain(self.mc_pkgs_project.iter()) {
+        for v in self.cfg.mc_pkgs_global.iter().chain(self.cfg.mc_pkgs_project.iter()) {
             let src = pi_link::skills::entry_source(v);
             if src.is_empty() || !picker.pending.contains(&src) || sources.contains(&src) {
                 continue;
@@ -131,13 +131,13 @@ pub(crate) fn view(chat: &Chat, weak: &gpui::WeakEntity<Chat>, window: &gpui::Wi
 
     // ---- 宇宙 = 全局 ∪ 项目包去重；先按展示名排序，再稳定地把已勾选置顶 ----
     let mut items: Vec<(String, bool)> = Vec::new(); // (来源, 项目)
-    for v in chat.mc_pkgs_global.iter().chain(chat.mc_pkgs_project.iter()) {
+    for v in chat.cfg.mc_pkgs_global.iter().chain(chat.cfg.mc_pkgs_project.iter()) {
         let src = pi_link::skills::entry_source(v);
         if src.is_empty() || items.iter().any(|(s, _)| *s == src) {
             continue;
         }
         let project = chat
-            .mc_pkgs_project
+            .cfg.mc_pkgs_project
             .iter()
             .any(|p| pi_link::skills::entry_source(p) == src);
         items.push((src, project));

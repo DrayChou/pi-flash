@@ -17,7 +17,7 @@ impl Chat {
     /// 编辑回填数据：选中行 → (名称, 原始 JSON)。原始 JSON 保 env 值与
     /// 未知字段（ServerEntry 重建会丢）。
     pub(crate) fn mcp_backfill_data(&self, key: &str) -> Option<(String, String)> {
-        let e = self.mcp_servers.iter().find(|s| section_key(s) == key)?;
+        let e = self.cfg.mcp_servers.iter().find(|s| section_key(s) == key)?;
         let raw = pi_link::mcp::raw_entry(&e.file, &e.name).ok().flatten()?;
         let text = serde_json::to_string_pretty(&raw).ok()?;
         Some((e.name.clone(), text))
@@ -64,7 +64,7 @@ impl Chat {
     pub(crate) fn mcp_bulk(&mut self, enable: bool, cx: &mut Context<Self>) {
         self.mc_clear_error(cx);
         let mut failed = 0usize;
-        for entry in self.mcp_servers.iter().filter(|s| s.scope == Scope::Global) {
+        for entry in self.cfg.mcp_servers.iter().filter(|s| s.scope == Scope::Global) {
             if entry.enabled == enable {
                 continue;
             }
@@ -109,7 +109,7 @@ impl Chat {
         let path = pi_link::mcp::global_path();
         // 编辑模式且改了名 → 删旧条目（旧条目必在全局文件）
         if let Some(old) = self
-            .mcp_servers
+            .cfg.mcp_servers
             .iter()
             .find(|s| section_key(s) == section && s.scope == Scope::Global)
             .cloned()
@@ -124,7 +124,7 @@ impl Chat {
             Ok(_) => {
                 self.reload_settings_panel();
                 let key = self
-                    .mcp_servers
+                    .cfg.mcp_servers
                     .iter()
                     .find(|s| s.name == name && s.scope == Scope::Global)
                     .map(section_key)
@@ -194,7 +194,7 @@ fn mcp_sidebar(
     // px7 + 行内 px8 = 内容左右 15px（与右侧详情 p15 等距，040 扩展页定稿）
     let mut list = sidebar_list().px(px(7.));
     let items: Vec<&ServerEntry> = chat
-        .mcp_servers
+        .cfg.mcp_servers
         .iter()
         .filter(|s| s.scope == Scope::Global)
         .collect();
@@ -280,7 +280,7 @@ fn mcp_form(
 ) -> gpui::AnyElement {
     let t = T();
     let editing = chat
-        .mcp_servers
+        .cfg.mcp_servers
         .iter()
         .find(|s| section_key(s) == section && s.scope == Scope::Global)
         .cloned();
@@ -323,8 +323,8 @@ fn mcp_form(
     if let Some(err) = error {
         form = form.child(error_note(err));
     }
-    if !chat.mcp_errors.is_empty() {
-        form = form.child(error_note(&chat.mcp_errors.join("；")));
+    if !chat.cfg.mcp_errors.is_empty() {
+        form = form.child(error_note(&chat.cfg.mcp_errors.join("；")));
     }
     form = form
         // 第四行：8 行粘贴框

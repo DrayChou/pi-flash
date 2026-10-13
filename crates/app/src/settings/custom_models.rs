@@ -8,7 +8,7 @@ use pi_link::credentials::SecretVault;
 impl Chat {
     pub(crate) fn mj_select(&mut self, section: String, cx: &mut Context<Self>) {
         let (name, ix) = mj_parse_section(&section);
-        let entry = pi_link::models_json::provider_entry(&self.mc_models_json, &name)
+        let entry = pi_link::models_json::provider_entry(&self.cfg.mc_models_json, &name)
             .cloned()
             .unwrap_or_else(|| serde_json::json!({}));
         let model = ix
@@ -39,7 +39,7 @@ impl Chat {
 
     /// 缓冲落盘（042：表单头保存即写盘；失败挂详情错误条，缓冲保留重试）。
     fn mj_flush(&mut self, cx: &mut Context<Self>) {
-        if let Err(e) = pi_link::pf_providers::write(&self.mc_models_json) {
+        if let Err(e) = pi_link::pf_providers::write(&self.cfg.mc_models_json) {
             self.mc_set_error(&e, cx);
         }
     }
@@ -59,7 +59,7 @@ impl Chat {
         if name.is_empty() {
             return self.mc_set_error(tr("custom_models.name_required"), cx);
         }
-        let mut entry = pi_link::models_json::provider_entry(&self.mc_models_json, &old_name)
+        let mut entry = pi_link::models_json::provider_entry(&self.cfg.mc_models_json, &old_name)
             .cloned()
             .unwrap_or_else(|| serde_json::json!({}));
         entry["api"] = serde_json::Value::String(api);
@@ -68,13 +68,13 @@ impl Chat {
         // 库不可用降级明文
         self.mj_store_key(&mut entry, &name, &key, cx);
         if name != old_name {
-            if let Err(e) = pi_link::models_json::rename_provider(&mut self.mc_models_json, &old_name, &name) {
+            if let Err(e) = pi_link::models_json::rename_provider(&mut self.cfg.mc_models_json, &old_name, &name) {
                 return self.mc_set_error(&e, cx);
             }
             // 凭据库条目跟名搬家（无旧条目则静默跳过）
             pi_link::pf_providers::rename_provider_key(&old_name, &name, &pi_link::credentials::KeyringVault);
         }
-        pi_link::models_json::upsert_provider(&mut self.mc_models_json, &name, entry);
+        pi_link::models_json::upsert_provider(&mut self.cfg.mc_models_json, &name, entry);
         self.mj_flush(cx);
         if let Some(st) = self.settings.clone() {
             st.update(cx, |s, cx| {
@@ -86,13 +86,13 @@ impl Chat {
     }
 
     pub(crate) fn mj_delete_provider(&mut self, name: String, cx: &mut Context<Self>) {
-        pi_link::models_json::remove_provider(&mut self.mc_models_json, &name);
+        pi_link::models_json::remove_provider(&mut self.cfg.mc_models_json, &name);
         // 凭据库条目一并清（幂等；条目不存在是 Ok）
         let _ = pi_link::credentials::KeyringVault
             .delete(&pi_link::credentials::env_var_name(&name));
         self.mj_flush(cx);
         if let Some(st) = self.settings.clone() {
-            let next = pi_link::models_json::providers(&self.mc_models_json)
+            let next = pi_link::models_json::providers(&self.cfg.mc_models_json)
                 .first()
                 .map(|(n, _)| format!("mj:p:{n}"))
                 .unwrap_or_default();
@@ -134,20 +134,20 @@ impl Chat {
         if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
             return self.mc_set_error(tr("custom_models.name_invalid"), cx);
         }
-        if pi_link::models_json::provider_entry(&self.mc_models_json, &name).is_some() {
+        if pi_link::models_json::provider_entry(&self.cfg.mc_models_json, &name).is_some() {
             return self.mc_set_error(&crate::i18n::tf("custom_models.exists", &[("name", name)]), cx);
         }
         let mut entry = serde_json::json!({ "api": mj_api_name(api) });
         set_opt_str(&mut entry, "baseUrl", base.trim());
         self.mj_store_key(&mut entry, &name, key.trim(), cx);
-        pi_link::models_json::upsert_provider(&mut self.mc_models_json, &name, entry);
+        pi_link::models_json::upsert_provider(&mut self.cfg.mc_models_json, &name, entry);
         self.mj_flush(cx);
         self.mj_select(format!("mj:p:{name}"), cx);
         cx.notify();
     }
 
     pub(crate) fn mj_add_model(&mut self, provider: String, cx: &mut Context<Self>) {
-        let ix = pi_link::models_json::add_model(&mut self.mc_models_json, &provider);
+        let ix = pi_link::models_json::add_model(&mut self.cfg.mc_models_json, &provider);
         self.mj_flush(cx);
         self.mj_select(format!("mj:m:{provider}:{ix}"), cx);
     }
@@ -174,13 +174,13 @@ impl Chat {
         if reasoning {
             model["reasoning"] = serde_json::json!(true);
         }
-        pi_link::models_json::update_model(&mut self.mc_models_json, &provider, ix, model);
+        pi_link::models_json::update_model(&mut self.cfg.mc_models_json, &provider, ix, model);
         self.mj_flush(cx);
         cx.notify();
     }
 
     pub(crate) fn mj_delete_model(&mut self, provider: String, ix: usize, cx: &mut Context<Self>) {
-        pi_link::models_json::remove_model(&mut self.mc_models_json, &provider, ix);
+        pi_link::models_json::remove_model(&mut self.cfg.mc_models_json, &provider, ix);
         self.mj_flush(cx);
         self.mj_select(format!("mj:p:{provider}"), cx);
     }
@@ -188,7 +188,7 @@ impl Chat {
     /// Skills toggle: write `disable-model-invocation` into SKILL.md
     /// (pi-web PATCH /api/skills parity).
     pub(crate) fn mc_cli_op(&mut self, args: Vec<String>, done: String, cx: &mut Context<Self>) {
-        let Some(tx) = self.op_tx.clone() else { return };
+        let Some(tx) = self.cfg.op_tx.clone() else { return };
 
         let cwd = self.cwd.clone();
         std::thread::spawn(move || {
@@ -304,7 +304,7 @@ pub(crate) fn mj_provider_editor(
         .child(note("留空 Base URL 使用 pi 内置端点；API Key 支持 ENV 变量名、!shell-command 或明文；点【保存】写入 ~/.pi/agent/models.json"));
 
     // 模型清单（原侧栏嵌套行内收进来；点行进模型编辑器）
-    let models = pi_link::models_json::provider_entry(&chat.mc_models_json, name)
+    let models = pi_link::models_json::provider_entry(&chat.cfg.mc_models_json, name)
         .map(pi_link::models_json::provider_models)
         .unwrap_or_default();
     let mut list = div().flex().flex_col();

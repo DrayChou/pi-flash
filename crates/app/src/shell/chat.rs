@@ -48,7 +48,6 @@ pub(crate) struct Chat {
     /// 斜杠/@ 菜单被点外收起（active_menu 据此返回 None；改输入即复位）
     pub(crate) menu_dismissed: bool,
     pub(crate) term_events: Option<futures::channel::mpsc::UnboundedSender<(usize, alacritty_terminal::event::Event)>>,
-    pub(crate) op_tx: Option<futures::channel::mpsc::UnboundedSender<String>>,
     // editor view state（输入组件实体在 composer 首次渲染时惰性创建；
     // 真输入框 = gpui-component InputState，光标/选区/IME/滚动条全内置）
     pub(crate) composer: Option<gpui::Entity<ComposerInput>>,
@@ -140,42 +139,8 @@ pub(crate) struct Chat {
     /// 023：打开文件后待聚焦的编辑器（Zed 行为：开文件即聚焦；渲染帧
     /// 编辑器实体就绪后消费）
     pub(crate) pending_focus_file: Option<PathBuf>,
-    // settings panel data
-    pub(crate) mc_patterns: Option<Vec<String>>,
-    pub(crate) mc_state: EnabledState,
-    pub(crate) mc_creds: Vec<(String, pi_link::config::CredentialKind)>,
-    pub(crate) mc_project_scope: bool,
-    /// settings.json defaults a new session starts with (pi-web /api/models
-    /// `defaultModel` + `defaultThinkingLevel`; selectInitialModelScope inputs)
-    pub(crate) mc_default_model: Option<(String, String)>,
-    pub(crate) mc_default_thinking: Option<String>,
-    /// settings.modelThinkingLevels — per-`provider/modelId` recorded levels
-    pub(crate) mc_model_thinking: Vec<(String, String)>,
-    pub(crate) mc_skills: Vec<pi_link::skills::SkillEntry>,
-    pub(crate) mc_pkgs_global: Vec<serde_json::Value>,
-    pub(crate) mc_pkgs_project: Vec<serde_json::Value>,
-    /// 扩展页 CLI op（install/remove）进行中：转圈按 op 种类落按钮；op 泵
-    /// 收到完成消息即清零（泵同时重读 globals + 刷新列表面板）
-    pub(crate) pkg_op: Option<PkgOp>,
-    /// 卸载确认浮层（040：点垃圾桶先确认）：待卸载来源
-    pub(crate) pkg_confirm_remove: Option<String>,
-    pub(crate) mc_default_tools: Option<Vec<String>>,
-    /// models.json 编辑缓冲（设置·模型页；表单头保存即写盘，无页面级 footer）
-    pub(crate) mc_models_json: serde_json::Value,
-    pub(crate) mc_mj_error: Option<String>,
-    /// 042：provider 通路探查状态（保存 key 后自动一次 + 详情页手动重试）
-    pub(crate) mc_probe: std::collections::HashMap<String, McProbe>,
-    /// 042 新增 Provider 弹窗的全量注册表（registry.rs dump；None = 未加载）
-    pub(crate) provider_registry: Option<std::sync::Arc<pi_link::registry::RegistryDump>>,
-    /// dump 拉取状态（Idle = 待拉/可拉，Loading = 后台进行中，Failed = 上次失败）
-    pub(crate) registry_state: crate::session::model_picker::RegistryState,
-    /// 042：【移除】内置商的确认弹窗（provider id；None = 没开）
-    pub(crate) mc_remove_confirm: Option<String>,
     /// 042：inputpanel 模型菜单（锚定 pill 卡片，替代原居中 ModelSelect 弹窗）
     pub(crate) model_picker: Option<crate::session::model_picker::ModelPicker>,
-    /// mcp.json 全局 + 项目服务器（设置·MCP 页）
-    pub(crate) mcp_servers: Vec<pi_link::mcp::ServerEntry>,
-    pub(crate) mcp_errors: Vec<String>,
     pub(crate) settings: Option<gpui::Entity<settings::SettingsPanel>>,
     // ---- v54 shell state ----
     /// psp 项目组（当前项目钉顶，其余按最近会话倒序；启动只加载
@@ -267,6 +232,8 @@ pub(crate) struct Chat {
     pub(crate) status_toast: Option<(String, std::time::Instant)>,
     /// 周边面板簇（4ea）：ext UI / 更新 / 远程 / 系统提示词弹窗
     pub(crate) aux: AuxUi,
+    /// 设置面板簇（4ea）：模型/技能/扩展/MCP 配置状态
+    pub(crate) cfg: CfgUi,
 }
 
 /// 周边面板状态簇（4ea 字段重组）：扩展 UI 面 / 081 自动更新与更新日志 /
@@ -293,6 +260,46 @@ pub(crate) struct AuxUi {
     pub(crate) sysprompt_scroll: gpui::ScrollHandle,
     /// 系统提示词面板各桶「调用声明」折叠块的展开态（按 SYSTEM_BUCKETS 下标）
     pub(crate) decl_open: [bool; 7],
+}
+
+/// 设置面板状态簇（4ea 字段重组）：模型/技能/扩展/MCP 页的全部
+/// 状态与 CLI op 泵通道（settings 句柄本身在 dlg 簇）。
+pub(crate) struct CfgUi {
+    // settings panel data
+    pub(crate) mc_patterns: Option<Vec<String>>,
+    pub(crate) mc_state: EnabledState,
+    pub(crate) mc_creds: Vec<(String, pi_link::config::CredentialKind)>,
+    pub(crate) mc_project_scope: bool,
+    /// settings.json defaults a new session starts with (pi-web /api/models
+    /// `defaultModel` + `defaultThinkingLevel`; selectInitialModelScope inputs)
+    pub(crate) mc_default_model: Option<(String, String)>,
+    pub(crate) mc_default_thinking: Option<String>,
+    /// settings.modelThinkingLevels — per-`provider/modelId` recorded levels
+    pub(crate) mc_model_thinking: Vec<(String, String)>,
+    pub(crate) mc_skills: Vec<pi_link::skills::SkillEntry>,
+    pub(crate) mc_pkgs_global: Vec<serde_json::Value>,
+    pub(crate) mc_pkgs_project: Vec<serde_json::Value>,
+    /// 扩展页 CLI op（install/remove）进行中：转圈按 op 种类落按钮；op 泵
+    /// 收到完成消息即清零（泵同时重读 globals + 刷新列表面板）
+    pub(crate) pkg_op: Option<PkgOp>,
+    /// 卸载确认浮层（040：点垃圾桶先确认）：待卸载来源
+    pub(crate) pkg_confirm_remove: Option<String>,
+    pub(crate) mc_default_tools: Option<Vec<String>>,
+    /// models.json 编辑缓冲（设置·模型页；表单头保存即写盘，无页面级 footer）
+    pub(crate) mc_models_json: serde_json::Value,
+    pub(crate) mc_mj_error: Option<String>,
+    /// 042：provider 通路探查状态（保存 key 后自动一次 + 详情页手动重试）
+    pub(crate) mc_probe: std::collections::HashMap<String, McProbe>,
+    /// 042 新增 Provider 弹窗的全量注册表（registry.rs dump；None = 未加载）
+    pub(crate) provider_registry: Option<std::sync::Arc<pi_link::registry::RegistryDump>>,
+    /// dump 拉取状态（Idle = 待拉/可拉，Loading = 后台进行中，Failed = 上次失败）
+    pub(crate) registry_state: crate::session::model_picker::RegistryState,
+    /// 042：【移除】内置商的确认弹窗（provider id；None = 没开）
+    pub(crate) mc_remove_confirm: Option<String>,
+    /// mcp.json 全局 + 项目服务器（设置·MCP 页）
+    pub(crate) mcp_servers: Vec<pi_link::mcp::ServerEntry>,
+    pub(crate) mcp_errors: Vec<String>,
+    pub(crate) op_tx: Option<futures::channel::mpsc::UnboundedSender<String>>,
 }
 
 impl Chat {
@@ -406,29 +413,7 @@ impl Chat {
             term_cursor_on: true,
             term_cursor_focused: false,
             term_events: None,
-            mc_patterns: None,
-            mc_state: EnabledState::default(),
-            mc_creds: Vec::new(),
-            mc_project_scope: false,
-            mc_default_model: None,
-            mc_default_thinking: None,
-            mc_model_thinking: Vec::new(),
-            mc_skills: Vec::new(),
-            mc_pkgs_global: Vec::new(),
-            mc_pkgs_project: Vec::new(),
-            pkg_op: None,
-            pkg_confirm_remove: None,
-            mc_default_tools: None,
-            mc_models_json: serde_json::json!({}),
-            mc_mj_error: None,
-            mc_probe: std::collections::HashMap::new(),
-            provider_registry: None,
-            registry_state: crate::session::model_picker::RegistryState::Idle,
-            mc_remove_confirm: None,
             model_picker: None,
-            mcp_servers: Vec::new(),
-            mcp_errors: Vec::new(),
-            op_tx: None,
             panel_tabs: Vec::new(),
             active_panel_tab: None,
             file_cache: std::collections::HashMap::new(),
@@ -452,6 +437,30 @@ impl Chat {
             ctx_tip_ring_hover: false,
             ctx_tip_panel_hover: false,
             ctx_tip_closing: None,
+            cfg: CfgUi {
+                mc_patterns: None,
+                mc_state: EnabledState::default(),
+                mc_creds: Vec::new(),
+                mc_project_scope: false,
+                mc_default_model: None,
+                mc_default_thinking: None,
+                mc_model_thinking: Vec::new(),
+                mc_skills: Vec::new(),
+                mc_pkgs_global: Vec::new(),
+                mc_pkgs_project: Vec::new(),
+                pkg_op: None,
+                pkg_confirm_remove: None,
+                mc_default_tools: None,
+                mc_models_json: serde_json::json!({}),
+                mc_mj_error: None,
+                mc_probe: std::collections::HashMap::new(),
+                provider_registry: None,
+                registry_state: crate::session::model_picker::RegistryState::Idle,
+                mc_remove_confirm: None,
+                mcp_servers: Vec::new(),
+                mcp_errors: Vec::new(),
+                op_tx: None,
+            },
             aux: AuxUi {
                 ext_status: Vec::new(),
                 ext_widgets: Vec::new(),
@@ -548,12 +557,12 @@ impl Chat {
 
         // settings panel CLI op pump (pi install/remove runs in background)
         let (op_tx, mut op_rx) = futures::channel::mpsc::unbounded::<String>();
-        chat.op_tx = Some(op_tx);
+        chat.cfg.op_tx = Some(op_tx);
         cx.spawn(async move |this, cx| {
             while let Some(msg) = op_rx.next().await {
                 if this
                     .update(cx, |chat, cx| {
-                        chat.pkg_op = None;
+                        chat.cfg.pkg_op = None;
                         chat.set_status(msg, cx);
                         // CLI op 改的是盘上的 settings.json；globals 是启动时
                         // 的内存副本，不重读则 reload_settings_panel 只会拷到

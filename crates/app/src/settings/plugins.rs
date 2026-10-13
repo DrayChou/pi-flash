@@ -11,12 +11,12 @@ impl Chat {
     /// （pi-web disable 语义），写全局 settings.json。
     pub(crate) fn mc_toggle_package(&mut self, ix: usize, cx: &mut Context<Self>) {
         self.mc_clear_error(cx);
-        let Some(entry) = self.mc_pkgs_global.get(ix) else {
+        let Some(entry) = self.cfg.mc_pkgs_global.get(ix) else {
             return;
         };
         let source = pi_link::skills::entry_source(entry);
         let next: Vec<serde_json::Value> = self
-            .mc_pkgs_global
+            .cfg.mc_pkgs_global
             .iter()
             .enumerate()
             .map(|(i, e)| {
@@ -49,7 +49,7 @@ impl Chat {
         self.mc_clear_error(cx);
         let mut changed = 0usize;
         let next: Vec<serde_json::Value> = self
-            .mc_pkgs_global
+            .cfg.mc_pkgs_global
             .iter()
             .map(|e| {
                 if pi_link::skills::entry_disabled(e) == !enable {
@@ -83,7 +83,7 @@ impl Chat {
     /// （normalize_source 剥前缀）；后台跑 vendored pi CLI，转圈在安装
     /// 按钮，完成后 op 泵清零并刷新列表。op 进行中忽略新请求。
     pub(crate) fn mc_install_package(&mut self, source: String, cx: &mut Context<Self>) {
-        if self.pkg_op.is_some() {
+        if self.cfg.pkg_op.is_some() {
             return;
         }
         self.mc_clear_error(cx);
@@ -92,7 +92,7 @@ impl Chat {
             self.mc_set_error(&tr("extensions.source_placeholder"), cx);
             return;
         }
-        self.pkg_op = Some(crate::settings::plugins::PkgOp::Install);
+        self.cfg.pkg_op = Some(crate::settings::plugins::PkgOp::Install);
         self.mc_cli_op(
             vec!["install".to_string(), source.clone()],
             crate::i18n::tf("extensions.installed", &[("source", source.clone())]),
@@ -102,11 +102,11 @@ impl Chat {
 
     /// 卸载（040：移除按钮换成垃圾箱 icon，转圈在该垃圾桶上）。
     pub(crate) fn mc_remove_package(&mut self, source: String, cx: &mut Context<Self>) {
-        if self.pkg_op.is_some() {
+        if self.cfg.pkg_op.is_some() {
             return;
         }
         self.mc_clear_error(cx);
-        self.pkg_op = Some(crate::settings::plugins::PkgOp::Remove(source.clone()));
+        self.cfg.pkg_op = Some(crate::settings::plugins::PkgOp::Remove(source.clone()));
         self.mc_cli_op(
             vec!["remove".to_string(), source.clone()],
             crate::i18n::tf("extensions.removed", &[("source", source.clone())]),
@@ -116,16 +116,16 @@ impl Chat {
 
     /// 点垃圾桶：弹确认浮层（040，统一居中确认组件）。
     pub(crate) fn mc_ask_remove_package(&mut self, source: String, cx: &mut Context<Self>) {
-        if self.pkg_op.is_some() {
+        if self.cfg.pkg_op.is_some() {
             return;
         }
-        self.pkg_confirm_remove = Some(source);
+        self.cfg.pkg_confirm_remove = Some(source);
         cx.notify();
     }
 
     /// 确认浮层的「确认 / 取消」：ok=true 才真删。
     pub(crate) fn mc_remove_dialog_close(&mut self, ok: bool, cx: &mut Context<Self>) {
-        let Some(source) = self.pkg_confirm_remove.take() else {
+        let Some(source) = self.cfg.pkg_confirm_remove.take() else {
             return;
         };
         if ok {
@@ -146,7 +146,7 @@ pub(crate) fn mc_plugins_view(
 ) -> gpui::AnyElement {
     let t = T();
     let entries: Vec<(usize, &serde_json::Value)> =
-        chat.mc_pkgs_global.iter().enumerate().collect();
+        chat.cfg.mc_pkgs_global.iter().enumerate().collect();
     div()
         .flex()
         .flex_col()
@@ -157,7 +157,7 @@ pub(crate) fn mc_plugins_view(
             weak,
             install_input,
             error,
-            matches!(chat.pkg_op, Some(crate::settings::plugins::PkgOp::Install)),
+            matches!(chat.cfg.pkg_op, Some(crate::settings::plugins::PkgOp::Install)),
             t,
         ))
         .child(two_pane(
@@ -395,7 +395,7 @@ fn pl_detail(
     let weak_trash = weak.clone();
     let trash_src = src.clone();
     // 转圈落点：正在卸载本包 → 垃圾桶转圈；有任一 op → 垃圾桶禁用
-    let removing_this = matches!(chat.pkg_op.as_ref(), Some(crate::settings::plugins::PkgOp::Remove(s)) if *s == src);
+    let removing_this = matches!(chat.cfg.pkg_op.as_ref(), Some(crate::settings::plugins::PkgOp::Remove(s)) if *s == src);
     let mut trash = div()
         .id("pkg-remove")
         .size(px(28.))
@@ -421,7 +421,7 @@ fn pl_detail(
             crate::appearance::theme::theme().danger,
         ));
     }
-    if removing_this || chat.pkg_op.is_some() {
+    if removing_this || chat.cfg.pkg_op.is_some() {
         trash = trash.opacity(0.5);
     } else {
         trash = trash
@@ -509,7 +509,7 @@ pub(crate) fn remove_confirm_overlay(
     chat: &Chat,
     cx: &mut Context<Chat>,
 ) -> Option<gpui::AnyElement> {
-    let src = chat.pkg_confirm_remove.as_ref()?;
+    let src = chat.cfg.pkg_confirm_remove.as_ref()?;
     let name = pi_link::skills::display_source(src).to_string();
     let weak = cx.entity().downgrade();
     let message = crate::i18n::tf("extensions.uninstall_confirm", &[("name", name)]);
