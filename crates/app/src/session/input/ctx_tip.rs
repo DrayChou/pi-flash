@@ -6,6 +6,7 @@ use gpui::{AnimationExt, Context, MouseButton, SharedString, div, prelude::*, px
 
 use crate::Chat;
 use crate::i18n::tr;
+use crate::services::format::fmt_thousand;
 
 /// 悬停标志更新 + 淡出状态机（乱序免疫）：只按 (was_open, open) 转移，
 /// 环→面板交接时两个 hover 事件无论先后都收敛到正确状态。双面全空才
@@ -226,7 +227,9 @@ fn ctx_usage_panel(
                 .into_any_element(),
         ],
         Some(s) => {
-            let fmt_k = |n: u64| -> String { format!("{}K", (n as f64 / 1000.).round() as u64) };
+            let fmt_k = |n: u64| -> String {
+                format!("{}K", fmt_thousand((n as f64 / 1000.).round() as u64))
+            };
             let ctx_total = s.context_tokens.unwrap_or(0);
 
             // —— 上下文容量块（ZCode 风格）——
@@ -356,12 +359,28 @@ fn ctx_usage_panel(
                 row(tr("stats.cache_read"), fmt_k(s.cache_read)),
                 row(tr("stats.cache_write"), fmt_k(s.cache_write)),
                 row(tr("tokens.total"), fmt_k(s.tokens_total)),
-                row(
-                    tr("stats.cache_hit_rate"),
-                    s.cache_hit_rate()
-                        .map(|r| format!("{r:.1}%"))
-                        .unwrap_or_else(|| "\u{2014}".into()),
-                ),
+                // 缓存命中率：用户最关心的数字，值走主题 accent 强调（用户定夺）
+                div()
+                    .flex()
+                    .items_center()
+                    .child(
+                        div()
+                            .text_size(crate::appearance::ui_size(12.))
+                            .text_color(rgb(t.text_dim))
+                            .child(tr("stats.cache_hit_rate")),
+                    )
+                    .child(
+                        div()
+                            .ml_auto()
+                            .text_size(crate::appearance::ui_size(12.))
+                            .font_family(crate::editor::markdown::MONO_FAMILY)
+                            .text_color(rgb(t.accent))
+                            .child(SharedString::from(
+                                s.cache_hit_rate()
+                                    .map(|r| format!("{r:.1}%"))
+                                    .unwrap_or_else(|| "\u{2014}".into()),
+                            )),
+                    ),
             ]);
             let cost_rows = vec![row(tr("stats.total_cost"), format!("${:.4}", s.cost)).into_any_element()];
             parts.push(section(tr("stats.tokens_total"), vec![token_grid]).into_any_element());
