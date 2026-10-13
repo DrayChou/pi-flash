@@ -237,7 +237,6 @@ fn tab_strip(
             label,
             active,
             4.,
-            path,
             tab_icon,
             badge,
             deleted,
@@ -261,6 +260,18 @@ fn session_tab(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyElemen
         this.set_content_view(crate::ContentView::Chat);
         cx.notify();
     });
+    // 右键 = 标签菜单（zed 移植）：会话 tab 恒存不可关，菜单无 Close、
+    // Close Left 恒灰（见 psp_overlays::tab_menu_layer）
+    let ctx_menu = cx.listener(
+        move |this, ev: &gpui::MouseDownEvent, _w, cx| {
+            this.dlg.tab_menu = Some((
+                crate::TabMenuTarget::Session,
+                f32::from(ev.position.x),
+                f32::from(ev.position.y),
+            ));
+            cx.notify();
+        },
+    );
     tab_shell(
         "ctab-session",
         Some("bot-message-square"),
@@ -273,6 +284,7 @@ fn session_tab(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyElemen
         None,
         false,
     )
+    .on_mouse_down(MouseButton::Right, ctx_menu)
     .into_any_element()
 }
 
@@ -283,7 +295,6 @@ fn content_tab(
     label: SharedString,
     active: bool,
     ml: f32,
-    path: Option<PathBuf>,
     tab_icon: Option<&'static str>,
     badge: Option<gpui::AnyElement>,
     strike: bool,
@@ -292,42 +303,9 @@ fn content_tab(
 ) -> impl gpui::IntoElement {
     let t = T();
     let close = cx.listener(move |this, _: &gpui::MouseDownEvent, _w, cx| {
-        if let Some(p) = path.clone() {
-            // 文件 tab：脏缓冲走确认弹窗；干净直关（含内容区回退）
-            this.close_file_tab(&p, cx);
-            cx.notify();
-            return;
-        }
-        let was_active = this.ws.active_panel_tab == Some(ix) && this.layout.content_view == view;
-        this.close_panel_tab(ix, cx);
-        // 关掉当前 tab 后内容区回退：终端→浏览区遗留→chat；
-        // 更新日志（081）→ 剩余 tab 激活最近的，没有则回会话
-        if was_active && this.layout.content_view == view {
-            if view == ContentView::Changelog {
-                match this.ws.active_panel_tab {
-                    Some(nix) => {
-                        let v = this
-                            .ws.panel_tabs
-                            .get(nix)
-                            .map(|tab| tab.view())
-                            .unwrap_or(ContentView::Chat);
-                        this.set_content_view(v);
-                    }
-                    None => this.set_content_view(ContentView::Chat),
-                }
-            } else if this.ws.active_panel_tab.is_none() {
-                let v = if this.ws.panel_tabs.is_empty() {
-                    ContentView::Chat
-                } else {
-                    this.layout.browse_last
-                };
-                this.set_content_view(v);
-                if this.layout.content_view == ContentView::Term && !this.ws.panel_tabs.is_empty() {
-                    let last = this.ws.panel_tabs.len() - 1;
-                    this.activate_panel_tab(last, cx);
-                }
-            }
-        }
+        // 文件 tab：脏缓冲走确认弹窗；干净直关（含内容区回退）。逻辑收拢
+        // 在 editor/tabs.rs close_tab_at——与标签右键菜单 Close 同一方法
+        this.close_tab_at(ix, cx);
         cx.notify();
     });
     let switch = cx.listener(move |this, _: &gpui::MouseDownEvent, window, cx| {
@@ -374,6 +352,16 @@ fn content_tab(
         })
         .child(crate::ui::icon_hover("x", 12., t.text_dim))
         .into_any_element();
+    // 右键 = 标签菜单（zed 移植）：Close/Others/Left/Right/All，锚点 =
+    // 事件坐标
+    let ctx_menu = cx.listener(move |this, ev: &gpui::MouseDownEvent, _w, cx| {
+        this.dlg.tab_menu = Some((
+            crate::TabMenuTarget::Panel(ix),
+            f32::from(ev.position.x),
+            f32::from(ev.position.y),
+        ));
+        cx.notify();
+    });
     tab_shell(
         id,
         tab_icon,
@@ -386,6 +374,7 @@ fn content_tab(
         badge,
         strike,
     )
+    .on_mouse_down(MouseButton::Right, ctx_menu)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -400,7 +389,7 @@ fn tab_shell(
     trailing: Option<gpui::AnyElement>,
     badge: Option<gpui::AnyElement>,
     strike: bool,
-) -> impl gpui::IntoElement {
+) -> gpui::Stateful<gpui::Div> {
     let mut tab = div()
         .id(id)
         .ml(px(ml))

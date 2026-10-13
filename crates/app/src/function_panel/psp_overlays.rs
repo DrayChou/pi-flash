@@ -57,6 +57,19 @@ pub(crate) fn psp_overlays(
     if chat.dlg.tree_menu.is_some() {
         el = el.child(tree_menu_layer(chat, vp, t, cx));
     }
+    // topbar 标签右键菜单（zed tab_bar 菜单移植；tab 已关不再挂——防挂到
+    // 空气里，顺带收槽位）
+    if let Some((target, x, y)) = chat.dlg.tab_menu {
+        let alive = match target {
+            crate::TabMenuTarget::Session => true,
+            crate::TabMenuTarget::Panel(ix) => ix < chat.ws.panel_tabs.len(),
+        };
+        if alive {
+            el = el.child(super::tab_menu::layer(chat, target, x, y, vp, t, cx));
+        } else {
+            chat.dlg.tab_menu = None;
+        }
+    }
     if let Some((path, x, y)) = chat.dlg.confirm_prj_del.clone() {
         el = el.child(confirm_project_del(&path, x, y, vp, t, &chat.dlg.dialog_focus, cx));
     }
@@ -558,7 +571,7 @@ fn menu_layer(
 }
 
 /// 统一菜单卡座：absolute 弹层基座，贴边由统一算法的 [`PopupEdges`] 决定。
-fn menu_card(edges: PopupEdges, t: &'static Theme) -> gpui::Div {
+pub(crate) fn menu_card(edges: PopupEdges, t: &'static Theme) -> gpui::Div {
     edges.apply(
         div()
             .absolute()
@@ -1280,7 +1293,7 @@ fn tree_terminal_item(
 }
 
 /// 菜单分组分隔线（§5.6：1px t.border）。
-fn menu_sep() -> gpui::Div {
+pub(crate) fn menu_sep() -> gpui::Div {
     div()
         .h(px(1.))
         .my(px(4.))

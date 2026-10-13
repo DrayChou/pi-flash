@@ -10,7 +10,7 @@ use gpui::{App, Div, MouseButton, SharedString, div, px, relative, rgb};
 use crate::Dialog;
 use crate::Chat;
 use crate::TextInput;
-use crate::i18n::tr;
+use crate::i18n::{tf, tr};
 use crate::session::model_picker::RegistryState;
 use crate::services::format::time_ago;
 use crate::appearance::theme;
@@ -70,8 +70,8 @@ pub(crate) fn render_dialogs(
                     cx,
                 ));
             }
-            if let Some(Dialog::FileDirty { path }) = chat.dlg.dialog.as_ref() {
-                root = root.child(render_file_dirty(chat, weak, path, t));
+            if let Some(Dialog::FileDirty { paths }) = chat.dlg.dialog.as_ref() {
+                root = root.child(render_file_dirty(chat, weak, paths, t));
             }
             if let Some(Dialog::WxQr) = chat.dlg.dialog.as_ref() {
                 root = root.child(render_wx_qr(chat, weak, t));
@@ -389,20 +389,46 @@ fn render_wx_qr(
 fn render_file_dirty(
     chat: &Chat,
     weak: &gpui::WeakEntity<Chat>,
-    path: &PathBuf,
+    paths: &[PathBuf],
     t: &theme::Theme,
 ) -> Div {
     let _ = chat;
     let weak_save = weak.clone();
     let weak_drop = weak.clone();
     let weak_cancel = weak.clone();
-    let p_save = path.clone();
-    let p_drop = path.clone();
-    let name: SharedString = path
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_default()
-        .into();
+    let p_save: Vec<PathBuf> = paths.to_vec();
+    let p_drop: Vec<PathBuf> = paths.to_vec();
+    // 单文件照旧显示文件名；批量（标签右键 Close Others/All 收拢）显示
+    // 数量 + 前 3 个名字（zed「N unsaved」同款语义，三键对整批生效）
+    let name: SharedString = match paths {
+        [p] => p
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default()
+            .into(),
+        many => {
+            let shown: Vec<String> = many
+                .iter()
+                .take(3)
+                .map(|p| {
+                    p.file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| p.display().to_string())
+                })
+                .collect();
+            let more = if many.len() > 3 { " …" } else { "" };
+            format!(
+                "{} {}{}",
+                tf(
+                    "conflict.unsaved_n_files",
+                    &[("n", many.len().to_string())]
+                ),
+                shown.join("、"),
+                more
+            )
+            .into()
+        }
+    };
     let btn = |id: &'static str, label: &'static str, accent: bool| {
         div()
             .id(id)
@@ -470,7 +496,11 @@ fn render_file_dirty(
                             gpui::MouseButton::Left,
                             move |_, _, cx| {
                                 let _ = weak_drop.update(cx, |c, cx| {
-                                    c.discard_file_tab(&p_drop, cx);
+                                    // 不保存关闭 = 整批丢弃（批量收拢时对全部
+                                    // 脏文件生效；单关时集合只有一个）
+                                    for p in &p_drop {
+                                        c.discard_file_tab(p, cx);
+                                    }
                                     c.dlg.dialog = None;
                                     cx.notify();
                                 });
@@ -482,8 +512,10 @@ fn render_file_dirty(
                             gpui::MouseButton::Left,
                             move |_, _, cx| {
                                 let _ = weak_save.update(cx, |c, cx| {
-                                    c.save_file(&p_save, cx);
-                                    c.discard_file_tab(&p_save, cx);
+                                    for p in &p_save {
+                                        c.save_file(p, cx);
+                                        c.discard_file_tab(p, cx);
+                                    }
                                     c.dlg.dialog = None;
                                     cx.notify();
                                 });

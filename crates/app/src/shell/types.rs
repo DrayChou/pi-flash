@@ -27,9 +27,11 @@ pub(crate) enum Dialog {
     /// topbar ⋯ 菜单：系统提示词 / 工具定义（窗体 = 设置弹窗那套大卡片，
     /// 见 top_panels / ui::overlay::big_card）
     SessionInfo { kind: TopPanel },
-    /// 023 fileView：关闭带未保存修改的文件 tab 前确认。
-    /// 持 path 不持 ix——弹窗存活期间的增删不会让索引漂移。
-    FileDirty { path: PathBuf },
+    /// 023 fileView：关闭带未保存修改的文件 tab 前确认。单关持一个 path；
+    /// 标签右键批量关闭（tab 菜单移植 zed「N unsaved」）收拢整批待裁决
+    /// 文件，弹窗三键对整批生效。持 path 不持 ix——弹窗存活期间的增删
+    /// 不会让索引漂移。
+    FileDirty { paths: Vec<PathBuf> },
     /// 060 远程控制：扫码弹窗（二维码 + 绑定码）。topbar 手机图标与设置
     /// 「远程控制」页签入口已隐藏（2026-10-10 定），自动化 WX_QR_OPEN 仍可打开。
     /// 不持数据 —— 内容全从 `chat.aux.remote.qr` 现读，泵更新即重绘。
@@ -212,6 +214,15 @@ pub(crate) enum PanelTab {
     File(PathBuf),
     /// 081 更新日志（新版本首启自动打开；无外部资源，纯渲染）
     Changelog,
+}
+
+/// topbar 标签右键菜单的目标 tab（zed tab_bar 菜单移植）：置顶会话 tab
+/// 恒存不可关（菜单无 Close、Close Left 恒灰）；自由 tab 按下标定位
+/// （菜单存续期 panel_tabs 冻结——浮层 occlude 全窗，无人能动它）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TabMenuTarget {
+    Session,
+    Panel(usize),
 }
 
 impl PanelTab {

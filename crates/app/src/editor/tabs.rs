@@ -100,11 +100,135 @@ impl Chat {
             })
             .unwrap_or(false);
         if dirty {
-            self.dlg.dialog = Some(crate::Dialog::FileDirty { path: path.to_path_buf() });
+            self.dlg.dialog = Some(crate::Dialog::FileDirty { paths: vec![path.to_path_buf()] });
             cx.notify();
             return;
         }
         self.discard_file_tab(path, cx);
+    }
+
+    /// 关一个自由 tab（tab 行尾 × 与标签右键菜单 Close 共用）：文件走脏
+    /// 确认；终端/更新日志直接关 + 内容区回退（原 × 闭包逻辑收拢成方法，
+    /// 两条入口同源）。
+    pub(crate) fn close_tab_at(&mut self, ix: usize, cx: &mut Context<Self>) {
+        let Some(tab) = self.ws.panel_tabs.get(ix).cloned() else {
+            return;
+        };
+        if let PanelTab::File(p) = &tab {
+            self.close_file_tab(p, cx);
+            cx.notify();
+            return;
+        }
+        let view = tab.view();
+        let was_active = self.ws.active_panel_tab == Some(ix) && self.layout.content_view == view;
+        self.close_panel_tab(ix, cx);
+        // 关掉当前 tab 后内容区回退：终端→浏览区遗留→chat；
+        // 更新日志（081）→ 剩余 tab 激活最近的，没有则回会话
+        if was_active && self.layout.content_view == view {
+            if view == ContentView::Changelog {
+                match self.ws.active_panel_tab {
+                    Some(nix) => {
+                        let v = self
+                            .ws
+                            .panel_tabs
+                            .get(nix)
+                            .map(|t| t.view())
+                            .unwrap_or(ContentView::Chat);
+                        self.set_content_view(v);
+                    }
+                    None => self.set_content_view(ContentView::Chat),
+                }
+            } else if self.ws.active_panel_tab.is_none() {
+                self.fallback_after_closes(cx);
+            }
+        }
+        cx.notify();
+    }
+
+    /// 批量关自由 tab（topbar 标签右键菜单移植 zed：Close Others/Left/
+    /// Right/All 共用核心）。`targets` = 待关下标集合；`focus` = 关完要
+    /// 激活的 tab（右键那个，Close All 传 None）。干净 tab 直接关；脏
+    /// 文件不逐个弹——收拢进一个 FileDirty 确认（zed「N unsaved」三键
+    /// 同构：保存并关闭/不保存关闭对整批生效，取消则脏 tab 留着）。会话
+    /// tab 不在 panel_tabs 里，天然不被波及（首标签恒不可关）。
+    pub(crate) fn close_tabs_batch(
+        &mut self,
+        mut targets: Vec<usize>,
+        focus: Option<usize>,
+        cx: &mut Context<Self>,
+    ) {
+        if targets.is_empty() {
+            return;
+        }
+        targets.sort_unstable();
+        targets.dedup();
+        // focus 按身份追踪：批量移除会让下标平移，事后按下标找必指错
+        let focus_tab = focus.and_then(|f| self.ws.panel_tabs.get(f).cloned());
+        let mut dirty: Vec<PathBuf> = Vec::new();
+        // 倒序移除：前面的下标不因删除漂移
+        for ix in targets.iter().rev() {
+            let Some(tab) = self.ws.panel_tabs.get(*ix).cloned() else {
+                continue;
+            };
+            match tab {
+                PanelTab::File(p) => {
+                    // 脏判据与 close_file_tab 同源（Deleted 且干净不算脏）
+                    let is_dirty = self
+                        .ws
+                        .file_cache
+                        .get(&p)
+                        .map(|f| match f.conflict {
+                            Some(crate::FileConflict::Deleted) => f.dirty,
+                            _ => f.dirty || f.conflict.is_some(),
+                        })
+                        .unwrap_or(false);
+                    if is_dirty {
+                        dirty.push(p);
+                    } else {
+                        self.discard_file_tab(&p, cx);
+                    }
+                }
+                _ => self.close_panel_tab(*ix, cx),
+            }
+        }
+        if !dirty.is_empty() {
+            dirty.reverse(); // 回正序：与标签视觉一致（左→右）
+            self.dlg.dialog = Some(crate::Dialog::FileDirty { paths: dirty });
+        }
+        match focus_tab.and_then(|t| self.ws.panel_tabs.iter().position(|p| p == &t)) {
+            Some(f) => {
+                // 右键 tab 存活（Others/Left/Right 必然）：激活它，视野跟上
+                let v = self.ws.panel_tabs[f].view();
+                self.activate_panel_tab(f, cx);
+                self.set_content_view(v);
+            }
+            None => self.fallback_after_closes(cx),
+        }
+        cx.notify();
+    }
+
+    /// 关了一批 tab 后没人可激活（Close All / focus 也被关）时的内容区
+    /// 回退，与单关回退同源：优先最近的文件 tab；没有文件但还有 tab 回
+    /// 浏览区遗留（终端则激活最后一个）；全空回会话。
+    fn fallback_after_closes(&mut self, cx: &mut Context<Self>) {
+        if let Some(fix) = self
+            .ws
+            .panel_tabs
+            .iter()
+            .position(|t| matches!(t, PanelTab::File(_)))
+        {
+            self.activate_panel_tab(fix, cx);
+            self.set_content_view(ContentView::File);
+        } else if self.ws.panel_tabs.is_empty() {
+            self.set_content_view(ContentView::Chat);
+        } else {
+            let v = self.layout.browse_last;
+            self.set_content_view(v);
+            if self.layout.content_view == ContentView::Term {
+                let last = self.ws.panel_tabs.len() - 1;
+                self.activate_panel_tab(last, cx);
+            }
+        }
     }
 
     /// 无条件丢弃文件 tab（确认弹窗三个按钮的公共尾）。

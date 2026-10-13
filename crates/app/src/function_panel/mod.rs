@@ -8,6 +8,7 @@ pub(crate) mod file_actions;
 pub(crate) mod psp_actions;
 pub(crate) mod git_panel;
 pub(crate) mod psp_overlays;
+pub(crate) mod tab_menu;
 
 use gpui::{Context, Entity, MouseButton, SharedString, div, prelude::*, px, rgb};
 

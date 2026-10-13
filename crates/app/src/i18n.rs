@@ -274,8 +274,16 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("conflict.keep_buffer", "保留缓冲", "保留緩衝", "Keep buffer"),
     ("conflict.unsaved_count", "未保存的修改", "未儲存的修改", "Unsaved changes"),
     ("conflict.unsaved_list", "有未保存的修改：", "有未儲存的修改：", "Unsaved changes:"),
+    ("conflict.unsaved_n_files", "有未保存的修改：{n} 个文件", "有未儲存的修改：{n} 個檔案", "Unsaved changes in {n} files"),
     ("conflict.close_without_saving", "不保存关闭", "不儲存關閉", "Close without saving"),
     ("conflict.save_and_close", "保存并关闭", "儲存並關閉", "Save and close"),
+    // topbar 标签右键菜单（zed tab_bar 菜单移植；无 Close Clean，会话
+    // 首标签恒不可关——菜单里没有 Close、Close Left 恒灰）
+    ("tab.close", "关闭", "關閉", "Close"),
+    ("tab.close_others", "关闭其他标签", "關閉其他標籤", "Close Others"),
+    ("tab.close_left", "关闭左侧标签", "關閉左側標籤", "Close Left"),
+    ("tab.close_right", "关闭右侧标签", "關閉右側標籤", "Close Right"),
+    ("tab.close_all", "关闭全部标签", "關閉全部標籤", "Close All"),
     ("conflict.no_files", "（无文件）", "（無檔案）", "(no files)"),
     ("conflict.initializing_editor", "编辑器初始化中…", "編輯器初始化中…", "Initializing editor…"),
     ("conflict.file_closed", "文件已关闭", "檔案已關閉", "File closed"),
