@@ -19,6 +19,48 @@ use super::{mode::InputMode, Decorations, InputState, LastLayout};
 const BOTTOM_MARGIN_ROWS: usize = 3;
 pub(super) const RIGHT_MARGIN: Pixels = px(10.);
 pub(super) const LINE_NUMBER_RIGHT_MARGIN: Pixels = px(10.);
+/// 视口上下额外 shaping/高亮的软换行行数：方向键/选区端点会落在视口外
+/// 1-2 行，这些行要保持真实 shaped（preferred_column 取 x 用）。
+const EXTRA_SHAPE_ROWS: usize = 2;
+
+/// 视口字节窗（PF 修复 2026-10-14，见 docs/agents/gpui.md「文本与绘制」）：
+/// `visible_range` 是**逻辑行**粒度，minified 单行文件（echarts.min.js 一行
+/// 94 万字符）会把整行送进高亮查询与 shaping——高亮 `match_styles` 产出
+/// 十几万条 capture 再进 `unique_styles` 的 O(区间×样式) 二重扫，每帧分钟
+/// 级假死。这里按行高累加定位每条软换行段的 y，只保留与视口 y 区间相交
+/// 的段，返回其字节范围（`visible_top` = visible_range 首行的内容 y）。
+fn viewport_byte_window(
+    text: &Rope,
+    wrapper: &super::text_wrapper::TextWrapper,
+    visible_range: &Range<usize>,
+    visible_top: Pixels,
+    line_height: Pixels,
+    viewport_top: Pixels,
+    viewport_bottom: Pixels,
+) -> Range<usize> {
+    let mut window = usize::MAX..0;
+    let mut line_y = visible_top;
+    let mut line_start_offset = text.line_start_offset(visible_range.start);
+    for row in visible_range.clone() {
+        let Some(item) = wrapper.lines.get(row) else {
+            break;
+        };
+        for (ix, seg) in item.wrapped_lines.iter().enumerate() {
+            let seg_top = line_y + ix as f32 * line_height;
+            if seg_top + line_height > viewport_top && seg_top < viewport_bottom {
+                window.start = window.start.min(line_start_offset + seg.start);
+                window.end = window.end.max(line_start_offset + seg.end);
+            }
+        }
+        line_y += item.height(line_height);
+        line_start_offset += item.len() + 1;
+    }
+    if window.start >= window.end {
+        0..0
+    } else {
+        window
+    }
+}
 
 pub(super) struct TextElement {
     pub(crate) state: Entity<InputState>,
@@ -536,7 +578,13 @@ impl TextElement {
             return (start..end, start as f32 * line_height);
         }
 
-        let mut visible_range = 0..total_lines;
+        // PF 修复（2026-10-14）：visible_range 是**逻辑行**空间，界限必须取
+        // lines.len()（逻辑行数）；原初始值 total_lines = text_wrapper.len()
+        // 是软换行行数——滚到文件底部（break 不触发）时 end 会跑到几千，
+        // 与循环里赋值的逻辑行号 ix 混用。旧 layout_lines 靠 slice_lines
+        // 越界钳制掩住，逐行迭代后直接 panic（pi-flash-jtt 实测）。
+        let logical_lines = state.text_wrapper.lines.len();
+        let mut visible_range = 0..logical_lines;
         let mut line_bottom = px(0.);
         for (ix, line) in state.text_wrapper.lines.iter().enumerate() {
             let wrapped_height = line.height(line_height);
@@ -548,7 +596,7 @@ impl TextElement {
             }
 
             if line_bottom + scroll_top >= input_height {
-                visible_range.end = (ix + extra_rows).min(total_lines);
+                visible_range.end = (ix + extra_rows).min(logical_lines);
                 break;
             }
         }
@@ -595,6 +643,7 @@ impl TextElement {
         (line_number_width, line_number_len)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn layout_lines(
         state: &InputState,
         display_text: &Rope,
@@ -602,6 +651,7 @@ impl TextElement {
         font_size: Pixels,
         runs: &[TextRun],
         bg_segments: &[(Range<usize>, Hsla)],
+        shape_window: &Range<usize>,
         window: &mut Window,
     ) -> Vec<LineLayout> {
         let is_multi_line = state.mode.is_multi_line();
@@ -637,17 +687,18 @@ impl TextElement {
                 .collect();
         }
 
-        let visible_text = display_text
-            .slice_lines(visible_range.start..visible_range.end)
-            .to_string();
-
+        // PF 2026-10-14：不再把整段可见行物化成一个 String（minified 单行
+        // 文件一次就是 941KB/帧的分配），逐行走零拷贝 RopeSlice，段文本
+        // 只在真正 shaping 时取。
         let mut lines = vec![];
         let mut offset = 0;
-        for (ix, line) in visible_text.split("\n").enumerate() {
-            let line_item = text_wrapper
-                .lines
-                .get(visible_range.start + ix)
-                .expect("line should exists in text_wrapper");
+        for row in visible_range.clone() {
+            // PF 2026-10-14：防御性行界（visible_range 原则上已由
+            // calculate_visible_range 钳到逻辑行数，越界只可能是尾部）。
+            let Some(line_item) = text_wrapper.lines.get(row) else {
+                continue;
+            };
+            let line_slice = display_text.slice_line(row);
 
             // PF-024: 折叠态按折叠后行长单段 shaping——text_wrapper 是 doc
             // 文本的行模型（含软换行），折叠后长度不再相等；md Live Preview
@@ -659,19 +710,32 @@ impl TextElement {
                     "折叠态必须关软换行（024 §6.1 P1 定案）"
                 );
             } else {
-                debug_assert_eq!(line_item.len(), line.len());
+                debug_assert_eq!(line_item.len(), line_slice.len());
             }
 
             let mut line_layout = LineLayout::new();
             let mut wrapped_lines = SmallVec::with_capacity(1);
 
             let wrapped_ranges: SmallVec<[Range<usize>; 1]> = if folded {
-                smallvec::smallvec![0..line.len()]
+                smallvec::smallvec![0..line_slice.len()]
             } else {
                 line_item.wrapped_lines.clone()
             };
 
+            // PF 2026-10-14：视口字节窗（含 EXTRA_SHAPE_ROWS 行余量）外的
+            // 软换行段不再 shaping——垫一条等 len 的空 ShapedLine 占位。段数
+            // 与字节 len 全保留（光标/选区/点击的行内定位按 len 累加，y 槽位
+            // 按段序号），x 取 0 只发生在屏外行。94 万字符行原来是 ~6000 段
+            // 全量 shaping/帧。
+            let abs_line_start = visible_range_offset.start + offset;
             for range in &wrapped_ranges {
+                let seg_start = abs_line_start + range.start;
+                let seg_end = abs_line_start + range.end;
+                if seg_end <= shape_window.start || seg_start >= shape_window.end {
+                    wrapped_lines.push(ShapedLine::default().with_len(range.len()));
+                    continue;
+                }
+
                 let line_runs = runs_for_range(runs, offset, &range);
                 let line_runs = if bg_segments.is_empty() {
                     line_runs
@@ -683,7 +747,7 @@ impl TextElement {
                     )
                 };
 
-                let sub_line: SharedString = line[range.clone()].to_string().into();
+                let sub_line: SharedString = line_slice.slice(range.clone()).to_string().into();
                 // PF-024 P1：行级字号上浮（标题行）——倍数来自装饰，
                 // cap 在行高内（行高 uniform，行级行高缝留 P2）。
                 let line_size = last_layout
@@ -692,7 +756,7 @@ impl TextElement {
                     .and_then(|dec| {
                         dec.line_scale
                             .iter()
-                            .find(|(l, _)| *l == visible_range.start + ix)
+                            .find(|(l, _)| *l == row)
                             .map(|(_, s)| *s)
                     })
                     .map(|s| font_size * s.min(1.7))
@@ -708,18 +772,24 @@ impl TextElement {
             lines.push(line_layout);
 
             // +1 for the `\n`
-            offset += line.len() + 1;
+            offset += line_item.len() + 1;
         }
 
         lines
     }
 
     /// First usize is the offset of skipped.
+    ///
+    /// `shape_window`（PF 2026-10-14）：视口字节窗。逐**逻辑行**的查询范围
+    /// 一律先与它求交——minified 单行（94 万字符）曾把整行送进
+    /// `SyntaxHighlighter::styles`（match_styles 全行 capture + unique_styles
+    /// O(区间×样式) 二重扫），每帧分钟级假死。普通行整行都在窗内，行为不变。
     fn highlight_lines(
         &mut self,
         visible_range: &Range<usize>,
         _visible_top: Pixels,
         visible_byte_range: Range<usize>,
+        shape_window: &Range<usize>,
         cx: &mut App,
     ) -> Option<Vec<(Range<usize>, HighlightStyle)>> {
         let state = self.state.read(cx);
@@ -746,10 +816,15 @@ impl TextElement {
             // +1 for `\n`
             let line_len = line.len() + 1;
             let range = offset..offset + line_len;
-            let line_styles = highlighter.styles(&range, &cx.theme().highlight_theme);
-            styles = gpui::combine_highlights(styles, line_styles).collect();
-
             offset = range.end;
+
+            let start = range.start.max(shape_window.start);
+            let end = range.end.min(shape_window.end);
+            if start >= end {
+                continue;
+            }
+            let line_styles = highlighter.styles(&(start..end), &cx.theme().highlight_theme);
+            styles = gpui::combine_highlights(styles, line_styles).collect();
         }
 
         let diagnostic_styles = diagnostics.styles_for_range(&visible_byte_range, cx);
@@ -856,6 +931,29 @@ impl Element for TextElement {
             .text
             .line_end_offset(visible_range.end.saturating_sub(1));
 
+        // PF 大文件修复（2026-10-14，见 docs/agents/gpui.md）：高亮查询与
+        // 文本 shaping 一律裁到「视口字节窗」（含上下 EXTRA_SHAPE_ROWS 行
+        // 余量）。窗口为空（0 高布局等退化帧）退回整段可见行，行为同旧版。
+        let scroll_top = state
+            .deferred_scroll_offset
+            .map(|d| d.y)
+            .unwrap_or_else(|| state.scroll_handle.offset().y);
+        let viewport_top = -scroll_top;
+        let shape_window = viewport_byte_window(
+            &state.text,
+            &state.text_wrapper,
+            &visible_range,
+            visible_top,
+            line_height,
+            viewport_top - EXTRA_SHAPE_ROWS as f32 * line_height,
+            viewport_top + bounds.size.height + EXTRA_SHAPE_ROWS as f32 * line_height,
+        );
+        let shape_window = if shape_window.is_empty() {
+            visible_start_offset..visible_end_offset
+        } else {
+            shape_window
+        };
+
         // PF-024: 装饰 provider（md Live Preview）每帧纯函数现算——折叠文本 +
         // 折叠坐标系样式；None = 走原路径（tree-sitter 高亮 + doc 文本）。
         let decorations: Option<Rc<Decorations>> = state
@@ -878,6 +976,7 @@ impl Element for TextElement {
                 &visible_range,
                 visible_top,
                 visible_start_offset..visible_end_offset,
+                &shape_window,
                 cx,
             )
         };
@@ -1010,6 +1109,7 @@ impl Element for TextElement {
             font_size,
             &runs,
             &document_colors,
+            &shape_window,
             window,
         );
 

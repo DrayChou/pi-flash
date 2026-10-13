@@ -38,6 +38,28 @@
   `input/text_wrapper.rs` 测试两处 SmallVec 类型推断），高亮单测跑不了。
   量法：隔离实例开文件后连打 `pif-ui exec app.info`，返回值 >1s 即此病复发。
 - svg 未登记进 `assets!()` 会**静默画空白**（有双向一致性测试守卫）。
+- **超大单行（minified js，94 万字符）每帧假死**：`visible_range` 是**逻辑行**
+  粒度，旧实现把整行字节范围送进高亮查询与 shaping——`match_styles` 对
+  94 万字符行产出 ~20 万条 capture，再进 `unique_styles` 的 O(区间×样式)
+  二重扫（每帧 ~10^10 次比较，分钟级）；`layout_lines` 对该行 ~6000 段全量
+  shape_line + 整段 String 物化（941KB/帧）。87K 的行只要落进 visible_range
+  就已经是 ~10^8/帧 的卡。修法（2026-10-14，pi-flash-jtt）：prepaint 按行高
+  几何算「视口字节窗」（上下各留 2 行余量供方向键/选区端点取 x），
+  `highlight_lines` 逐行查询范围与窗求交；`layout_lines` 窗外段垫等 len 的
+  空 `ShapedLine`（段数/字节 len/y 槽位全保留——光标/点击/选区的行内定位
+  按 len 累加，x 取 0 只发生在屏外行）。配套：`closest_index_for_*`/
+  `index_for_position` 的字节累加改用覆写后的 `len()`（垫段 text 为空）；
+  `LineLayout::paint` 跳过空 text 段（省 ~6000 次 paint_layer/帧）。
+  量法同注入修复：隔离实例开 echarts.min.js（1MB/45 行/末行 94 万字符），
+  `pif-ui exec app.info` 稳态 45-70ms（修复前分钟级假死）。已知边界：在
+  超长行内打字仍是整行 rewrap（wrapper 按逻辑行增量，~0.1-0.5s/键），
+  打开/滚动/查看已顺。
+- **`calculate_visible_range` 行空间混用（大单行滚到文件底 panic）**：
+  visible_range 是逻辑行空间，但非等高路径初始值曾是 `text_wrapper.len()`
+  （=软换行行数）——滚到文件底部 break 不触发时 end 跑到几千，与循环里
+  赋值的逻辑行号混用。旧 `layout_lines` 靠 `slice_lines` 越界钳制掩住；
+  改逐行迭代后直接 panic（`line should exists in text_wrapper`）。已钳到
+  `lines.len()`，layout_lines 侧留防御性跳过。
 - `icon_hover` 自定义元素在 list 虚拟条目里占位不绘制 → 用 `icon()`/`icon_current`。
 - `WindowBounds::Maximized` 创建路径无效 → `zoom_window()`。
 
@@ -68,3 +90,4 @@
 - 杂项：prepaint/paint 第 5 参是 prepaint state 非 hitbox；Pixels 字段私有（f32::from/除法）；move 闭包捕获 `&WeakEntity` 参数 E0521（闭包外 clone）；`unbounded()` 返回值不能别解构。
 - **vendor 本地改动（升级必须重套）**：`elements/div.rs` `TOOLTIP_SHOW_DELAY` 500→350ms（用户定夺 2026-10-13，350ms 弹出体感更跟手；源码处有注释标记）。
 - **vendor 本地改动（升级必须重套）**：`input/state.rs` `set_selected_range` 显式清 `selection_reversed`（不变式：该 setter 光标恒在选区尾）+ 新增 `set_selected_range_reversed`（光标锚选区**起点**，滚动保起点可见）——app `TextInput::select_all_on_focus` 全选改走它（改名框头部可见，2026-10-13 用户定夺）；`cursor()`/滚动早有 reversed 分支，此补丁只补公开设置口。
+- **vendor 本地改动（升级必须重套）**：`input/element.rs` 视口字节窗（`viewport_byte_window` + `EXTRA_SHAPE_ROWS`：`highlight_lines` 逐行查询与窗求交、`layout_lines` 窗外软换行段垫等 len 空 ShapedLine、`calculate_visible_range` 非等高路径钳逻辑行数）+ `input/text_wrapper.rs`（`LineLayout::paint` 跳空 text 段；`closest_index_for_x`/`closest_index_for_position`/`index_for_position` 字节累加改用覆写后 `len()`）——超大单行（minified js）每帧假死修复，2026-10-14，pi-flash-jtt。

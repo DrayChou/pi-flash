@@ -470,7 +470,9 @@ impl LineLayout {
 
                 return acc_len + ix;
             }
-            acc_len += line.text.len();
+            // PF 2026-10-14：按覆写后的 len 累加（视口窗外垫的占位段 text
+            // 为空但 len 是真实字节数，text.len 会把段后所有定位推错）。
+            acc_len += line.len();
         }
 
         acc_len
@@ -500,7 +502,9 @@ impl LineLayout {
                 return Some(offset + ix);
             }
 
-            offset += line.text.len();
+            // PF 2026-10-14：按覆写后的 len 累加（占位段 text 为空，len 是
+            // 真实字节数；见 element.rs layout_lines 的视口窗外垫段）。
+            offset += line.len();
             line_top = line_bottom;
         }
 
@@ -521,7 +525,7 @@ impl LineLayout {
                 return Some(offset + ix);
             }
 
-            offset += line.text.len();
+            offset += line.len();
             line_top = line_bottom;
         }
 
@@ -540,6 +544,13 @@ impl LineLayout {
         cx: &mut App,
     ) {
         for (ix, line) in self.wrapped_lines.iter().enumerate() {
+            // PF 2026-10-14：text 为空的段 = 视口窗外垫的占位段（等 len 空
+            // ShapedLine，见 element.rs layout_lines）或真空行——paint 是
+            // 一次 paint_layer，94 万字符单行 ~6000 个空段跳过后每帧省掉
+            // 同量级的空层。
+            if line.text.is_empty() {
+                continue;
+            }
             _ = line.paint(
                 pos + point(px(0.), ix * line_height),
                 line_height,

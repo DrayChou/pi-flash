@@ -1,3 +1,37 @@
+## 待验证（本轮修复）——editor 打开 minified js 卡到死（单行 94 万字符）
+
+用户口径：打开 `素材-2026柴油裂解价差-echarts.min.js`（1,030,855 字节、
+45 行、末行 **941,277 字符**、次长行 86,887 字符）编辑器假死。（该文件
+就是 echarts 库本体，minified——「引用外部 echarts」与本 bug 无关。）
+
+- ✅ 根因（vendor gpui-component，两条都在**每帧**路径上）：
+  1. 高亮：`highlight_lines` 按**逻辑行**取整行字节范围送
+     `SyntaxHighlighter::styles`——94 万字符行 `match_styles` 产出 ~20 万条
+     capture，再进 `unique_styles` 的 O(区间×样式) 二重扫（每帧 ~10^10 次
+     比较）→ 分钟级/帧 = 假死；86,887 字符的第 35 行首屏就落在
+     visible_range 里，打开即 ~10^8/帧 的卡。
+  2. shaping：`layout_lines` 对可见逻辑行的**全部软换行段**逐段
+     `shape_line` + 整段可见行物化成一个 String——94 万字符行 ~6000 段
+     /941KB 每帧重付。
+- ✅ 修法（**视口字节窗**，对齐 2026-10-12 注入高亮修复的思路）：
+  prepaint 按行高几何定位每条软换行段的 y，算出与视口相交的字节窗
+  （上下各留 2 行余量，方向键/选区端点取 x 用）；`highlight_lines` 逐行
+  查询范围先与窗求交；`layout_lines` 窗外段垫等 len 的空 `ShapedLine`
+  （段数/字节 len/y 槽位全保留，光标/点击/选区定位按 len 累加，x 取 0
+  只发生在屏外行）；`closest_index_for_*`/`index_for_position` 字节累加
+  改用覆写后的 `len()`；`LineLayout::paint` 跳空 text 段。
+- ✅ 顺带修一个被掩住的 panic：`calculate_visible_range` 非等高路径
+  `visible_range` 初始值用了 `text_wrapper.len()`（**软换行行数**），
+  与循环赋值的逻辑行号混用——滚到文件底部 break 不触发时 end 跑到几千，
+  旧代码靠 `slice_lines` 越界钳制掩住，改逐行迭代后 pagedown 到深处直接
+  panic（`line should exists in text_wrapper`）。已钳到 `lines.len()`。
+- ✅ 验证（pif-ui 隔离实例实测，debug 构建）：打开后稳态 `app.info`
+  45-70ms（修复前分钟级假死）；pagedown×45 到文件底 + pageup 折返，
+  94 万字符行整屏软换行 + 高亮渲染正常；大行内方向键移动正常；普通
+  rust 文件无回归；`cargo test -p app`(4) + `cargo test -p pi-link`(134+3)
+  全绿。已知边界：在超长行内打字仍整行 rewrap（~0.1-0.5s/键），打开
+  （全量 wrap + 首次 tree-sitter parse）一次 ~1-2s（debug 口径）。
+
 ## 待验证（本轮修复）——外部改动不同步：cwd 外文件根本没挂监听
 
 用户口径：在 Obsidian 里改了文件，pf 编辑器窗口不同步（预览/源码都不变）。
