@@ -173,6 +173,8 @@ pub(crate) fn slash_menu_view(
                 .into_any_element()
         });
         let weak_hover = weak.clone();
+        let weak_click = weak.clone();
+        let click_insert = c.insert.clone();
         div()
             .id(SharedString::from(format!("slash-{ix}")))
             .w_full()
@@ -187,6 +189,15 @@ pub(crate) fn slash_menu_view(
             .bg(rgb(if active { t.bg_selected } else { t.bg_panel }))
             .cursor_pointer()
             .hover(|s| s.bg(rgb(t.bg_hover)))
+            // 点击条目 = 应用补全（pi-web onMouseDown → applyAtCompletion /
+            // applySlashCommand parity）。此前缺失：点击无效果，用户转而点
+            // 发送（在菜单外 → on_mouse_down_out 收起）→ 原始查询文本直发，
+            // @ 提及丢目录前缀、/ 命令丢参数形态
+            .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
+                let _ = weak_click.update(cx, |chat, cx| {
+                    chat.accept_menu(click_insert.clone(), cx);
+                });
+            })
             .on_hover(move |h: &bool, _w, cx| {
                 // 悬停跟随高亮（pi-web onMouseEnter 更新 highlight parity）
                 if *h {
