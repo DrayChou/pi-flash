@@ -380,10 +380,6 @@ fn min_speed_bps() -> f64 {
 
 /// 下载到文件，边下边算 SHA-256（单遍）。开传满 probe 平均速度仍低于 min_bps
 /// 即 Err（测速不过，由上层换源）。返回 hex 摘要。
-fn download_and_hash(url: &str, dest: &Path) -> Result<String, String> {
-    download_and_hash_cfg(url, dest, speed_probe(), min_speed_bps())
-}
-
 fn download_and_hash_cfg(
     url: &str,
     dest: &Path,
