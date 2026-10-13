@@ -80,7 +80,7 @@ fn focused_str(chat: &Chat, window: &gpui::Window, cx: &Context<Chat>) -> Value 
     if chat.focus.is_focused(window) {
         return json!("chat");
     }
-    if chat.dialog_focus.is_focused(window) {
+    if chat.dlg.dialog_focus.is_focused(window) {
         return json!("dialog");
     }
     if chat.git_commit_input.read(cx).focus_handle().is_focused(window) {
@@ -203,7 +203,7 @@ fn app_surface(chat: &Chat, window: &gpui::Window, cx: &Context<Chat>) -> Value 
                 .map(|rt| rt.read(cx).tool_preset_key() == "custom")
                 .unwrap_or(false),
         },
-        "plugin_picker": chat.plugin_picker.as_ref().map(|p| {
+        "plugin_picker": chat.dlg.plugin_picker.as_ref().map(|p| {
             let sel = |src: &str| p.pending.contains(src);
             let count = |list: &[Value], want: bool| {
                 list.iter()
@@ -229,14 +229,14 @@ fn app_surface(chat: &Chat, window: &gpui::Window, cx: &Context<Chat>) -> Value 
             })
         }),
         // 瞬时提示（set_status）：运行中拦截 / 对话中途禁改 等断言用
-        "status_toast": chat.status_toast.as_ref().map(|(m, _)| m.clone()),
-        "pill_menu": chat.pill_menu.map(|m| match m {
+        "status_toast": chat.dlg.status_toast.as_ref().map(|(m, _)| m.clone()),
+        "pill_menu": chat.dlg.pill_menu.map(|m| match m {
             crate::PillMenu::Thinking => "thinking",
             crate::PillMenu::Tools => "tools",
         }),
         // 斜杠/@ 补全菜单（031）
         "composer_menu": composer_menu,
-        "pill_anchor": chat.pill_anchor.map(|a| json!({
+        "pill_anchor": chat.dlg.pill_anchor.map(|a| json!({
             "center_x": f32::from(a.center_x),
             "top": f32::from(a.top),
         })),
@@ -433,7 +433,7 @@ fn files_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
     expanded.sort();
     // 021 行内编辑（Zed EditState 移植）状态：新建/改名行开合、键入值与
     // 校验态——行内编辑的事务断言全靠这条
-    let tree_edit = chat.tree_edit.as_ref().map(|e| {
+    let tree_edit = chat.dlg.tree_edit.as_ref().map(|e| {
         let (kind, subject) = match &e.kind {
             crate::function_panel::TreeEditKind::New { dir } => ("new", dir.display().to_string()),
             crate::function_panel::TreeEditKind::Rename { path } => ("rename", path.display().to_string()),
@@ -525,7 +525,7 @@ fn git_surface(chat: &Chat) -> Value {
 }
 
 fn settings_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
-    match &chat.settings {
+    match &chat.dlg.settings {
         None => json!({"open": false}),
         Some(panel) => {
             let p = panel.read(cx);
@@ -564,7 +564,7 @@ fn settings_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
 }
 
 fn dialogs_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
-    let dialog = chat.dialog.as_ref().map(|d| match d {
+    let dialog = chat.dlg.dialog.as_ref().map(|d| match d {
         Dialog::ProviderPicker { .. } => "provider_picker",
         Dialog::GitDiff { .. } => "git_diff",
         Dialog::SessionSearch { .. } => "session_search",
@@ -577,7 +577,7 @@ fn dialogs_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
     });
     // 打开项目菜单：列表数据随弹窗一起上报（扫描是异步回填，UI 测试
     // 据此轮询就绪）
-    let project_hits: Vec<Value> = match chat.dialog.as_ref() {
+    let project_hits: Vec<Value> = match chat.dlg.dialog.as_ref() {
         Some(Dialog::ProjectPicker { .. }) => chat
             .psp.project_hits
             .iter()
@@ -586,7 +586,7 @@ fn dialogs_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
         _ => Vec::new(),
     };
     // 文件搜索命中随弹窗上报（后台扫盘异步回填，UI 测试据此轮询就绪）
-    let file_search_hits: Vec<Value> = match chat.dialog.as_ref() {
+    let file_search_hits: Vec<Value> = match chat.dlg.dialog.as_ref() {
         Some(Dialog::FileSearch { .. }) => chat
             .file_search_hits
             .iter()
@@ -599,30 +599,30 @@ fn dialogs_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
         "file_search_hits": file_search_hits,
         // 模型菜单可见行数（UI 测试断言用：空列表 = 新会话页拉不到目录；
         // 042 起数据源 = pill 化模型菜单的 picker_models）
-        "model_rows": match chat.model_picker.as_ref() {
+        "model_rows": match chat.dlg.model_picker.as_ref() {
             Some(_) => chat.picker_models(cx).0.len(),
             None => 0,
         },
         "project_hits": project_hits,
         "project_filter": chat.psp.project_filter,
-        "confirm_delete": opt_path(chat.confirm_delete.as_ref()),
+        "confirm_delete": opt_path(chat.dlg.confirm_delete.as_ref()),
         // 021 文件树删除确认浮层（Some=开着，值为待删路径；file.delete /
         // file.delete_confirm 两段式 op 断言开合用）+ trash 失败持久弹层
-        "tree_confirm_del": opt_path(chat.tree_confirm_del.as_ref()),
-        "tree_del_error": chat.tree_del_error.clone(),
+        "tree_confirm_del": opt_path(chat.dlg.tree_confirm_del.as_ref()),
+        "tree_del_error": chat.dlg.tree_del_error.clone(),
         // 040 扩展页卸载确认浮层（Some=开着，值为待卸载来源）
         "pkg_confirm_remove": chat.cfg.pkg_confirm_remove.clone(),
-        "renaming": opt_path(chat.renaming.as_ref()),
+        "renaming": opt_path(chat.dlg.renaming.as_ref()),
         // 编辑区右键菜单（file.context_menu 置槽；null=关）——开合/收起
         // 断言的数据化出口（此前只能开，断言靠 shot 像素）
-        "editor_menu": chat.editor_menu.as_ref().map(|(p, x, y)| json!({
+        "editor_menu": chat.dlg.editor_menu.as_ref().map(|(p, x, y)| json!({
             "path": p.display().to_string(),
             "x": x,
             "y": y,
         })),
         "ext_dialog": chat.aux.ext_dialog.is_some(),
-        "toast": chat.status_toast.as_ref().map(|(t, _)| truncate(t, 200)),
-        "settings_open": chat.settings.is_some(),
+        "toast": chat.dlg.status_toast.as_ref().map(|(t, _)| truncate(t, 200)),
+        "settings_open": chat.dlg.settings.is_some(),
         // 060 远程控制：扫码弹窗的实时状态（pif-ui 可据此断言 UI 状态）
         "wx_qr": match &chat.aux.remote.qr {
             crate::remote_control::QrState::Idle => "idle",

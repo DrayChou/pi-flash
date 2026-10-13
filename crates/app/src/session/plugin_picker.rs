@@ -44,11 +44,11 @@ impl Chat {
         at: gpui::Point<gpui::Pixels>,
         cx: &mut gpui::Context<Self>,
     ) {
-        if self.plugin_picker.is_some() {
+        if self.dlg.plugin_picker.is_some() {
             self.plugin_picker_cancel(cx);
             return;
         }
-        self.pill_anchor = Some(crate::PillBtns::anchor(&self.pill_btn.ext, at));
+        self.dlg.pill_anchor = Some(crate::PillBtns::anchor(&self.dlg.pill_btn.ext, at));
         self.open_plugin_picker(cx);
     }
 
@@ -60,23 +60,23 @@ impl Chat {
     /// 不再并回全局集——否则取消的勾在重开时被全局集顶回去（回显 bug）。
     pub(crate) fn open_plugin_picker(&mut self, cx: &mut gpui::Context<Self>) {
         if self.rt().read(cx).tool_preset_key() != "custom" {
-            self.pill_menu = None;
+            self.dlg.pill_menu = None;
             self.set_status(crate::i18n::tr("extensions.only_full_preset").to_string(), cx);
             return;
         }
         let seed = self.rt().read(cx).ext_sources.clone();
-        self.pill_menu = None;
-        self.plugin_picker = Some(PluginPicker::new(seed));
+        self.dlg.pill_menu = None;
+        self.dlg.plugin_picker = Some(PluginPicker::new(seed));
         cx.notify();
     }
 
     pub(crate) fn plugin_picker_cancel(&mut self, cx: &mut gpui::Context<Self>) {
-        self.plugin_picker = None;
+        self.dlg.plugin_picker = None;
         cx.notify();
     }
 
     pub(crate) fn plugin_picker_toggle(&mut self, source: &str, cx: &mut gpui::Context<Self>) {
-        if let Some(p) = self.plugin_picker.as_mut() {
+        if let Some(p) = self.dlg.plugin_picker.as_mut() {
             if !p.pending.remove(source) {
                 p.pending.insert(source.to_string());
             }
@@ -88,7 +88,7 @@ impl Chat {
     /// 勾选即生效：把当前勾选集写入 runtime（按钮计数实时变）并落台账。
     /// 重绑时机 = 下一轮 `send_input` 空闲发送前（见模块注释）。
     fn apply_ext_selection(&mut self, cx: &mut gpui::Context<Self>) {
-        let Some(picker) = self.plugin_picker.as_ref() else {
+        let Some(picker) = self.dlg.plugin_picker.as_ref() else {
             return;
         };
         // 宇宙序 = 全局 → 项目，去重（同一来源出现在两个 scope 时 `-e` 只发一次），
@@ -124,7 +124,7 @@ impl Chat {
 
 /// 面板元素（`None` = 没开）。挂在 app root 上，锚点同工具胶囊菜单。
 pub(crate) fn view(chat: &Chat, weak: &gpui::WeakEntity<Chat>, window: &gpui::Window) -> Option<AnyElement> {
-    let picker = chat.plugin_picker.as_ref()?;
+    let picker = chat.dlg.plugin_picker.as_ref()?;
     let t = T();
     let ui = crate::appearance::ui_size;
     let selected = |src: &str| picker.pending.contains(src);
@@ -217,7 +217,7 @@ pub(crate) fn view(chat: &Chat, weak: &gpui::WeakEntity<Chat>, window: &gpui::Wi
     let gap = px(5.);
     // 040：列表加宽 100px 容纳右侧 token 标注（320 → 420）
     let panel_w = px(420.);
-    let (bottom, left) = match chat.pill_anchor {
+    let (bottom, left) = match chat.dlg.pill_anchor {
         Some(a) => {
             let bottom = (vp.height - a.top + gap).max(px(8.));
             let mut left = a.center_x - panel_w / 2.;

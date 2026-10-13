@@ -84,7 +84,7 @@ pub(crate) enum ModelGroupEntry {
 impl Chat {
     /// 自动化入口（无点击坐标）：锚点缺省走面板右下兜底定位（open_mcp_picker 同款）。
     pub(crate) fn open_model_picker(&mut self, cx: &mut gpui::Context<Self>) {
-        self.pill_anchor = None;
+        self.dlg.pill_anchor = None;
         self.picker_open(cx);
     }
 
@@ -94,12 +94,12 @@ impl Chat {
         at: gpui::Point<gpui::Pixels>,
         cx: &mut gpui::Context<Self>,
     ) {
-        if self.model_picker.is_some() {
-            self.model_picker = None;
+        if self.dlg.model_picker.is_some() {
+            self.dlg.model_picker = None;
             cx.notify();
             return;
         }
-        self.pill_anchor = Some(crate::PillBtns::anchor(&self.pill_btn.model, at));
+        self.dlg.pill_anchor = Some(crate::PillBtns::anchor(&self.dlg.pill_btn.model, at));
         self.picker_open(cx);
     }
 
@@ -116,7 +116,7 @@ impl Chat {
                 let _ = weak_change.update(cx, |c, cx| {
                     // list contents changed with the filter text — restart
                     // keyboard selection from the top
-                    if let Some(p) = c.model_picker.as_mut() {
+                    if let Some(p) = c.dlg.model_picker.as_mut() {
                         p.sel = 0;
                     }
                     cx.notify();
@@ -128,13 +128,13 @@ impl Chat {
                 let weak = weak.clone();
                 cx.defer(move |cx| {
                     let _ = weak.update(cx, |c, cx| {
-                        c.model_picker = None;
+                        c.dlg.model_picker = None;
                         cx.notify();
                     });
                 });
             }));
         });
-        self.model_picker = Some(ModelPicker {
+        self.dlg.model_picker = Some(ModelPicker {
             input,
             sel: 0,
             scroll: gpui::ScrollHandle::new(),
@@ -162,7 +162,7 @@ impl Chat {
         if total < MODEL_FILTER_MIN {
             return (scoped, total);
         }
-        let flt = match &self.model_picker {
+        let flt = match &self.dlg.model_picker {
             Some(p) => p.input.read(cx).value().trim().to_lowercase(),
             None => String::new(),
         };
@@ -213,7 +213,7 @@ impl Chat {
         if n == 0 {
             return;
         }
-        if let Some(p) = self.model_picker.as_mut() {
+        if let Some(p) = self.dlg.model_picker.as_mut() {
             p.sel = ((p.sel as i32) + delta).clamp(0, n as i32 - 1) as usize;
             cx.notify();
         }
@@ -222,7 +222,7 @@ impl Chat {
     /// Enter on the picker: switch the session to the highlighted model and
     /// close（会话级切换，不落盘——落盘的是五角星）。
     pub(crate) fn apply_model_sel(&mut self, cx: &mut Context<Self>) {
-        let sel = match &self.model_picker {
+        let sel = match &self.dlg.model_picker {
             Some(p) => p.sel,
             None => return,
         };
@@ -234,7 +234,7 @@ impl Chat {
         if let Some((provider, id)) = pick {
             self.rt().update(cx, |r, cx| r.select_model(provider, id, cx));
         }
-        self.model_picker = None;
+        self.dlg.model_picker = None;
         cx.notify();
     }
 }
@@ -371,7 +371,7 @@ pub(crate) fn view(
     window: &gpui::Window,
     cx: &gpui::App,
 ) -> Option<AnyElement> {
-    let picker = chat.model_picker.as_ref()?;
+    let picker = chat.dlg.model_picker.as_ref()?;
     let t = T();
     let ui = crate::appearance::ui_size;
 
@@ -429,7 +429,7 @@ pub(crate) fn view(
                     Some(Box::new(move |c, cx| {
                         c.rt().update(cx, |r, cx| r.select_model(dp.clone(), di.clone(), cx));
                         // picking is also the dismissal gesture
-                        c.model_picker = None;
+                        c.dlg.model_picker = None;
                         cx.notify();
                     })),
                     t,
@@ -454,7 +454,7 @@ pub(crate) fn view(
     let vp = window.viewport_size();
     let gap = px(5.);
     let panel_w = px(340.);
-    let (bottom, left) = match chat.pill_anchor {
+    let (bottom, left) = match chat.dlg.pill_anchor {
         Some(a) => {
             let bottom = (vp.height - a.top + gap).max(px(8.));
             let mut left = a.center_x - panel_w / 2.;
@@ -468,7 +468,7 @@ pub(crate) fn view(
 
     let dismiss_weak = weak.clone();
     let layer = crate::ui::overlay::layer(false, None, move |_w, cx| {
-        let _ = dismiss_weak.update(cx, |c, _cx| c.model_picker = None);
+        let _ = dismiss_weak.update(cx, |c, _cx| c.dlg.model_picker = None);
     });
 
     let weak_apply = weak.clone();

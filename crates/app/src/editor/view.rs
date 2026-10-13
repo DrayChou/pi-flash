@@ -605,7 +605,7 @@ pub(crate) fn render_editor_surface(
             move |ev: &gpui::MouseDownEvent, _, cx| {
                 cx.stop_propagation();
                 let _ = weak_menu.update(cx, |c, cx| {
-                    c.editor_menu = Some((
+                    c.dlg.editor_menu = Some((
                         menu_path.clone(),
                         f32::from(ev.position.x),
                         f32::from(ev.position.y),

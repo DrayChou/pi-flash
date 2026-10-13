@@ -287,7 +287,7 @@ pub(crate) fn render_msg(
                                     .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                                         let image = image_for_open.clone();
                                         let _ = weak_open.update(cx, |c, cx| {
-                                            c.dialog =
+                                            c.dlg.dialog =
                                                 Some(crate::Dialog::ImagePreview { image });
                                             cx.notify();
                                         });

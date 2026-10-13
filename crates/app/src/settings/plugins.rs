@@ -230,7 +230,7 @@ fn pl_install_bar(
                         false,
                         |c, cx| {
                             let src = c
-                                .settings
+                                .dlg.settings
                                 .clone()
                                 .map(|st| st.read(cx).install_input.clone())
                                 .map(|input| input.read(cx).value().to_string())
@@ -330,7 +330,7 @@ fn pl_sidebar(
                 .bg(rgb(t.bg))
                 .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                     let _ = weak_item.update(cx, |c, cx| {
-                        if let Some(st) = c.settings.clone() {
+                        if let Some(st) = c.dlg.settings.clone() {
                             st.update(cx, |s, cx| {
                                 s.section = item_src.clone();
                                 s.error = None;
@@ -514,7 +514,7 @@ pub(crate) fn remove_confirm_overlay(
     let weak = cx.entity().downgrade();
     let message = crate::i18n::tf("extensions.uninstall_confirm", &[("name", name)]);
     Some(crate::ui::overlay::confirm(
-        &chat.dialog_focus,
+        &chat.dlg.dialog_focus,
         message,
         {
             let weak = weak.clone();

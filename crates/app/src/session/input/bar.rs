@@ -32,7 +32,7 @@ fn plugin_button(
         (
             r.tool_preset_key() == "custom",
             r.ext_sources.len(),
-            chat.plugin_picker.is_some(),
+            chat.dlg.plugin_picker.is_some(),
         )
     };
     let active = is_custom;
@@ -71,7 +71,7 @@ fn plugin_button(
             );
     }
     // 统一定位测量端：抓按钮 bounds（paint 期，每帧覆盖）
-    el = el.child(crate::PillBtns::tracker(&chat.pill_btn.ext));
+    el = el.child(crate::PillBtns::tracker(&chat.dlg.pill_btn.ext));
     el.into_any_element()
 }
 
@@ -96,7 +96,7 @@ fn mcp_button(
             .iter()
             .filter(|s| s.scope == pi_link::mcp::Scope::Global && s.enabled)
             .count(),
-        chat.mcp_picker.is_some(),
+        chat.dlg.mcp_picker.is_some(),
     );
     let label = if n > 0 {
         format!("{}({n})", crate::i18n::tr("dock.mcp"))
@@ -124,7 +124,7 @@ fn mcp_button(
         .child(icon_hover("server", 13., color))
         .child(SharedString::from(label));
     // 统一定位测量端：抓按钮 bounds（paint 期，每帧覆盖）
-    el = el.child(crate::PillBtns::tracker(&chat.pill_btn.mcp));
+    el = el.child(crate::PillBtns::tracker(&chat.dlg.pill_btn.mcp));
     el.into_any_element()
 }
 
@@ -149,8 +149,8 @@ pub(super) fn composer_bar(
     // `!` shell 模式（与 input_area 边框同判定）：左组控件整组换成提示
     let bash_mode = chat.pending_images.is_empty() && chat.input.trim_start().starts_with('!');
     let bash_excluded = chat.input.trim_start().starts_with("!!");
-    let thinking_open = chat.pill_menu == Some(PillMenu::Thinking);
-    let tools_open = chat.pill_menu == Some(PillMenu::Tools);
+    let thinking_open = chat.dlg.pill_menu == Some(PillMenu::Thinking);
+    let tools_open = chat.dlg.pill_menu == Some(PillMenu::Tools);
     // 工具预设 = spawn 参数（--tools/--no-tools），换它要重绑会话进程 +
     // 整表重读：运行中换会把当前这一轮掐掉、并让「等待模型响应」掉回屏底。
     // 所以 agent 跑动期间置灰禁止（思考强度/模型都是实时 RPC，不动消息表，照旧可用）。
@@ -253,7 +253,7 @@ pub(super) fn composer_bar(
             .child(SharedString::from(model_label.to_string()))
             .child(icon("chevron-down", 10., if locked { t.text_faint } else { t.text_dim }))
             // 统一定位测量端：抓按钮 bounds（paint 期，每帧覆盖）
-            .child(crate::PillBtns::tracker(&chat.pill_btn.model)),
+            .child(crate::PillBtns::tracker(&chat.dlg.pill_btn.model)),
     );
     // 思考强度 ∨
     right = right.child(
@@ -281,8 +281,8 @@ pub(super) fn composer_bar(
                     if this.rt().read(cx).compacting {
                         return;
                     }
-                    this.pill_anchor = Some(crate::PillBtns::anchor(&this.pill_btn.thinking, event.position));
-                    this.pill_menu = match this.pill_menu {
+                    this.dlg.pill_anchor = Some(crate::PillBtns::anchor(&this.dlg.pill_btn.thinking, event.position));
+                    this.dlg.pill_menu = match this.dlg.pill_menu {
                         Some(PillMenu::Thinking) => None,
                         _ => Some(PillMenu::Thinking),
                     };
@@ -303,7 +303,7 @@ pub(super) fn composer_bar(
             .child(SharedString::from(thinking_label.to_string()))
             .child(icon("chevron-down", 10., if locked { t.text_faint } else { t.text_dim }))
             // 统一定位测量端：抓按钮 bounds（paint 期，每帧覆盖）
-            .child(crate::PillBtns::tracker(&chat.pill_btn.thinking)),
+            .child(crate::PillBtns::tracker(&chat.dlg.pill_btn.thinking)),
     );
     // 圆形发送 ↑（运行中变停止：主题色圆角方块+对比色停止块）；用户定位：
     // 左移 5px、上移 8px
@@ -459,8 +459,8 @@ fn bar_left_group(
                             );
                             return;
                         }
-                        this.pill_anchor = Some(crate::PillBtns::anchor(&this.pill_btn.tools, event.position));
-                        this.pill_menu = match this.pill_menu {
+                        this.dlg.pill_anchor = Some(crate::PillBtns::anchor(&this.dlg.pill_btn.tools, event.position));
+                        this.dlg.pill_menu = match this.dlg.pill_menu {
                             Some(PillMenu::Tools) => None,
                             _ => Some(PillMenu::Tools),
                         };
@@ -471,7 +471,7 @@ fn bar_left_group(
                 .child(SharedString::from(tools_label.to_string()))
                 .child(icon("chevron-down", 10., t.text_dim))
                 // 统一定位测量端：抓按钮 bounds（paint 期，每帧覆盖）
-                .child(crate::PillBtns::tracker(&chat.pill_btn.tools)),
+                .child(crate::PillBtns::tracker(&chat.dlg.pill_btn.tools)),
             )
             // 扩展按钮（040 定稿）：**工具胶囊的兄弟节点**，不是子节点——
             // 塞进胶囊里点它会冒泡触发工具菜单（用户踩过）。仅「full+」档

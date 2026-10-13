@@ -398,10 +398,10 @@ pub(crate) fn render_settings(
     let weak_dismiss = weak_close.clone();
     let overlay = crate::ui::overlay::layer(
         true,
-        Some(&chat.dialog_focus),
+        Some(&chat.dlg.dialog_focus),
         move |_w, cx| {
             let _ = weak_dismiss.update(cx, |c, cx| {
-                c.settings = None;
+                c.dlg.settings = None;
                 cx.notify();
             });
         },
@@ -438,7 +438,7 @@ pub(crate) fn render_settings(
                 let weak_close = weak_close.clone();
                 move |_w, cx| {
                     let _ = weak_close.update(cx, |c, cx| {
-                        c.settings = None;
+                        c.dlg.settings = None;
                         cx.notify();
                     });
                 }
@@ -497,7 +497,7 @@ fn nav_items(tab: u8, weak_close: gpui::WeakEntity<Chat>) -> Vec<gpui::AnyElemen
                 let _ = weak_tab.update(cx, |c, cx| {
                     let next_section = SettingsPanel::prefill_section(c, *ix);
                     let is_mcp = *ix == TAB_MCP;
-                    if let Some(st) = c.settings.clone() {
+                    if let Some(st) = c.dlg.settings.clone() {
                         st.update(cx, |s, cx| {
                             s.tab = *ix;
                             s.error = None;

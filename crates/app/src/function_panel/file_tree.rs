@@ -112,7 +112,7 @@ pub(crate) fn files_view(
             let weak_commit = weak.clone();
             move |_, _, cx| {
                 let _ = weak_commit.update(cx, |c, cx| {
-                    if c.tree_edit.is_some() {
+                    if c.dlg.tree_edit.is_some() {
                         c.tree_edit_confirm_from_click(cx);
                     }
                 });
@@ -158,7 +158,7 @@ pub(crate) fn files_view(
         let weak_c = weak.clone();
         let weak_bg = weak.clone();
         let cwd_bg = chat.cwd.clone();
-        let editing = chat.tree_edit.clone();
+        let editing = chat.dlg.tree_edit.clone();
         col = col.child(
             div()
                 .flex_1()
@@ -174,7 +174,7 @@ pub(crate) fn files_view(
                     move |ev: &gpui::MouseDownEvent, _, cx| {
                         cx.stop_propagation();
                         let _ = weak_bg.update(cx, |c, cx| {
-                            c.tree_menu = Some(crate::function_panel::TreeMenu::Dir {
+                            c.dlg.tree_menu = Some(crate::function_panel::TreeMenu::Dir {
                                 path: cwd_bg.clone(),
                                 x: f32::from(ev.position.x),
                                 y: f32::from(ev.position.y),
@@ -201,7 +201,7 @@ pub(crate) fn files_view(
     } else {
         let weak_bg = weak.clone();
         let cwd_bg = chat.cwd.clone();
-        let edit = chat.tree_edit.clone();
+        let edit = chat.dlg.tree_edit.clone();
         // 新建行的落点（Zed new_entry：虚拟行插在目录行下方、子项之前；
         // 目标 = 项目根时插列表顶）。改名行不注入（原地替换该行）。
         let edit_slot: Option<(usize, usize)> = edit.as_ref().and_then(|e| match &e.kind {
@@ -239,7 +239,7 @@ pub(crate) fn files_view(
                     move |ev: &gpui::MouseDownEvent, _, cx| {
                         cx.stop_propagation();
                         let _ = weak_bg.update(cx, |c, cx| {
-                            c.tree_menu = Some(crate::function_panel::TreeMenu::Dir {
+                            c.dlg.tree_menu = Some(crate::function_panel::TreeMenu::Dir {
                                 path: cwd_bg.clone(),
                                 x: f32::from(ev.position.x),
                                 y: f32::from(ev.position.y),
@@ -434,7 +434,7 @@ fn action_bar(
                     move |ev: &gpui::MouseDownEvent, _, cx| {
                         cx.stop_propagation();
                         let _ = w_menu.update(cx, |c, cx| {
-                            c.tree_menu = Some(crate::function_panel::TreeMenu::Dir {
+                            c.dlg.tree_menu = Some(crate::function_panel::TreeMenu::Dir {
                                 path: cwd_menu.clone(),
                                 x: f32::from(ev.position.x),
                                 y: f32::from(ev.position.y),
@@ -977,7 +977,7 @@ fn tree_right_click(weak: &gpui::WeakEntity<Chat>, row: &TreeRow) -> gpui::AnyEl
             cx.stop_propagation();
             let path = path.clone();
             let _ = weak.update(cx, |c, cx| {
-                c.tree_menu = Some(if is_dir {
+                c.dlg.tree_menu = Some(if is_dir {
                     crate::function_panel::TreeMenu::Dir {
                         path,
                         x: f32::from(ev.position.x),

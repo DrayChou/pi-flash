@@ -160,7 +160,7 @@ pub(crate) fn input_area(
                             .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                                 let Some(image) = thumb_for_open.clone() else { return; };
                                 let _ = weak_open.update(cx, |c, cx| {
-                                    c.dialog = Some(crate::Dialog::ImagePreview { image });
+                                    c.dlg.dialog = Some(crate::Dialog::ImagePreview { image });
                                     cx.notify();
                                 });
                             })
@@ -230,8 +230,8 @@ pub(crate) fn input_area(
     // 控件行
     // 锁定期间强制收起胶囊菜单（工具预设/思考），否则菜单会浮在
     // 锁定的控件上还能点
-    if compacting && chat.pill_menu.is_some() {
-        chat.pill_menu = None;
+    if compacting && chat.dlg.pill_menu.is_some() {
+        chat.dlg.pill_menu = None;
     }
     capsule = capsule.child(composer_bar(
         chat,

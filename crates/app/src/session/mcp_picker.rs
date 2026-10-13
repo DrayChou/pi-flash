@@ -33,8 +33,8 @@ impl McpPicker {
 impl Chat {
     /// 自动化入口（无点击坐标）：锚点缺省走面板的右下兜底定位。
     pub(crate) fn open_mcp_picker(&mut self, cx: &mut gpui::Context<Self>) {
-        self.pill_anchor = None;
-        self.mcp_picker = Some(McpPicker::new());
+        self.dlg.pill_anchor = None;
+        self.dlg.mcp_picker = Some(McpPicker::new());
         cx.notify();
     }
 
@@ -44,13 +44,13 @@ impl Chat {
         at: gpui::Point<gpui::Pixels>,
         cx: &mut gpui::Context<Self>,
     ) {
-        if self.mcp_picker.is_some() {
-            self.mcp_picker = None;
+        if self.dlg.mcp_picker.is_some() {
+            self.dlg.mcp_picker = None;
             cx.notify();
             return;
         }
-        self.pill_anchor = Some(crate::PillBtns::anchor(&self.pill_btn.mcp, at));
-        self.mcp_picker = Some(McpPicker::new());
+        self.dlg.pill_anchor = Some(crate::PillBtns::anchor(&self.dlg.pill_btn.mcp, at));
+        self.dlg.mcp_picker = Some(McpPicker::new());
         cx.notify();
     }
 
@@ -81,7 +81,7 @@ impl Chat {
 
 /// 面板元素（`None` = 没开）。挂在 app root 上，锚点同扩展菜单。
 pub(crate) fn view(chat: &Chat, weak: &gpui::WeakEntity<Chat>, window: &gpui::Window) -> Option<AnyElement> {
-    let picker = chat.mcp_picker.as_ref()?;
+    let picker = chat.dlg.mcp_picker.as_ref()?;
     let t = T();
     let ui = crate::appearance::ui_size;
 
@@ -144,7 +144,7 @@ pub(crate) fn view(chat: &Chat, weak: &gpui::WeakEntity<Chat>, window: &gpui::Wi
     let vp = window.viewport_size();
     let gap = px(5.);
     let panel_w = px(320.);
-    let (bottom, left) = match chat.pill_anchor {
+    let (bottom, left) = match chat.dlg.pill_anchor {
         Some(a) => {
             let bottom = (vp.height - a.top + gap).max(px(8.));
             let mut left = a.center_x - panel_w / 2.;
@@ -158,7 +158,7 @@ pub(crate) fn view(chat: &Chat, weak: &gpui::WeakEntity<Chat>, window: &gpui::Wi
 
     let dismiss_weak = weak.clone();
     let layer = crate::ui::overlay::layer(false, None, move |_w, cx| {
-        let _ = dismiss_weak.update(cx, |c, _cx| c.mcp_picker = None);
+        let _ = dismiss_weak.update(cx, |c, _cx| c.dlg.mcp_picker = None);
     });
 
     let card = crate::ui::overlay::stop_click(

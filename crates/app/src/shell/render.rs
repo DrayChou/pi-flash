@@ -62,7 +62,7 @@ impl Render for Chat {
         }
         // keep terminal focus alive across frames (render focuses chat input
         // otherwise, which would steal it back every redraw)
-        let dialog_input = match &self.dialog {
+        let dialog_input = match &self.dlg.dialog {
             Some(Dialog::ProviderPicker { input, .. }) | Some(Dialog::SessionSearch { input })
             | Some(Dialog::ProjectPicker { input, .. })
             | Some(Dialog::FileSearch { input, .. }) => {
@@ -73,7 +73,7 @@ impl Render for Chat {
         .or_else(|| {
             // 042：模型菜单的过滤输入同享焦点保持（每帧不被 composer 抢回）；
             // 过滤框未渲染（<10 条）时不抢——菜单退化为纯鼠标操作
-            self.model_picker
+            self.dlg.model_picker
                 .as_ref()
                 .filter(|_| self.picker_filter_shown(cx))
                 .map(|p| p.input.clone())
@@ -81,10 +81,10 @@ impl Render for Chat {
         // 详情卡的原地改名输入框也要持有焦点——否则每帧的焦点回收
         // 会把它抢回主输入框，键盘输入进不去
         let card_rename_focus = self
-            .hover_card
+            .dlg.hover_card
             .as_ref()
             .and_then(|c| c.rename_input.clone());
-        let rename_focus = self.rename_input.clone().or(card_rename_focus);
+        let rename_focus = self.dlg.rename_input.clone().or(card_rename_focus);
         if let Some(input) = rename_focus.or(dialog_input) {
             let handle = input.read(cx).focus_handle_in(cx);
             if !handle.is_focused(window) {
@@ -101,29 +101,29 @@ impl Render for Chat {
             let handle = if ext_text {
                 self.aux.ext_input.read(cx).focus_handle()
             } else {
-                self.dialog_focus.clone()
+                self.dlg.dialog_focus.clone()
             };
             if !handle.is_focused(window) {
                 window.focus(&handle);
             }
-        } else if self.dialog.is_some()
+        } else if self.dlg.dialog.is_some()
             // overlay::confirm 三槽（文件树删除/项目删除/删除失败）不占
             // Dialog 枚举，但同样要一打开就持有焦点——Enter 确认 / ESC 取消
             // 才能立即生效（zed window.prompt 同款，键盘可操作）
-            || self.tree_confirm_del.is_some()
-            || self.confirm_prj_del.is_some()
-            || self.tree_del_error.is_some()
+            || self.dlg.tree_confirm_del.is_some()
+            || self.dlg.confirm_prj_del.is_some()
+            || self.dlg.tree_del_error.is_some()
         {
-            if !self.dialog_focus.is_focused(window) {
-                window.focus(&self.dialog_focus);
+            if !self.dlg.dialog_focus.is_focused(window) {
+                window.focus(&self.dlg.dialog_focus);
             }
-        } else if let Some(panel) = self.settings.as_ref() {
+        } else if let Some(panel) = self.dlg.settings.as_ref() {
             // 焦点在面板任意输入框内就不抢（白名单在 v60/v70 两度漏新输入框，
             // 现由 SettingsPanel::focus_within 结构化自检）
             if !panel.read(cx).focus_within(window, cx)
-                && !self.dialog_focus.is_focused(window)
+                && !self.dlg.dialog_focus.is_focused(window)
             {
-                window.focus(&self.dialog_focus);
+                window.focus(&self.dlg.dialog_focus);
             }
         } else if self.file_editor_focus(window, cx).is_some() {
             // 023：文件编辑器持有焦点时不回收——否则点进去下一帧就被抢回
@@ -146,7 +146,7 @@ impl Render for Chat {
             // 请求见 open_file_new / open_file_rename 的 focus_soon；用户点
             // 别处造成的真夺焦（对话框/终端/编辑器/设置）走前面各分支，本
             // 分支看不到，blur 收场照常触发）。
-            match self.tree_edit.as_ref().filter(|_| self.dock_panel == DockPanel::Files) {
+            match self.dlg.tree_edit.as_ref().filter(|_| self.dock_panel == DockPanel::Files) {
                 Some(edit) if edit.input.read(cx).has_inner() => {
                     let handle = edit.input.read(cx).focus_handle_in(cx);
                     if !handle.is_focused(window) {
@@ -185,7 +185,7 @@ impl Render for Chat {
             let r = rt.read(cx);
             (r.thinking_override.clone(), r.tools_preset.clone())
         };
-        let pill_menu_el = self.pill_menu.map(|menu| {
+        let pill_menu_el = self.dlg.pill_menu.map(|menu| {
             let weak_menu = weak.clone();
             let rows: Vec<(String, String, bool)> = match menu {
                 PillMenu::Thinking => [
@@ -237,7 +237,7 @@ impl Render for Chat {
                         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                             cx.stop_propagation();
                             let _ = weak_row.update(cx, |c, cx| {
-                                c.pill_menu = None;
+                                c.dlg.pill_menu = None;
                                 if is_thinking {
                                     c.set_thinking_level(&key_for_rpc, cx);
                                 } else {
@@ -285,8 +285,8 @@ impl Render for Chat {
                 let weak_menu = weak_menu.clone();
                 crate::ui::overlay::layer(false, None, move |_w, cx| {
                     let _ = weak_menu.update(cx, |c, cx| {
-                        if c.pill_menu.is_some() {
-                            c.pill_menu = None;
+                        if c.dlg.pill_menu.is_some() {
+                            c.dlg.pill_menu = None;
                             cx.notify();
                         }
                     });
@@ -299,7 +299,7 @@ impl Render for Chat {
                         let vp = window.viewport_size();
                         let gap = px(5.);
                         let menu_w = px(320.);
-                        let (anchor_bottom, anchor_left) = match self.pill_anchor {
+                        let (anchor_bottom, anchor_left) = match self.dlg.pill_anchor {
                             Some(a) => {
                                 let bottom = (vp.height - a.top + gap).max(px(8.));
                                 let mut left = a.center_x - menu_w / 2.;
@@ -488,7 +488,7 @@ impl Render for Chat {
             }))
             .child(body);
 
-        if let Some(panel) = self.settings.clone() {
+        if let Some(panel) = self.dlg.settings.clone() {
             let data = settings::SettingsFormData::snapshot(panel.read(cx), cx);
             root = root.child(settings::render_settings(self, &weak_for_dialog, &data));
         }
@@ -526,7 +526,7 @@ impl Render for Chat {
         // status toast（v54: statusbar 无状态文本，改瞬时提示）。2026-10-10
         // 定夺：配色随主题（bg_panel+border+text）、不加阴影（2026-11 用户拍
         // 掉 halo，见上方注释），尺寸自适应 max 600×200、超高滚动、自动换行
-        if let Some((msg, _)) = &self.status_toast {
+        if let Some((msg, _)) = &self.dlg.status_toast {
             let text: SharedString = msg.clone().into();
             // 统一弹出定位（2026-10-11）：纵边按锚点象限取自 ui::popup——
             // 顶槽锚点 (y=0) 恒判「上半」向下弹；水平居中是 2026-10-10 定夺

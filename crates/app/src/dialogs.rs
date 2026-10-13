@@ -22,10 +22,10 @@ fn dialog_shell(chat: &Chat, weak: &gpui::WeakEntity<Chat>, panel: Div) -> Div {
     let weak_bg = weak.clone();
     crate::ui::overlay::layer(
         true,
-        Some(&chat.dialog_focus),
+        Some(&chat.dlg.dialog_focus),
         move |_w, cx| {
             let _ = weak_bg.update(cx, |c, cx| {
-                c.dialog = None;
+                c.dlg.dialog = None;
                 cx.notify();
             });
         },
@@ -46,22 +46,22 @@ pub(crate) fn render_dialogs(
         // dialogs mount as a CHILD of the chat root — on top of the content,
         // never replacing it (replacing the root blanks the whole UI behind
         // the dialog; settings parity = content stays visible beneath)
-            if let Some(Dialog::ProviderPicker { input, scroll }) = chat.dialog.as_ref() {
+            if let Some(Dialog::ProviderPicker { input, scroll }) = chat.dlg.dialog.as_ref() {
                 root = root.child(render_provider_picker(chat, weak, input, scroll, t, cx));
             }
-            if let Some(Dialog::GitDiff { path, patch }) = chat.dialog.as_ref() {
+            if let Some(Dialog::GitDiff { path, patch }) = chat.dlg.dialog.as_ref() {
                 root = root.child(render_git_diff(chat, weak, path, patch, t, cx));
             }
-            if let Some(Dialog::SessionSearch { input }) = chat.dialog.as_ref() {
+            if let Some(Dialog::SessionSearch { input }) = chat.dlg.dialog.as_ref() {
                 root = root.child(render_session_search(chat, weak, input, t, cx));
             }
-            if let Some(Dialog::ProjectPicker { input, fresh, scroll }) = chat.dialog.as_ref() {
+            if let Some(Dialog::ProjectPicker { input, fresh, scroll }) = chat.dlg.dialog.as_ref() {
                 root = root.child(render_project_picker(chat, weak, input, *fresh, scroll, t, cx));
             }
-            if let Some(Dialog::ImagePreview { image }) = chat.dialog.as_ref() {
+            if let Some(Dialog::ImagePreview { image }) = chat.dlg.dialog.as_ref() {
                 root = root.child(render_image_preview(chat, weak, image, t));
             }
-            if let Some(Dialog::SessionInfo { kind }) = chat.dialog.as_ref() {
+            if let Some(Dialog::SessionInfo { kind }) = chat.dlg.dialog.as_ref() {
                 root = root.child(crate::top_panels::session_info_dialog(
                     *kind,
                     chat,
@@ -70,13 +70,13 @@ pub(crate) fn render_dialogs(
                     cx,
                 ));
             }
-            if let Some(Dialog::FileDirty { path }) = chat.dialog.as_ref() {
+            if let Some(Dialog::FileDirty { path }) = chat.dlg.dialog.as_ref() {
                 root = root.child(render_file_dirty(chat, weak, path, t));
             }
-            if let Some(Dialog::WxQr) = chat.dialog.as_ref() {
+            if let Some(Dialog::WxQr) = chat.dlg.dialog.as_ref() {
                 root = root.child(render_wx_qr(chat, weak, t));
             }
-            if let Some(Dialog::FileSearch { input, scroll }) = chat.dialog.as_ref() {
+            if let Some(Dialog::FileSearch { input, scroll }) = chat.dlg.dialog.as_ref() {
                 root = root.child(render_file_search(chat, weak, input, scroll, t, cx));
             }
     root
@@ -254,7 +254,7 @@ fn render_wx_qr(
                     if go {
                         c.aux.remote.begin_qr(); // 幂等：已在扫码/已出码时不重发
                     } else {
-                        c.dialog = None;
+                        c.dlg.dialog = None;
                     }
                     cx.notify();
                 });
@@ -366,11 +366,11 @@ fn render_wx_qr(
     let weak_dismiss = weak.clone();
     let dismiss = move |_w: &mut gpui::Window, cx: &mut gpui::App| {
         let _ = weak_dismiss.update(cx, |c, cx| {
-            c.dialog = None;
+            c.dlg.dialog = None;
             cx.notify();
         });
     };
-    crate::ui::overlay::layer(true, Some(&chat.dialog_focus), dismiss.clone())
+    crate::ui::overlay::layer(true, Some(&chat.dlg.dialog_focus), dismiss.clone())
         .flex()
         .items_center()
         .justify_center()
@@ -459,7 +459,7 @@ fn render_file_dirty(
                             gpui::MouseButton::Left,
                             move |_, _, cx| {
                                 let _ = weak_cancel.update(cx, |c, cx| {
-                                    c.dialog = None;
+                                    c.dlg.dialog = None;
                                     cx.notify();
                                 });
                             },
@@ -471,7 +471,7 @@ fn render_file_dirty(
                             move |_, _, cx| {
                                 let _ = weak_drop.update(cx, |c, cx| {
                                     c.discard_file_tab(&p_drop, cx);
-                                    c.dialog = None;
+                                    c.dlg.dialog = None;
                                     cx.notify();
                                 });
                             },
@@ -484,7 +484,7 @@ fn render_file_dirty(
                                 let _ = weak_save.update(cx, |c, cx| {
                                     c.save_file(&p_save, cx);
                                     c.discard_file_tab(&p_save, cx);
-                                    c.dialog = None;
+                                    c.dlg.dialog = None;
                                     cx.notify();
                                 });
                             },
@@ -645,7 +645,7 @@ fn render_provider_picker(chat: &Chat, weak: &gpui::WeakEntity<Chat>, input: &gp
                 .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                     let pid = pid.clone();
                     let _ = weak_card.update(cx, |c, cx| {
-                        c.dialog = None;
+                        c.dlg.dialog = None;
                         c.mc_select_provider(pid, cx);
                         cx.notify();
                     });
@@ -788,7 +788,7 @@ fn render_git_diff(chat: &Chat, weak: &gpui::WeakEntity<Chat>, path: &PathBuf, p
                                                     let weak = weak.clone();
                                                     move |_, _, cx| {
                                                         let _ = weak.update(cx, |c, cx| {
-                                                            c.dialog = None;
+                                                            c.dlg.dialog = None;
                                                             cx.notify();
                                                         });
                                                     }
@@ -826,7 +826,7 @@ fn render_image_preview(
     // 图片预览也要有看得见的关闭按钮（浮层规则 5）：× 绝对定位在卡片右上角
     let close = crate::ui::overlay::close_btn("image-preview-close", t, move |_w, cx| {
         let _ = weak_close.update(cx, |c, cx| {
-            c.dialog = None;
+            c.dlg.dialog = None;
             cx.notify();
         });
     });
@@ -1151,7 +1151,7 @@ impl Chat {
             .iter()
             .any(|f| f.path == path && f.status == GitStatus::Untracked);
         let patch = git_file_diff(&self.cwd, &path, untracked);
-        self.dialog = Some(Dialog::GitDiff { path, patch });
+        self.dlg.dialog = Some(Dialog::GitDiff { path, patch });
         cx.notify();
     }
 
@@ -1176,14 +1176,14 @@ impl Chat {
                 }))
                 .on_escape(Box::new(move |cx: &mut App| {
                     let _ = weak_esc.update(cx, |c, cx| {
-                        c.dialog = None;
+                        c.dlg.dialog = None;
                         cx.notify();
                     });
                 }))
         });
         self.psp.project_hits.clear();
         self.psp.project_filter.clear();
-        self.dialog = Some(Dialog::ProjectPicker {
+        self.dlg.dialog = Some(Dialog::ProjectPicker {
             input,
             fresh,
             scroll: gpui::ScrollHandle::new(),
@@ -1237,7 +1237,7 @@ impl Chat {
                 }))
                 .on_escape(Box::new(move |cx: &mut App| {
                     let _ = weak_esc.update(cx, |c, cx| {
-                        c.dialog = None;
+                        c.dlg.dialog = None;
                         cx.notify();
                     });
                 }))
@@ -1245,7 +1245,7 @@ impl Chat {
         self.psp.search_hits.clear();
         self.psp.search_truncated = false;
         self.psp.search_needle.clear();
-        self.dialog = Some(Dialog::SessionSearch { input });
+        self.dlg.dialog = Some(Dialog::SessionSearch { input });
         cx.notify();
     }
 
@@ -1301,7 +1301,7 @@ impl Chat {
     /// message containing the needle.
     pub(crate) fn jump_to_hit(&mut self, path: PathBuf, ts: Option<i64>, cx: &mut Context<Self>) {
         let needle = self.psp.search_needle.clone();
-        self.dialog = None;
+        self.dlg.dialog = None;
         let key = path.to_string_lossy().to_string();
         let already_open = self.active_key == key || self.runtimes.contains_key(&key);
         if self.active_key != key {
@@ -1323,7 +1323,7 @@ impl Chat {
     /// system 消息，runtime 每次 get_messages 都 replay 一份（见
     /// `pi_link::transcript::transcript_system`），所以打开即是最新。
     pub(crate) fn open_session_info(&mut self, kind: crate::TopPanel, cx: &mut Context<Self>) {
-        self.dialog = if self.session_info_open(kind) {
+        self.dlg.dialog = if self.session_info_open(kind) {
             None
         } else {
             Some(Dialog::SessionInfo { kind })
@@ -1333,7 +1333,7 @@ impl Chat {
 
     /// 该面的弹窗是否正开着（会话功能栏点亮用）。
     pub(crate) fn session_info_open(&self, kind: crate::TopPanel) -> bool {
-        matches!(self.dialog, Some(Dialog::SessionInfo { kind: k }) if k == kind)
+        matches!(self.dlg.dialog, Some(Dialog::SessionInfo { kind: k }) if k == kind)
     }
 }
 

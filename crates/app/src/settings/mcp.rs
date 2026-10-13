@@ -25,7 +25,7 @@ impl Chat {
 
     pub(crate) fn mcp_select(&mut self, key: String, cx: &mut Context<Self>) {
         let data = self.mcp_backfill_data(&key);
-        if let Some(st) = self.settings.clone() {
+        if let Some(st) = self.dlg.settings.clone() {
             st.update(cx, |s, cx| {
                 s.section = key;
                 s.error = None;
@@ -50,7 +50,7 @@ impl Chat {
         self.mc_clear_error(cx);
         match pi_link::mcp::remove(&entry.file, &entry.name) {
             Ok(_) => {
-                if let Some(st) = self.settings.clone() {
+                if let Some(st) = self.dlg.settings.clone() {
                     st.update(cx, |s, _| s.section = "__mcp_add__".into());
                 }
                 self.reload_settings_panel();
@@ -84,7 +84,7 @@ impl Chat {
     /// mcp.json（粘贴 JSON 里的 exposure 等字段原样保留）。043：一切改动
     /// 只对新会话生效。
     pub(crate) fn mcp_save_submit(&mut self, cx: &mut Context<Self>) {
-        let Some(st) = self.settings.clone() else { return };
+        let Some(st) = self.dlg.settings.clone() else { return };
         let (text, name_override, section) = {
             let s = st.read(cx);
             (
@@ -129,7 +129,7 @@ impl Chat {
                     .find(|s| s.name == name && s.scope == Scope::Global)
                     .map(section_key)
                     .unwrap_or("__mcp_add__".into());
-                if let Some(st) = self.settings.clone() {
+                if let Some(st) = self.dlg.settings.clone() {
                     st.update(cx, |s, _| s.section = key);
                 }
                 self.set_status(tr("mcp.saved_next_session").to_string(), cx);

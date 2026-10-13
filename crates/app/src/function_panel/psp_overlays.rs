@@ -33,34 +33,34 @@ pub(crate) fn psp_overlays(
         .id("psp-overlays")
         .absolute()
         .inset_0();
-    if let Some((path, x, y)) = &chat.proj_tip {
+    if let Some((path, x, y)) = &chat.dlg.proj_tip {
         el = el.child(proj_tip(path, *x, *y, vp, t));
     }
-    if chat.editor_menu.is_some() {
+    if chat.dlg.editor_menu.is_some() {
         el = el.child(editor_menu_layer(chat, vp, t, cx));
     }
     // 终端右键菜单（复制/粘贴/全选）；tab 已关则不再挂（防挂到空气里）
-    if let Some((tab_id, x, y)) = chat.term_menu
+    if let Some((tab_id, x, y)) = chat.dlg.term_menu
         && chat.terminals.iter().any(|t| t.id == tab_id)
     {
         el = el.child(term_menu_layer(chat, tab_id, x, y, vp, t, cx));
     }
-    if let Some(card) = &chat.hover_card {
+    if let Some(card) = &chat.dlg.hover_card {
         // 延迟显示（0.3s）：快速滑过会话列表时不创建视觉，不干扰行悬停
         if card.shown {
             el = el.child(hover_card(chat, vp, t, cx));
         }
     }
-    if chat.psp_menu.is_some() {
+    if chat.dlg.psp_menu.is_some() {
         el = el.child(menu_layer(chat, vp, t, cx));
     }
-    if chat.tree_menu.is_some() {
+    if chat.dlg.tree_menu.is_some() {
         el = el.child(tree_menu_layer(chat, vp, t, cx));
     }
-    if let Some((path, x, y)) = chat.confirm_prj_del.clone() {
-        el = el.child(confirm_project_del(&path, x, y, vp, t, &chat.dialog_focus, cx));
+    if let Some((path, x, y)) = chat.dlg.confirm_prj_del.clone() {
+        el = el.child(confirm_project_del(&path, x, y, vp, t, &chat.dlg.dialog_focus, cx));
     }
-    if let Some(path) = chat.tree_confirm_del.clone() {
+    if let Some(path) = chat.dlg.tree_confirm_del.clone() {
         // zed build_removal_prompt 同款：删除打开中的文件时未保存修改并入
         // 删除确认（一次确认 = 删文件 + 弃缓冲）；目录删除统计其子树内
         // 全部打开中的脏 tab（zed 对整个待删集合数 dirty_buffers）
@@ -72,11 +72,11 @@ pub(crate) fn psp_overlays(
         el = el.child(tree_delete_confirm(
             &path,
             dirty_count,
-            &chat.dialog_focus,
+            &chat.dlg.dialog_focus,
             cx,
         ));
     }
-    if chat.tree_del_error.is_some() {
+    if chat.dlg.tree_del_error.is_some() {
         el = el.child(tree_del_error_layer(chat, t, cx));
     }
     el.into_any_element()
@@ -139,7 +139,7 @@ fn hover_card(
     t: &'static Theme,
     cx: &mut gpui::Context<Chat>,
 ) -> gpui::AnyElement {
-    let card = chat.hover_card.clone().expect("hover_card checked by caller");
+    let card = chat.dlg.hover_card.clone().expect("hover_card checked by caller");
     let mut found: Option<(String, u64, std::time::SystemTime, String)> = None;
     for g in &chat.psp.projects {
         if let Some(info) = g.sessions.iter().find(|s| same_path(&s.path, &card.path)) {
@@ -193,7 +193,7 @@ fn hover_card(
         })
         // 进卡取消隐藏 / 离卡进入宽限
         .on_hover(cx.listener(|this, h: &bool, _w, cx| {
-            if let Some(card) = this.hover_card.as_mut() {
+            if let Some(card) = this.dlg.hover_card.as_mut() {
                 card.card_hovered = *h;
                 card.hide_at = (!*h).then(std::time::Instant::now);
             }
@@ -249,7 +249,7 @@ fn hover_card(
                 // 点击标题 = 原地进入改名（不切换会话）
                 .on_mouse_down(MouseButton::Left, cx.listener(
                     move |this, _: &gpui::MouseDownEvent, window, cx| {
-                        let Some(card) = this.hover_card.as_mut() else { return };
+                        let Some(card) = this.dlg.hover_card.as_mut() else { return };
                         let path = card.path.clone();
                         let prefill = title_for_rename.clone();
                         let weak_ok = cx.entity().downgrade();
@@ -276,7 +276,7 @@ fn hover_card(
                         });
                         let handle = input.read(cx).focus_handle();
                         window.focus(&handle);
-                        if let Some(card) = this.hover_card.as_mut() {
+                        if let Some(card) = this.dlg.hover_card.as_mut() {
                             card.renaming = true;
                             card.rename_input = Some(input);
                         }
@@ -318,7 +318,7 @@ fn hover_card(
                     vec![
                         ghost_btn("hc-cancel", tr("action.cancel"), false, cx.listener(
                             |this, _: &gpui::MouseDownEvent, _w, cx| {
-                                if let Some(c) = this.hover_card.as_mut() {
+                                if let Some(c) = this.dlg.hover_card.as_mut() {
                                     c.confirming = false;
                                 }
                                 cx.notify();
@@ -328,7 +328,7 @@ fn hover_card(
                         solid_danger_btn("hc-ok", tr("action.confirm"), {
                             let path = path.clone();
                             cx.listener(move |this, _: &gpui::MouseDownEvent, _w, cx| {
-                                this.hover_card = None;
+                                this.dlg.hover_card = None;
                                 this.delete_session(path.clone(), cx);
                             })
                         })
@@ -337,7 +337,7 @@ fn hover_card(
                 } else {
                     vec![ghost_btn("hc-del", tr("action.delete"), true, cx.listener(
                         |this, _: &gpui::MouseDownEvent, _w, cx| {
-                            if let Some(c) = this.hover_card.as_mut() {
+                            if let Some(c) = this.dlg.hover_card.as_mut() {
                                 c.confirming = true;
                             }
                             cx.notify();
@@ -415,7 +415,7 @@ fn menu_layer(
     cx: &mut gpui::Context<Chat>,
 ) -> gpui::AnyElement {
     let weak = cx.entity().downgrade();
-    let (x, y) = match chat.psp_menu.clone().expect("checked by caller") {
+    let (x, y) = match chat.dlg.psp_menu.clone().expect("checked by caller") {
         crate::function_panel::PspMenu::Sort { x, y, .. } => (x, y),
         crate::function_panel::PspMenu::Project { x, y, .. } => (x, y),
     };
@@ -425,19 +425,19 @@ fn menu_layer(
     let pop_up = parent_edges.top.is_none();
     // 浮层公共基座（遮挡不穿透 + 点外关闭 + ESC 关闭）
     let weak_layer = weak.clone();
-    let mut layer = crate::ui::overlay::layer(false, Some(&chat.dialog_focus), move |_w, cx| {
+    let mut layer = crate::ui::overlay::layer(false, Some(&chat.dlg.dialog_focus), move |_w, cx| {
         let _ = weak_layer.update(cx, |c, cx| {
-            c.psp_menu = None;
+            c.dlg.psp_menu = None;
             cx.notify();
         });
     });
     let mut card = menu_card(parent_edges, t);
-    match chat.psp_menu.clone().expect("re-checked") {
+    match chat.dlg.psp_menu.clone().expect("re-checked") {
         crate::function_panel::PspMenu::Sort { sub, .. } => {
             let mut view = menu_item("m-list", "icon-organize", tr("psp.list_mode"), false, false);
             view = view.on_hover(cx.listener(|this, h: &bool, _w, cx| {
                 if *h {
-                    if let Some(crate::function_panel::PspMenu::Sort { sub, .. }) = this.psp_menu.as_mut() {
+                    if let Some(crate::function_panel::PspMenu::Sort { sub, .. }) = this.dlg.psp_menu.as_mut() {
                         *sub = Some(0);
                     }
                     cx.notify();
@@ -446,7 +446,7 @@ fn menu_layer(
             let mut sort = menu_item("m-sort", "icon-sort", tr("psp.sort_mode"), false, false);
             sort = sort.on_hover(cx.listener(|this, h: &bool, _w, cx| {
                 if *h {
-                    if let Some(crate::function_panel::PspMenu::Sort { sub, .. }) = this.psp_menu.as_mut() {
+                    if let Some(crate::function_panel::PspMenu::Sort { sub, .. }) = this.dlg.psp_menu.as_mut() {
                         *sub = Some(1);
                     }
                     cx.notify();
@@ -511,7 +511,7 @@ fn menu_layer(
                         let _ = weak.update(cx, |c, cx| {
                             apply(c, cx);
                             c.persist_ui();
-                            c.psp_menu = None;
+                            c.dlg.psp_menu = None;
                             cx.notify();
                         });
                     });
@@ -537,7 +537,7 @@ fn menu_layer(
                             cx.stop_propagation();
                             let _ = weak.update(cx, |c, cx| {
                                 crate::services::shell_open::open_in_explorer(&path);
-                                c.psp_menu = None;
+                                c.dlg.psp_menu = None;
                                 cx.notify();
                             });
                         }
@@ -554,7 +554,7 @@ fn menu_layer(
                                     // 只开终端 tab（内容区切过去），dock 面板
                                     // 留在原处——会话列表里开终端不切文件树
                                     c.open_terminal_in(path.clone(), window, cx);
-                                    c.psp_menu = None;
+                                    c.dlg.psp_menu = None;
                                     cx.notify();
                                 });
                             }
@@ -575,8 +575,8 @@ fn menu_layer(
                             cx.stop_propagation();
                             let (x, y) = (f32::from(ev.position.x), f32::from(ev.position.y));
                             let _ = weak.update(cx, |c, cx| {
-                                c.psp_menu = None;
-                                c.confirm_prj_del = Some((path.clone(), x, y));
+                                c.dlg.psp_menu = None;
+                                c.dlg.confirm_prj_del = Some((path.clone(), x, y));
                                 cx.notify();
                             });
                         }
@@ -661,7 +661,7 @@ fn confirm_project_del(
     let weak = cx.entity().downgrade();
     crate::ui::overlay::layer(false, Some(focus), move |_w, cx| {
         let _ = weak.update(cx, |c, cx| {
-            c.confirm_prj_del = None;
+            c.dlg.confirm_prj_del = None;
             cx.notify();
         });
     })
@@ -699,14 +699,14 @@ fn confirm_project_del(
                         .gap(px(8.))
                         .child(ghost_btn("pd-cancel", tr("action.cancel"), false, cx.listener(
                             |this, _: &gpui::MouseDownEvent, _w, cx| {
-                                this.confirm_prj_del = None;
+                                this.dlg.confirm_prj_del = None;
                                 cx.notify();
                             },
                         )))
                         .child(solid_danger_btn("pd-ok", tr("psp.confirm_delete"), {
                             let path = path.clone();
                             cx.listener(move |this, _: &gpui::MouseDownEvent, _w, cx| {
-                                this.confirm_prj_del = None;
+                                this.dlg.confirm_prj_del = None;
                                 this.delete_project(path.clone(), cx);
                             })
                         })),
@@ -731,20 +731,20 @@ fn tree_menu_layer(
     cx: &mut gpui::Context<Chat>,
 ) -> gpui::AnyElement {
     let weak = cx.entity().downgrade();
-    let (x, y) = match chat.tree_menu.clone().expect("checked by caller") {
+    let (x, y) = match chat.dlg.tree_menu.clone().expect("checked by caller") {
         crate::function_panel::TreeMenu::Dir { x, y, .. } | crate::function_panel::TreeMenu::File { x, y, .. } => (x, y),
     };
     // 与 psp 菜单同参：向下弹让 12px，左右象限决定横向方向
     let edges = PopupEdges::around((x, y), vp, 0., 12.);
     let weak_layer = weak.clone();
-    let layer = crate::ui::overlay::layer(false, Some(&chat.dialog_focus), move |_w, cx| {
+    let layer = crate::ui::overlay::layer(false, Some(&chat.dlg.dialog_focus), move |_w, cx| {
         let _ = weak_layer.update(cx, |c, cx| {
-            c.tree_menu = None;
+            c.dlg.tree_menu = None;
             cx.notify();
         });
     });
     let mut card = menu_card(edges, t);
-    match chat.tree_menu.clone().expect("re-checked") {
+    match chat.dlg.tree_menu.clone().expect("re-checked") {
         crate::function_panel::TreeMenu::Dir { path, .. } => {
             card = card
                 .child(tree_item(
@@ -965,12 +965,12 @@ fn editor_menu_layer(
     cx: &mut gpui::Context<Chat>,
 ) -> gpui::AnyElement {
     let weak = cx.entity().downgrade();
-    let (path, x, y) = chat.editor_menu.clone().expect("checked by caller");
+    let (path, x, y) = chat.dlg.editor_menu.clone().expect("checked by caller");
     let edges = PopupEdges::around((x, y), vp, 0., 12.);
     let weak_layer = weak.clone();
-    let layer = crate::ui::overlay::layer(false, Some(&chat.dialog_focus), move |_w, cx| {
+    let layer = crate::ui::overlay::layer(false, Some(&chat.dlg.dialog_focus), move |_w, cx| {
         let _ = weak_layer.update(cx, |c, cx| {
-            c.editor_menu = None;
+            c.dlg.editor_menu = None;
             cx.notify();
         });
     });
@@ -1110,9 +1110,9 @@ fn term_menu_layer(
         .iter()
         .find(|t| t.id == tab_id)
         .is_some_and(|t| t.selection.is_some());
-    let layer = crate::ui::overlay::layer(false, Some(&chat.dialog_focus), move |_w, cx| {
+    let layer = crate::ui::overlay::layer(false, Some(&chat.dlg.dialog_focus), move |_w, cx| {
         let _ = weak_layer.update(cx, |c, cx| {
-            c.term_menu = None;
+            c.dlg.term_menu = None;
             cx.notify();
         });
     });
@@ -1169,7 +1169,7 @@ fn term_menu_item(
             cx.stop_propagation();
             let _ = weak.update(cx, |c, cx| {
                 apply(c, tab_id, cx);
-                c.term_menu = None;
+                c.dlg.term_menu = None;
                 // 焦点回终端：菜单收起后键盘接着用（与打开菜单时的聚焦对称）
                 if let Some(tab) = c.terminals.iter().find(|t| t.id == tab_id) {
                     let f = tab.focus.clone();
@@ -1197,7 +1197,7 @@ fn editor_item(
             cx.stop_propagation();
             let _ = weak.update(cx, |c, cx| {
                 apply(c, cx);
-                c.editor_menu = None;
+                c.dlg.editor_menu = None;
                 cx.notify();
             });
         })
@@ -1222,7 +1222,7 @@ fn editor_edit_item(
                     ed.update(cx, |st, scx| st.focus(window, scx));
                     window.dispatch_action(make(), cx);
                 }
-                c.editor_menu = None;
+                c.dlg.editor_menu = None;
                 cx.notify();
             });
         })
@@ -1251,7 +1251,7 @@ fn editor_terminal_item(
                 .map(|p| p.to_path_buf())
                 .unwrap_or_else(|| path.clone());
             c.open_terminal_in(cwd, window, cx);
-            c.editor_menu = None;
+            c.dlg.editor_menu = None;
             cx.notify();
         });
     })
@@ -1272,7 +1272,7 @@ fn tree_item(
             cx.stop_propagation();
             let _ = weak.update(cx, |c, cx| {
                 apply(c, cx);
-                c.tree_menu = None;
+                c.dlg.tree_menu = None;
                 cx.notify();
             });
         })
@@ -1303,7 +1303,7 @@ fn tree_terminal_item(
                 path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| path.clone())
             };
             c.open_terminal_in(cwd, window, cx);
-            c.tree_menu = None;
+            c.dlg.tree_menu = None;
             cx.notify();
         });
     })
@@ -1324,12 +1324,12 @@ fn tree_del_error_layer(
     cx: &mut gpui::Context<Chat>,
 ) -> gpui::AnyElement {
     let weak = cx.entity().downgrade();
-    let msg = chat.tree_del_error.clone().expect("checked by caller");
+    let msg = chat.dlg.tree_del_error.clone().expect("checked by caller");
     let weak_dismiss = weak.clone();
     let weak_ok = weak.clone();
-    let layer = crate::ui::overlay::layer(false, Some(&chat.dialog_focus), move |_w, cx| {
+    let layer = crate::ui::overlay::layer(false, Some(&chat.dlg.dialog_focus), move |_w, cx| {
         let _ = weak_dismiss.update(cx, |c, cx| {
-            c.tree_del_error = None;
+            c.dlg.tree_del_error = None;
             cx.notify();
         });
     });
@@ -1358,7 +1358,7 @@ fn tree_del_error_layer(
                 false,
                 move |_, _, cx| {
                     let _ = weak_ok.update(cx, |c, cx| {
-                        c.tree_del_error = None;
+                        c.dlg.tree_del_error = None;
                         cx.notify();
                     });
                 },
@@ -1401,7 +1401,7 @@ fn tree_delete_confirm(
         message,
         move |_w, cx| {
             let _ = weak_cancel.update(cx, |c, cx| {
-                c.tree_confirm_del = None;
+                c.dlg.tree_confirm_del = None;
                 cx.notify();
             });
         },

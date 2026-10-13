@@ -5,7 +5,7 @@
 //!    这一层）——裸挂 `absolute` 而不 occlude 的浮层会让事件漏进底下的消息
 //!    列表/终端（`input.rs` 胶囊、`psp_overlays` 都踩过）；
 //! 2. 点浮层外任意处关闭；
-//! 3. ESC 关闭（layer 自己 `track_focus`，调用方传 `chat.dialog_focus`）；
+//! 3. ESC 关闭（layer 自己 `track_focus`，调用方传 `chat.dlg.dialog_focus`）；
 //! 4. 点卡片本身**不**关闭 —— 卡片套一层 [`stop_click`]；
 //! 5. 有可见内容的卡片再挂一个 × 关闭钮（[`close_btn`] / [`panel_header`]）。
 //!
@@ -164,7 +164,7 @@ pub fn close_btn(
 /// 自造窗体。调用方负责外面那层 [`layer`] 与居中：
 ///
 /// ```ignore
-/// overlay::layer(true, Some(&chat.dialog_focus), dismiss)
+/// overlay::layer(true, Some(&chat.dlg.dialog_focus), dismiss)
 ///     .flex().items_center().justify_center()
 ///     .child(overlay::big_card("标题", Some(nav), body, t, close))
 /// ```

@@ -94,7 +94,7 @@ pub(crate) fn render_ext_dialog(
     let dismiss = move |_w: &mut gpui::Window, cx: &mut gpui::App| {
         let _ = weak_dismiss.update(cx, |c, cx| c.ext_respond(None, None, true, cx));
     };
-    crate::ui::overlay::layer(true, Some(&chat.dialog_focus), dismiss)
+    crate::ui::overlay::layer(true, Some(&chat.dlg.dialog_focus), dismiss)
         .flex()
         .items_center()
         .justify_center()

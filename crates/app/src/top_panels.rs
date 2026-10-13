@@ -61,11 +61,11 @@ pub(crate) fn session_info_dialog(
     let weak_dismiss = weak.clone();
     let dismiss = move |_w: &mut gpui::Window, cx: &mut gpui::App| {
         let _ = weak_dismiss.update(cx, |c, cx| {
-            c.dialog = None;
+            c.dlg.dialog = None;
             cx.notify();
         });
     };
-    crate::ui::overlay::layer(true, Some(&chat.dialog_focus), dismiss.clone())
+    crate::ui::overlay::layer(true, Some(&chat.dlg.dialog_focus), dismiss.clone())
         .flex()
         .items_center()
         .justify_center()

@@ -331,15 +331,15 @@ pub(super) fn dispatch(
             }
             let x = params.get("x").and_then(Value::as_f64).unwrap_or(600.) as f32;
             let y = params.get("y").and_then(Value::as_f64).unwrap_or(160.) as f32;
-            chat.editor_menu = Some((path, x, y));
+            chat.dlg.editor_menu = Some((path, x, y));
             cx.notify();
             ok()
         }
         // 编辑区右键菜单收起（file.context_menu 的对向 op，与点菜单项外
         // 区域同效——清槽）。幂等：无菜单开着也 ok，回 had_menu 供断言
         method::FILE_CONTEXT_MENU_CLOSE => {
-            let had_menu = chat.editor_menu.is_some();
-            chat.editor_menu = None;
+            let had_menu = chat.dlg.editor_menu.is_some();
+            chat.dlg.editor_menu = None;
             cx.notify();
             Ok(json!({"ok": true, "had_menu": had_menu}))
         }
@@ -379,7 +379,7 @@ pub(super) fn dispatch(
         }
         // 删除确认浮层的「确认」（与确认按钮同一方法）：清槽 + trash 真删
         method::FILE_DELETE_CONFIRM => {
-            if chat.tree_confirm_del.is_none() {
+            if chat.dlg.tree_confirm_del.is_none() {
                 return Err(bad("没有待确认的删除（tree_confirm_del 为空）"));
             }
             chat.tree_delete_confirm_commit(cx);
@@ -478,7 +478,7 @@ pub(super) fn dispatch(
             ok()
         }
         method::SETTINGS_CLOSE => {
-            chat.settings = None;
+            chat.dlg.settings = None;
             cx.notify();
             ok()
         }
@@ -509,12 +509,12 @@ pub(super) fn dispatch(
         }
         method::WX_QR_OPEN => {
             chat.aux.remote.begin_qr();
-            chat.dialog = Some(crate::Dialog::WxQr);
+            chat.dlg.dialog = Some(crate::Dialog::WxQr);
             cx.notify();
             ok()
         }
         method::DIALOG_CLOSE => {
-            chat.dialog = None;
+            chat.dlg.dialog = None;
             cx.notify();
             ok()
         }
@@ -566,7 +566,7 @@ pub(super) fn dispatch(
             ok()
         }
         method::MCP_PICKER_CANCEL => {
-            chat.mcp_picker = None;
+            chat.dlg.mcp_picker = None;
             cx.notify();
             ok()
         }
@@ -577,7 +577,7 @@ pub(super) fn dispatch(
                 .ok_or_else(|| bad("需要 {\"text\": \"粘贴内容\"}"))?
                 .to_string();
             let name = params.get("name").and_then(Value::as_str).unwrap_or("").to_string();
-            if let Some(st) = chat.settings.clone() {
+            if let Some(st) = chat.dlg.settings.clone() {
                 st.update(cx, |s, cx| {
                     s.mcp_add.update(cx, |ti, cx| ti.set_value(text, cx));
                     s.mcp_name.update(cx, |ti, cx| ti.set_value(name, cx));
@@ -680,7 +680,7 @@ fn tree_edit_prefill(
     let Some(name) = params.get("name").and_then(Value::as_str) else {
         return;
     };
-    if let Some(edit) = chat.tree_edit.as_ref() {
+    if let Some(edit) = chat.dlg.tree_edit.as_ref() {
         let name = name.to_string();
         edit.input.update(cx, |ti, cxi| ti.set_value(name, cxi));
     }

@@ -19,7 +19,7 @@ impl Chat {
         let get_str = |v: &serde_json::Value, k: &str| {
             v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string()
         };
-        if let Some(st) = self.settings.clone() {
+        if let Some(st) = self.dlg.settings.clone() {
             st.update(cx, |s, cx| {
                 s.section = section;
                 s.error = None;
@@ -46,7 +46,7 @@ impl Chat {
 
     /// 把编辑器字段应用进缓冲并落盘（provider 名称改动走重命名）。
     pub(crate) fn mj_apply_provider(&mut self, old_name: String, cx: &mut Context<Self>) {
-        let Some(st) = self.settings.clone() else { return };
+        let Some(st) = self.dlg.settings.clone() else { return };
         let (name, base, key, api) = {
             let s = st.read(cx);
             (
@@ -76,7 +76,7 @@ impl Chat {
         }
         pi_link::models_json::upsert_provider(&mut self.cfg.mc_models_json, &name, entry);
         self.mj_flush(cx);
-        if let Some(st) = self.settings.clone() {
+        if let Some(st) = self.dlg.settings.clone() {
             st.update(cx, |s, cx| {
                 s.section = format!("mj:p:{name}");
                 cx.notify();
@@ -91,7 +91,7 @@ impl Chat {
         let _ = pi_link::credentials::KeyringVault
             .delete(&pi_link::credentials::env_var_name(&name));
         self.mj_flush(cx);
-        if let Some(st) = self.settings.clone() {
+        if let Some(st) = self.dlg.settings.clone() {
             let next = pi_link::models_json::providers(&self.cfg.mc_models_json)
                 .first()
                 .map(|(n, _)| format!("mj:p:{n}"))
@@ -153,7 +153,7 @@ impl Chat {
     }
 
     pub(crate) fn mj_apply_model(&mut self, provider: String, ix: usize, cx: &mut Context<Self>) {
-        let Some(st) = self.settings.clone() else { return };
+        let Some(st) = self.dlg.settings.clone() else { return };
         let (id, mname, ctx, reasoning) = {
             let s = st.read(cx);
             (
@@ -440,7 +440,7 @@ pub(crate) fn mj_model_editor(
                         .child(tr("custom_models.reasoning_badge")),
                 )
                 .child(config_switch("mj-reasoning", weak, mj_reasoning, false, |c, cx| {
-                    if let Some(st) = c.settings.clone() {
+                    if let Some(st) = c.dlg.settings.clone() {
                         st.update(cx, |s, cx| {
                             s.mj_reasoning = !s.mj_reasoning;
                             cx.notify();
@@ -478,7 +478,7 @@ pub(crate) fn mj_add_panel(
             div()
                 .pt(px(4.))
                 .child(config_button("mj-create", weak, &tr("action.create"), Btn::Primary, false, false, |c, cx| {
-                    let Some(st) = c.settings.clone() else { return };
+                    let Some(st) = c.dlg.settings.clone() else { return };
                     let (name, base, key, api) = st.read(cx).editor_snapshot(cx);
                     c.mj_add_provider(name, base, key, api, cx);
                 })),
@@ -521,7 +521,7 @@ pub(crate) fn api_options_row(
                 .cursor_pointer()
                 .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                     let _ = weak_opt.update(cx, |c, cx| {
-                        if let Some(st) = c.settings.clone() {
+                        if let Some(st) = c.dlg.settings.clone() {
                             st.update(cx, |s, cx| {
                                 s.mj_api = *ix;
                                 cx.notify();

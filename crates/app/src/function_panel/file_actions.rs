@@ -61,8 +61,8 @@ impl Chat {
     /// 「搜索文件」：500×500 居中弹窗（同 Dialog 体系，焦点/ESC/外点
     /// 关闭全走 dialog_shell）。再点一次操作栏按钮 = 关（toggle 语义）。
     pub(crate) fn open_file_search(&mut self, cx: &mut Context<Self>) {
-        if matches!(self.dialog, Some(Dialog::FileSearch { .. })) {
-            self.dialog = None;
+        if matches!(self.dlg.dialog, Some(Dialog::FileSearch { .. })) {
+            self.dlg.dialog = None;
             cx.notify();
             return;
         }
@@ -80,7 +80,7 @@ impl Chat {
                     let weak = weak_esc.clone();
                     cx.defer(move |cx| {
                         let _ = weak.update(cx, |c, cx| {
-                            c.dialog = None;
+                            c.dlg.dialog = None;
                             cx.notify();
                         });
                     });
@@ -89,7 +89,7 @@ impl Chat {
         self.file_search_hits.clear();
         self.file_search_needle.clear();
         self.file_search_gen += 1;
-        self.dialog = Some(Dialog::FileSearch {
+        self.dlg.dialog = Some(Dialog::FileSearch {
             input,
             scroll: gpui::ScrollHandle::new(),
         });
@@ -142,7 +142,7 @@ impl Chat {
     /// 命中行点击：打开文件 tab（主体渲染/编辑器配置由 kind handler 决定；
     /// 10MB/二进制闸同样生效）。
     pub(crate) fn open_file_search_hit(&mut self, rel: &str, cx: &mut Context<Self>) {
-        self.dialog = None;
+        self.dlg.dialog = None;
         self.open_file_tab(self.cwd.join(rel), cx);
     }
 
@@ -155,8 +155,8 @@ impl Chat {
     /// Esc 取消 / 点别处按 Zed 失焦语义收场。名字可含子目录，尾随 `/`
     /// 升级为目录（Zed filename_indicates_dir）。
     pub(crate) fn open_file_new(&mut self, dir: PathBuf, is_dir: bool, cx: &mut Context<Self>) {
-        self.tree_menu = None;
-        self.editor_menu = None;
+        self.dlg.tree_menu = None;
+        self.dlg.editor_menu = None;
         // 「只看变更」列表放不下新建行（列表里没有目录行）：回退树模式
         if self.changes_only {
             self.changes_only = false;
@@ -173,7 +173,7 @@ impl Chat {
         // 内件建好即兑现为焦点；此后由焦点级联按「编辑存续期 = 焦点所有者」
         // 兜底，不再重复请求。
         input.update(cx, |ti, tcx| ti.focus_soon(tcx));
-        self.tree_edit = Some(TreeEdit {
+        self.dlg.tree_edit = Some(TreeEdit {
             kind: TreeEditKind::New { dir },
             is_dir,
             input,
@@ -193,8 +193,8 @@ impl Chat {
         reveal: bool,
         cx: &mut Context<Self>,
     ) {
-        self.tree_menu = None;
-        self.editor_menu = None;
+        self.dlg.tree_menu = None;
+        self.dlg.editor_menu = None;
         if reveal {
             self.dock_panel = DockPanel::Files;
             self.reveal_tree_row(&path);
@@ -218,7 +218,7 @@ impl Chat {
         // 首发聚焦请求同 open_file_new（Zed `rename_impl` → 同一条
         // focus_filename_editor 请求）
         input.update(cx, |ti, tcx| ti.focus_soon(tcx));
-        self.tree_edit = Some(TreeEdit {
+        self.dlg.tree_edit = Some(TreeEdit {
             kind: TreeEditKind::Rename { path },
             is_dir,
             input,
@@ -239,7 +239,7 @@ impl Chat {
         value: &str,
         cx: &mut Context<Self>,
     ) {
-        let Some(mut edit) = self.tree_edit.clone() else { return };
+        let Some(mut edit) = self.dlg.tree_edit.clone() else { return };
         let mut filename = value.to_string();
         // Zed confirm_edit：Windows 下尾随点被文件系统忽略，剥掉防错位
         #[cfg(windows)]
@@ -278,14 +278,14 @@ impl Chat {
                     if via == TreeEditVia::Dismiss {
                         self.tree_edit_discard(cx);
                     } else {
-                        if let Some(slot) = self.tree_edit.as_mut() {
+                        if let Some(slot) = self.dlg.tree_edit.as_mut() {
                             slot.validation = TreeValidation::Error(existing_msg(&filename));
                         }
                         cx.notify();
                     }
                     return;
                 }
-                self.tree_edit = None;
+                self.dlg.tree_edit = None;
                 self.file_new_commit(dir, edit.is_dir, filename, cx);
             }
             TreeEditKind::Rename { path } => {
@@ -305,14 +305,14 @@ impl Chat {
                     if via == TreeEditVia::Dismiss {
                         self.tree_edit_discard(cx);
                     } else {
-                        if let Some(slot) = self.tree_edit.as_mut() {
+                        if let Some(slot) = self.dlg.tree_edit.as_mut() {
                             slot.validation = TreeValidation::Error(existing_msg(&filename));
                         }
                         cx.notify();
                     }
                     return;
                 }
-                self.tree_edit = None;
+                self.dlg.tree_edit = None;
                 self.file_rename_commit(path, edit.is_dir, filename, cx);
             }
         }
@@ -321,7 +321,7 @@ impl Chat {
     /// 键入即校验（Zed populate_validation_error 移植）：首尾空白 = 警告，
     /// 目标已存在 = 错误（同名自身除外），其余清空。`value` 随回调传入。
     pub(crate) fn tree_edit_validate(&mut self, value: &str, cx: &mut Context<Self>) {
-        let Some(edit) = self.tree_edit.as_mut() else { return };
+        let Some(edit) = self.dlg.tree_edit.as_mut() else { return };
         let filename = value.to_string();
         edit.validation = if filename.trim().is_empty() {
             TreeValidation::None
@@ -351,7 +351,7 @@ impl Chat {
 
     /// 取消行内编辑（Esc；Zed cancel → discard_edit_state）。
     pub(crate) fn tree_edit_discard(&mut self, cx: &mut Context<Self>) {
-        if self.tree_edit.take().is_some() {
+        if self.dlg.tree_edit.take().is_some() {
             cx.notify();
         }
     }
@@ -361,7 +361,7 @@ impl Chat {
     /// 自身的点击在 edit_input_slot 已 stop_propagation，绝无派发中的
     /// 输入框租借（与快照读同类）。
     pub(crate) fn tree_edit_confirm_from_click(&mut self, cx: &mut Context<Self>) {
-        let Some(edit) = self.tree_edit.clone() else { return };
+        let Some(edit) = self.dlg.tree_edit.clone() else { return };
         let value = edit.input.read(cx).value().to_string();
         self.tree_edit_confirm(TreeEditVia::Dismiss, &value, cx);
     }
@@ -508,9 +508,9 @@ impl Chat {
 
     /// 「删除」第一步：挂统一确认浮层（overlay::confirm，居中）。
     pub(crate) fn confirm_tree_delete(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        self.tree_menu = None;
-        self.editor_menu = None;
-        self.tree_confirm_del = Some(path);
+        self.dlg.tree_menu = None;
+        self.dlg.editor_menu = None;
+        self.dlg.tree_confirm_del = Some(path);
         cx.notify();
     }
 
@@ -519,8 +519,8 @@ impl Chat {
     /// 杜绝「回调先清槽、commit 再 take 取到空」的时序（文件树删除从未
     /// 生效过的根因）。
     pub(crate) fn tree_delete_confirm_commit(&mut self, cx: &mut Context<Self>) {
-        let Some(path) = self.tree_confirm_del.clone() else { return };
-        self.tree_confirm_del = None;
+        let Some(path) = self.dlg.tree_confirm_del.clone() else { return };
+        self.dlg.tree_confirm_del = None;
         self.tree_delete_commit(&path, cx);
     }
 
@@ -562,7 +562,7 @@ impl Chat {
             Err(e) => {
                 // 持久弹层：状态栏 toast 一闪容易漏看，用户回报也拿不到
                 // 具体错误
-                self.tree_del_error = Some(e.to_string());
+                self.dlg.tree_del_error = Some(e.to_string());
                 self.set_status(crate::i18n::tf("extensions.remove_failed", &[("e", e.to_string())]), cx);
                 cx.notify();
             }
@@ -571,7 +571,7 @@ impl Chat {
 
     /// 「复制路径」：绝对路径进剪贴板（gpui 原生 ClipboardItem）。
     pub(crate) fn tree_copy_path(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        self.tree_menu = None;
+        self.dlg.tree_menu = None;
         cx.write_to_clipboard(gpui::ClipboardItem::new_string(
             path.to_string_lossy().to_string(),
         ));
@@ -583,7 +583,7 @@ impl Chat {
     /// 自动引号、目录不闭合供钻取）追加到输入框末尾，光标落在插入之后；
     /// 内容区切回会话让插入可见（在终端/文件视图时）。
     pub(crate) fn tree_at_insert(&mut self, path: PathBuf, is_dir: bool, cx: &mut Context<Self>) {
-        self.tree_menu = None;
+        self.dlg.tree_menu = None;
         let rel = path
             .strip_prefix(&self.cwd)
             .unwrap_or(&path)

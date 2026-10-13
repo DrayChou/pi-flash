@@ -120,7 +120,7 @@ impl Chat {
         name: String,
         cx: &mut Context<Self>,
     ) {
-        self.hover_card = None;
+        self.dlg.hover_card = None;
         if name.is_empty() {
             cx.notify();
             return;
@@ -192,7 +192,7 @@ impl Chat {
 
     /// psp 详情卡改名取消（Esc）。
     pub(crate) fn rename_card_cancel(&mut self, _path: &PathBuf, cx: &mut Context<Self>) {
-        if let Some(card) = self.hover_card.as_mut() {
+        if let Some(card) = self.dlg.hover_card.as_mut() {
             card.renaming = false;
             card.rename_input = None;
         }
@@ -202,7 +202,7 @@ impl Chat {
     /// 改名中点卡外 = 取消（Esc 同语义：不提交）并收卡。卡是 hover 态浮层，
     /// 鼠标已不在卡上，留着等于一张钉死的空壳，直接收掉。
     pub(crate) fn hover_card_rename_dismiss(&mut self, cx: &mut Context<Self>) {
-        self.hover_card = None;
+        self.dlg.hover_card = None;
         cx.notify();
     }
 }

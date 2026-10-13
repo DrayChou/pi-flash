@@ -219,7 +219,7 @@ impl Chat {
             self.psp.turn_errors.remove(f);
             self.psp.turn_warnings.remove(f);
         }
-        self.pill_menu = None;
+        self.dlg.pill_menu = None;
         self.menu_ix = 0;
         // 「点外/Esc 收起」不能跨会话泄漏：否则上个会话收起过菜单，切过来
         // 后 / @ 永远弹不出（active_menu 第一行就短路）
@@ -257,8 +257,8 @@ impl Chat {
         self.runtimes.insert(key, rt.clone());
         self.subscribe_runtime(&rt, cx);
         clear_last_open(&self.cwd.to_string_lossy());
-        self.renaming = None;
-        self.rename_input = None;
+        self.dlg.renaming = None;
+        self.dlg.rename_input = None;
         self.switch_to(rt, cx);
     }
 
@@ -325,9 +325,9 @@ impl Chat {
         if let Some(rt) = self.runtimes.get(&key).cloned() {
             self.cwd = cwd;
             self.branch = read_branch(&self.cwd);
-            self.renaming = None;
-            self.rename_input = None;
-            self.confirm_delete = None;
+            self.dlg.renaming = None;
+            self.dlg.rename_input = None;
+            self.dlg.confirm_delete = None;
             if rename {
                 rt.update(cx, |r, _| r.pending_rename = true);
             }
@@ -374,9 +374,9 @@ impl Chat {
             self.attach_fs_watch();
         }
         set_last_open(&self.cwd.to_string_lossy(), &path.to_string_lossy());
-        self.renaming = None;
-        self.rename_input = None;
-        self.confirm_delete = None;
+        self.dlg.renaming = None;
+        self.dlg.rename_input = None;
+        self.dlg.confirm_delete = None;
         self.switch_to(rt.clone(), cx);
         let rt_spawn = rt;
         cx.spawn(async move |_this, cx| {
@@ -399,7 +399,7 @@ impl Chat {
     /// (active) session is aborted + shut down first and the shell resets
     /// to a fresh draft with the same cwd.
     pub(crate) fn delete_session(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        self.confirm_delete = None;
+        self.dlg.confirm_delete = None;
         let key = path.to_string_lossy().to_string();
         // 会话没了，它的自定义插件清单也清掉（034）
         if let Some(store) = pi_link::session_ext::store_path() {
@@ -461,14 +461,14 @@ impl Chat {
             }));
             ti.set_on_escape(Box::new(move |cx| {
                 let _ = weak_esc.update(cx, |c, cx| {
-                    c.renaming = None;
-                    c.rename_input = None;
+                    c.dlg.renaming = None;
+                    c.dlg.rename_input = None;
                     cx.notify();
                 });
             }));
         });
-        self.renaming = Some(path);
-        self.rename_input = Some(input);
+        self.dlg.renaming = Some(path);
+        self.dlg.rename_input = Some(input);
         cx.notify();
     }
 
@@ -480,8 +480,8 @@ impl Chat {
         // reload it when pi confirms the write (set_session_name response —
         // an immediate re-read here would race the file flush)
         self.refresh_state(cx);
-        self.renaming = None;
-        self.rename_input = None;
+        self.dlg.renaming = None;
+        self.dlg.rename_input = None;
         cx.notify();
     }
 
@@ -541,7 +541,7 @@ impl Chat {
         set_last_workspace(&self.cwd.to_string_lossy());
         self.branch = read_branch(&self.cwd);
         self.refresh_sessions();
-        self.dialog = None;
+        self.dlg.dialog = None;
         self.expanded_dirs.clear();
         // 文件树：根项目行默认展开
         self.expanded_dirs.insert(self.cwd.clone());

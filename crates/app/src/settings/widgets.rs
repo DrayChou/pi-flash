@@ -318,7 +318,7 @@ pub(crate) fn select_section(
     let weak = weak.clone();
     move |_, cx| {
         let _ = weak.update(cx, |c, cx| {
-            if let Some(st) = c.settings.clone() {
+            if let Some(st) = c.dlg.settings.clone() {
                 st.update(cx, |s, cx| {
                     s.section = section.clone();
                     s.error = None;

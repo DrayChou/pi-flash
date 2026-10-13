@@ -91,7 +91,7 @@ impl Chat {
             })
             .unwrap_or(false);
         if dirty {
-            self.dialog = Some(crate::Dialog::FileDirty { path: path.to_path_buf() });
+            self.dlg.dialog = Some(crate::Dialog::FileDirty { path: path.to_path_buf() });
             cx.notify();
             return;
         }
@@ -359,8 +359,8 @@ impl Chat {
                     .send(alacritty_terminal::event_loop::Msg::Shutdown);
                 self.terminals.remove(tix);
                 // 该终端的右键菜单若开着，随 tab 一起收（挂载处也校验，双保险）
-                if self.term_menu.is_some_and(|(tid, _, _)| tid == *id) {
-                    self.term_menu = None;
+                if self.dlg.term_menu.is_some_and(|(tid, _, _)| tid == *id) {
+                    self.dlg.term_menu = None;
                 }
                 // 终端可开多个（同项目不限量）：下标随移除平移/夹紧，
                 // 否则 active_terminal 会指错终端或越界

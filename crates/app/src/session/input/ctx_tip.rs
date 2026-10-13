@@ -17,28 +17,28 @@ pub(super) fn ctx_tip_hover(
     entered: bool,
     cx: &mut Context<Chat>,
 ) {
-    let was_open = chat.ctx_tip_ring_hover || chat.ctx_tip_panel_hover;
+    let was_open = chat.dlg.ctx_tip_ring_hover || chat.dlg.ctx_tip_panel_hover;
     if ring {
-        chat.ctx_tip_ring_hover = entered;
+        chat.dlg.ctx_tip_ring_hover = entered;
     } else {
-        chat.ctx_tip_panel_hover = entered;
+        chat.dlg.ctx_tip_panel_hover = entered;
     }
-    let open = chat.ctx_tip_ring_hover || chat.ctx_tip_panel_hover;
+    let open = chat.dlg.ctx_tip_ring_hover || chat.dlg.ctx_tip_panel_hover;
     match (was_open, open) {
         (false, true) => {
-            chat.ctx_tip_closing = None;
+            chat.dlg.ctx_tip_closing = None;
             cx.notify();
         }
         (true, false) => {
             let t = std::time::Instant::now();
-            chat.ctx_tip_closing = Some(t);
+            chat.dlg.ctx_tip_closing = Some(t);
             cx.spawn(async move |this, cx| {
                 cx.background_executor()
                     .timer(std::time::Duration::from_millis(200))
                     .await;
                 let _ = this.update(cx, |c, cx| {
-                    if c.ctx_tip_closing == Some(t) {
-                        c.ctx_tip_closing = None;
+                    if c.dlg.ctx_tip_closing == Some(t) {
+                        c.dlg.ctx_tip_closing = None;
                         cx.notify();
                     }
                 });
@@ -59,7 +59,7 @@ pub(super) fn ctx_tip_element(
     cx: &mut Context<Chat>,
 ) -> Option<gpui::AnyElement> {
     let visible =
-        chat.ctx_tip_ring_hover || chat.ctx_tip_panel_hover || chat.ctx_tip_closing.is_some();
+        chat.dlg.ctx_tip_ring_hover || chat.dlg.ctx_tip_panel_hover || chat.dlg.ctx_tip_closing.is_some();
     if !visible {
         return None;
     }
@@ -67,7 +67,7 @@ pub(super) fn ctx_tip_element(
         let r = chat.rt().read(cx);
         (r.stats.clone(), r.compacting, r.can_compact())
     };
-    let closing = chat.ctx_tip_closing.is_some();
+    let closing = chat.dlg.ctx_tip_closing.is_some();
     let wrap = div()
         .id("ctx-tip")
         .absolute()

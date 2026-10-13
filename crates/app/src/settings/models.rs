@@ -24,7 +24,7 @@ impl Chat {
             let data = self.mcp_backfill_data(&section);
             panel.update(cx, |s, cx| super::mcp::mcp_apply_backfill(s, data, cx));
         }
-        self.settings = Some(panel);
+        self.dlg.settings = Some(panel);
         cx.notify();
     }
 
@@ -211,14 +211,14 @@ impl Chat {
     }
 
     pub(crate) fn mc_set_error(&mut self, msg: &str, cx: &mut Context<Self>) {
-        if let Some(st) = self.settings.clone() {
+        if let Some(st) = self.dlg.settings.clone() {
             st.update(cx, |s, _| s.error = Some(msg.to_string()));
         }
         cx.notify();
     }
 
     pub(crate) fn mc_clear_error(&mut self, cx: &mut Context<Self>) {
-        if let Some(st) = self.settings.clone() {
+        if let Some(st) = self.dlg.settings.clone() {
             let had = st.read(cx).error.is_some();
             if had {
                 st.update(cx, |s, cx| {
@@ -385,7 +385,7 @@ impl Chat {
         } else {
             None
         };
-        if let Some(st) = self.settings.clone() {
+        if let Some(st) = self.dlg.settings.clone() {
             st.update(cx, |s, cx| {
                 s.section = id;
                 s.error = None;
@@ -744,7 +744,7 @@ fn mc_add_action(weak: &gpui::WeakEntity<Chat>) -> gpui::AnyElement {
                 .child(tr("model.add_provider"))
                 .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                     let _ = weak.update(cx, |c, cx| {
-                        c.dialog = Some(c.provider_picker_dialog(cx));
+                        c.dlg.dialog = Some(c.provider_picker_dialog(cx));
                         cx.notify();
                     });
                 }),
@@ -890,7 +890,7 @@ fn mc_models_detail(
                                 .hover(|s| s.opacity(0.7))
                                 .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                                     let _ = weak_eye.update(cx, |c, cx| {
-                                        if let Some(st) = c.settings.clone() {
+                                        if let Some(st) = c.dlg.settings.clone() {
                                             let input = st.read(cx).key_input.clone();
                                             let visible = st.update(cx, |s, cx| {
                                                 s.key_visible = !s.key_visible;
@@ -916,7 +916,7 @@ fn mc_models_detail(
                     false,
                     move |c, cx| {
                         let key = c
-                            .settings
+                            .dlg.settings
                             .as_ref()
                             .map(|st| st.read(cx).key_input.clone())
                             .map(|input| input.read(cx).value().to_string())
@@ -1139,7 +1139,7 @@ pub(crate) fn remove_provider_confirm_overlay(
         &[("name", name)],
     );
     Some(crate::ui::overlay::confirm(
-        &chat.dialog_focus,
+        &chat.dlg.dialog_focus,
         message,
         {
             let weak = weak.clone();
@@ -1182,7 +1182,7 @@ impl Chat {
                 let weak = weak_esc.clone();
                 cx.defer(move |cx| {
                     let _ = weak.update(cx, |c, cx| {
-                        c.dialog = None;
+                        c.dlg.dialog = None;
                         cx.notify();
                     });
                 });

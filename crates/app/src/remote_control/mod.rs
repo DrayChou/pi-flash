@@ -643,9 +643,9 @@ impl crate::Chat {
         // 工作台选会话；留个弹窗把人挡在外面是错的）
         if self.aux.remote.poll_qr() {
             if matches!(self.aux.remote.qr, QrState::Done { .. })
-                && matches!(self.dialog, Some(crate::Dialog::WxQr))
+                && matches!(self.dlg.dialog, Some(crate::Dialog::WxQr))
             {
-                self.dialog = None;
+                self.dlg.dialog = None;
             }
             cx.notify();
         }

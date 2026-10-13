@@ -535,18 +535,18 @@ fn spawn_pump_120ms(cx: &mut gpui::Context<Chat>) {
                 .update(cx, |c, cx| {
                     let mut dirty = false;
                     // 改名中：不打字时鼠标虽不在卡上，也不能清卡
-                    let renaming = c.hover_card.as_ref().is_some_and(|h| h.renaming);
+                    let renaming = c.dlg.hover_card.as_ref().is_some_and(|h| h.renaming);
                     if !renaming {
-                        if let Some(at) = c.hover_card.as_ref().and_then(|h| h.hide_at) {
+                        if let Some(at) = c.dlg.hover_card.as_ref().and_then(|h| h.hide_at) {
                             if at.elapsed() > std::time::Duration::from_millis(300) {
-                                c.hover_card = None;
+                                c.dlg.hover_card = None;
                                 dirty = true;
                             }
                         }
                     }
                     // 详情卡延迟显示（0.3s）：悬停期满且鼠标未在离行宽限时才置
                     // shown，下一次渲染把卡画出来
-                    if let Some(card) = c.hover_card.as_mut() {
+                    if let Some(card) = c.dlg.hover_card.as_mut() {
                         if !card.shown
                             && card.hide_at.is_none()
                             && card.show_at.elapsed() >= std::time::Duration::from_millis(300)
@@ -567,9 +567,9 @@ fn spawn_pump_120ms(cx: &mut gpui::Context<Chat>) {
                             }
                         }
                     }
-                    if let Some((_, at)) = &c.status_toast {
+                    if let Some((_, at)) = &c.dlg.status_toast {
                         if at.elapsed() > std::time::Duration::from_millis(2500) {
-                            c.status_toast = None;
+                            c.dlg.status_toast = None;
                             dirty = true;
                         }
                     }

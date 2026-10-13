@@ -612,7 +612,7 @@ impl gpui::Element for TerminalElement {
                     let (x, y) = (f32::from(ev.position.x), f32::from(ev.position.y));
                     let tab_id = this.tab_id;
                     let _ = this.weak.update(cx, |chat, cx| {
-                        chat.term_menu = Some((tab_id, x, y));
+                        chat.dlg.term_menu = Some((tab_id, x, y));
                         cx.notify();
                     });
                 });
@@ -1364,8 +1364,8 @@ impl Chat {
         let ctrl = k.modifiers.control;
         let shift = k.modifiers.shift;
         // 右键菜单开着时 ESC 先收菜单（否则这一下会变成 PTY 的 ^[）
-        if k.key == "escape" && self.term_menu.is_some() {
-            self.term_menu = None;
+        if k.key == "escape" && self.dlg.term_menu.is_some() {
+            self.dlg.term_menu = None;
             cx.notify();
             cx.stop_propagation();
             return;

@@ -315,15 +315,15 @@ pub(crate) fn psp_view(
                     // 确认）——它们锚定的是行位置，滚动后锚点漂移，钉在原地
                     // 只会错位（用户定稿：滚动 = 菜单立即消失）
                     .on_scroll_wheel(cx.listener(|this, _: &gpui::ScrollWheelEvent, _w, cx| {
-                        if this.hover_card.is_some()
-                            || this.psp_menu.is_some()
-                            || this.proj_tip.is_some()
-                            || this.confirm_prj_del.is_some()
+                        if this.dlg.hover_card.is_some()
+                            || this.dlg.psp_menu.is_some()
+                            || this.dlg.proj_tip.is_some()
+                            || this.dlg.confirm_prj_del.is_some()
                         {
-                            this.hover_card = None;
-                            this.psp_menu = None;
-                            this.proj_tip = None;
-                            this.confirm_prj_del = None;
+                            this.dlg.hover_card = None;
+                            this.dlg.psp_menu = None;
+                            this.dlg.proj_tip = None;
+                            this.dlg.confirm_prj_del = None;
                             cx.notify();
                         }
                     }))
@@ -450,7 +450,7 @@ fn title_row(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> g
                             let _ = w_sort.update(cx, |c, cx| {
                                 // 存原始点击点；方向与间距由渲染期统一弹出
                                 // 算法（ui::popup）决定，此处不再手工偏移
-                                c.psp_menu = Some(crate::function_panel::PspMenu::Sort {
+                                c.dlg.psp_menu = Some(crate::function_panel::PspMenu::Sort {
                                     sub: None,
                                     x: f32::from(ev.position.x),
                                     y: f32::from(ev.position.y),
@@ -479,7 +479,7 @@ fn project_row(
     let hovered = chat.psp.hovered_project == Some(pi)
         // ⋯ 菜单打开中：按钮保持显示（交互进行中不消失）
         || matches!(
-            &chat.psp_menu,
+            &chat.dlg.psp_menu,
             Some(crate::function_panel::PspMenu::Project { path: mp, .. })
             if crate::services::workspace::same_path(mp, &g.path)
         );
@@ -532,8 +532,8 @@ fn project_row(
                     if c.psp.hovered_project == Some(pi) {
                         c.psp.hovered_project = None;
                     }
-                    if c.proj_tip.is_some() {
-                        c.proj_tip = None;
+                    if c.dlg.proj_tip.is_some() {
+                        c.dlg.proj_tip = None;
                         cx.notify();
                     }
                 }
@@ -544,12 +544,12 @@ fn project_row(
             let _ = w_tip_off.update(cx, |c, cx| {
                 let path = path_tip.clone();
                 let path_str = path.to_string_lossy().to_string();
-                if c.proj_tip.as_ref().is_none_or(|(p, _, _)| {
+                if c.dlg.proj_tip.as_ref().is_none_or(|(p, _, _)| {
                     !same_ws(&p.to_string_lossy(), &path_str)
                 }) {
-                    c.proj_tip = Some((path, x, y));
+                    c.dlg.proj_tip = Some((path, x, y));
                     cx.notify();
-                } else if let Some(p) = c.proj_tip.as_mut() {
+                } else if let Some(p) = c.dlg.proj_tip.as_mut() {
                     p.1 = x;
                     p.2 = y;
                 }
@@ -600,7 +600,7 @@ fn project_row(
                                     cx.stop_propagation();
                                     let _ = w_menu.update(cx, |c, cx| {
                                         // 同排序菜单：存原始点击点，定向交统一算法
-                                        c.psp_menu = Some(crate::function_panel::PspMenu::Project {
+                                        c.dlg.psp_menu = Some(crate::function_panel::PspMenu::Project {
                                             path: path_menu.clone(),
                                             x: f32::from(ev.position.x),
                                             y: f32::from(ev.position.y),
@@ -760,7 +760,7 @@ fn session_row_view(
                 let top = b.origin.y;
                 let h = b.size.height;
                 let _ = w_bounds.update(cx, |c, cx| {
-                    if let Some(card) = c.hover_card.as_mut() {
+                    if let Some(card) = c.dlg.hover_card.as_mut() {
                         if crate::services::workspace::same_path(&card.path, &path_bounds)
                             && ((card.y - f32::from(top)).abs() > 0.5
                                 || (card.h - f32::from(h)).abs() > 0.5)
@@ -799,7 +799,7 @@ fn session_row_view(
             let leaving = !*h;
             let _ = w_hover.update(cx, |c, _cx| {
                 if leaving {
-                    if let Some(card) = c.hover_card.as_mut() {
+                    if let Some(card) = c.dlg.hover_card.as_mut() {
                         // 鼠标若已进卡（card_hovered），行退出事件晚到
                         // 也不得启动消失宽限
                         if !card.card_hovered {
@@ -813,11 +813,11 @@ fn session_row_view(
             let y = f32::from(ev.position.y);
             let _ = w_move.update(cx, |c, cx| {
                 let same = c
-                    .hover_card
+                    .dlg.hover_card
                     .as_ref()
                     .is_some_and(|card| crate::services::workspace::same_path(&card.path, &path_card));
                 if !same {
-                    c.hover_card = Some(crate::function_panel::HoverCard {
+                    c.dlg.hover_card = Some(crate::function_panel::HoverCard {
                         path: path_card.clone(),
                         // 临时估计（鼠标 y - 半行高）；prepaint 钩子会把
                         // y 校正为本行的真实顶部（bounds.origin.y），行高
@@ -833,7 +833,7 @@ fn session_row_view(
                         rename_input: None,
                     });
                     cx.notify();
-                } else if let Some(card) = c.hover_card.as_mut() {
+                } else if let Some(card) = c.dlg.hover_card.as_mut() {
                     // 鼠标在本行内移动：只要不在卡上就持续取消消失宽限
                     if !card.card_hovered {
                         card.hide_at = None;

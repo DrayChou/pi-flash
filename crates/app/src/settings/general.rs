@@ -334,7 +334,7 @@ fn size_trigger(
         // 触发按钮被点：开本槽位（再点已开的槽位 = 收起）
         move |_, cx| {
             let _ = weak_toggle.update(cx, |c, cx| {
-                if let Some(st) = c.settings.clone() {
+                if let Some(st) = c.dlg.settings.clone() {
                     st.update(cx, |s, cx| {
                         s.size_popup = if s.size_popup == Some(ix) { None } else { Some(ix) };
                         cx.notify();
@@ -345,7 +345,7 @@ fn size_trigger(
         // 弹层外被点：收起
         move |_, cx| {
             let _ = weak_dismiss.update(cx, |c, cx| {
-                if let Some(st) = c.settings.clone() {
+                if let Some(st) = c.dlg.settings.clone() {
                     st.update(cx, |s, cx| {
                         if s.size_popup.take().is_some() {
                             cx.notify();
@@ -392,7 +392,7 @@ fn size_trigger(
                                     },
                                 );
                                 // 弹层内点击不会触发 on_mouse_down_out，选中后手动收起
-                                if let Some(st) = c.settings.clone() {
+                                if let Some(st) = c.dlg.settings.clone() {
                                     st.update(cx, |s, cx| {
                                         if s.size_popup.take().is_some() {
                                             cx.notify();
@@ -472,7 +472,7 @@ fn font_trigger(
         // 触发按钮被点：开本槽位（再点已开的槽位 = 收起）
         move |_, cx| {
             let _ = weak_toggle.update(cx, |c, cx| {
-                if let Some(st) = c.settings.clone() {
+                if let Some(st) = c.dlg.settings.clone() {
                     st.update(cx, |s, cx| {
                         if s.font_popup == Some(ix) {
                             s.close_font_popup(cx);
@@ -486,7 +486,7 @@ fn font_trigger(
         // 弹层外被点：收起
         move |_, cx| {
             let _ = weak_dismiss.update(cx, |c, cx| {
-                if let Some(st) = c.settings.clone() {
+                if let Some(st) = c.dlg.settings.clone() {
                     st.update(cx, |s, cx| s.close_font_popup(cx));
                 }
             });
@@ -582,7 +582,7 @@ fn font_popup_card(
                                 size: spec.size,
                             },
                         );
-                        if let Some(st) = c.settings.clone() {
+                        if let Some(st) = c.dlg.settings.clone() {
                             st.update(cx, |s, cx| s.close_font_popup(cx));
                         }
                         cx.notify();

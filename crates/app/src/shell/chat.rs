@@ -13,8 +13,6 @@ use crate::settings::plugins::PkgOp;
 
 pub(crate) struct Chat {
     pub(crate) focus: FocusHandle,
-    pub(crate) dialog_focus: FocusHandle,
-    pub(crate) dialog: Option<Dialog>,
     pub(crate) dock_panel: DockPanel,
     pub(crate) input: String,
     pub(crate) pending_images: Vec<AttachedImage>,
@@ -64,26 +62,6 @@ pub(crate) struct Chat {
     /// 永不撞车）。唯一写入点 = messages::bar_hover_wired。
     pub bar_hover: Option<usize>,
     pub(crate) input_focused: bool,
-    // inline rename (active session)
-    pub(crate) renaming: Option<PathBuf>,
-    pub(crate) rename_input: Option<gpui::Entity<TextInput>>,
-    pub(crate) confirm_delete: Option<PathBuf>,
-    // shell surfaces
-    pub(crate) pill_menu: Option<PillMenu>,
-    /// 「full+」档的扩展选择面板（勾选即生效；滚动位跨帧复用）
-    pub(crate) plugin_picker: Option<crate::session::plugin_picker::PluginPicker>,
-    /// MCP 勾选菜单（043：全局 mcp.json 无条目时按钮不渲染，菜单自然不开）
-    pub(crate) mcp_picker: Option<crate::session::mcp_picker::McpPicker>,
-    /// 打开弹窗的那个按钮的锚点（水平中点 + 顶缘）——inputpanel 全部弹窗
-    /// 统一定位：与按钮居中、距 5px、不遮按钮（用户定稿）
-    pub(crate) pill_anchor: Option<PillAnchor>,
-    /// 三个胶囊按钮的 paint 期 bounds（canvas 捕获，跨帧槽位）
-    pub(crate) pill_btn: PillBtns,
-    /// ctx-ring 悬浮详情（v58 响应式）：环/面板两面悬停标志 + 淡出起始
-    /// 时刻（input.rs ctx_tip_hover 状态机持有）
-    pub(crate) ctx_tip_ring_hover: bool,
-    pub(crate) ctx_tip_panel_hover: bool,
-    pub(crate) ctx_tip_closing: Option<std::time::Instant>,
     // git panel
     pub(crate) git_files: Vec<GitFile>,
     pub(crate) git_add_del: (u64, u64),
@@ -132,9 +110,6 @@ pub(crate) struct Chat {
     /// 023：打开文件后待聚焦的编辑器（Zed 行为：开文件即聚焦；渲染帧
     /// 编辑器实体就绪后消费）
     pub(crate) pending_focus_file: Option<PathBuf>,
-    /// 042：inputpanel 模型菜单（锚定 pill 卡片，替代原居中 ModelSelect 弹窗）
-    pub(crate) model_picker: Option<crate::session::model_picker::ModelPicker>,
-    pub(crate) settings: Option<gpui::Entity<settings::SettingsPanel>>,
     pub(crate) slp_w: f32,
     pub(crate) panes_hidden: bool,
     pub(crate) slp_drag: Option<(f32, f32)>,
@@ -161,26 +136,6 @@ pub(crate) struct Chat {
     /// composer 胶囊实时高度（ui::measure_height 每帧写、读到的是上一帧
     /// 值；导航刻度条「屏高 − inputpanel/2」居中用，033）
     pub(crate) composer_h: std::rc::Rc<std::cell::Cell<f32>>,
-    pub(crate) proj_tip: Option<(PathBuf, f32, f32)>,
-    pub(crate) hover_card: Option<HoverCard>,
-    pub(crate) psp_menu: Option<PspMenu>,
-    pub(crate) confirm_prj_del: Option<(PathBuf, f32, f32)>,
-    /// 021 文件树右键菜单状态槽（渲染挂 psp_overlays 同层）
-    pub(crate) tree_menu: Option<TreeMenu>,
-    /// 021 行内新建/改名（Zed EditState 移植）：非空 = 树里有一行编辑器
-    /// （渲染挂 file_tree；焦点走主 render 焦点保持链）
-    pub(crate) tree_edit: Option<TreeEdit>,
-    /// 编辑区右键菜单（zed 式：编辑块 + 文件动作块；渲染挂 psp_overlays
-    /// 同层）。(文件路径, 鼠标 x, y)
-    pub(crate) editor_menu: Option<(PathBuf, f32, f32)>,
-    /// 终端右键菜单（复制 / 粘贴 / 全选；渲染挂 psp_overlays 同层）。
-    /// (终端 tab id, 鼠标 x, y)
-    pub(crate) term_menu: Option<(usize, f32, f32)>,
-    /// 021 文件树删除确认（统一 overlay::confirm；待删路径）
-    pub(crate) tree_confirm_del: Option<PathBuf>,
-    /// 删除失败持久弹层（trash Err 不再只靠状态栏一闪，用户可直接回报
-    /// 具体错误）
-    pub(crate) tree_del_error: Option<String>,
     /// 021 操作栏「切换显示变更」：只列 git 变更文件（flatten changes_only）
     pub(crate) changes_only: bool,
     /// 021 文件搜索（Dialog::FileSearch）：命中（相对路径清单切片）、
@@ -189,13 +144,14 @@ pub(crate) struct Chat {
     pub(crate) file_search_needle: String,
     pub(crate) file_search_gen: u64,
     pub(crate) file_search_scanning: bool,
-    pub(crate) status_toast: Option<(String, std::time::Instant)>,
     /// 周边面板簇（4ea）：ext UI / 更新 / 远程 / 系统提示词弹窗
     pub(crate) aux: AuxUi,
     /// 设置面板簇（4ea）：模型/技能/扩展/MCP 配置状态
     pub(crate) cfg: CfgUi,
     /// psp 列表簇（4ea）：项目/会话列表、搜索、通知点
     pub(crate) psp: PspUi,
+    /// 弹窗/悬浮层簇（4ea）
+    pub(crate) dlg: DlgUi,
 }
 
 /// 周边面板状态簇（4ea 字段重组）：扩展 UI 面 / 081 自动更新与更新日志 /
@@ -309,6 +265,57 @@ pub(crate) struct PspUi {
     pub(crate) hovered_project: Option<usize>,
 }
 
+/// 弹窗/悬浮层簇（4ea 字段重组）：模态槽、pill 弹层三件套、各域右键
+/// 菜单与行内编辑/确认槽、ctx 提示悬停、toast、设置面板句柄。
+pub(crate) struct DlgUi {
+    pub(crate) dialog_focus: FocusHandle,
+    pub(crate) dialog: Option<Dialog>,
+    // shell surfaces
+    pub(crate) pill_menu: Option<PillMenu>,
+    /// 「full+」档的扩展选择面板（勾选即生效；滚动位跨帧复用）
+    pub(crate) plugin_picker: Option<crate::session::plugin_picker::PluginPicker>,
+    /// MCP 勾选菜单（043：全局 mcp.json 无条目时按钮不渲染，菜单自然不开）
+    pub(crate) mcp_picker: Option<crate::session::mcp_picker::McpPicker>,
+    /// 042：inputpanel 模型菜单（锚定 pill 卡片，替代原居中 ModelSelect 弹窗）
+    pub(crate) model_picker: Option<crate::session::model_picker::ModelPicker>,
+    /// 打开弹窗的那个按钮的锚点（水平中点 + 顶缘）——inputpanel 全部弹窗
+    /// 统一定位：与按钮居中、距 5px、不遮按钮（用户定稿）
+    pub(crate) pill_anchor: Option<PillAnchor>,
+    /// 三个胶囊按钮的 paint 期 bounds（canvas 捕获，跨帧槽位）
+    pub(crate) pill_btn: PillBtns,
+    /// ctx-ring 悬浮详情（v58 响应式）：环/面板两面悬停标志 + 淡出起始
+    /// 时刻（input.rs ctx_tip_hover 状态机持有）
+    pub(crate) ctx_tip_ring_hover: bool,
+    pub(crate) ctx_tip_panel_hover: bool,
+    pub(crate) ctx_tip_closing: Option<std::time::Instant>,
+    // inline rename (active session)
+    pub(crate) renaming: Option<PathBuf>,
+    pub(crate) rename_input: Option<gpui::Entity<TextInput>>,
+    pub(crate) confirm_delete: Option<PathBuf>,
+    pub(crate) proj_tip: Option<(PathBuf, f32, f32)>,
+    pub(crate) hover_card: Option<HoverCard>,
+    pub(crate) psp_menu: Option<PspMenu>,
+    pub(crate) confirm_prj_del: Option<(PathBuf, f32, f32)>,
+    /// 021 文件树右键菜单状态槽（渲染挂 psp_overlays 同层）
+    pub(crate) tree_menu: Option<TreeMenu>,
+    /// 021 行内新建/改名（Zed EditState 移植）：非空 = 树里有一行编辑器
+    /// （渲染挂 file_tree；焦点走主 render 焦点保持链）
+    pub(crate) tree_edit: Option<TreeEdit>,
+    /// 编辑区右键菜单（zed 式：编辑块 + 文件动作块；渲染挂 psp_overlays
+    /// 同层）。(文件路径, 鼠标 x, y)
+    pub(crate) editor_menu: Option<(PathBuf, f32, f32)>,
+    /// 终端右键菜单（复制 / 粘贴 / 全选；渲染挂 psp_overlays 同层）。
+    /// (终端 tab id, 鼠标 x, y)
+    pub(crate) term_menu: Option<(usize, f32, f32)>,
+    /// 021 文件树删除确认（统一 overlay::confirm；待删路径）
+    pub(crate) tree_confirm_del: Option<PathBuf>,
+    /// 删除失败持久弹层（trash Err 不再只靠状态栏一闪，用户可直接回报
+    /// 具体错误）
+    pub(crate) tree_del_error: Option<String>,
+    pub(crate) status_toast: Option<(String, std::time::Instant)>,
+    pub(crate) settings: Option<gpui::Entity<settings::SettingsPanel>>,
+}
+
 impl Chat {
     pub(crate) fn new(cx: &mut Context<Self>) -> Self {
         let focus = cx.focus_handle();
@@ -369,8 +376,6 @@ impl Chat {
 
         let mut chat = Self {
             focus,
-            dialog_focus,
-            dialog: None,
             input: String::new(),
             pending_images: Vec::new(),
             session_tail_cache: std::collections::HashMap::new(),
@@ -414,7 +419,6 @@ impl Chat {
             term_cursor_on: true,
             term_cursor_focused: false,
             term_events: None,
-            model_picker: None,
             panel_tabs: Vec::new(),
             active_panel_tab: None,
             file_cache: std::collections::HashMap::new(),
@@ -429,15 +433,35 @@ impl Chat {
             )),
             bar_hover: None,
             input_focused: false,
-            pill_menu: None,
-            plugin_picker: None,
-            mcp_picker: None,
-            pill_anchor: None,
-            pill_btn: PillBtns::default(),
             ext_tokens: services::token_probe::read_cache(),
-            ctx_tip_ring_hover: false,
-            ctx_tip_panel_hover: false,
-            ctx_tip_closing: None,
+            dlg: DlgUi {
+                dialog_focus,
+                dialog: None,
+                pill_menu: None,
+                plugin_picker: None,
+                mcp_picker: None,
+                model_picker: None,
+                pill_anchor: None,
+                pill_btn: PillBtns::default(),
+                ctx_tip_ring_hover: false,
+                ctx_tip_panel_hover: false,
+                ctx_tip_closing: None,
+                renaming: None,
+                rename_input: None,
+                confirm_delete: None,
+                proj_tip: None,
+                hover_card: None,
+                psp_menu: None,
+                confirm_prj_del: None,
+                tree_menu: None,
+                tree_edit: None,
+                editor_menu: None,
+                term_menu: None,
+                tree_confirm_del: None,
+                tree_del_error: None,
+                status_toast: None,
+                settings: None,
+            },
             psp: PspUi {
                 projects: Vec::new(),
                 project_hits: Vec::new(),
@@ -500,11 +524,7 @@ impl Chat {
                 decl_open: [false; 7],
                 ext_input: cx.new(|cx| TextInput::new(cx)),
             },
-            settings: None,
             // 081：已有合法 staging = Ready（不花网络），否则 Idle
-            renaming: None,
-            rename_input: None,
-            confirm_delete: None,
             slp_w: ui.slp_w,
             panes_hidden: ui.panes_hidden,
             slp_drag: None,
@@ -520,22 +540,11 @@ impl Chat {
             nav_hover_turn: None,
             nav_flyout_list: gpui::ListState::new(0, gpui::ListAlignment::Top, px(1000.)),
             composer_h: std::rc::Rc::new(std::cell::Cell::new(0.)),
-            proj_tip: None,
-            hover_card: None,
-            psp_menu: None,
-            confirm_prj_del: None,
-            tree_menu: None,
-            tree_edit: None,
-            editor_menu: None,
-            term_menu: None,
-            tree_del_error: None,
-            tree_confirm_del: None,
             changes_only: ui.tree_changes_only,
             file_search_hits: Vec::new(),
             file_search_needle: String::new(),
             file_search_gen: 0,
             file_search_scanning: false,
-            status_toast: None,
             crumb_menu_dir: None,
             crumb_dd: cx.new(|_| crate::ui::DropdownState::new()),
             ext_probe: (0, 0),
@@ -680,7 +689,7 @@ impl Chat {
 
 
     pub(crate) fn set_status(&mut self, msg: String, cx: &mut Context<Self>) {
-        self.status_toast = Some((msg, std::time::Instant::now()));
+        self.dlg.status_toast = Some((msg, std::time::Instant::now()));
         self.rt().update(cx, |r, _| r.status = String::new());
         let _ = cx;
     }
