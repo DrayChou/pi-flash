@@ -6,6 +6,62 @@
 use crate::*;
 
 impl Chat {
+    /// psp 详情卡标题点击 → 原地改名（三行高输入区，2026-10-13 用户定夺）：
+    /// 构建 rename_input + focus_soon（内件就绪即聚焦，select_all_on_focus
+    /// 全选且光标锚起点）。标题点击处理器与 ui.debug_hover {session, rename}
+    /// 自动化入口共用。
+    pub(crate) fn hover_card_begin_rename(&mut self, cx: &mut Context<Self>) {
+        let Some(card) = self.dlg.hover_card.as_mut() else { return };
+        let path = card.path.clone();
+        // 标题口径与 hover_card 渲染一致：会话名优先，空则预览/占位
+        let title = self
+            .psp
+            .projects
+            .iter()
+            .find_map(|g| g.sessions.iter().find(|s| same_path(&s.path, &path)))
+            .map(|info| {
+                info.name
+                    .clone()
+                    .filter(|n| !n.trim().is_empty())
+                    .unwrap_or_else(|| {
+                        if info.preview.is_empty() {
+                            "(empty)".to_string()
+                        } else {
+                            info.preview.clone()
+                        }
+                    })
+            })
+            .unwrap_or_default();
+        let weak_ok = cx.entity().downgrade();
+        let weak_esc = weak_ok.clone();
+        // 三行高输入区：会话名可长，单行放不下；auto_grow(3,3) 内件自算高
+        let input = cx.new(|cx| crate::ui::TextInput::new(cx).lines(3).select_all_on_focus());
+        input.update(cx, |ti, cx| ti.set_value(title, cx));
+        input.update(cx, |ti, _cx| {
+            let weak_ok = weak_ok.clone();
+            let weak_esc = weak_esc.clone();
+            let path_ok = path.clone();
+            ti.set_on_submit(Box::new(move |v, cx| {
+                let _ = weak_ok.update(cx, |c, cx| {
+                    c.rename_card_commit(&path_ok, v.trim().to_string(), cx)
+                });
+            }));
+            let path_esc = path.clone();
+            ti.set_on_escape(Box::new(move |cx| {
+                let _ = weak_esc.update(cx, |c, cx| c.rename_card_cancel(&path_esc, cx));
+            }));
+        });
+        // 首发聚焦走 focus_soon（内件下一帧建好即聚焦）：fallback 句柄不在
+        // 元素树里，直接 window.focus 是空路径——composer 白白 blur，输入框
+        // 收不到焦点，全选要再点一下才发生（同文件树行内改名）
+        input.update(cx, |ti, tcx| ti.focus_soon(tcx));
+        if let Some(card) = self.dlg.hover_card.as_mut() {
+            card.renaming = true;
+            card.rename_input = Some(input);
+        }
+        cx.notify();
+    }
+
     /// 打开项目菜单的【打开文件夹】：目录选择器 → 切换工作区。`fresh`
     /// （新会话页来源）= 选完落**全新草稿**（new_session_in，不恢复该目录
     /// 的 last_open）；psp 来源保持恢复上次会话的既定行为。

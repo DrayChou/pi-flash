@@ -266,11 +266,10 @@ impl TextInput {
             this.on_inner_event(entity, event, cx);
         })
         .detach();
-        // apply a pre-init value (prefill) now that we have a window
-        if let Some(v) = self.pending_value.take() {
-            self.value = v.clone();
-            state.update(cx, |st, scx| st.set_value(v, window, scx));
-        }
+        // pre-init 值（prefill）不在这里灌：统一走 render 的 pending_value
+        // 应用——那里带 select_all_on_focus 的建态即选（vendor prepaint 的
+        // is_selected_all 门闸依赖它抢在首次布局前落位）。ensure_state 只被
+        // render 调用，应用时机不变。
         self.state = Some(state.clone());
         Some(state)
     }
@@ -331,7 +330,24 @@ impl Render for TextInput {
         // apply dirty buffers (inner setters need the window)
         if let Some(v) = self.pending_value.take() {
             self.value = v.clone();
-            state.update(cx, |st, scx| st.set_value(v, window, scx));
+            let select_all = self.select_all_on_focus;
+            state.update(cx, |st, scx| {
+                st.set_value(v.clone(), window, scx);
+                // select_all_on_focus 的**建态即选**路径：抢在首个 prepaint
+                // 之前把选区落成全选——vendor prepaint 的光标跟随滚动块被
+                // is_selected_all 门闸整个跳过。否则 set_value 把光标甩到
+                // 文本尾，首帧布局按尾光标滚，CJK 长行 position_for_index
+                // 越界外推会把横向滚动推出屏外（改名框一打开空白的根因，
+                // 2026-10-13 pif-ui 实测复现）。focus 晚于首帧的场景（弹层
+                // 筛选框先建后聚焦）仍走 Focus 事件路径。
+                if select_all && !v.is_empty() {
+                    let len = st.value().len();
+                    st.set_selected_range_reversed(0..len, scx);
+                }
+            });
+            if select_all {
+                self.select_all_done = true; // 免 Focus 事件路径重复全选
+            }
         }
         if let Some(r) = self.pending_select.take() {
             state.update(cx, |st, scx| st.set_selected_range(r, scx));

@@ -591,6 +591,42 @@ pub(super) fn dispatch(
         // 调试专用：直置 psp 项目行 hover/收起态（绕过鼠标合成）。project
         // 缺省 = 清除 hover；collapse = 强制该项目收起(true)/展开(false)。
         method::UI_DEBUG_HOVER => {
+            // 会话详情卡直开（自动化复现 hover 卡路径；rename=true 直进
+            // 改名态——与标题点击同一 Chat::hover_card_begin_rename 槽）。
+            // shown 直置 true 免 300ms 悬停等待；card_hovered=true 免消失
+            // 宽限被 tick 拉起。
+            if let Some(sp) = params.get("session").and_then(Value::as_str) {
+                let path = std::path::PathBuf::from(sp);
+                let found = chat.psp.projects.iter().any(|g| {
+                    g.sessions.iter().any(|s| crate::services::workspace::same_path(&s.path, &path))
+                });
+                if !found {
+                    return Err(not_found(format!("psp 列表没有该会话: {sp}")));
+                }
+                chat.dlg.hover_card = Some(crate::function_panel::HoverCard {
+                    path: path.clone(),
+                    y: 200.,
+                    h: 32.,
+                    hide_at: None,
+                    show_at: std::time::Instant::now() - std::time::Duration::from_secs(1),
+                    shown: true,
+                    confirming: false,
+                    card_hovered: true,
+                    renaming: false,
+                    rename_input: None,
+                });
+                if params.get("rename").and_then(Value::as_bool) == Some(true) {
+                    chat.hover_card_begin_rename(cx);
+                }
+                cx.notify();
+                return Ok(json!({
+                    "hovered_session": sp,
+                    "renaming": chat
+                        .dlg.hover_card
+                        .as_ref()
+                        .is_some_and(|c| c.renaming),
+                }));
+            }
             match params.get("project") {
                 Some(Value::Number(n)) => {
                     let pi = n.as_u64().ok_or_else(|| bad("project 必须是非负整数"))? as usize;

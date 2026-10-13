@@ -165,7 +165,6 @@ fn hover_card(
     let confirming = card.confirming;
     let renaming = card.renaming;
     let anchor_x = chat.layout.slp_w + 8.;
-    let title_for_rename = title.clone();
 
     // 统一算法只裁决弹出方向（锚 = 行顶 y）；精准对齐是调用方语义
     //（2026-10-11 二次定夺）：向下弹卡顶 = 行顶、向上弹卡底 = 行底——
@@ -247,45 +246,11 @@ fn hover_card(
                 .rounded(px(6.))
                 .hover(|s| s.bg(rgb(t.bg_hover)))
                 // 点击标题 = 原地进入改名（不切换会话）
+                // 点击标题 = 原地进入改名（不切换会话）；构建/聚焦细节在
+                // Chat::hover_card_begin_rename（与自动化入口共用）
                 .on_mouse_down(MouseButton::Left, cx.listener(
                     move |this, _: &gpui::MouseDownEvent, _window, cx| {
-                        let Some(card) = this.dlg.hover_card.as_mut() else { return };
-                        let path = card.path.clone();
-                        let prefill = title_for_rename.clone();
-                        let weak_ok = cx.entity().downgrade();
-                        let weak_esc = weak_ok.clone();
-                        // 三行高输入区（2026-10-13 用户定夺）：会话名可长，
-                        // 单行放不下；auto_grow(3,3) 内件自算高
-                        let input = cx.new(|cx| {
-                            crate::ui::TextInput::new(cx).lines(3).select_all_on_focus()
-                        });
-                        input.update(cx, |ti, cx| ti.set_value(prefill, cx));
-                        input.update(cx, |ti, _cx| {
-                            let weak_ok = weak_ok.clone();
-                            let weak_esc = weak_esc.clone();
-                            let path_ok = path.clone();
-                            ti.set_on_submit(Box::new(move |v, cx| {
-                                let _ = weak_ok.update(cx, |c, cx| {
-                                    c.rename_card_commit(&path_ok, v.trim().to_string(), cx)
-                                });
-                            }));
-                            let path_esc = path.clone();
-                            ti.set_on_escape(Box::new(move |cx| {
-                                let _ = weak_esc.update(cx, |c, cx| {
-                                    c.rename_card_cancel(&path_esc, cx)
-                                });
-                            }));
-                        });
-                        // 首发聚焦走 focus_soon（内件下一帧建好即聚焦）：
-                        // fallback 句柄不在元素树里，直接 window.focus 是
-                        // 空路径——composer 白白 blur，输入框收不到焦点，
-                        // 全选要再点一下才发生（同文件树行内改名）
-                        input.update(cx, |ti, tcx| ti.focus_soon(tcx));
-                        if let Some(card) = this.dlg.hover_card.as_mut() {
-                            card.renaming = true;
-                            card.rename_input = Some(input);
-                        }
-                        cx.notify();
+                        this.hover_card_begin_rename(cx);
                     },
                 ))
                 .child(SharedString::from(title))
