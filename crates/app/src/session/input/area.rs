@@ -479,14 +479,23 @@ fn ensure_composer(
         f.set_on_change(Rc::new(move |v, cx| {
             let _ = weak_change.update(cx, |chat, cx| {
                 if chat.composer.input != v {
+                    // enter() 污染签名（原文尾追 \n）：组件 Enter 先插换行
+                    // 触发本次 Change，随即 PressEnter → on_submit 用剥 \n 的
+                    // 值覆盖回来。此间过滤集未变，不能复位 menu_ix——否则
+                    // ↑/↓/悬停选中的条目在 on_submit 读到的恒是 0，Enter 永远
+                    // 接受第 0 项（@ 提及表现为「回车插的还是裸查询文本」）
+                    let enter_pollution =
+                        v.ends_with('\n') && &v[..v.len() - 1] == chat.composer.input;
                     chat.composer.input = v.to_string();
-                    // 输入再次变化 = 解除点外/Esc 收起（active_menu 门控的
-                    // 声明语义；打字不走 set_input，必须在此复位）
-                    chat.composer.menu_dismissed = false;
-                    chat.composer.menu_ix = 0;
-                    // 过滤集变了回顶部，避免新列表停留在旧滚动深处
-                    chat.composer.menu_scroll
-                        .set_offset(gpui::point(px(0.), px(0.)));
+                    if !enter_pollution {
+                        // 输入再次变化 = 解除点外/Esc 收起（active_menu 门控的
+                        // 声明语义；打字不走 set_input，必须在此复位）
+                        chat.composer.menu_dismissed = false;
+                        chat.composer.menu_ix = 0;
+                        // 过滤集变了回顶部，避免新列表停留在旧滚动深处
+                        chat.composer.menu_scroll
+                            .set_offset(gpui::point(px(0.), px(0.)));
+                    }
                     cx.notify();
                 }
             });
