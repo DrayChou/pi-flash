@@ -27,7 +27,6 @@ Windows x64 only.
 
 ### Improvements
 - A batch of chrome alignment (owner-decided): topbar and statusbar are now equal height at 40px (window control buttons follow at 42×40); bar tabs fit the bar height; the statusbar settings button's right edge aligns with the list right line and the first tab card's left edge sits on the icon alignment line; the icon alignment line collapses into a single token (11→12px); composer right-group button spacing matches the left group (15px). (d2760c5, c100b22, 61981c5, 418512c, d00de94, e015300, 189008a)
-
 ## [0.1.4] - 2026-10-13
 
 A UI polish batch: bundled pi upgraded to 1.2.0, global shortcuts and keybinding hints, a set of completion-menu / cross-project fixes, and several owner-decided UI tweaks.
