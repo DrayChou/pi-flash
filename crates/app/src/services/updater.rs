@@ -14,14 +14,26 @@
 //!
 //! 网络纪律（设计文档定）：检测 timeout 30s，失败重试 2 次、间隔 10 分钟，
 //! 全程后台线程，绝不阻塞主进程；失败静默回落 Idle，下次启动再来。
+//! 下载源与 npm 薄壳同规则：直连优先，开传 3s 平均 <128KB/s 即按序切默认镜像
+//! （PI_FLASH_MIRROR 钉定唯一源 / PI_FLASH_MIRRORS 追加候选）。
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Duration;
 
-/// 下载/检查仓库坐标（与 npm/bin/lib.js releaseBase 同源）。
+/// 下载/检查仓库坐标（与 npm/bin/lib.js DIRECT_BASE 同源）。
 const RELEASES_DOWNLOAD_BASE: &str = "https://github.com/danielbill/pi-flash/releases/download";
+/// 默认镜像候选（<base>/v<version>/<asset> 同构布局的前缀加速，2026-10 实测可用，
+/// 与 npm/bin/lib.js DEFAULT_MIRRORS 同表；失效后 PR 更新两处）。
+const DEFAULT_MIRRORS: [&str; 3] = [
+    "https://gh-proxy.com/https://github.com/danielbill/pi-flash/releases/download",
+    "https://ghfast.top/https://github.com/danielbill/pi-flash/releases/download",
+    "https://ghproxy.net/https://github.com/danielbill/pi-flash/releases/download",
+];
+/// 测速切换（与 npm 薄壳 lib.js 同参数）：开传满 PROBE 平均速度仍低于阈值即弃源。
+const SPEED_PROBE: Duration = Duration::from_secs(3);
+const MIN_SPEED_BPS: f64 = 128.0 * 1024.0;
 const RELEASES_API_BASE: &str = "https://api.github.com/repos/danielbill/pi-flash/releases";
 const UA: &str = "pi-flash-updater";
 /// 检测超时（设计文档：30s）。
@@ -181,12 +193,28 @@ fn api_base() -> String {
         .unwrap_or_else(|| RELEASES_API_BASE.to_string())
 }
 
-fn download_base() -> String {
-    std::env::var("PI_FLASH_MIRROR")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-        .map(|m| m.trim_end_matches('/').to_string())
-        .unwrap_or_else(|| RELEASES_DOWNLOAD_BASE.to_string())
+/// 候选下载源：`PI_FLASH_MIRROR` 指定唯一源（跳过测速切换）；否则直连优先 +
+/// `PI_FLASH_MIRRORS` 追加 + 默认镜像（与 npm/bin/lib.js downloadBases 同规则）。
+fn download_bases() -> Vec<String> {
+    if let Ok(m) = std::env::var("PI_FLASH_MIRROR") {
+        let m = m.trim().trim_end_matches('/').to_string();
+        if !m.is_empty() {
+            return vec![m];
+        }
+    }
+    let extra = std::env::var("PI_FLASH_MIRRORS")
+        .map(|s| {
+            s.split([',', ' ', ';'])
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(|s| s.trim_end_matches('/').to_string())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let mut bases = vec![RELEASES_DOWNLOAD_BASE.to_string()];
+    bases.extend(extra);
+    bases.extend(DEFAULT_MIRRORS.iter().map(|s| s.to_string()));
+    bases
 }
 
 fn check_agent() -> ureq::Agent {
@@ -326,7 +354,8 @@ fn set_download_percent(pct: u8) {
     DOWNLOAD_PCT.store(pct.min(100), Ordering::Relaxed);
 }
 
-/// 下载到文件，边下边算 SHA-256（单遍）。返回 hex 摘要。
+/// 下载到文件，边下边算 SHA-256（单遍）。开传满 SPEED_PROBE 平均速度仍低于
+/// MIN_SPEED_BPS 即 Err（测速不过，由上层换源）。返回 hex 摘要。
 fn download_and_hash(url: &str, dest: &Path) -> Result<String, String> {
     use sha2::Digest;
     let agent = ureq::AgentBuilder::new()
@@ -349,12 +378,20 @@ fn download_and_hash(url: &str, dest: &Path) -> Result<String, String> {
     let mut buf = [0u8; 64 * 1024];
     let mut got: u64 = 0;
     let mut last_pct: u8 = 0;
+    let t0 = std::time::Instant::now();
     loop {
         let n = reader.read(&mut buf).map_err(|e| format!("{e}"))?;
         if n == 0 {
             break;
         }
         got += n as u64;
+        let elapsed = t0.elapsed();
+        if elapsed >= SPEED_PROBE && got as f64 / elapsed.as_secs_f64() < MIN_SPEED_BPS {
+            return Err(format!(
+                "测速不过（{}KB/s < 128KB/s）",
+                (got as f64 / elapsed.as_secs_f64() / 1024.0) as u64
+            ));
+        }
         if total > 0 {
             let pct = ((got as f64 / total as f64) * 100.0).min(100.0) as u8;
             if pct != last_pct {
@@ -366,6 +403,26 @@ fn download_and_hash(url: &str, dest: &Path) -> Result<String, String> {
         out.write_all(&buf[..n]).map_err(|e| format!("{e}"))?;
     }
     Ok(format!("{:x}", h.finalize()))
+}
+
+/// 按候选源逐个试下载（每源一次，测速不过/网络错误都换下一个），全灭才报错。
+/// 返回（zip 的 SHA-256，命中源 base——校验和钉官方优先时兜底用）。
+fn download_mirrored(asset: &str, dest: &Path, ver: &str) -> Result<(String, String), String> {
+    let mut errors = Vec::new();
+    for base in download_bases() {
+        eprintln!("[updater] 下载源：{base}");
+        match download_and_hash(&format!("{base}/v{ver}/{asset}"), dest) {
+            Ok(h) => return Ok((h, base)),
+            Err(e) => {
+                eprintln!("[updater] 源不可用（{e}），换下一个");
+                errors.push(format!("{base}：{e}"));
+            }
+        }
+    }
+    Err(format!(
+        "所有下载源均失败：{}；可设 PI_FLASH_MIRROR=<base> 指定源，或到 GitHub release 页手动下载",
+        errors.join("；")
+    ))
 }
 
 fn fetch_text(url: &str) -> Result<String, String> {
@@ -415,40 +472,30 @@ fn stage_update(rel: &ReleaseInfo) -> Result<String, String> {
 
     let result = (|| -> Result<(), String> {
         let asset = asset_name(&ver);
-        let base = format!("{}/v{}", download_base(), ver);
         let zip_path = tmp.join(&asset);
 
-        // 下载（3 次尝试 + 线性退避），边下边算 SHA-256
-        let mut zip_hash: Option<String> = None;
-        let mut last_err = String::new();
-        for attempt in 1..=3 {
-            match download_and_hash(&format!("{base}/{asset}"), &zip_path) {
-                Ok(h) => {
-                    zip_hash = Some(h);
-                    break;
-                }
-                Err(e) => {
-                    last_err = e;
-                    if attempt < 3 {
-                        std::thread::sleep(Duration::from_secs(attempt * 2));
-                    }
-                }
-            }
-        }
-        let zip_hash = zip_hash.ok_or_else(|| format!("下载失败：{last_err}"))?;
+        // 下载（测速自动换源：直连慢/挂就按序切镜像），边下边算 SHA-256
+        let (zip_hash, chosen) = download_mirrored(&asset, &zip_path, &ver)?;
 
-        // 校验和：sidecar 404 → SHA256SUMS 兜底
+        // 校验和：直连优先钉定官方哈希（zip 走镜像时防串包）→ 命中源兜底；
+        // sidecar 404 → SHA256SUMS 兜底
         let expected = {
             let mut found = None;
-            for url in [format!("{base}/{asset}.sha256"), format!("{base}/SHA256SUMS")] {
-                match fetch_text(&url) {
-                    Ok(text) => {
-                        if let Some(h) = parse_hash_for(&text, &asset) {
-                            found = Some(h);
-                            break;
+            let mut bases = vec![RELEASES_DOWNLOAD_BASE.to_string()];
+            if chosen != RELEASES_DOWNLOAD_BASE {
+                bases.push(chosen);
+            }
+            'outer: for b in &bases {
+                for suffix in [format!("{asset}.sha256"), "SHA256SUMS".to_string()] {
+                    match fetch_text(&format!("{b}/v{ver}/{suffix}")) {
+                        Ok(text) => {
+                            if let Some(h) = parse_hash_for(&text, &asset) {
+                                found = Some(h);
+                                break 'outer;
+                            }
                         }
+                        Err(_) => continue, // 404 / 网络抖动 → 试下一个来源
                     }
-                    Err(_) => continue, // 404 / 网络抖动 → 试下一个来源
                 }
             }
             found.ok_or_else(|| format!("release 资产里找不到 {asset} 的 SHA-256，放弃安装"))?
