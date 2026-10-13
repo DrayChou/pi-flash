@@ -6,7 +6,6 @@ use gpui::{AnimationExt, Context, MouseButton, SharedString, div, prelude::*, px
 
 use crate::Chat;
 use crate::i18n::tr;
-use crate::services::format::fmt_thousand;
 
 /// 悬停标志更新 + 淡出状态机（乱序免疫）：只按 (was_open, open) 转移，
 /// 环→面板交接时两个 hover 事件无论先后都收敛到正确状态。双面全空才
@@ -108,11 +107,11 @@ pub(super) fn ctx_tip_element(
 }
 
 /// 用量详情面板（ZCode「上下文容量」弹层风格）：标题行（已用/窗口 · 百分比）
-/// + 进度条 + 分类占比行（类别色点 · 降序）+ 分隔线 + 平均缓存命中率；下方
-/// 保留 token 分项 / 费用 / 压缩按钮。分类占比为**估算**：系统侧 7 大类走
-/// `pi_link::transcript::breakdown`（与系统提示词面板分析块同源），「消息」
-/// = 官方上下文总量 − 系统侧估算（反推）——各行加总恒等于 pi 报告的官方
-/// 总量，估算误差全部收进「消息」行。
+/// + 进度条 + 分类占比行（类别色点 · 降序）；下方 Token 分项二列网格
+/// （token 值统一 K 口径，缓存命中率收在网格末格）+ 费用 + 压缩按钮。
+/// 分类占比为**估算**：系统侧 7 大类走 `pi_link::transcript::breakdown`
+/// （与系统提示词面板分析块同源），「消息」= 官方上下文总量 − 系统侧估算
+/// （反推）——各行加总恒等于 pi 报告的官方总量，估算误差全部收进「消息」行。
 fn ctx_usage_panel(
     stats: Option<pi_link::protocol::SessionStats>,
     sys: Option<&pi_link::transcript::TranscriptSystem>,
@@ -301,12 +300,14 @@ fn ctx_usage_panel(
                                 div()
                                     .flex()
                                     .items_center()
-                                    .gap(px(5.))
                                     .child(
                                         div()
                                             .size(px(8.))
                                             .rounded_full()
                                             .flex_shrink_0()
+                                            // 色点↔文字 5px：显式点距（不走 flex gap，
+                                            // 用户定夺 2026-10-13）
+                                            .mr(px(5.))
                                             .bg(rgb(color)),
                                     )
                                     .child(
@@ -347,23 +348,20 @@ fn ctx_usage_panel(
                 }
             }
             let mut parts: Vec<gpui::AnyElement> = vec![ctx.into_any_element()];
-            // 分隔线 + 平均缓存命中率（ZCode 面板把命中率收在容量块末尾）
-            if let Some(r) = s.cache_hit_rate() {
-                parts.push(
-                    div()
-                        .border_t_1()
-                        .border_color(rgb(t.border))
-                        .pt(px(10.))
-                        .child(row(tr("stats.cache_hit_rate"), format!("{:.1}%", r * 100.)))
-                        .into_any_element(),
-                );
-            }
+            // Token 分项二列网格，token 值统一 K 口径（用户定夺）；缓存命中
+            // 率收进网格末格，正好补齐「总计」右侧的空位（用户定夺）
             let token_grid = grid2(vec![
-                row(tr("stats.input"), fmt_thousand(s.input)),
-                row(tr("stats.output"), fmt_thousand(s.output)),
-                row(tr("stats.cache_read"), fmt_thousand(s.cache_read)),
-                row(tr("stats.cache_write"), fmt_thousand(s.cache_write)),
-                row(tr("tokens.total"), fmt_thousand(s.tokens_total)),
+                row(tr("stats.input"), fmt_k(s.input)),
+                row(tr("stats.output"), fmt_k(s.output)),
+                row(tr("stats.cache_read"), fmt_k(s.cache_read)),
+                row(tr("stats.cache_write"), fmt_k(s.cache_write)),
+                row(tr("tokens.total"), fmt_k(s.tokens_total)),
+                row(
+                    tr("stats.cache_hit_rate"),
+                    s.cache_hit_rate()
+                        .map(|r| format!("{r:.1}%"))
+                        .unwrap_or_else(|| "\u{2014}".into()),
+                ),
             ]);
             let cost_rows = vec![row(tr("stats.total_cost"), format!("${:.4}", s.cost)).into_any_element()];
             parts.push(section(tr("stats.tokens_total"), vec![token_grid]).into_any_element());
@@ -389,7 +387,9 @@ fn ctx_usage_panel(
         .border_color(rgb(t.border))
         .bg(rgb(t.bg))
         .shadow_lg()
-        .p(px(12.))
+        // 左右 15（用户定夺：上下两片区域统一），垂直仍走 SP6 12
+        .px(px(15.))
+        .py(px(12.))
         .flex()
         .flex_col()
         .gap(px(12.))

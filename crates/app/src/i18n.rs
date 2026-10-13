@@ -486,7 +486,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("settings.memory_dir", "会话记忆 / 布局状态存放位置", "", ""),
     ("settings.restore_hint", "启动时恢复上次激活的项目与会话", "", ""),
     ("settings.restore_title", "启动恢复", "", ""),
-    ("stats.cache_hit_rate", "平均缓存命中率", "平均快取命中率", "Avg cache hit rate"),
+    ("stats.cache_hit_rate", "缓存命中率", "快取命中率", "Cache hit rate"),
     ("stats.cache_read", "缓存读", "", ""),
     ("stats.cache_write", "缓存写", "", ""),
     ("stats.context_capacity", "上下文容量", "上下文容量", "Context usage"),
