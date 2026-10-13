@@ -414,7 +414,7 @@ fn tab_shell(
             // 底）；023① 激活/背景等高；023④ 激活 tab 限宽 300px（超长
             // 省略号截断）
             d.max_w(px(300.))
-                .h(px(HEIGHT - 3.))
+                .h(px(HEIGHT - 4.))
                 .mb(px(-1.))
                 .bg(rgb(t.bg))
                 // 上沿不画线（2026-10-10 定夺）：只留左右两道与内容区分隔
@@ -432,7 +432,7 @@ fn tab_shell(
         .when(!active, |d| {
             // 023④ 未激活 tab 默认缩至 100px
             d.max_w(px(100.))
-                .h(px(HEIGHT - 3.))
+                .h(px(HEIGHT - 4.))
                 .mb(px(-1.))
                 .pl(px(12.))
                 .pr(px(12.))

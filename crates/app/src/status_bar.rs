@@ -85,21 +85,24 @@ fn tabs(
         div()
             .id(SharedString::from(*id))
             .w(px(46.))
-            .h(px(HEIGHT))
+            // tab 高 = bar 高 −4（2026-10-13 定夺，上下两 bar 同规则）
+            .h(px(HEIGHT - 4.))
             .flex()
             .items_center()
             .justify_center()
             .cursor_pointer()
             .text_color(if on { rgb(t.accent) } else { rgb(t.text_muted) })
             .when(on, |d| {
-                // 连体卡：nav 底色 + 边框（顶无边）+ 底圆角 + 顶穿 1px
+                // 连体卡：nav 底色 + 边框（顶无边）+ 底圆角 + 顶贴 dock
+                // （mt = −(bar−tab) = −4 时卡片顶缘 y=0，与上方 dock 连体；
+                // items_center 几何：element top = (H−h+mt)/2）
                 d.bg(rgb(t.nav))
                     .border_1()
                     .border_t_0()
                     .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x8c)))
                     .rounded_bl(px(9.))
                     .rounded_br(px(9.))
-                    .mt(px(-1.))
+                    .mt(px(-4.))
             })
             .when(!on, |d| {
                 d.hover(|s| s.bg(rgb(t.bg_hover)).rounded_bl(px(8.)).rounded_br(px(8.)))
