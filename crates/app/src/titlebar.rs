@@ -24,10 +24,10 @@ pub(crate) const HEIGHT: f32 = 38.;
 /// Caption-button glyph font (Win11; MDL2 covers Win10).
 pub const CAPTION_FONT: &str = "Segoe Fluent Icons";
 
-/// 左段（015 功能面板侧）：收放钮（贴左 12px——2026-10-13 用户定夺，图标
-/// 视觉线 12+6=18px 与 psp 列表图标对齐，见 function_panel/mod.rs psp_view
-/// 注释）+ 拖拽填充。原右端手机遥控钮已隐藏（2026-10-10 用户定夺；重开走
-/// git 历史找回 wx_btn）。
+/// 左段（015 功能面板侧）：收放钮（贴左 5px——2026-10-13 定夺回到原位，
+/// 图标视觉线 5+6=11px，psp 列表图标线对齐到此，见 function_panel/mod.rs
+/// psp_view 注释）+ 拖拽填充。原右端手机遥控钮已隐藏（2026-10-10 用户定
+/// 夺；重开走 git 历史找回 wx_btn）。
 pub(crate) fn topbar_l(_chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> impl gpui::IntoElement {
     let t = T();
     div()
@@ -37,7 +37,7 @@ pub(crate) fn topbar_l(_chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> impl g
         .flex()
         .items_center()
         .bg(rgb(t.chrome))
-        .child(div().ml(px(12.)).child(icon_btn(
+        .child(div().ml(px(5.)).child(icon_btn(
             "panes-toggle",
             "panel-left",
             tr("titlebar.toggle_sidebar"),

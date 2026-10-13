@@ -234,10 +234,10 @@ pub(crate) fn psp_view(
     // 之前 title 行放滚动容器内时，其按钮 hitbox 被 scroll mask 裁掉，
     // 点击全部失效——这也是设计的本意：title 行不是列表内容。
     let t = T();
-    // 统一对齐线（2026-10-13 改）：topbar 收放钮贴左 12px（30px 钮盒、
-    // 18px 图标居中）→ 图标视觉线 = 12+6 = 18px。列表侧 col 外层 px 10 是
-    // 唯一水平留白源，行内 pl 8 叠加其上 = 10+8 = 18px，与钮图标同线；
-    // title 行挂 pl 8（文字同线）。右线不动（行 pr 10 / title pr 10）。
+    // 统一对齐线（2026-10-13 定稿）：topbar 收放钮贴左 5px（30px 钮盒、
+    // 18px 图标居中）→ 图标视觉线 = 5+6 = 11px。列表侧 col 外层 px 10 是
+    // 唯一水平留白源，行内 pl 1 是对齐补偿 = 10+1 = 11px，与钮图标同线；
+    // title 行挂 pl 1（文字同线）。右线不动（行 pr 10 / title pr 10）。
     let mut col = div()
         .flex_1()
         .min_h_0()
@@ -365,7 +365,7 @@ fn title_row(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> g
         .h(px(30.))
         .flex()
         .items_center()
-        .pl(px(8.))
+        .pl(px(1.))
         .pr(px(10.))
 
         .text_size(crate::appearance::ui_size(12.))
@@ -504,7 +504,7 @@ fn project_row(
         .flex()
         .items_center()
         .gap(px(8.))
-        .pl(px(8.))
+        .pl(px(1.))
         .pr(px(10.))
         .rounded(px(8.))
         .cursor_pointer()
@@ -713,8 +713,8 @@ fn session_row_view(
         gpui::linear_color_stop(fade_hover_to, 1.),
     );
 
-    // 溢出测量：标题真实排版宽 vs 行内可用宽（列表 px 24 + 行 pl/pr 14 +
-    // slot 15 + 两个 gap 16 + 时间列 38）
+    // 溢出测量：标题真实排版宽 vs 行内可用宽（容器 px 10×2 + 行 pl 1/pr 10
+    // + slot 15 + 两个 gap 16 + 时间列 38）
     let panel_family = crate::appearance::panel_font().family;
     let measure_font = gpui::Font {
         family: panel_family.clone().into(),
@@ -739,7 +739,7 @@ fn session_row_view(
             .text_system()
             .layout_line(&title, measure_size, &[measure_run], None)
             .width;
-        let available = px(chat.layout.slp_w - 24. - 14. - 15. - 16. - 38.);
+        let available = px(chat.layout.slp_w - 20. - 11. - 15. - 16. - 38.);
         title_w > available
     };
 
@@ -783,7 +783,7 @@ fn session_row_view(
         .flex()
         .items_center()
         .gap(px(8.))
-        .pl(px(8.))
+        .pl(px(1.))
         .pr(px(10.))
         .rounded(px(8.))
         .cursor_pointer()
@@ -956,7 +956,7 @@ fn pending_row_view(
                 .flex()
                 .items_center()
                 .gap(px(8.))
-                .pl(px(8.))
+                .pl(px(1.))
                 .pr(px(10.))
                 .rounded(px(8.))
                 .cursor_pointer()
