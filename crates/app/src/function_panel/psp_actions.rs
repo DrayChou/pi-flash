@@ -242,7 +242,8 @@ impl Chat {
                 }
             }
         }
-        self.set_status(tr("psp.renamed").to_string(), cx);
+        // 不发「已改名」状态提示（2026-10-13 用户定夺）：改名框原地生效，
+        // 列表标题即时可见，提示冗余
         cx.notify();
     }
 
