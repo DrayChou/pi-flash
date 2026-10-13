@@ -335,6 +335,8 @@ fn file_nav_bar(
 
 /// 预览切换按钮（ToolButton::Eye，双态类型工具栏；024）：图标 = 点击后的
 /// 动作——源码态显示 eye（回预览），渲染态显示 eye-off（进源码）。
+/// 2026-10-13 用户定夺：eye/eye-off 字形本身已表意，切换钮不上色，
+/// 恒用 text_muted（原源码态 accent 上色取消）。
 fn eye_button(weak: &gpui::WeakEntity<Chat>, source_mode: bool) -> gpui::AnyElement {
     let t = T();
     let weak_eye = weak.clone();
@@ -364,8 +366,8 @@ fn eye_button(weak: &gpui::WeakEntity<Chat>, source_mode: bool) -> gpui::AnyElem
         })
         .child(icon(
             if source_mode { "eye" } else { "eye-off" },
-            14.,
-            if source_mode { t.accent } else { t.text_muted },
+            crate::ui::tokens::icon::LG,
+            t.text_muted,
         ))
         .into_any_element()
 }
@@ -388,7 +390,7 @@ fn search_button(ed: Option<gpui::Entity<gpui_component::input::InputState>>) ->
                 window.dispatch_action(Box::new(gpui_component::input::Search), cx);
             }
         })
-        .child(icon("search", 13., t.text_muted))
+        .child(icon("search", crate::ui::tokens::icon::LG, t.text_muted))
         .into_any_element()
 }
 
