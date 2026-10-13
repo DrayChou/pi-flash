@@ -394,7 +394,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("branch.detour_note", "*此对话曾短暂探索另一分支后返回，摘要如下：*", "", ""),
     ("composer.compacting_wait2", "上下文压缩中，请等待……", "", ""),
     ("composer.hint_esc", "ESC打断模型", "", ""),
-    ("composer.hint_shortcuts", "/skill，!shell命令，Shift回车换行", "", ""),
+    ("composer.hint_shortcuts", "/skill，@文件，!shell，Shift回车换行", "", ""),
     ("custom_models.add", "添加自定义 Provider", "", ""),
     ("custom_models.base_url_hint", "留空 Base URL 使用 pi 内置端点；API Key 支持 ENV 变量", "", ""),
     ("custom_models.configure", "配置 Provider", "", ""),
