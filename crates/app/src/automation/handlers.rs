@@ -128,8 +128,8 @@ pub(super) fn dispatch(
                     .composer.composer
                     .as_ref()
                     .map(|c| c.read(cx).focus_handle_in(cx))
-                    .unwrap_or_else(|| chat.focus.clone()),
-                "chat" => chat.focus.clone(),
+                    .unwrap_or_else(|| chat.layout.focus.clone()),
+                "chat" => chat.layout.focus.clone(),
                 "git_commit" => chat.git_commit_input.read(cx).focus_handle(),
                 "terminal" => {
                     // 优先给**当前显示**的终端（渲染面 = active_panel_tab），
@@ -171,7 +171,7 @@ pub(super) fn dispatch(
                 "ok": true,
                 "terminals": chat.terminals.len(),
                 "active_terminal": chat.active_terminal,
-                "content_view": match chat.content_view {
+                "content_view": match chat.layout.content_view {
                     ContentView::Chat => "chat",
                     ContentView::Term => "term",
                     ContentView::File => "file",
@@ -248,7 +248,7 @@ pub(super) fn dispatch(
         }
         method::PANEL_DOCK => {
             let panel = params.get("panel").and_then(Value::as_str).ok_or_else(|| bad("需要 {\"panel\": \"sessions|files|git\"}"))?;
-            chat.dock_panel = match panel {
+            chat.layout.dock_panel = match panel {
                 "sessions" => DockPanel::Sessions,
                 "files" => DockPanel::Files,
                 "git" => DockPanel::Git,

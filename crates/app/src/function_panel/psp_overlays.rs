@@ -164,7 +164,7 @@ fn hover_card(
     let path = card.path.clone();
     let confirming = card.confirming;
     let renaming = card.renaming;
-    let anchor_x = chat.slp_w + 8.;
+    let anchor_x = chat.layout.slp_w + 8.;
     let title_for_rename = title.clone();
 
     // 统一算法只裁决弹出方向（锚 = 行顶 y）；精准对齐是调用方语义

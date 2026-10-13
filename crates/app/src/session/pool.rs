@@ -209,7 +209,7 @@ impl Chat {
         // 看着像「切了会话但窗口没切过来」。browse_last 不受影响，
         // statusbar 的 files tab 仍能回到终端/文件（set_content_view 只在
         // Term/File 时更新它）。
-        if self.content_view != crate::ContentView::Chat {
+        if self.layout.content_view != crate::ContentView::Chat {
             self.set_content_view(crate::ContentView::Chat);
         }
         if let Some(f) = &file {

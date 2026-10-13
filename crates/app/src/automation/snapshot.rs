@@ -77,7 +77,7 @@ fn focused_str(chat: &Chat, window: &gpui::Window, cx: &Context<Chat>) -> Value 
             return json!("composer");
         }
     }
-    if chat.focus.is_focused(window) {
+    if chat.layout.focus.is_focused(window) {
         return json!("chat");
     }
     if chat.dlg.dialog_focus.is_focused(window) {
@@ -148,7 +148,7 @@ fn term_surface(chat: &Chat, window: &gpui::Window, _cx: &Context<Chat>) -> Valu
     json!({
         "terminals": tabs,
         "active_terminal": chat.active_terminal,
-        "content_view": content_view_str(chat.content_view),
+        "content_view": content_view_str(chat.layout.content_view),
     })
 }
 
@@ -189,8 +189,8 @@ fn app_surface(chat: &Chat, window: &gpui::Window, cx: &Context<Chat>) -> Value 
             "height_px": (f32::from(viewport.height) * scale).round() as i64,
             "scale_factor": scale,
         },
-        "dock_panel": chat.dock_panel.as_str(),
-        "content_view": content_view_str(chat.content_view),
+        "dock_panel": chat.layout.dock_panel.as_str(),
+        "content_view": content_view_str(chat.layout.content_view),
         "active_key": chat.pool.active_key,
         "active_file": opt_path(chat.psp.active_file.as_ref()),
         "terminals": chat.terminals.len(),

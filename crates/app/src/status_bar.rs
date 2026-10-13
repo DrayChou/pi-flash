@@ -15,7 +15,7 @@ const HEIGHT: f32 = 36.;
 
 pub(crate) fn control_bar(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> impl gpui::IntoElement {
     let t = T();
-    let active = chat.dock_panel;
+    let active = chat.layout.dock_panel;
 
     let mut bar = div()
         .id("status-bar")
@@ -99,7 +99,7 @@ fn tabs(
             })
             .on_mouse_down(MouseButton::Left, cx.listener(
                 move |this, _: &gpui::MouseDownEvent, _w, cx| {
-                    this.dock_panel = panel;
+                    this.layout.dock_panel = panel;
                     if panel == DockPanel::Git {
                         this.refresh_git();
                         this.refresh_git_log();
@@ -108,7 +108,7 @@ fn tabs(
                     // files tab = 浏览操作区（终端/文件预览的最后状态）；
                     // git tab = 只切面板
                     if panel == DockPanel::Sessions {
-                        this.content_view = crate::ContentView::Chat;
+                        this.layout.content_view = crate::ContentView::Chat;
                     } else if panel == DockPanel::Files {
                         // 浏览操作区：有文件 tab 或终端任一存在才切
                         let any = this
@@ -117,10 +117,10 @@ fn tabs(
                             .any(|t| matches!(t, crate::PanelTab::File(_)))
                             || !this.panel_tabs.is_empty();
                         if any {
-                            let v = this.browse_last;
+                            let v = this.layout.browse_last;
                             this.set_content_view(v);
                             // File 视图需要定位到具体 tab
-                            if this.content_view == crate::ContentView::File {
+                            if this.layout.content_view == crate::ContentView::File {
                                 if let Some(ix) = this.panel_tabs.iter().position(
                                     |t| matches!(t, crate::PanelTab::File(_)),
                                 ) {
@@ -142,9 +142,9 @@ fn tabs(
 impl Chat {
     pub(crate) fn persist_ui(&mut self) {
         let mut st = ui_state();
-        st.panel = self.dock_panel.as_str().to_string();
-        st.slp_w = self.slp_w;
-        st.panes_hidden = self.panes_hidden;
+        st.panel = self.layout.dock_panel.as_str().to_string();
+        st.slp_w = self.layout.slp_w;
+        st.panes_hidden = self.layout.panes_hidden;
         st.list_mode = match self.psp.list_mode {
             crate::ListMode::Flat => "flat".to_string(),
             crate::ListMode::Grouped => "grouped".to_string(),
@@ -159,7 +159,7 @@ impl Chat {
     }
 
     pub(crate) fn toggle_panes(&mut self, cx: &mut gpui::Context<Self>) {
-        self.panes_hidden = !self.panes_hidden;
+        self.layout.panes_hidden = !self.layout.panes_hidden;
         self.persist_ui();
         cx.notify();
     }

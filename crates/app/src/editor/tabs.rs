@@ -112,7 +112,7 @@ impl Chat {
         self.file_cache.remove(path);
         // 关掉后可能没人再需要这个目录的监听：卸掉
         self.retain_file_watches();
-        if was_active && self.content_view == ContentView::File {
+        if was_active && self.layout.content_view == ContentView::File {
             // 激活位可能落到终端 tab 上——优先指去最近的文件 tab；
             // 一个文件 tab 都不剩则内容区回退（有终端回浏览区，否则回会话）
             let any_file = self
@@ -132,7 +132,7 @@ impl Chat {
                     let v = if self.panel_tabs.is_empty() {
                         ContentView::Chat
                     } else {
-                        self.browse_last
+                        self.layout.browse_last
                     };
                     self.set_content_view(v);
                 }

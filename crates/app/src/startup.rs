@@ -556,13 +556,13 @@ fn spawn_pump_120ms(cx: &mut gpui::Context<Chat>) {
                         }
                     }
                     // 导航 flyout 250ms 离开宽限（pi-web PREVIEW_HIDE_DELAY parity）
-                    if c.nav_open {
-                        if let Some(at) = c.nav_hide_at {
+                    if c.layout.nav_open {
+                        if let Some(at) = c.layout.nav_hide_at {
                             if at.elapsed() > std::time::Duration::from_millis(250) {
-                                c.nav_open = false;
-                                c.nav_flyout_hovered = false;
-                                c.nav_hover_turn = None;
-                                c.nav_hide_at = None;
+                                c.layout.nav_open = false;
+                                c.layout.nav_flyout_hovered = false;
+                                c.layout.nav_hover_turn = None;
+                                c.layout.nav_hide_at = None;
                                 dirty = true;
                             }
                         }

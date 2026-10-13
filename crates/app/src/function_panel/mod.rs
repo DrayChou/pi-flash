@@ -740,7 +740,7 @@ fn session_row_view(
             .text_system()
             .layout_line(&title, measure_size, &[measure_run], None)
             .width;
-        let available = px(chat.slp_w - 24. - 14. - 15. - 16. - 38.);
+        let available = px(chat.layout.slp_w - 24. - 14. - 15. - 16. - 38.);
         title_w > available
     };
 
@@ -1009,7 +1009,7 @@ pub(crate) fn dock(
     cx: &mut Context<Chat>,
 ) -> gpui::AnyElement {
     let t = T();
-    let view: gpui::AnyElement = match chat.dock_panel {
+    let view: gpui::AnyElement = match chat.layout.dock_panel {
         DockPanel::Sessions => psp_view(chat, entity, weak.clone(), window, cx),
         DockPanel::Files => files_view(chat, weak, cx).into_any_element(),
         DockPanel::Git => git_panel::view(chat, weak, cx).into_any_element(),

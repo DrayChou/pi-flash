@@ -19,7 +19,7 @@ pub(crate) fn content_main(
     cx: &mut Context<Chat>,
 ) -> gpui::AnyElement {
     let t = T();
-    let view: gpui::AnyElement = match chat.content_view {
+    let view: gpui::AnyElement = match chat.layout.content_view {
         ContentView::Chat => crate::session::main_column(chat, entity, weak, window, cx)
             .into_any_element(),
         ContentView::Term => term_view(chat, weak, window, cx)

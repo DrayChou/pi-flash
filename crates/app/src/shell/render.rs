@@ -128,7 +128,7 @@ impl Render for Chat {
         } else if self.file_editor_focus(window, cx).is_some() {
             // 023：文件编辑器持有焦点时不回收——否则点进去下一帧就被抢回
             // composer，打字全失效（编辑器此前不在白名单）
-        } else if !(self.content_view == crate::ContentView::Term
+        } else if !(self.layout.content_view == crate::ContentView::Term
             && self
                 .shown_terminal_focus()
                 .is_some_and(|h| h.is_focused(window)))
@@ -146,7 +146,7 @@ impl Render for Chat {
             // 请求见 open_file_new / open_file_rename 的 focus_soon；用户点
             // 别处造成的真夺焦（对话框/终端/编辑器/设置）走前面各分支，本
             // 分支看不到，blur 收场照常触发）。
-            match self.dlg.tree_edit.as_ref().filter(|_| self.dock_panel == DockPanel::Files) {
+            match self.dlg.tree_edit.as_ref().filter(|_| self.layout.dock_panel == DockPanel::Files) {
                 Some(edit) if edit.input.read(cx).has_inner() => {
                     let handle = edit.input.read(cx).focus_handle_in(cx);
                     if !handle.is_focused(window) {
@@ -164,7 +164,7 @@ impl Render for Chat {
                     // chat 根。
                     match self
                         .shown_terminal_focus()
-                        .filter(|_| self.content_view == crate::ContentView::Term)
+                        .filter(|_| self.layout.content_view == crate::ContentView::Term)
                     {
                         Some(h) if !h.is_focused(window) => window.focus(&h),
                         Some(_) => {}
@@ -334,9 +334,9 @@ impl Render for Chat {
         // ---- v54 body: panel-col (topbar-l + dock + statusbar) | content-col
         let entity_for_body = entity.clone();
         let weak_for_body = weak.clone();
-        let panes_hidden = self.panes_hidden;
-        let slp_dragging = self.slp_drag.is_some();
-        let slp_hovered = self.slp_hover;
+        let panes_hidden = self.layout.panes_hidden;
+        let slp_dragging = self.layout.slp_drag.is_some();
+        let slp_hovered = self.layout.slp_hover;
         let mut body = div()
             .id("app-body")
             .flex_1()
@@ -346,8 +346,8 @@ impl Render for Chat {
             // slp 宽度拖拽（resizer 按下时在此跟踪）
             .on_mouse_move(move |ev: &gpui::MouseMoveEvent, _, cx| {
                 let _ = weak_for_body.update(cx, |c, cx| {
-                    if let Some((start_x, start_w)) = c.slp_drag {
-                        c.slp_w = (start_w + f32::from(ev.position.x) - start_x).clamp(300., 500.);
+                    if let Some((start_x, start_w)) = c.layout.slp_drag {
+                        c.layout.slp_w = (start_w + f32::from(ev.position.x) - start_x).clamp(300., 500.);
                         cx.notify();
                     }
                 });
@@ -358,7 +358,7 @@ impl Render for Chat {
                     let weak = weak.clone();
                     move |_, _, cx| {
                         let _ = weak.update(cx, |c, cx| {
-                            if c.slp_drag.take().is_some() {
+                            if c.layout.slp_drag.take().is_some() {
                                 c.persist_ui();
                                 cx.notify();
                             }
@@ -375,24 +375,24 @@ impl Render for Chat {
                     .absolute()
                     .top_0()
                     .bottom_0()
-                    .left(px(self.slp_w - 3.))
+                    .left(px(self.layout.slp_w - 3.))
                     .w(px(12.))
                     .cursor_col_resize()
                     .on_hover(cx.listener(|this, h: &bool, _w, cx| {
-                        if this.slp_hover != *h {
-                            this.slp_hover = *h;
+                        if this.layout.slp_hover != *h {
+                            this.layout.slp_hover = *h;
                             cx.notify();
                         }
                     }))
                     .on_mouse_down(MouseButton::Left, cx.listener(
                         |this, ev: &gpui::MouseDownEvent, _w, cx| {
                             if ev.click_count == 2 {
-                                this.slp_w = 300.;
+                                this.layout.slp_w = 300.;
                                 this.persist_ui();
                                 cx.notify();
                             } else {
-                                this.slp_drag =
-                                    Some((f32::from(ev.position.x), this.slp_w));
+                                this.layout.slp_drag =
+                                    Some((f32::from(ev.position.x), this.layout.slp_w));
                             }
                         },
                     ))
@@ -400,7 +400,7 @@ impl Render for Chat {
             body = body.child(
                 div()
                     .id("panel-col")
-                    .w(px(self.slp_w))
+                    .w(px(self.layout.slp_w))
                     .flex_shrink_0()
                     .flex()
                     .flex_col()
@@ -426,7 +426,7 @@ impl Render for Chat {
                 .relative()
                 .bg(rgb(t.bg))
                 .when(
-                    !panes_hidden && !slp_dragging && !self.slp_hover,
+                    !panes_hidden && !slp_dragging && !self.layout.slp_hover,
                     |d| {
                         d.border_l_1()
                             .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x99)))

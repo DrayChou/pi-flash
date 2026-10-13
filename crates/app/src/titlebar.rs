@@ -72,7 +72,7 @@ pub(crate) fn topbar_r(
         .bg(rgb(t.chrome));
 
     // 收起态：收放钮跳到右段起点（4px 等距，竖线镜像位）
-    if chat.panes_hidden {
+    if chat.layout.panes_hidden {
         bar = bar
             .child(
                 div()
@@ -227,7 +227,7 @@ fn tab_strip(
                 .into_any_element(),
             )
         });
-        let active = chat.content_view == tab_view && chat.active_panel_tab == Some(ix);
+        let active = chat.layout.content_view == tab_view && chat.active_panel_tab == Some(ix);
         tabs_host = tabs_host.child(content_tab(
             if is_file { "ctab-file" } else { "ctab-term" },
             ix,
@@ -252,7 +252,7 @@ fn tab_strip(
 /// 会话视图（Obsidian 卡片融底）；点击回会话视图（status_bar 会话 tab 同语义）。
 fn session_tab(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyElement {
     let t = T();
-    let active = chat.content_view == ContentView::Chat;
+    let active = chat.layout.content_view == ContentView::Chat;
     let title: SharedString = chat.session_title(cx).into();
     let switch = cx.listener(move |this, _: &gpui::MouseDownEvent, _w, cx| {
         this.set_content_view(crate::ContentView::Chat);
@@ -295,11 +295,11 @@ fn content_tab(
             cx.notify();
             return;
         }
-        let was_active = this.active_panel_tab == Some(ix) && this.content_view == view;
+        let was_active = this.active_panel_tab == Some(ix) && this.layout.content_view == view;
         this.close_panel_tab(ix, cx);
         // 关掉当前 tab 后内容区回退：终端→浏览区遗留→chat；
         // 更新日志（081）→ 剩余 tab 激活最近的，没有则回会话
-        if was_active && this.content_view == view {
+        if was_active && this.layout.content_view == view {
             if view == ContentView::Changelog {
                 match this.active_panel_tab {
                     Some(nix) => {
@@ -316,10 +316,10 @@ fn content_tab(
                 let v = if this.panel_tabs.is_empty() {
                     ContentView::Chat
                 } else {
-                    this.browse_last
+                    this.layout.browse_last
                 };
                 this.set_content_view(v);
-                if this.content_view == ContentView::Term && !this.panel_tabs.is_empty() {
+                if this.layout.content_view == ContentView::Term && !this.panel_tabs.is_empty() {
                     let last = this.panel_tabs.len() - 1;
                     this.activate_panel_tab(last, cx);
                 }

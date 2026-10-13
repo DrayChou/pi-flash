@@ -12,8 +12,6 @@ use crate::settings::plugins::PkgOp;
 
 
 pub(crate) struct Chat {
-    pub(crate) focus: FocusHandle,
-    pub(crate) dock_panel: DockPanel,
     pub(crate) cwd: PathBuf,
     pub(crate) branch: String,
     pub(crate) term_events: Option<futures::channel::mpsc::UnboundedSender<(usize, alacritty_terminal::event::Event)>>,
@@ -60,14 +58,6 @@ pub(crate) struct Chat {
     /// 023：打开文件后待聚焦的编辑器（Zed 行为：开文件即聚焦；渲染帧
     /// 编辑器实体就绪后消费）
     pub(crate) pending_focus_file: Option<PathBuf>,
-    pub(crate) slp_w: f32,
-    pub(crate) panes_hidden: bool,
-    pub(crate) slp_drag: Option<(f32, f32)>,
-    /// 分隔线响应区悬停（线加深加粗 + col_resize 光标已由 resizer 承担）
-    pub(crate) slp_hover: bool,
-    pub(crate) content_view: ContentView,
-    /// 浏览操作区的最后视图（Term/File）：文件树标签点击时恢复
-    pub(crate) browse_last: ContentView,
     /// md 预览滚动条状态（MarkdownKind preview 面板的 v63-6 配方）
     pub(crate) md_preview_scrollbar: gpui_component::scroll::ScrollbarState,
     /// md 渲染预览块级虚拟化（抄 zed thread_view 的 list 架构）：MarkdownKind
@@ -75,14 +65,6 @@ pub(crate) struct Chat {
     /// reset 归零滚动
     pub(crate) md_preview_list: gpui::ListState,
     pub(crate) md_preview_list_path: Option<PathBuf>,
-    pub(crate) nav_open: bool,
-    pub(crate) nav_hide_at: Option<std::time::Instant>,
-    pub(crate) nav_flyout_hovered: bool,
-    /// flyout 内鼠标所在轮（选择框/比例尺亮点跟随鼠标）
-    pub(crate) nav_hover_turn: Option<usize>,
-    /// 导航 flyout 卡片列表虚拟化句柄（v63-6：只建可视卡片；跨开合保持
-    /// 滚动位）
-    pub(crate) nav_flyout_list: gpui::ListState,
     /// 021 操作栏「切换显示变更」：只列 git 变更文件（flatten changes_only）
     pub(crate) changes_only: bool,
     /// 021 文件搜索（Dialog::FileSearch）：命中（相对路径清单切片）、
@@ -103,6 +85,8 @@ pub(crate) struct Chat {
     pub(crate) pool: PoolUi,
     /// composer 输入面板簇（4ea，031）
     pub(crate) composer: ComposerUi,
+    /// 壳布局簇（4ea）：dock/路由/分隔条/flyout/焦点
+    pub(crate) layout: LayoutUi,
 }
 
 /// 周边面板状态簇（4ea 字段重组）：扩展 UI 面 / 081 自动更新与更新日志 /
@@ -330,6 +314,29 @@ pub(crate) struct ComposerUi {
     >>,
 }
 
+/// 壳布局簇（4ea 字段重组）：dock 面板、内容区路由、分隔条拖拽、
+/// 导航 flyout 与焦点仲裁锚。
+pub(crate) struct LayoutUi {
+    pub(crate) dock_panel: DockPanel,
+    pub(crate) slp_w: f32,
+    pub(crate) panes_hidden: bool,
+    pub(crate) slp_drag: Option<(f32, f32)>,
+    /// 分隔线响应区悬停（线加深加粗 + col_resize 光标已由 resizer 承担）
+    pub(crate) slp_hover: bool,
+    pub(crate) content_view: ContentView,
+    /// 浏览操作区的最后视图（Term/File）：文件树标签点击时恢复
+    pub(crate) browse_last: ContentView,
+    pub(crate) nav_open: bool,
+    pub(crate) nav_hide_at: Option<std::time::Instant>,
+    pub(crate) nav_flyout_hovered: bool,
+    /// flyout 内鼠标所在轮（选择框/比例尺亮点跟随鼠标）
+    pub(crate) nav_hover_turn: Option<usize>,
+    /// 导航 flyout 卡片列表虚拟化句柄（v63-6：只建可视卡片；跨开合保持
+    /// 滚动位）
+    pub(crate) nav_flyout_list: gpui::ListState,
+    pub(crate) focus: FocusHandle,
+}
+
 impl Chat {
     pub(crate) fn new(cx: &mut Context<Self>) -> Self {
         let focus = cx.focus_handle();
@@ -389,10 +396,8 @@ impl Chat {
         let (fs_watch_tx, fs_watch_rx_ch) = std::sync::mpsc::channel::<()>();
 
         let mut chat = Self {
-            focus,
             // v54.4 定案：启动固定会话界面（面板/内容区绑定关系见
             // status_bar；不恢复上次离开时的面板）
-            dock_panel: DockPanel::Sessions,
             cwd: cwd.clone(),
             branch,
             expanded_dirs: HashSet::new(),
@@ -421,6 +426,21 @@ impl Chat {
             fs_watch_rx: Some(fs_watch_rx_ch),
             fs_watch: None,
             file_watches: std::collections::HashMap::new(),
+            layout: LayoutUi {
+                focus,
+                dock_panel: DockPanel::Sessions,
+                slp_w: ui.slp_w,
+                panes_hidden: ui.panes_hidden,
+                slp_drag: None,
+                slp_hover: false,
+                content_view: ContentView::Chat,
+                browse_last: ContentView::Term,
+                nav_open: false,
+                nav_hide_at: None,
+                nav_flyout_hovered: false,
+                nav_hover_turn: None,
+                nav_flyout_list: gpui::ListState::new(0, gpui::ListAlignment::Top, px(1000.)),
+            },
             composer: ComposerUi {
                 input: String::new(),
                 pending_images: Vec::new(),
@@ -544,20 +564,9 @@ impl Chat {
                 ext_input: cx.new(|cx| TextInput::new(cx)),
             },
             // 081：已有合法 staging = Ready（不花网络），否则 Idle
-            slp_w: ui.slp_w,
-            panes_hidden: ui.panes_hidden,
-            slp_drag: None,
-            slp_hover: false,
-            content_view: ContentView::Chat,
-            browse_last: ContentView::Term,
             md_preview_scrollbar: gpui_component::scroll::ScrollbarState::default(),
             md_preview_list: gpui::ListState::new(0, gpui::ListAlignment::Top, px(1000.)),
             md_preview_list_path: None,
-            nav_open: false,
-            nav_hide_at: None,
-            nav_flyout_hovered: false,
-            nav_hover_turn: None,
-            nav_flyout_list: gpui::ListState::new(0, gpui::ListAlignment::Top, px(1000.)),
             changes_only: ui.tree_changes_only,
             file_search_hits: Vec::new(),
             file_search_needle: String::new(),
@@ -714,9 +723,9 @@ impl Chat {
 
 
     pub(crate) fn set_content_view(&mut self, v: ContentView) {
-        self.content_view = v;
+        self.layout.content_view = v;
         if matches!(v, ContentView::Term | ContentView::File) {
-            self.browse_last = v;
+            self.layout.browse_last = v;
         }
     }
 }
@@ -726,7 +735,7 @@ impl Chat {
     /// 当前文件 tab 编辑器的焦点句柄（持焦时 Some）——render 帧级焦点回收
     /// 的白名单，与终端/对话框同级（023）。
     pub(crate) fn file_editor_focus(&self, window: &gpui::Window, cx: &App) -> Option<gpui::FocusHandle> {
-        if self.content_view != ContentView::File {
+        if self.layout.content_view != ContentView::File {
             return None;
         }
         let path = self.active_file_path()?;
@@ -743,11 +752,11 @@ impl Chat {
 impl Focusable for Chat {
     fn focus_handle(&self, cx: &App) -> FocusHandle {
         // composer 就绪后，"聚焦聊天"即落到输入组件（真输入框：光标/
-        // 选区/IME 全可用），chat.focus 仅作组件创建前的回退
+        // 选区/IME 全可用），chat.layout.focus 仅作组件创建前的回退
         self.composer.composer
             .as_ref()
             .map(|c| c.read(cx).focus_handle_in(cx))
-            .unwrap_or_else(|| self.focus.clone())
+            .unwrap_or_else(|| self.layout.focus.clone())
     }
 }
 

@@ -58,7 +58,7 @@ pub(crate) fn main_column(
     // 012 新会话页判据 = pi-web isEmptyNew（空会话且 agent 未跑）：启动时
     // 项目|会话列表为空、或「新建会话」都落在这里
     let new_session_page = rt.read(cx).messages.is_empty() && !streaming;
-    // composer 焦点态来自输入组件（chat.focus 仅是组件创建前的回退）
+    // composer 焦点态来自输入组件（chat.layout.focus 仅是组件创建前的回退）
     let input_focused = chat
         .composer.composer
         .as_ref()
@@ -180,7 +180,7 @@ fn session_fn_bar(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyEle
             "sfbar-term",
             "terminal",
             tr("session.open_terminal"),
-            chat.content_view == crate::ContentView::Term,
+            chat.layout.content_view == crate::ContentView::Term,
             cx.listener(|this, _: &gpui::MouseDownEvent, window, cx| {
                 this.open_terminal(None, window, cx);
                 cx.notify();
@@ -546,7 +546,7 @@ fn nav_gutter(
     // 弹出、内容溢出显示滚动条）。滚动条挂在滚动容器平级的 absolute
     // 兄弟上（滚动容器内的绝对定位子元素会随内容滚走）。整包结构：
     // wrap（flex 列）= 总结栏 30px 固定 + 卡片滚动区 flex_1
-    if chat.nav_open && !summary.turns.is_empty() {
+    if chat.layout.nav_open && !summary.turns.is_empty() {
         // absolute 定位本身即绝对定位子孙（滚动条）的包含块，无需再挂
         // relative——且 position 是单字段，relative 会覆盖 absolute
         let mut flyout_wrap = div()
@@ -565,13 +565,13 @@ fn nav_gutter(
             .shadow_lg()
             .on_hover(cx.listener(|this, h: &bool, _w, cx| {
                 if *h {
-                    this.nav_open = true;
-                    this.nav_hide_at = None;
-                    this.nav_flyout_hovered = true;
+                    this.layout.nav_open = true;
+                    this.layout.nav_hide_at = None;
+                    this.layout.nav_flyout_hovered = true;
                 } else {
-                    this.nav_flyout_hovered = false;
-                    this.nav_hover_turn = None;
-                    this.nav_hide_at = Some(std::time::Instant::now());
+                    this.layout.nav_flyout_hovered = false;
+                    this.layout.nav_hover_turn = None;
+                    this.layout.nav_hide_at = Some(std::time::Instant::now());
                 }
                 cx.notify();
             }));
@@ -608,8 +608,8 @@ fn nav_gutter(
         // 卡片列表虚拟化（v63-6）：ListState 只建可视卡片（~20）而非全
         // 量（千轮会话原先是 1.2 万+ div/帧）。轮次数仅在用户新增一轮时
         // 变化（面板开着时几乎不可能），reset 重算计数
-        if chat.nav_flyout_list.item_count() != summary.turns.len() {
-            chat.nav_flyout_list.reset(summary.turns.len());
+        if chat.layout.nav_flyout_list.item_count() != summary.turns.len() {
+            chat.layout.nav_flyout_list.reset(summary.turns.len());
         }
         let weak_cards = weak.clone();
         let summary_cards = summary.clone();
@@ -633,7 +633,7 @@ fn nav_gutter(
             .pl(px(6.))
             .pr(px(14.))
             .child(
-                gpui::list(chat.nav_flyout_list.clone(), move |ix, _window, cx| {
+                gpui::list(chat.layout.nav_flyout_list.clone(), move |ix, _window, cx| {
                     let Some(s) = summary_cards.turns.get(ix) else {
                         return div().into_any_element();
                     };
@@ -641,7 +641,7 @@ fn nav_gutter(
                     // 经 weak 升级读取（list 闭包只有 &mut App）
                     let on = weak_cards
                         .upgrade()
-                        .is_some_and(|c| c.read(cx).nav_hover_turn == Some(ix));
+                        .is_some_and(|c| c.read(cx).layout.nav_hover_turn == Some(ix));
                     nav_card(ix, s, on, &weak_cards, &rt_cards, t)
                 })
                 // 上下 padding 挂 list 本体（prepaint 会应用）
@@ -654,9 +654,9 @@ fn nav_gutter(
         // 滚动条仅在实际溢出时渲染；ListStateHandle 把 ListState 适配成
         // gpui-component Scrollbar 的句柄（拖拽走 list.rs 的 scrollbar 协
         // 作接口），锚在滚动区（总结栏之下）
-        if chat.nav_flyout_list.max_offset_for_scrollbar().height > px(0.) {
+        if chat.layout.nav_flyout_list.max_offset_for_scrollbar().height > px(0.) {
             let handle = crate::ui::list_handle::ListStateHandle(
-                chat.nav_flyout_list.clone(),
+                chat.layout.nav_flyout_list.clone(),
             );
             let sb_state = gpui_component::scroll::ScrollbarState::default();
             flyout_wrap = flyout_wrap.child(
@@ -712,7 +712,7 @@ fn nav_gutter(
                         cx.listener(move |this, _, window, cx| {
                             // 面板联动（v63-6）：面板滚到该段的区域起始卡
                             //（卡序号 = 轮序号）
-                            this.nav_flyout_list
+                            this.layout.nav_flyout_list
                                 .scroll_to_reveal_item(turn_of_tick(i));
                             rt_scroll.read(cx).pager.nav_goto(turn_of_tick(i), target_ix);
                             window.refresh();
@@ -761,10 +761,10 @@ fn nav_gutter(
                         .items_start()
                         .on_hover(cx.listener(|this, h: &bool, _w, cx| {
                             if *h {
-                                this.nav_open = true;
-                                this.nav_hide_at = None;
-                            } else if !this.nav_flyout_hovered {
-                                this.nav_hide_at =
+                                this.layout.nav_open = true;
+                                this.layout.nav_hide_at = None;
+                            } else if !this.layout.nav_flyout_hovered {
+                                this.layout.nav_hide_at =
                                     Some(std::time::Instant::now());
                             }
                             cx.notify();
@@ -811,8 +811,8 @@ fn nav_card(
         .on_hover(move |h: &bool, _window, cx| {
             if *h {
                 let _ = weak_hover.update(cx, |this, cx| {
-                    if this.nav_hover_turn != Some(ti) {
-                        this.nav_hover_turn = Some(ti);
+                    if this.layout.nav_hover_turn != Some(ti) {
+                        this.layout.nav_hover_turn = Some(ti);
                         cx.notify();
                     }
                 });

@@ -103,7 +103,7 @@ pub(crate) fn user_action_bar(
             .on_mouse_down(MouseButton::Left, move |_, window, cx| {
                 let _ = weak_edit.update(cx, |c, cx| {
                     c.with_active_editor(cx, |r, _| r.input = edit_text.clone());
-                    let focus = c.focus.clone();
+                    let focus = c.layout.focus.clone();
                     window.focus(&focus);
                 });
             }),

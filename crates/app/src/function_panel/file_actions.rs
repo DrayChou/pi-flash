@@ -196,7 +196,7 @@ impl Chat {
         self.dlg.tree_menu = None;
         self.dlg.editor_menu = None;
         if reveal {
-            self.dock_panel = DockPanel::Files;
+            self.layout.dock_panel = DockPanel::Files;
             self.reveal_tree_row(&path);
         }
         let name =
