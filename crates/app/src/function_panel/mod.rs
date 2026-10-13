@@ -236,7 +236,7 @@ pub(crate) fn psp_view(
     // 点击全部失效——这也是设计的本意：title 行不是列表内容。
     let t = T();
     // 统一对齐线（§7 / tokens::align）：topbar 收放钮图标与列表行图标共
-    // 用视觉左缘 ICON_LINE（现值 11）。容器 px = LIST_PX 是唯一水平留白源，
+    // 用视觉左缘 ICON_LINE。容器 px = LIST_PX 是唯一水平留白源，
     // 行内 pl = ROW_PL 是对齐补偿（LIST_PX + ROW_PL = ICON_LINE）；右线 =
     // LIST_PX。改线只改 tokens 里 ICON_LINE，这里全自动跟随。
     let mut col = div()

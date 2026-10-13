@@ -109,8 +109,8 @@ pub mod row {
 /// 会话 / 伪标签）共用的视觉左缘。单一来源——**只调 ICON_LINE 一个数**，
 /// 两侧边距按下面的推导常量自动跟随；推导值由锁定测试看守。
 pub mod align {
-    /// 对齐线，距 dock/窗左缘（2026-10-13 定夺 11）。
-    pub const ICON_LINE: f32 = 11.;
+    /// 对齐线，距 dock/窗左缘（2026-10-13 定夺 12）。
+    pub const ICON_LINE: f32 = 12.;
     /// 收放钮钮盒 30 / 图标 18，居中 → 图标内边 6。
     pub const TOGGLE_BTN: f32 = 30.;
     pub const TOGGLE_ICON: f32 = super::icon::LG;
@@ -231,7 +231,7 @@ mod tests {
                 align::LIST_PX,
                 align::ROW_PL,
             ],
-            [11., 30., 18., 5., 10., 1.]
+            [12., 30., 18., 6., 10., 2.]
         );
         // §2 渲染特例固定字号（markdown chrome）
         assert_eq!(
