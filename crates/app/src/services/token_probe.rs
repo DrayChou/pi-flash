@@ -420,7 +420,7 @@ impl Chat {
                 continue;
             }
             let mtime = package_mtime(&dir);
-            if self.ext_tokens.get(&src).is_some_and(|e| e.mtime == mtime) {
+            if self.pool.ext_tokens.get(&src).is_some_and(|e| e.mtime == mtime) {
                 continue;
             }
             targets.push(ProbePkg { source: src, dir, mtime });
@@ -435,9 +435,9 @@ impl Chat {
                 .await;
             let _ = this.update(cx, |c, cx| {
                 for (k, v) in result {
-                    c.ext_tokens.insert(k, v);
+                    c.pool.ext_tokens.insert(k, v);
                 }
-                write_cache(&c.ext_tokens);
+                write_cache(&c.pool.ext_tokens);
                 cx.notify();
             });
         })

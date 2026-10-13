@@ -538,12 +538,12 @@ fn think_options() -> Vec<(String, String)> {
 fn provider_options(chat: &crate::Chat) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = Vec::new();
     let live = chat
-        .models_by_cwd
+        .pool.models_by_cwd
         .get(&chat.cwd.to_string_lossy().to_string())
         .map(|v| v.as_slice())
         .unwrap_or(&[]);
     let removed = crate::services::workspace::removed_providers();
-    for m in live.iter().chain(chat.globals.models.iter()) {
+    for m in live.iter().chain(chat.pool.globals.models.iter()) {
         if removed.iter().any(|p| p == &m.provider) {
             continue;
         }
@@ -557,12 +557,12 @@ fn provider_options(chat: &crate::Chat) -> Vec<(String, String)> {
 /// `/模型` 第二层：某供应商下的模型（入参来自第一层，已过移除墓碑）。
 fn model_options(chat: &crate::Chat, provider: &str) -> Vec<(String, String)> {
     let live = chat
-        .models_by_cwd
+        .pool.models_by_cwd
         .get(&chat.cwd.to_string_lossy().to_string())
         .map(|v| v.as_slice())
         .unwrap_or(&[]);
     let mut out: Vec<(String, String)> = Vec::new();
-    for m in live.iter().chain(chat.globals.models.iter()) {
+    for m in live.iter().chain(chat.pool.globals.models.iter()) {
         if m.provider != provider || out.iter().any(|(_, id)| id == &m.id) {
             continue;
         }
@@ -586,7 +586,7 @@ fn project_options(chat: &crate::Chat) -> Vec<(String, String)> {
 
 /// `/任务`：会话清单，标签优先 `name`，回落首条用户消息（与侧栏同一优先级）。
 fn task_options(chat: &crate::Chat) -> Vec<(String, String)> {
-    chat.sessions
+    chat.pool.sessions
         .iter()
         .map(|s| {
             let label = s
@@ -630,8 +630,8 @@ impl crate::Chat {
         // 060 档 1 回推：空闲/轮次结束时把 assistant 缓冲发干净。
         // 每拍都调，flush 在缓冲为空时是 no-op。
         let running = self
-            .runtimes
-            .get(&self.active_key)
+            .pool.runtimes
+            .get(&self.pool.active_key)
             .map(|rt| rt.read(cx).agent_running)
             .unwrap_or(false);
         // 回填给 route() —— /task 的两个守卫要用（route 拿不到 cx）
@@ -697,7 +697,7 @@ impl crate::Chat {
             Action::OpenMenu(kind, sub) => self.open_wx_menu(kind, sub, cx),
             Action::Bind(code) => {
                 let lang = Lang::from_ix(crate::i18n::lang_ix());
-                if self.aux.remote.accept_bind(&code, &self.active_key) {
+                if self.aux.remote.accept_bind(&code, &self.pool.active_key) {
                     self.aux.remote.send(&t(lang, "绑定成功。发送 **/帮助** 查看可用命令。"));
                 } else {
                     self.aux.remote.send(&bind_invalid(lang));
@@ -806,7 +806,7 @@ impl crate::Chat {
                     self.aux.remote.send(&t(Lang::from_ix(crate::i18n::lang_ix()), TASK_RUNNING));
                     return;
                 }
-                if let Some(info) = self.sessions.iter().find(|s| s.id == value) {
+                if let Some(info) = self.pool.sessions.iter().find(|s| s.id == value) {
                     let path = info.path.clone();
                     self.new_session_in(path, cx);
                 }
@@ -827,13 +827,13 @@ impl crate::Chat {
     /// 移除墓碑过滤：已移除商的模型 id 不再可被指定。
     fn provider_of_model(&self, id: &str) -> Option<String> {
         let live = self
-            .models_by_cwd
+            .pool.models_by_cwd
             .get(&self.cwd.to_string_lossy().to_string())
             .map(|v| v.as_slice())
             .unwrap_or(&[]);
         let removed = crate::services::workspace::removed_providers();
         live.iter()
-            .chain(self.globals.models.iter())
+            .chain(self.pool.globals.models.iter())
             .filter(|m| !removed.iter().any(|p| p == &m.provider))
             .find(|m| m.id == id)
             .map(|m| m.provider.clone())
@@ -841,8 +841,8 @@ impl crate::Chat {
 
     fn send_wx(&mut self, cmd: &Command, cx: &mut gpui::Context<Self>) {
         // `/bind` 钉住的会话优先，否则当前活跃会话（§4.2 active_session）
-        let key = self.aux.remote.target_key(&self.active_key).to_string();
-        let Some(rt) = self.runtimes.get(&key).cloned() else {
+        let key = self.aux.remote.target_key(&self.pool.active_key).to_string();
+        let Some(rt) = self.pool.runtimes.get(&key).cloned() else {
             // 找不到目标会话也要出声 —— 静默丢弃已经坑过一次（微信没回执）
             eprintln!("[wx] 命令未送达：没有 key = {key} 的会话");
             return;
@@ -858,15 +858,15 @@ impl crate::Chat {
     }
     /// 当前活跃会话是否在跑（`/新建` 的运行中分支与状态卡共用）。
     fn agent_running_now(&self, cx: &gpui::App) -> bool {
-        self.runtimes
-            .get(&self.active_key)
+        self.pool.runtimes
+            .get(&self.pool.active_key)
             .map(|rt| rt.read(cx).agent_running)
             .unwrap_or(false)
     }
 
     /// 活跃会话 → `/状态` 卡片；启动瞬间没有 runtime 时返回 `None`。
     fn status_reply(&self, cx: &gpui::App, lang: Lang) -> Option<String> {
-        let rt = self.runtimes.get(&self.active_key)?;
+        let rt = self.pool.runtimes.get(&self.pool.active_key)?;
         let r = rt.read(cx);
         let workspace = r
             .cwd

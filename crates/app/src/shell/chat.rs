@@ -18,28 +18,8 @@ pub(crate) struct Chat {
     pub(crate) pending_images: Vec<AttachedImage>,
     pub(crate) history: Vec<String>,
     pub(crate) history_ix: Option<usize>,
-    pub(crate) session_tail_cache: std::collections::HashMap<PathBuf, Vec<Msg>>,
-    pub(crate) sessions: Vec<SessionInfo>,
     pub(crate) cwd: PathBuf,
     pub(crate) branch: String,
-    /// model catalog keyed by cwd — **进程答案覆盖层**（010-启动.md §7）：活着的
-    /// runtime 的 RPC `get_available_models` 答复写这里（项目级差异），无进程时
-    /// 消费方回落 `globals.models`（启动时从磁盘 ∪ 自有缓存装载）。
-    pub(crate) models_by_cwd: std::collections::HashMap<String, Vec<pi_link::protocol::ModelInfo>>,
-    /// 启动装载的全局态（模型清单 / 命令 / 默认项 / 插件 / 全局 mcp）：渲染只读，
-    /// 不再扫盘也不发 RPC（010-启动.md §1、§7）。
-    pub(crate) globals: startup::Globals,
-    /// 项目上下文（启动集合内逐项目装载；切项目命中即零扫盘，见 §5）。
-    pub(crate) project_ctx: std::collections::HashMap<String, startup::ProjectCtx>,
-    pub(crate) runtimes: std::collections::HashMap<String, gpui::Entity<session::runtime::SessionRuntime>>,
-    pub(crate) active_key: String,
-    /// 010-启动：启动页闸门；揭幕帧由 pending_zoom 补 §4 最大化
-    pub(crate) booted: bool,
-    pub(crate) pending_zoom: bool,
-    /// 040 延迟加载：扩展/技能说明 token 数（source → 测量值；启动时读缓存，
-    /// 揭幕后后台探针刷新）。source 缺项 = 尚未测得（UI 显示「—」）
-    pub(crate) ext_tokens: std::collections::HashMap<String, services::token_probe::TokenEntry>,
-    pub(crate) draft_seq: usize,
     pub(crate) menu_ix: usize,
     /// / 菜单滚动句柄（按键选中 scroll_to_item 行跟随；输入变化回顶）
     pub(crate) menu_scroll: gpui::ScrollHandle,
@@ -152,6 +132,8 @@ pub(crate) struct Chat {
     pub(crate) psp: PspUi,
     /// 弹窗/悬浮层簇（4ea）
     pub(crate) dlg: DlgUi,
+    /// 会话池簇（4ea）：runtimes 池 + 指针 + 缓存 + 启动闸门
+    pub(crate) pool: PoolUi,
 }
 
 /// 周边面板状态簇（4ea 字段重组）：扩展 UI 面 / 081 自动更新与更新日志 /
@@ -316,6 +298,31 @@ pub(crate) struct DlgUi {
     pub(crate) settings: Option<gpui::Entity<settings::SettingsPanel>>,
 }
 
+/// 会话池簇（4ea 字段重组）：常驻 runtime 池 + 注意力指针 + 索引缓存
+/// + 启动装载的全局态与闸门（010）。
+pub(crate) struct PoolUi {
+    pub(crate) runtimes: std::collections::HashMap<String, gpui::Entity<session::runtime::SessionRuntime>>,
+    pub(crate) active_key: String,
+    pub(crate) sessions: Vec<SessionInfo>,
+    pub(crate) session_tail_cache: std::collections::HashMap<PathBuf, Vec<Msg>>,
+    pub(crate) draft_seq: usize,
+    /// model catalog keyed by cwd — **进程答案覆盖层**（010-启动.md §7）：活着的
+    /// runtime 的 RPC `get_available_models` 答复写这里（项目级差异），无进程时
+    /// 消费方回落 `globals.models`（启动时从磁盘 ∪ 自有缓存装载）。
+    pub(crate) models_by_cwd: std::collections::HashMap<String, Vec<pi_link::protocol::ModelInfo>>,
+    /// 启动装载的全局态（模型清单 / 命令 / 默认项 / 插件 / 全局 mcp）：渲染只读，
+    /// 不再扫盘也不发 RPC（010-启动.md §1、§7）。
+    pub(crate) globals: startup::Globals,
+    /// 项目上下文（启动集合内逐项目装载；切项目命中即零扫盘，见 §5）。
+    pub(crate) project_ctx: std::collections::HashMap<String, startup::ProjectCtx>,
+    /// 040 延迟加载：扩展/技能说明 token 数（source → 测量值；启动时读缓存，
+    /// 揭幕后后台探针刷新）。source 缺项 = 尚未测得（UI 显示「—」）
+    pub(crate) ext_tokens: std::collections::HashMap<String, services::token_probe::TokenEntry>,
+    /// 010-启动：启动页闸门；揭幕帧由 pending_zoom 补 §4 最大化
+    pub(crate) booted: bool,
+    pub(crate) pending_zoom: bool,
+}
+
 impl Chat {
     pub(crate) fn new(cx: &mut Context<Self>) -> Self {
         let focus = cx.focus_handle();
@@ -378,21 +385,11 @@ impl Chat {
             focus,
             input: String::new(),
             pending_images: Vec::new(),
-            session_tail_cache: std::collections::HashMap::new(),
-            sessions: Vec::new(),
             // v54.4 定案：启动固定会话界面（面板/内容区绑定关系见
             // status_bar；不恢复上次离开时的面板）
             dock_panel: DockPanel::Sessions,
             cwd: cwd.clone(),
             branch,
-            runtimes: std::collections::HashMap::new(),
-            active_key: String::new(),
-            booted: false,
-            pending_zoom: false,
-            draft_seq: 0,
-            models_by_cwd: std::collections::HashMap::new(),
-            globals: startup::Globals::default(),
-            project_ctx: std::collections::HashMap::new(),
             expanded_dirs: HashSet::new(),
             tree_rows: std::sync::Arc::new(Vec::new()),
             git_files: Vec::new(),
@@ -433,7 +430,19 @@ impl Chat {
             )),
             bar_hover: None,
             input_focused: false,
-            ext_tokens: services::token_probe::read_cache(),
+            pool: PoolUi {
+                runtimes: std::collections::HashMap::new(),
+                active_key: String::new(),
+                sessions: Vec::new(),
+                session_tail_cache: std::collections::HashMap::new(),
+                draft_seq: 0,
+                models_by_cwd: std::collections::HashMap::new(),
+                globals: startup::Globals::default(),
+                project_ctx: std::collections::HashMap::new(),
+                ext_tokens: services::token_probe::read_cache(),
+                booted: false,
+                pending_zoom: false,
+            },
             dlg: DlgUi {
                 dialog_focus,
                 dialog: None,
@@ -552,9 +561,9 @@ impl Chat {
         };
         // 启动阶段：全局态一次性装载（010-启动.md §1/§6）——模型清单（磁盘 ∪ 自有
         // 缓存）、命令、默认项、插件、全局 mcp，全部先于第一帧进内存，**不 spawn 进程**。
-        chat.globals = startup::load_globals();
+        chat.pool.globals = startup::load_globals();
         let cwd_key = chat.cwd.to_string_lossy().to_string();
-        chat.project_ctx
+        chat.pool.project_ctx
             .insert(cwd_key, startup::load_project(&chat.cwd.clone()));
         // new-session defaults (default model / thinking / enabledModels
         // scope) before the first frame — the draft pills render from them
@@ -585,7 +594,7 @@ impl Chat {
                         // CLI op 改的是盘上的 settings.json；globals 是启动时
                         // 的内存副本，不重读则 reload_settings_panel 只会拷到
                         // 旧列表（040：安装后列表不刷新的根因）
-                        chat.globals = startup::load_globals();
+                        chat.pool.globals = startup::load_globals();
                         chat.reload_settings_panel();
                         cx.notify();
                     })
@@ -658,9 +667,9 @@ impl Chat {
             }
             r
         });
-        chat.draft_seq = 1; // "draft-0" is taken by the initial runtime above
-        chat.runtimes.insert(rt_key.clone(), rt.clone());
-        chat.active_key = rt_key.clone();
+        chat.pool.draft_seq = 1; // "draft-0" is taken by the initial runtime above
+        chat.pool.runtimes.insert(rt_key.clone(), rt.clone());
+        chat.pool.active_key = rt_key.clone();
         chat.subscribe_runtime(&rt, cx);
         // 010-启动.md §9：启动期的一切（首帧附着 / 120ms 泵 / 3s 外部追加观察 /
         // 60s 空闲回收 / 30s recents 对账 / 启动页闸门 / 会话清单与项目集装载）

@@ -52,12 +52,12 @@ impl Render for Chat {
         // 010-启动：揭幕前整幅启动页（黑底、居中 logo、非最大化）；揭幕帧
         // 再按 §4 默认最大化（0.2.2 建窗即 Maximized 不可靠，显式 zoom 是
         // 项目已验证路径——原建窗回调里的 zoom 后移到了这里）。
-        if !self.booted {
+        if !self.pool.booted {
             startup::mark_splash_painted();
             return startup::splash_view();
         }
-        if self.pending_zoom {
-            self.pending_zoom = false;
+        if self.pool.pending_zoom {
+            self.pool.pending_zoom = false;
             window.zoom_window();
         }
         // keep terminal focus alive across frames (render focuses chat input

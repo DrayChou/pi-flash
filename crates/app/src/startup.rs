@@ -596,7 +596,7 @@ fn spawn_external_append_watch(cx: &mut gpui::Context<Chat>) {
             .await;
         let ok = this
             .update(cx, |chat, cx| {
-                for rt in chat.runtimes.values() {
+                for rt in chat.pool.runtimes.values() {
                     rt.update(cx, |r, cx| r.check_external_append(cx));
                 }
             })
@@ -618,8 +618,8 @@ fn spawn_idle_recycle(cx: &mut gpui::Context<Chat>) {
         let ok = this
             .update(cx, |chat, cx| {
                 let idle_cap = std::time::Duration::from_secs(600);
-                for (key, rt) in &chat.runtimes {
-                    if *key == chat.active_key {
+                for (key, rt) in &chat.pool.runtimes {
+                    if *key == chat.pool.active_key {
                         continue;
                     }
                     let idle = {
@@ -648,7 +648,7 @@ fn spawn_recents_poll(cx: &mut gpui::Context<Chat>) {
             .timer(std::time::Duration::from_secs(30))
             .await;
         let exclude = match this.update(cx, |chat, cx| {
-            chat.runtimes
+            chat.pool.runtimes
                 .values()
                 .filter_map(|rt| rt.read(cx).file.clone())
                 .collect::<Vec<_>>()
@@ -677,8 +677,8 @@ fn spawn_splash_gate(cx: &mut gpui::Context<Chat>) {
                 .await;
             let attached = this
                 .update(cx, |c, cx| {
-                    c.runtimes
-                        .get(&c.active_key)
+                    c.pool.runtimes
+                        .get(&c.pool.active_key)
                         .is_some_and(|r| r.read(cx).agent.session.is_some())
                 })
                 .unwrap_or(true); // 实体已亡（窗口关闭）：停止闸门
@@ -690,8 +690,8 @@ fn spawn_splash_gate(cx: &mut gpui::Context<Chat>) {
             }
         }
         let _ = this.update(cx, |c, cx| {
-            c.booted = true;
-            c.pending_zoom = true;
+            c.pool.booted = true;
+            c.pool.pending_zoom = true;
             // 040 延迟加载：揭幕（切换启动页）后才开始测扩展/skill 说明
             // token——非关键数据，不对启动造成任何负担
             c.spawn_token_probe(cx);
@@ -721,7 +721,7 @@ pub(crate) fn spawn_session_list_load(
             .filter(|s| crate::services::workspace::same_ws(&s.cwd, &cwd_text))
             .collect::<Vec<_>>();
         let _ = this.update(cx, |chat, cx| {
-            chat.sessions = sessions;
+            chat.pool.sessions = sessions;
             cx.notify();
             if crate::PERF.load(std::sync::atomic::Ordering::Relaxed) {
                 if let Some(t0) = crate::T0.get() {
@@ -748,7 +748,7 @@ pub(crate) fn spawn_session_list_load(
                 .psp.projects
                 .iter()
                 .map(|g| g.path.clone())
-                .filter(|p| !chat.project_ctx.contains_key(&p.to_string_lossy().to_string()))
+                .filter(|p| !chat.pool.project_ctx.contains_key(&p.to_string_lossy().to_string()))
                 .collect();
             if !pending.is_empty() {
                 cx.spawn(async move |this, cx| {
@@ -756,7 +756,7 @@ pub(crate) fn spawn_session_list_load(
                         let key = cwd.to_string_lossy().to_string();
                         let ctx = cx.background_spawn(async move { load_project(&cwd) }).await;
                         let _ = this.update(cx, |chat, cx| {
-                            chat.project_ctx.insert(key, ctx);
+                            chat.pool.project_ctx.insert(key, ctx);
                             cx.notify();
                         });
                     }
@@ -788,7 +788,7 @@ pub(crate) fn spawn_session_list_load(
             })
             .await;
         let _ = this.update(cx, |chat, _cx| {
-            chat.session_tail_cache = preloaded;
+            chat.pool.session_tail_cache = preloaded;
         });
     })
     .detach();

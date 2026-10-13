@@ -186,8 +186,8 @@ impl Chat {
         // 凭据（PF 自有账本 pf-auth.json；auth.json 归 pi，PF 不读）
         self.cfg.mc_creds = pi_link::pf_auth::kinds();
         // 会话预设 `configured` 对应的工具清单（settings.json defaultTools）
-        self.cfg.mc_default_tools = self.globals.default_tools.clone();
-        self.cfg.mc_pkgs_global = self.globals.packages.clone();
+        self.cfg.mc_default_tools = self.pool.globals.default_tools.clone();
+        self.cfg.mc_pkgs_global = self.pool.globals.packages.clone();
         let ctx = self.project_ctx_now();
         self.cfg.mc_skills = ctx.skills;
         self.cfg.mc_pkgs_project = ctx.packages;
@@ -277,7 +277,7 @@ impl Chat {
         };
         services::workspace::set_default_model_pref(next.clone());
         self.cfg.mc_default_model = next;
-        for (_, rt) in &self.runtimes {
+        for (_, rt) in &self.pool.runtimes {
             rt.update(cx, |r, _| r.default_model = self.cfg.mc_default_model.clone());
         }
         cx.notify();
@@ -1208,11 +1208,11 @@ impl Chat {
     /// 目录缓存与 auth.json 不归 PF 管，数据面原样保留、展示层除名。
     pub(crate) fn catalog_for(&self, cwd: &std::path::Path) -> Vec<pi_link::protocol::ModelInfo> {
         let raw = self
-            .models_by_cwd
+            .pool.models_by_cwd
             .get(&cwd.to_string_lossy().to_string())
             .map(|v| v.as_slice())
             .filter(|v| !v.is_empty())
-            .unwrap_or(self.globals.models.as_slice());
+            .unwrap_or(self.pool.globals.models.as_slice());
         let removed = crate::services::workspace::removed_providers();
         raw.iter()
             .filter(|m| !removed.iter().any(|p| p == &m.provider))
@@ -1226,24 +1226,24 @@ impl Chat {
     pub(crate) fn refresh_provider_catalog(&mut self, provider: &str) {
         let fresh = pi_link::catalog::disk_models();
         let mut g: Vec<_> = self
-            .globals
+            .pool.globals
             .models
             .iter()
             .filter(|m| m.provider != provider)
             .cloned()
             .collect();
         g.extend(fresh.iter().cloned());
-        self.globals.models = pi_link::catalog::dedupe(g);
+        self.pool.globals.models = pi_link::catalog::dedupe(g);
         let cwd_key = self.cwd.to_string_lossy().to_string();
         let mut m: Vec<_> = self
-            .models_by_cwd
+            .pool.models_by_cwd
             .remove(&cwd_key)
             .unwrap_or_default()
             .into_iter()
             .filter(|x| x.provider != provider)
             .collect();
         m.extend(fresh);
-        self.models_by_cwd.insert(cwd_key, pi_link::catalog::dedupe(m));
+        self.pool.models_by_cwd.insert(cwd_key, pi_link::catalog::dedupe(m));
     }
 
     /// Picker fallback: catalog entry for the active session's cwd is empty →
@@ -1260,7 +1260,7 @@ impl Chat {
             )
         };
         if self
-            .models_by_cwd
+            .pool.models_by_cwd
             .get(&cwd_key)
             .is_some_and(|v| !v.is_empty())
         {
@@ -1273,7 +1273,7 @@ impl Chat {
             return;
         }
         // active is a draft: any other live runtime of the same cwd answers too
-        for (_, rt) in &self.runtimes {
+        for (_, rt) in &self.pool.runtimes {
             let r = rt.read(cx);
             if r.cwd.to_string_lossy().to_string() == cwd_key
                 && r.agent.session.is_some()

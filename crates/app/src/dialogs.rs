@@ -353,7 +353,7 @@ fn render_wx_qr(
     }
 
     // 绑定码：微信里 `/bind <code>` 用
-    let code = chat.aux.remote.bind_code(&chat.active_key);
+    let code = chat.aux.remote.bind_code(&chat.pool.active_key);
     // 上面的「绑定成功」说的是**渠道**（扫码授权）；这里说的是 `/bind`，
     // 两者别混 —— 用户被「已绑定/未绑定」并排显示搞糊涂过
     let bind_line = match chat.aux.remote.bound.as_deref() {
@@ -1303,8 +1303,8 @@ impl Chat {
         let needle = self.psp.search_needle.clone();
         self.dlg.dialog = None;
         let key = path.to_string_lossy().to_string();
-        let already_open = self.active_key == key || self.runtimes.contains_key(&key);
-        if self.active_key != key {
+        let already_open = self.pool.active_key == key || self.pool.runtimes.contains_key(&key);
+        if self.pool.active_key != key {
             self.open_session(path.clone(), false, cx);
         }
         let rt = self.rt();

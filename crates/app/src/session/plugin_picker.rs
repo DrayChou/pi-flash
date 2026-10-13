@@ -147,7 +147,7 @@ pub(crate) fn view(chat: &Chat, weak: &gpui::WeakEntity<Chat>, window: &gpui::Wi
     let rows: Vec<AnyElement> = items
         .iter()
         .map(|(src, project)| {
-            let tokens = chat.ext_tokens.get(src).map(|e| e.ext.max(0) as u64);
+            let tokens = chat.pool.ext_tokens.get(src).map(|e| e.ext.max(0) as u64);
             plugin_row(weak, src, selected(src), *project, tokens, t)
         })
         .collect();
@@ -172,7 +172,7 @@ pub(crate) fn view(chat: &Chat, weak: &gpui::WeakEntity<Chat>, window: &gpui::Wi
     let total: i64 = items
         .iter()
         .filter(|(s, _)| selected(s))
-        .filter_map(|(s, _)| chat.ext_tokens.get(s))
+        .filter_map(|(s, _)| chat.pool.ext_tokens.get(s))
         .map(|e| e.ext)
         .sum();
 

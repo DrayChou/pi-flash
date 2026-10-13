@@ -202,7 +202,7 @@ impl Chat {
     /// Keep `sessions` (current project) in sync with the matching group.
     pub(crate) fn sync_current_sessions(&mut self) {
         let cwd = self.cwd.to_string_lossy().to_string();
-        self.sessions = self
+        self.pool.sessions = self
             .psp.projects
             .iter()
             .find(|g| same_ws(&g.path.to_string_lossy(), &cwd))
@@ -661,7 +661,7 @@ fn session_row_view(
     // 写入点是 SessionEvent::Changed 订阅（只在进程退出 / 手动压缩 / 换工具预设
     // 时发），正常一轮的 AgentStart/AgentSettled/AgentEnd 都不发 Changed →
     // 缓存恒空，状态槽的旋转圈再也不出现。回到渲染期直接扫常驻 runtime。
-    let running = chat.runtimes.values().any(|rt| {
+    let running = chat.pool.runtimes.values().any(|rt| {
         let r = rt.read(cx);
         r.file.as_deref() == Some(info.path.as_path())
             && (r.agent_running || r.state.as_ref().is_some_and(|s| s.is_streaming))
@@ -936,7 +936,7 @@ fn pending_row_view(
     let Some(entry) = chat.psp.pending_tabs.iter().find(|e| e.key == key) else {
         return div().into_any_element();
     };
-    let is_active = chat.active_key == entry.key;
+    let is_active = chat.pool.active_key == entry.key;
     let title: SharedString = if entry.preview.is_empty() {
         tr("session.new").to_string().into()
     } else {
@@ -966,7 +966,7 @@ fn pending_row_view(
                 .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                     let key = key_click.clone();
                     let _ = w_click.update(cx, |c, cx| {
-                        if let Some(rt) = c.runtimes.get(&key).cloned() {
+                        if let Some(rt) = c.pool.runtimes.get(&key).cloned() {
                             c.switch_to(rt, cx);
                         }
                     });

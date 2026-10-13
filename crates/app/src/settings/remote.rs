@@ -144,7 +144,7 @@ pub(crate) fn mc_remote_view(chat: &mut Chat, weak: &gpui::WeakEntity<Chat>) -> 
     col = col.child(field("状态", mono_lines(status_lines, 11., true)));
 
     // ── 绑定码：设置页展示，用户在微信里 `/bind <code>` 回填 ──────────
-    let active = chat.active_key.clone();
+    let active = chat.pool.active_key.clone();
     let code = chat.aux.remote.bind_code(&active);
     let mut bind_lines = vec![format!("绑定码：{code}")];
     match chat.aux.remote.bound.as_deref() {

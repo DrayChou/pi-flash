@@ -66,14 +66,14 @@ impl Chat {
             .unwrap_or_default();
         for p in &sessions {
             if self
-                .runtimes
-                .get(&self.active_key)
+                .pool.runtimes
+                .get(&self.pool.active_key)
                 .map(|rt| rt.read(cx).file.as_deref() == Some(p.as_path()))
                 .unwrap_or(false)
             {
                 self.new_session(cx);
             }
-            if let Some(rt) = self.runtimes.remove(&p.to_string_lossy().to_string()) {
+            if let Some(rt) = self.pool.runtimes.remove(&p.to_string_lossy().to_string()) {
                 rt.update(cx, |r, _| {
                     r.rpc(&Command::Abort);
                     r.shutdown_process();
@@ -84,7 +84,7 @@ impl Chat {
         self.psp.projects.retain(|g| !same_path(&g.path, &path));
         if same_path(&self.cwd, &path) {
             // 当前项目被删：清当前组数据，保留草稿会话
-            self.sessions.clear();
+            self.pool.sessions.clear();
             self.sync_current_sessions();
         }
         self.psp.unread.retain(|p| {
@@ -127,7 +127,7 @@ impl Chat {
         }
         let name_for_status = name.clone();
         let key = path.to_string_lossy().to_string();
-        match self.runtimes.get(&key).cloned() {
+        match self.pool.runtimes.get(&key).cloned() {
             Some(rt) => {
                 rt.update(cx, |r, _| {
                     r.rpc(&Command::SetSessionName { name: name.clone() });
@@ -135,7 +135,7 @@ impl Chat {
             }
             None => {
                 // 未加载的会话：tail 渲染 + 临时进程发改名，不切换活跃会话
-                let tail = match self.session_tail_cache.get(path).cloned() {
+                let tail = match self.pool.session_tail_cache.get(path).cloned() {
                     Some(msgs) => msgs,
                     None => msgs_from_tail(read_tail_messages(path, 256 * 1024, 100)),
                 };
@@ -157,7 +157,7 @@ impl Chat {
                     r.pager.reload(r.messages.len());
                     r
                 });
-                self.runtimes.insert(key, rt.clone());
+                self.pool.runtimes.insert(key, rt.clone());
                 self.subscribe_runtime(&rt, cx);
                 let rt_spawn = rt.clone();
                 cx.spawn(async move |_this, cx| {

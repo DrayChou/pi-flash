@@ -183,11 +183,11 @@ impl Chat {
             return std::borrow::Cow::Borrowed(&rt.commands);
         }
         let mut out: Vec<pi_link::protocol::SlashCommand> = self
-            .project_ctx
+            .pool.project_ctx
             .get(&self.cwd.to_string_lossy().to_string())
             .map(|ctx| ctx.skill_commands.clone())
             .unwrap_or_default();
-        out.extend(self.globals.commands.iter().cloned());
+        out.extend(self.pool.globals.commands.iter().cloned());
         std::borrow::Cow::Owned(out)
     }
 

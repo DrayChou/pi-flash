@@ -183,7 +183,7 @@ pub(super) fn dispatch(
         // ---- 会话 ----
         method::SESSION_NEW => {
             chat.new_session(cx);
-            let key = chat.active_key.clone();
+            let key = chat.pool.active_key.clone();
             Ok(json!({"ok": true, "key": key}))
         }
         method::SESSION_OPEN => {
@@ -202,7 +202,7 @@ pub(super) fn dispatch(
                 .ok_or_else(|| bad("需要 {\"key\": \"…\"} 或 {\"path\": \"…\"}"))?
                 .to_string();
             let rt = chat
-                .runtimes
+                .pool.runtimes
                 .get(&key)
                 .cloned()
                 .ok_or_else(|| not_found(format!("池里没有 key={key:?} 的会话（runtimes 见 ui.snapshot sessions 面）")))?;

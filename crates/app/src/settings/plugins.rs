@@ -39,7 +39,7 @@ impl Chat {
             return;
         }
         // globals 是启动时的内存副本：不同步的话 reload_settings_panel 拷回旧列表
-        self.globals.packages = next;
+        self.pool.globals.packages = next;
         self.reload_settings_panel();
         cx.notify();
     }
@@ -74,7 +74,7 @@ impl Chat {
             self.mc_set_error(&crate::i18n::tf("settings.write_failed", &[("e", e)]), cx);
             return;
         }
-        self.globals.packages = next;
+        self.pool.globals.packages = next;
         self.reload_settings_panel();
         cx.notify();
     }
@@ -477,7 +477,7 @@ fn pl_detail(
         &tr("tokens.prompt_size"),
         // 尚未测得（延迟加载未跑完/未安装）显示「—」
         mono_text(
-            match chat.ext_tokens.get(&src) {
+            match chat.pool.ext_tokens.get(&src) {
                 Some(e) => format!(
                     "{} tokens",
                     crate::services::format::fmt_thousand(e.ext.max(0) as u64)

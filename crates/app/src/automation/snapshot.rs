@@ -182,7 +182,7 @@ fn app_surface(chat: &Chat, window: &gpui::Window, cx: &Context<Chat>) -> Value 
         "lang": crate::i18n::LANG_LABELS[crate::i18n::lang_ix()],
         "cwd": chat.cwd.display().to_string(),
         "branch": chat.branch,
-        "booted": chat.booted,
+        "booted": chat.pool.booted,
         "focused": focused_str(chat, window, cx),
         "window": {
             "width_px": (f32::from(viewport.width) * scale).round() as i64,
@@ -191,15 +191,15 @@ fn app_surface(chat: &Chat, window: &gpui::Window, cx: &Context<Chat>) -> Value 
         },
         "dock_panel": chat.dock_panel.as_str(),
         "content_view": content_view_str(chat.content_view),
-        "active_key": chat.active_key,
+        "active_key": chat.pool.active_key,
         "active_file": opt_path(chat.psp.active_file.as_ref()),
         "terminals": chat.terminals.len(),
         "active_terminal": chat.active_terminal,
         // 031/040 full+ 档扩展面板：按钮可用性（full+ 档即可，勾选即生效）
         "plugin_menu": {
             "available": chat
-                .runtimes
-                .get(&chat.active_key)
+                .pool.runtimes
+                .get(&chat.pool.active_key)
                 .map(|rt| rt.read(cx).tool_preset_key() == "custom")
                 .unwrap_or(false),
         },
@@ -262,7 +262,7 @@ fn app_surface(chat: &Chat, window: &gpui::Window, cx: &Context<Chat>) -> Value 
 
 fn sessions_surface(chat: &Chat) -> Value {
     let sessions: Vec<Value> = chat
-        .sessions
+        .pool.sessions
         .iter()
         .map(|s| {
             json!({
@@ -278,7 +278,7 @@ fn sessions_surface(chat: &Chat) -> Value {
                     .map(|d| d.as_millis() as u64)
                     .unwrap_or(0),
                 "unread": chat.psp.unread.contains(&s.path),
-                "loaded": chat.runtimes.contains_key(&s.path.display().to_string()),
+                "loaded": chat.pool.runtimes.contains_key(&s.path.display().to_string()),
             })
         })
         .collect();
@@ -295,9 +295,9 @@ fn sessions_surface(chat: &Chat) -> Value {
         .collect();
     json!({
         "cwd": chat.cwd.display().to_string(),
-        "active_key": chat.active_key,
+        "active_key": chat.pool.active_key,
         "active_file": opt_path(chat.psp.active_file.as_ref()),
-        "runtimes": chat.runtimes.keys().cloned().collect::<Vec<_>>(),
+        "runtimes": chat.pool.runtimes.keys().cloned().collect::<Vec<_>>(),
         "sessions": sessions,
         "projects": projects,
         "pending_tabs": pending_tabs,
@@ -306,8 +306,8 @@ fn sessions_surface(chat: &Chat) -> Value {
 
 /// 活跃会话的运行态（agent 是否在跑、流式状态、消息尾部、模型）。
 fn session_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
-    let Some(rt) = chat.runtimes.get(&chat.active_key) else {
-        return json!({"active_key": chat.active_key, "exists": false});
+    let Some(rt) = chat.pool.runtimes.get(&chat.pool.active_key) else {
+        return json!({"active_key": chat.pool.active_key, "exists": false});
     };
     let r = rt.read(cx);
     json!({
@@ -635,7 +635,7 @@ fn dialogs_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
         },
         "wx_running": chat.aux.remote.is_running(),
         "wx_bound": chat.aux.remote.bound,
-        "wx_bind_code": chat.aux.remote.bind_code(&chat.active_key),
+        "wx_bind_code": chat.aux.remote.bind_code(&chat.pool.active_key),
     })
 }
 
