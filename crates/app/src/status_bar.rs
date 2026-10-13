@@ -10,6 +10,7 @@ use crate::Chat;
 use crate::DockPanel;
 use crate::services::workspace::{save_ui_state, ui_state};
 use crate::appearance::theme::theme as T;
+use crate::ui::tokens::align;
 
 const HEIGHT: f32 = 36.;
 
@@ -33,12 +34,16 @@ pub(crate) fn control_bar(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> impl
                 .flex()
                 .items_center()
                 .gap(px(2.))
-                .ml(px(16.))
+                // 首 tab 卡片左缘落在图标对齐线（§7 / tokens::align，与上方
+                // psp 列表图标同线；2026-10-13 定夺）
+                .ml(px(align::ICON_LINE))
                 .children(tabs(active, t, cx)),
         );
     bar = bar.child(div().flex_1());
 
-    // 016：设置钮下放状态栏右槽（原手机图标位；手机遥控迁 topbar 左段）
+    // 016：设置钮下放状态栏右槽（原手机图标位；手机遥控迁 topbar 左段）。
+    // 图标右缘贴右 15px（2026-10-13 定夺）= 居中几何 (46−16)/2 自动保证，
+    // 改钮宽/图标尺寸时等式联动，勿再叠加右边距
     bar = bar.child(
         div()
             .id("statusbar-settings")
