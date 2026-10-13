@@ -387,9 +387,7 @@ impl Chat {
                         session::runtime::SessionRuntime::attach_pump(&rt_spawn, rx, epoch, cx);
                     }
                 }
-                if let Some(s) = &r.agent.session {
-                    let _ = s.send(&Command::GetMessages);
-                }
+                r.rpc(&Command::GetMessages);
                 r.refresh_anchors();
                 r.refresh_state();
             });
@@ -414,9 +412,7 @@ impl Chat {
         // clears the file handle on Windows before unlink)
         if let Some(rt) = self.runtimes.remove(&key) {
             rt.update(cx, |r, _| {
-                if let Some(s) = &r.agent.session {
-                    let _ = s.send(&Command::Abort);
-                }
+                r.rpc(&Command::Abort);
                 r.shutdown_process();
             });
         }
@@ -479,9 +475,7 @@ impl Chat {
     /// Rename commit path that never reads the input entity (called from
     /// the input's own submit callback where the entity is borrowed).
     pub(crate) fn apply_rename(&mut self, name: String, cx: &mut Context<Self>) {
-        if let Some(session) = &self.rt().read(cx).agent.session {
-            let _ = session.send(&Command::SetSessionName { name });
-        }
+        self.rt().read(cx).rpc(&Command::SetSessionName { name });
         // sidebar label comes from the session file's `session_info` entry;
         // reload it when pi confirms the write (set_session_name response —
         // an immediate re-read here would race the file flush)

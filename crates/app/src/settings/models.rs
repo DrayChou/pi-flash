@@ -1268,9 +1268,7 @@ impl Chat {
         }
         if has_session {
             active.update(cx, |r, _| {
-                if let Some(s) = r.agent.session.as_ref() {
-                    let _ = s.send(&pi_link::protocol::Command::GetAvailableModels);
-                }
+                r.rpc(&pi_link::protocol::Command::GetAvailableModels);
             });
             return;
         }
@@ -1280,9 +1278,7 @@ impl Chat {
             if r.cwd.to_string_lossy().to_string() == cwd_key
                 && r.agent.session.is_some()
             {
-                if let Some(s) = r.agent.session.as_ref() {
-                    let _ = s.send(&pi_link::protocol::Command::GetAvailableModels);
-                }
+                r.rpc(&pi_link::protocol::Command::GetAvailableModels);
                 return;
             }
         }

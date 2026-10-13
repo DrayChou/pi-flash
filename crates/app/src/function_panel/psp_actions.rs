@@ -75,9 +75,7 @@ impl Chat {
             }
             if let Some(rt) = self.runtimes.remove(&p.to_string_lossy().to_string()) {
                 rt.update(cx, |r, _| {
-                    if let Some(s) = &r.agent.session {
-                        let _ = s.send(&Command::Abort);
-                    }
+                    r.rpc(&Command::Abort);
                     r.shutdown_process();
                 });
             }
@@ -132,9 +130,7 @@ impl Chat {
         match self.runtimes.get(&key).cloned() {
             Some(rt) => {
                 rt.update(cx, |r, _| {
-                    if let Some(s) = &r.agent.session {
-                        let _ = s.send(&Command::SetSessionName { name: name.clone() });
-                    }
+                    r.rpc(&Command::SetSessionName { name: name.clone() });
                 });
             }
             None => {
@@ -174,9 +170,7 @@ impl Chat {
                                 );
                             }
                         }
-                        if let Some(s) = &r.agent.session {
-                            let _ = s.send(&Command::SetSessionName { name: name.clone() });
-                        }
+                        r.rpc(&Command::SetSessionName { name: name.clone() });
                     });
                     // 改名发完即收进程（消息保留，下次打开秒开）
                     let _ = rt_spawn.update(cx, |r, _| r.shutdown_process());

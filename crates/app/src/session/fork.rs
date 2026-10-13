@@ -49,10 +49,8 @@ impl SessionRuntime {
     /// 只为 033 导航面板而要——pi 在 ~1200 条消息的会话上会自己 stack overflow
     /// 并回 `success:false`，那种会话下没有树，但「新分支」照常可用。
     pub(crate) fn refresh_anchors(&self) {
-        if let Some(session) = &self.agent.session {
-            let _ = session.send(&Command::GetEntries);
-            let _ = session.send(&Command::GetTree);
-        }
+        self.rpc(&Command::GetEntries);
+        self.rpc(&Command::GetTree);
     }
 
     /// 把 active chain 上的 user entry id 按顺序回填到用户消息上。
@@ -99,18 +97,18 @@ impl SessionRuntime {
         }
         // pi-web handleFork 的前置条件：进程必须在（未落盘的 draft fork 会
         // 由 pi 报 "This session has not been saved yet"）
-        let Some(session) = &self.agent.session else {
+        if self.agent.session.is_none() {
             self.status = "cannot fork before the session is saved".into();
             cx.notify();
             return;
-        };
+        }
         // 分支要改名（原名截取 20 字）：原 title 必须在 fork **之前**
         // 取，fork 落地后 state 讲的已经是新会话了
         self.fork_source_title = Some(self.branch_source_title());
         // 「创建中…」直到响应落地（同时防连点：第二个 fork 会被 pi 拒）
         self.forking = true;
         self.status = "forking".into();
-        let _ = session.send(&cmd);
+        self.rpc(&cmd);
         cx.notify();
     }
 
@@ -192,20 +190,16 @@ impl SessionRuntime {
         // branched file 的 RPC 快照即权威（fork 点之前的路径已被 pi 复制进新文件）
         self.disk_msg_count = 0;
         self.notify_list(cx);
-        if let Some(s) = self.agent.session.as_ref() {
-            let _ = s.send(&Command::GetState);
-            let _ = s.send(&Command::GetSessionStats);
-            let _ = s.send(&Command::GetMessages);
-        }
+        self.rpc(&Command::GetState);
+        self.rpc(&Command::GetSessionStats);
+        self.rpc(&Command::GetMessages);
         self.refresh_anchors();
         // 新分支自动改名：原名截取 20 字（用户定案）。set_session_name 写在
         // pi 已 rebind 的新文件上，响应回来后再刷一次侧栏（沿用既有 500ms
         // 延迟刷新路径）。
         let name = source_title.as_deref().map(branch_name).unwrap_or_default();
         if !name.is_empty() {
-            if let Some(s) = self.agent.session.as_ref() {
-                let _ = s.send(&Command::SetSessionName { name: name.clone() });
-            }
+            self.rpc(&Command::SetSessionName { name: name.clone() });
             self.status = format!("forked: {name}");
         } else {
             // 原名取不到（空会话）：交给 pi 的默认命名，不发明名字

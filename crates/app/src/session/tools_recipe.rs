@@ -303,9 +303,7 @@ impl Chat {
                 let epoch = r.agent.epoch;
                 session::runtime::SessionRuntime::attach_pump(&rt, rx, epoch, cx);
             }
-            if let Some(s) = &r.agent.session {
-                let _ = s.send(&Command::GetMessages);
-            }
+            r.rpc(&Command::GetMessages);
             r.refresh_anchors();
             r.refresh_state();
             // 状态行与胶囊同文案（full+）

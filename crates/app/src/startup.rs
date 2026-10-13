@@ -515,9 +515,7 @@ fn spawn_initial_attach(
                     crate::session::runtime::SessionRuntime::attach_pump(&rt, rx, epoch, cx);
                 }
             }
-            if let Some(s) = &r.agent.session {
-                let _ = s.send(&pi_link::protocol::Command::GetMessages);
-            }
+            r.rpc(&pi_link::protocol::Command::GetMessages);
             r.refresh_anchors();
             r.refresh_state();
         });

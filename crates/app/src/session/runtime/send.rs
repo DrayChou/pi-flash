@@ -11,6 +11,15 @@ use crate::session::messages::{BashInfo, Msg, Role};
 use super::*;
 
 impl SessionRuntime {
+    /// RPC 门面：session/runtime/ 域外的文件一律经此发送，不直摸
+    /// `agent.session`——进程在场与否、wire 细节都收在 runtime 内部。
+    /// 返回 false = 无进程（草稿/已断），调用方按需降级。
+    pub(crate) fn rpc(&self, cmd: &Command) -> bool {
+        match &self.agent.session {
+            Some(s) => s.send(cmd).is_ok(),
+            None => false,
+        }
+    }
 
     /// 引导：中断当前运行并立即注入此消息（rpc steer）。乐观上屏与翻页
     /// 和 prompt 发送一致——发送帧气泡钉视口顶，不等回显。
