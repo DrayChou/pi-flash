@@ -42,8 +42,9 @@ pub(crate) fn control_bar(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> impl
     bar = bar.child(div().flex_1());
 
     // 016：设置钮下放状态栏右槽（原手机图标位；手机遥控迁 topbar 左段）。
-    // 图标右缘贴右 15px（2026-10-13 定夺）= 居中几何 (46−16)/2 自动保证，
-    // 改钮宽/图标尺寸时等式联动，勿再叠加右边距
+    // 图标右缘对齐上方列表右线（容器 LIST_PX + 行 pr LIST_PX = 2×LIST_PX，
+    // 2026-10-13 定夺「向上对齐」）——右对齐 + pr 直取线位，勿改回居中
+    // （居中是 15px，会比右线多伸出 5px）
     bar = bar.child(
         div()
             .id("statusbar-settings")
@@ -51,7 +52,8 @@ pub(crate) fn control_bar(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> impl
             .h(px(HEIGHT))
             .flex()
             .items_center()
-            .justify_center()
+            .justify_end()
+            .pr(px(align::LIST_PX * 2.))
             .cursor_pointer()
             .hover(|s| s.bg(rgb(t.bg_hover)))
             .on_mouse_down(MouseButton::Left, cx.listener(
