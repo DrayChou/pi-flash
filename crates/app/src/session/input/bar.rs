@@ -36,11 +36,9 @@ fn plugin_button(
         )
     };
     let active = is_custom;
-    let label = if n > 0 {
-        format!("{}({n})", crate::i18n::tr("settings.tab.extensions"))
-    } else {
-        crate::i18n::tr("settings.tab.extensions").to_string()
-    };
+    // 2026-10-13 用户定夺：去掉「扩展」二字——按钮 = plug 图标 + 计数
+    // `(n)`；n=0 时仅图标（点开菜单勾选扩展的入口仍在）
+    let label = if n > 0 { format!("({n})") } else { String::new() };
     let color = if !active {
         t.text_faint
     } else if open {
