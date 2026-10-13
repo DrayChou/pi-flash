@@ -38,14 +38,19 @@ git add "${FILES[@]}"
 git commit -m "release v${VERSION}" -- "${FILES[@]}"
 git tag "v${VERSION}"
 
-echo "==> 2/3 推送 main + tags（HTTPS 失败自动走 SSH over 443，AGENTS.md 铁律；两路都断才停）"
-SSH_URL="ssh://git@ssh.github.com:443/$(git remote get-url origin | sed 's#.*github.com[:/]##')"
-push_with_fallback() {  # $1 = refspec（main / tag 名）
-  if git push "$1" 2>/dev/null; then return 0; fi
-  echo "    HTTPS 推 $1 失败（多半被墙），SSH over 443 重试…"
+echo "==> 2/3 推送 main + tags（直连失败自动走 SSH over 443，AGENTS.md 铁律；两路都断才停）"
+# owner/repo.git 从任意 origin 形式提取（https / scp 别名 / ssh URL 四种都认）
+REPO_PATH=$(git remote get-url origin | grep -oE '[^/:]+/[^/:]+\.git$') || true
+[[ -n "$REPO_PATH" ]] || { echo "✗ 无法从 origin 提取 owner/repo：$(git remote get-url origin)"; exit 1; }
+SSH_URL="ssh://git@ssh.github.com:443/${REPO_PATH}"
+push_with_fallback() {  # $1 = refspec（main / tag 名）；git push 单参数会被当远端名，必须 origin <refspec>
+  local out
+  if out=$(git push origin "$1" 2>&1); then return 0; fi
+  echo "    origin 直推 $1 失败：$(echo "$out" | tail -1)"
+  echo "    走 SSH over 443 重试…"
   GIT_SSH_COMMAND="ssh -i ~/.ssh/id_rsa_github -o StrictHostKeyChecking=no" git push "$SSH_URL" "$1"
 }
-push_with_fallback main || { echo "✗ 两条通道都推不动 main：本地提交与 tag 不丢，网络恢复后重推并手动挂 Release（RELEASE.md §3.2）"; exit 1; }
+push_with_fallback main || { echo "✗ 两条通道都推不动 main：本地提交与 tag 不丢，网络恢复后 'git push origin main && git push origin v${VERSION}'，再手动挂 Release（RELEASE.md §3.2）"; exit 1; }
 push_with_fallback "v${VERSION}" || { echo "✗ 两条通道都推不动 tag：恢复后 'GIT_SSH_COMMAND=\"ssh -i ~/.ssh/id_rsa_github -o StrictHostKeyChecking=no\" git push $SSH_URL v${VERSION}'，再手动 gh release create（RELEASE.md §3.2）"; exit 1; }
 
 echo "==> 3/3 挂 GitHub Release + 三资产"
