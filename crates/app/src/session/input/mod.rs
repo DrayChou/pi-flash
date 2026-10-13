@@ -1,0 +1,194 @@
+//! composer (v57 输入组件化)：真输入框 = gpui-component InputState 多行
+//! 模式（ui/composer_input.rs 门面）——点击定位光标、左右键移动、多行上下
+//! 键、选区、IME、undo、超限纵向滚动条全为组件内置，不再手搓 String+绘制
+//! 光标。单容器 16px 圆角 1px 边框，宽 = 消息列宽（外层同 px(15) 内边距 +
+//! max_w 920），窗口缩放时始终贴合，不再用百分比近似
+//! 居中，悬浮胶囊上浮叠在聊天区上（0 高 wrapper 不吞点击/滚轮）。控件行：
+//! 左 = 图片 + 工具预设「默认∨」；右 = 上下文用量环 + 模型∨ + 思考∨ +
+//! 圆形发送 ↑ / 主题色停止块（运行中）。
+//!
+//! 按键路由（详见 composer_input.rs 头注）：
+//! - Enter → 组件 PressEnter{secondary:false} → on_submit（菜单开=接受补全；
+//!   运行中=引导；空闲=发送）
+//! - Shift+Enter → wrapper on_key_down（运行中=排队 follow-up，空闲=换行）
+//! - ↑/↓/Tab → "Input" 上下文覆盖绑定截获为 ComposerUp/Down/Tab（菜单导航
+//!   /历史回溯/补全），非空多行重新派发组件 MoveUp/MoveDown
+//! - Escape → wrapper on_key_down（菜单开=取消补全，运行中=中止）
+
+
+
+use gpui::Context;
+
+use crate::Chat;
+use crate::*;
+
+mod area;
+mod bar;
+mod ctx_tip;
+
+pub(crate) use area::*;
+use bar::*;
+use ctx_tip::*;
+
+
+// ---------------------------------------------------------------------------
+// composer 方法：输入写入/@ 索引/发送与中止（P3 自 main.rs impl Chat 拆入）
+// ---------------------------------------------------------------------------
+
+impl Chat {
+    /// chat.input 唯一写入口：同步镜像进输入组件（组件是渲染真值源，
+    /// 手写 input 不再存在）。历史/草稿/清空/补全改写都走这里。
+    pub(crate) fn set_input(&mut self, v: String, cx: &mut Context<Self>) {
+        self.input = v;
+        self.menu_dismissed = false;
+        if let Some(c) = &self.composer {
+            c.update(cx, |f, fcx| f.set_value(&self.input, fcx));
+        }
+        cx.notify();
+    }
+
+    /// set_input 的光标落点版（031 @ 补全：确认后光标停在插入 token 之后）。
+    /// cursor_byte = 新值的字节偏移。
+    pub(crate) fn set_input_with_cursor(
+        &mut self,
+        v: String,
+        cursor_byte: usize,
+        cx: &mut Context<Self>,
+    ) {
+        self.input = v;
+        self.menu_dismissed = false;
+        if let Some(c) = &self.composer {
+            let v = self.input.clone();
+            c.update(cx, |f, fcx| f.set_value_with_cursor(v, cursor_byte, fcx));
+        }
+        cx.notify();
+    }
+
+    /// @ 文件索引惰性构建（031 对齐 pi-web file-index：TTL 内复用，过期/
+    /// 缺失在后台线程重建；旧清单在重建期间先顶上。TTL/容量读
+    /// app-settings.json，默认 60s / 10 项目）。
+    pub(crate) fn ensure_at_index(&mut self, cx: &mut Context<Self>) {
+        let ttl = std::time::Duration::from_secs(services::workspace::at_index_ttl_secs());
+        let key = self.cwd.to_string_lossy().to_string();
+        let fresh = match self.at_index.get(&key) {
+            Some(e) => {
+                e.building || e.built.is_some_and(|t| t.elapsed() < ttl)
+            }
+            None => false,
+        };
+        if fresh {
+            return;
+        }
+        let entry = self.at_index.entry(key).or_default();
+        entry.building = true;
+        entry.built = None;
+        // 缓存上限（pi-web：超限整表清空——每 cwd 一份，重建很便宜）
+        if self.at_index.len() >= services::workspace::at_index_max_projects() {
+            self.at_index.clear();
+        }
+        let cwd = self.cwd.clone();
+        let key = cwd.to_string_lossy().to_string();
+        cx.spawn(async move |this, cx| {
+            // entries 派生也在后台：大仓库（20 万条）下主线程只做 Arc 换手
+            let (files, entries) = cx
+                .background_executor()
+                .spawn(async move {
+                    let listing = crate::services::file_index::load_listing(&cwd);
+                    let entries =
+                        crate::services::at_file::build_entries_from_files(&listing.files);
+                    (listing.files, entries)
+                })
+                .await;
+            let _ = this.update(cx, |chat, cx| {
+                // key = 构建时的 cwd（期间切项目也不会写错条目）
+                let e = chat.at_index.entry(key).or_default();
+                e.files = std::sync::Arc::new(files);
+                e.entries = std::sync::Arc::new(entries);
+                e.built = Some(std::time::Instant::now());
+                e.building = false;
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    pub(crate) fn with_active_editor<Act: FnOnce(&mut SessionRuntime, &mut Context<SessionRuntime>)>(
+        &mut self,
+        cx: &mut Context<Self>,
+        act: Act,
+    ) {
+        let rt = self.rt();
+        let (input, images, history) = (
+            self.input.clone(),
+            self.pending_images.clone(),
+            self.history.clone(),
+        );
+        rt.update(cx, |r, cx| {
+            r.input = input;
+            r.pending_images = images;
+            r.history = history;
+            act(r, cx);
+        });
+        // pull post-action state back (history push, input clear)
+        let (input, images, history) = {
+            let r = rt.read(cx);
+            (r.input.clone(), r.pending_images.clone(), r.history.clone())
+        };
+        self.set_input(input, cx);
+        self.pending_images = images;
+        self.history = history;
+        self.history_ix = None;
+        cx.notify();
+    }
+
+    pub(crate) fn send_input(&mut self, cx: &mut Context<Self>) {
+        self.with_active_editor(cx, |r, cx| r.send_input(cx));
+    }
+
+    pub(crate) fn steer_input(&mut self, cx: &mut Context<Self>) {
+        self.with_active_editor(cx, |r, cx| r.steer_input(cx));
+    }
+
+    pub(crate) fn follow_up_input(&mut self, cx: &mut Context<Self>) {
+        self.with_active_editor(cx, |r, cx| r.follow_up_input(cx));
+    }
+
+    pub(crate) fn abort_stream(&mut self, cx: &mut Context<Self>) {
+        self.rt().update(cx, |r, cx| r.abort_stream(cx));
+        cx.notify();
+    }
+
+    /// `!` bash 执行中 Esc / 停止按钮（031）：rpc abort_bash
+    pub(crate) fn abort_bash(&mut self, cx: &mut Context<Self>) {
+        self.rt().update(cx, |r, cx| r.abort_bash(cx));
+        cx.notify();
+    }
+
+    pub(crate) fn set_thinking_level(&mut self, key: &str, cx: &mut Context<Self>) {
+        self.rt().update(cx, |r, cx| r.set_thinking_level(key, cx));
+    }
+
+    /// `/` 菜单命令清单（010-启动.md §3）：会话进程答过 → 用它（含项目 skill）；
+    /// 否则 = 项目 skill 派生（`skill:<name>`）+ 全局扩展命令（内置表 + 缓存）。
+    /// 草稿态（无进程）因此也有完整菜单。
+    ///
+    /// 返回 Cow：会话进程答过的场景（slash 菜单打开期间每帧调用）直接借用
+    /// rt.commands，不再每帧深克隆整张命令表。
+    pub(crate) fn slash_commands<'a>(
+        &self,
+        cx: &'a gpui::App,
+    ) -> std::borrow::Cow<'a, [pi_link::protocol::SlashCommand]> {
+        let rt = self.rt().read(cx);
+        if !rt.commands.is_empty() {
+            return std::borrow::Cow::Borrowed(&rt.commands);
+        }
+        let mut out: Vec<pi_link::protocol::SlashCommand> = self
+            .project_ctx
+            .get(&self.cwd.to_string_lossy().to_string())
+            .map(|ctx| ctx.skill_commands.clone())
+            .unwrap_or_default();
+        out.extend(self.globals.commands.iter().cloned());
+        std::borrow::Cow::Owned(out)
+    }
+
+}
