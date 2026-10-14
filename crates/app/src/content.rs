@@ -64,6 +64,7 @@ fn changelog_view(chat: &mut Chat) -> gpui::AnyElement {
     let version = page.version.clone();
     let body = page.body.clone();
     let fetching = page.fetching;
+    let fetch_failed = page.fetch_failed;
     let mut col = div().flex_1().min_h_0().flex().flex_col();
     // 头：更新日志 + 版本号（滚动跟随外层，不参与内层滚动）
     col = col.child(
@@ -119,6 +120,10 @@ fn changelog_view(chat: &mut Chat) -> gpui::AnyElement {
                 .child(crate::ui::spinner(14., t.text_dim))
                 .child(tr("about.fetching_changelog").to_string()),
         );
+    } else if fetch_failed {
+        // 现拉 15s 超时/失败（被墙、断网）：区别于「暂无更新日志」，回新
+        // 会话页再点一次版本号即重试
+        col = col.child(empty_hint(tr("about.github_unreachable"), t));
     } else {
         col = col.child(empty_hint(tr("about.no_changelog_available"), t));
     }

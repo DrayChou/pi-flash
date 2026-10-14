@@ -234,6 +234,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("about.changelog", "更新日志", "更新日誌", "Changelog"),
     ("about.fetching_changelog", "正在获取更新日志…", "正在獲取更新日誌…", "Fetching changelog…"),
     ("about.no_changelog_available", "暂无更新日志", "暫無更新日誌", "No changelog available"),
+    ("about.github_unreachable", "暂时无法连接 GitHub", "暫時無法連線 GitHub", "Can't reach GitHub right now"),
     ("about.about", "关于", "關於", "About"),
     ("about.author", "作者", "作者", "Author"),
     ("about.author_name", "不正常赛博捅讯社", "不正常賽博捅訊社", "不正常赛博捅讯社"),

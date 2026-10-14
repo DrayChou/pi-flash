@@ -264,6 +264,7 @@ fn app_surface(chat: &Chat, window: &gpui::Window, cx: &Context<Chat>) -> Value 
             },
             "auto_update": crate::services::workspace::auto_update(),
             "changelog_open": chat.aux.changelog.as_ref().map(|p| p.version.clone()),
+            "changelog_error": chat.aux.changelog.as_ref().is_some_and(|p| p.fetch_failed),
         },
     })
 }

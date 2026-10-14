@@ -39,6 +39,8 @@ const RELEASES_API_BASE: &str = "https://api.github.com/repos/danielbill/pi-flas
 const UA: &str = "pi-flash-updater";
 /// 检测超时（设计文档：30s）。
 const CHECK_TIMEOUT: Duration = Duration::from_secs(30);
+/// 更新日志现拉超时（用户在等页面，15s 即见「暂时无法连接 GitHub」提示）。
+const CHANGELOG_TIMEOUT: Duration = Duration::from_secs(15);
 /// 检测失败重试间隔（设计文档：10 分钟 ×2 次）。
 const RETRY_INTERVAL: Duration = Duration::from_secs(600);
 /// 下载整体预算（zip ≈120MB；连接超时 30s 不封总量）。
@@ -67,6 +69,9 @@ pub(crate) struct ChangelogPage {
     pub(crate) version: String,
     pub(crate) body: Option<String>,
     pub(crate) fetching: bool,
+    /// 现拉失败（网络不通/被墙，15s 超时）：页面显示「暂时无法连接
+    /// GitHub」而非「暂无更新日志」；再点版本号即重试。
+    pub(crate) fetch_failed: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -222,9 +227,12 @@ fn check_agent() -> ureq::Agent {
     ureq::AgentBuilder::new().timeout(CHECK_TIMEOUT).build()
 }
 
-/// latest release（含 body = 更新日志 markdown）。tag 形如 v1.2.3。
-fn fetch_release(url: &str) -> Result<ReleaseInfo, String> {
-    let resp = check_agent()
+/// latest release（含 body = 更新日志 markdown）。tag 形如 v1.2.3。timeout
+/// 由调用方定：更新检查走设计文档的 30s，更新日志现拉走 15s。
+fn fetch_release(url: &str, timeout: Duration) -> Result<ReleaseInfo, String> {
+    let resp = ureq::AgentBuilder::new()
+        .timeout(timeout)
+        .build()
         .get(url)
         .set("User-Agent", UA)
         .set("Accept", "application/vnd.github+json")
@@ -249,13 +257,14 @@ fn fetch_release(url: &str) -> Result<ReleaseInfo, String> {
 }
 
 fn fetch_latest() -> Result<ReleaseInfo, String> {
-    fetch_release(&format!("{}/latest", api_base()))
+    fetch_release(&format!("{}/latest", api_base()), CHECK_TIMEOUT)
 }
 
-/// 按 tag 拉更新日志（更新日志页缓存缺失时的现拉通道）。
+/// 按 tag 拉更新日志（更新日志页缓存缺失时的现拉通道）。15s 超时：被墙/
+/// 断网时尽快落「暂时无法连接 GitHub」提示，不让用户对着转圈干等。
 fn fetch_release_body(version: &str) -> Result<String, String> {
     let url = format!("{}/tags/v{}", api_base(), version_key_string(version));
-    fetch_release(&url).map(|r| r.body)
+    fetch_release(&url, CHANGELOG_TIMEOUT).map(|r| r.body)
 }
 
 // ---------------------------------------------------------------------------
@@ -685,6 +694,7 @@ impl crate::Chat {
                 version: version.clone(),
                 fetching: need_fetch,
                 body: cached,
+                fetch_failed: false,
             });
         }
         self.open_changelog_tab(cx);
@@ -702,8 +712,14 @@ impl crate::Chat {
             let _ = this.update(cx, |c, cx| {
                 if let Some(p) = &mut c.aux.changelog {
                     match body {
-                        Ok(b) if !b.trim().is_empty() => p.body = Some(b),
-                        _ => {}
+                        // 空正文 = release 无 notes，走「暂无更新日志」，不算连接失败
+                        Ok(b) => {
+                            if !b.trim().is_empty() {
+                                p.body = Some(b);
+                            }
+                            p.fetch_failed = false;
+                        }
+                        Err(_) => p.fetch_failed = true,
                     }
                     p.fetching = false;
                 }
