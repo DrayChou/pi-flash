@@ -87,9 +87,9 @@ pub(crate) fn render_dialogs(
 /// 类型图标 + 名字 + 所在目录副文案），点击即打开文件 tab。数据由
 /// open_file_search / file_search_changed 后台扫盘回填，代际防抖。
 ///
-/// 行对齐契约（2026-10-14 用户定稿）：行内容左缘 = 输入框文字左缘
-/// （面板 p_4 16px + 输入框 1px 边框 + Medium 档 input_px 12px = 29px，
-/// 行 pl 13 补齐）；路径跟在名字后面左对齐，超长自动折行（行 min_h）。
+/// 行对齐契约（2026-10-14 用户定稿）：行内容左缘 = 输入框**框体**左缘
+/// （面板 p_4 16px，行零附加缩进）；图标列、状态行（N 个文件）同线。
+/// 路径跟在名字后面左对齐，超长自动折行（行 min_h）。
 fn render_file_search(
     chat: &Chat,
     weak: &gpui::WeakEntity<Chat>,
@@ -126,10 +126,7 @@ fn render_file_search(
                 .w_full()
                 // min_h：路径折行时行要长高（固定 h 会截掉第二行）
                 .min_h(px(34.))
-                // 左缩进 13 = 输入框文字内缩（1px 边框 + Medium 档 input_px
-                // 12），叠面板 p_4 的 16px 合计 29px——图标列与输入框文字
-                // 同一条左线
-                .pl(px(13.))
+                // 零附加缩进：内容左缘 = 面板 p_4 16px = 输入框框体左缘
                 .pr_2()
                 .flex()
                 .items_center()
@@ -183,8 +180,8 @@ fn render_file_search(
         .shadow_lg()
         .child(input.clone())
         .child(
+            // 状态行与行内容同一条左线（零附加缩进，= 输入框框体左缘）
             div()
-                .px_1()
                 .text_size(crate::appearance::ui_size(11.))
                 .text_color(rgb(t.text_dim))
                 .child(status),
