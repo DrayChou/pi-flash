@@ -697,7 +697,8 @@
   .cmp-send svg { width: 16px; height: 16px; }
 
     /* 状态栏：高 40 与顶栏等高，只覆盖面板段宽；无上边框、无右缘线。
-       020-1 后会话/文件树整合进 slp，面板切换 tab 取消，仅剩右侧设置钮 */
+       020-1 后会话+文件树整合为一个「项目」面板 → 只留一个 tab（briefcase）；
+       原文件树 tab 隐藏，后续新面板在此追加 tab */
   .statusbar {
     position: relative;
     width: var(--slp-w);
@@ -706,7 +707,24 @@
     display: flex; align-items: flex-end;
     font-size: 11px; color: var(--text-dim);
   }
+  .sb-btns { display: flex; align-items: flex-end; gap: 2px; padding-left: 12px; }
   .app.panes-hidden .statusbar { display: none; }
+  .sb-tab {
+    height: 36px; width: 46px; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    border: 0; background: transparent; padding: 0;
+    color: var(--text-muted); font-family: inherit; cursor: default;
+  }
+  .sb-tab:hover { color: var(--text); border-radius: 0 0 8px 8px; }
+  .sb-tab.on {
+    height: 40px; margin-top: -4px;
+    background: var(--nav);
+    border: 1px solid rgba(175,196,186,.55); border-top: 0;
+    border-radius: 0 0 9px 9px;
+    color: var(--accent);
+  }
+  .sb-tab.on:hover { background: var(--nav); }
+  .sb-tab svg { width: 16px; height: 16px; }
   /* 右侧设置钮：46px 全高，sliders-horizontal，右缘对齐 pr=20 */
   .sb-settings {
     margin-left: auto; margin-right: 12px;
@@ -1224,7 +1242,7 @@
             <h2>布局总览</h2>
             <pre>topbar 40  [收放][─] [会话tab 激活][终端tab][文件tab] [─][□][×]
 slp 300px 会话列表+文件树 上下整合面板 │ 内容区（聊天 / 终端 / md 预览 / 新会话页）
-statusbar 40（设置钮）│</pre>
+statusbar 40（项目 tab + 设置钮）│</pre>
             <h2>整合面板（020-1）</h2>
             <p>会话列表与文件树整合为一个面板，上下两个子面板默认各占 50% 高度；分隔线可拖拽改比例，上推到底会话面板只剩控制栏、下拉到底文件树只剩操作栏（双击复位 50%）。子面板 = 控制栏 + 内容区；控制栏只放一个「最大化」钮：点击本面板最大化、另一面板自动收起到操作栏（无最小化钮，避免双最小化盲区），中间比例交给分隔线拖拽。会话控制栏左三（项目 / 会话 / 搜索，icon+文字）右二（列表切换 / 最大化，纯 icon）；文件树控制栏在原四钮最右加最大化。</p>
             <h2>三层色阶</h2>
@@ -1278,7 +1296,11 @@ statusbar 40（设置钮）│</pre>
     </div>
 
         <div class="statusbar">
-      <!-- 020-1：会话/文件树整合进 slp 上下子面板，面板切换 tab 取消；仅剩设置钮 -->
+      <div class="sb-btns">
+        <!-- 020-1：会话+文件树整合为「项目」面板，tab 用 briefcase；原文件树 tab 隐藏；
+             后续新面板（git/终端…）在此追加 -->
+        <button class="sb-tab on" id="sbProject"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 12h.01"/><path d="M16 6V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><path d="M22 13a18.15 18.15 0 0 1-20 0"/><rect width="20" height="14" x="2" y="6" rx="2"/></svg></button>
+      </div>
       <button class="sb-settings" id="sbSettings" data-tip="设置"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5H3"/><path d="M12 19H3"/><path d="M14 3v4"/><path d="M16 17v4"/><path d="M21 12h-9"/><path d="M21 19h-5"/><path d="M21 5h-7"/><path d="M8 10v4"/><path d="M8 12H3"/></svg></button>
     </div>
   </div>
