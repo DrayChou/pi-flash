@@ -134,9 +134,14 @@ pub(crate) fn file_view(
         .get(&path)
         .map(|f| f.conflict.clone())
         .unwrap_or(None);
-    // 二进制占位 tab（open_file_tab 开的「无法打开」灰屏）：无缓冲无编辑器
-    // ——懒创建/重载灌入/聚焦三件套全部跳过
+    // 非文本 tab（open_file_tab 开的：图片查看 / 「无法打开」灰屏）：无缓冲
+    // 无编辑器——懒创建/重载灌入/聚焦三件套全部跳过
     let binary = chat.ws.file_cache.get(&path).is_some_and(|f| f.binary);
+    let tab_image = chat
+        .ws
+        .file_cache
+        .get(&path)
+        .and_then(|f| f.image);
 
     // 渲染帧副作用区：编辑器懒创建 + 自动重载灌入（见两 fn 文档）
     if !binary {
@@ -178,10 +183,14 @@ pub(crate) fn file_view(
             host = host.child(conflict_banner(weak, &path, c));
         }
     }
-    // 主体渲染算法由 kind handler 决定（md 双态/图片查看器/代码编辑器）；
-    // 二进制占位 tab 例外——「无法打开 {ext} 类型文件」灰屏（仿 Zed）
+    // 主体渲染算法由 kind handler 决定（md 双态/图片查看器/代码编辑器）。
+    // 非文本 tab 分流（zed 同款两类视图）：image=Some → 图片查看面板
+    // （ImageView）；None → 「无法打开 {ext} 类型文件」灰屏（InvalidItemView）
     host.child(if binary {
-        unsupported_body(&path)
+        match tab_image {
+            Some(format) => render_image_surface(&path, format),
+            None => unsupported_body(&path),
+        }
     } else {
         file_editor_body(chat, kind, &path, weak, cx)
     })
@@ -587,8 +596,8 @@ fn file_editor_body(
     )
 }
 
-/// 图片查看面板（ImageKind::render_body）：gpui img() 真渲染（最佳查看
-/// 方式），无编辑器、只读。
+/// 图片查看面板（open_file_tab 图片认领 / ImageKind 主体共用）：gpui img()
+/// 真渲染（最佳查看方式），无编辑器、只读。
 pub(crate) fn render_image_surface(path: &Path, format: gpui::ImageFormat) -> gpui::AnyElement {
     let t = T();
     match std::fs::read(path)

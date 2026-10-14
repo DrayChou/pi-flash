@@ -10,6 +10,8 @@
 //! - markdown：Markdown 渲染器（聊天正文 + md 预览），含 render/
 //!   {html,math,mermaid} 富渲染组件
 //!   └─ wysiwyg：Markdown 所见即所得（Live Preview，024 设计）
+//! - file_content：文件字节 ↔ 文本解码/编码（Zed file_content.rs 逐字
+//!   移植：BOM/二进制判定/chardetng 嗅探），打开与保存共用
 //!
 //! vendor 编辑底座见 `vendor/gpui-component/src/input/`
 //! （rope/光标/undo/IME），本域不碰内核。
@@ -18,3 +20,4 @@ pub mod markdown;
 pub mod view;
 pub(crate) mod tabs;
 pub(crate) mod kind;
+pub(crate) mod file_content;

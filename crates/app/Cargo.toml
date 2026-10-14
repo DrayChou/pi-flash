@@ -50,6 +50,11 @@ wxprobe = { path = "../wxprobe" }
 ureq = { version = "2", default-features = false, features = ["tls", "native-certs", "gzip"] }
 sha2 = "0.10"
 zip = { version = "2", default-features = false, features = ["deflate"] }
+# 文件打开编码检测（editor/file_content.rs，Zed file_content.rs 同款）：
+# encoding_rs 解码/编码，chardetng 非Unicode 嗅探（GBK 等遗留编码可开可存）
+encoding_rs = "0.8"
+chardetng = "0.1"
+anyhow = "1"
 
 [dev-dependencies]
 # gpui 测试夹具（TestAppContext + 真布局）——只有 app 的 test target 会带上

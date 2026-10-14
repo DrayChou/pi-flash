@@ -99,6 +99,14 @@ pub(crate) trait FileKind: Sync {
         None
     }
 
+    /// 二进制内容认领（zed `ImageItem::try_open` 同构：ProjectItemRegistry
+    /// 逆序尝试，图片查看器先于 editor 认领二进制字节）。Some = 按返回的
+    /// gpui 格式开图片查看 tab；None = 落文本管线（二进制判定在
+    /// file_content::decode_text，Binary → 无法打开灰屏）。默认 None。
+    fn try_binary(&self, _bytes: &[u8]) -> Option<gpui::ImageFormat> {
+        None
+    }
+
     /// 源码/预览双态（eye 按钮 + edm-preview 菜单项 + file.view_mode op
     /// 的门控）
     fn supports_view_mode(&self) -> bool {
@@ -138,7 +146,11 @@ struct CodeKind {
 /// 期间由 sync_live_decorations 关——折叠与折行互斥）。
 struct MarkdownKind;
 
-/// 图片：gpui img() 查看器，无编辑器、只读。
+/// 图片：gpui img() 查看器，无编辑器、只读。注册即后缀门（zed
+/// `is_image_file` 的 `Img::extensions()` 同口径）；能否真渲染由
+/// [`ImageKind::try_binary`] 对字节做 magic 嗅探裁决——后缀骗不过
+/// （zed `create_gpui_image`：guess_format 失败/不支持 → 开图失败 →
+/// InvalidItemView 灰屏）。
 struct ImageKind {
     format: gpui::ImageFormat,
 }
@@ -210,6 +222,21 @@ impl FileKind for ImageKind {
     fn name(&self) -> &'static str {
         "image"
     }
+    /// zed `create_gpui_image` 同款 match：magic bytes 说了算，映射到
+    /// gpui::ImageFormat；不在表内（avif/tga/dds/hdr/exr/qoi、tiff/ico/
+    /// pnm——最后三者在 vendored gpui 0.2.2 的 ImageFormat 里还没有对应
+    /// variant，zed 新版才加）一律 None 落灰屏。
+    fn try_binary(&self, bytes: &[u8]) -> Option<gpui::ImageFormat> {
+        let format = image::guess_format(bytes).ok()?;
+        match format {
+            image::ImageFormat::Png => Some(gpui::ImageFormat::Png),
+            image::ImageFormat::Jpeg => Some(gpui::ImageFormat::Jpeg),
+            image::ImageFormat::Gif => Some(gpui::ImageFormat::Gif),
+            image::ImageFormat::WebP => Some(gpui::ImageFormat::Webp),
+            image::ImageFormat::Bmp => Some(gpui::ImageFormat::Bmp),
+            _ => None,
+        }
+    }
     fn render_body(&self, _cx: &mut Context<Chat>, body: BodyCtx<'_>) -> AnyElement {
         super::view::render_image_surface(body.path, self.format)
     }
@@ -226,7 +253,6 @@ static IMG_JPEG: ImageKind = ImageKind { format: gpui::ImageFormat::Jpeg };
 static IMG_GIF: ImageKind = ImageKind { format: gpui::ImageFormat::Gif };
 static IMG_WEBP: ImageKind = ImageKind { format: gpui::ImageFormat::Webp };
 static IMG_BMP: ImageKind = ImageKind { format: gpui::ImageFormat::Bmp };
-static IMG_SVG: ImageKind = ImageKind { format: gpui::ImageFormat::Svg };
 
 static RUST: CodeKind = CodeKind { ts_lang: "rust" };
 static PYTHON: CodeKind = CodeKind { ts_lang: "python" };
@@ -235,8 +261,8 @@ static TYPESCRIPT: CodeKind = CodeKind { ts_lang: "typescript" };
 static TSX: CodeKind = CodeKind { ts_lang: "tsx" };
 static GO: CodeKind = CodeKind { ts_lang: "go" };
 static JSON: CodeKind = CodeKind { ts_lang: "json" };
-/// 树状标记语言共用实例（html/htm/xml/vue → ts_lang "html"）：后三者的高亮
-/// 语言随 html，且都不享浏览器菜单（那是 [`browser_openable`] 的判据）
+/// 树状标记语言共用实例（html/htm/xml/vue/svg → ts_lang "html"）：后几者
+/// 的高亮语言随 html，且都不享浏览器菜单（那是 [`browser_openable`]）
 static MARKUP: CodeKind = CodeKind { ts_lang: "html" };
 static CSS: CodeKind = CodeKind { ts_lang: "css" };
 static TOML: CodeKind = CodeKind { ts_lang: "toml" };
@@ -266,12 +292,13 @@ fn registry() -> &'static HashMap<&'static str, &'static dyn FileKind> {
             }
         };
         put(&["md", "markdown"], &MARKDOWN);
+        // svg 不进图片类（zed is_image_file 显式排除 `!ext.contains("svg")`
+        // ——svg 是文本，默认开源码，预览走单独动作）：并入树状标记语言
         put(&["png"], &IMG_PNG);
         put(&["jpg", "jpeg"], &IMG_JPEG);
         put(&["gif"], &IMG_GIF);
         put(&["webp"], &IMG_WEBP);
         put(&["bmp"], &IMG_BMP);
-        put(&["svg"], &IMG_SVG);
         put(&["rs"], &RUST);
         put(&["py", "pyw"], &PYTHON);
         put(&["js", "jsx", "mjs", "cjs"], &JAVASCRIPT);
@@ -279,10 +306,10 @@ fn registry() -> &'static HashMap<&'static str, &'static dyn FileKind> {
         put(&["tsx"], &TSX);
         put(&["go"], &GO);
         put(&["json", "jsonc"], &JSON);
-        // html/htm/xml/vue：树状标记语言共用一个 CodeKind（源码进编辑器，
+        // html/htm/xml/vue/svg：树状标记语言共用一个 CodeKind（源码进编辑器，
         // tree-sitter html 高亮；html 二改拍板起不再旁路系统浏览器）。
         // 「在浏览器中打开」不是 kind 差异 → [`browser_openable`] 路径判据
-        put(&["html", "htm", "xml", "vue"], &MARKUP);
+        put(&["html", "htm", "xml", "vue", "svg"], &MARKUP);
         put(&["css", "scss"], &CSS);
         put(&["toml"], &TOML);
         put(&["yaml", "yml"], &YAML);
@@ -366,6 +393,8 @@ mod tests {
         assert_eq!(kind("html").name(), "code");
         assert_eq!(kind("htm").name(), "code");
         assert_eq!(kind("xml").name(), "code");
+        // svg 同为树状标记文本（zed is_image_file 排除 svg，默认开源码）
+        assert_eq!(kind("svg").name(), "code");
         let cfg = kind("html").editor_config().unwrap();
         assert_eq!(cfg.ts_lang, "html");
         assert!(cfg.soft_wrap);
@@ -373,6 +402,32 @@ mod tests {
         assert_eq!(kind("html").toolbar(), &[ToolButton::Search]);
         // 文件动作块 = 默认骨架（浏览器项由 browser_openable 打头渲染）
         assert_eq!(kind("html").menu_file_actions(true), DEFAULT_FILE_ACTIONS);
+    }
+
+    /// 图片二进制认领（zed create_gpui_image 同款）：magic bytes 裁决——
+    /// 后缀在注册表只当「后缀门」，字节不是真图/格式 gpui 不认 → None
+    /// 落文本管线（decode_text Binary → 灰屏）。
+    #[test]
+    fn image_binary_claim_by_magic() {
+        // 真 magic：五种 gpui 支持的格式全认领
+        assert_eq!(
+            kind("png").try_binary(b"\x89PNG\r\n\x1a\nrest"),
+            Some(gpui::ImageFormat::Png)
+        );
+        assert_eq!(kind("jpg").try_binary(b"\xFF\xD8\xFFxx"), Some(gpui::ImageFormat::Jpeg));
+        assert_eq!(kind("bmp").try_binary(b"BM\x00\x00"), Some(gpui::ImageFormat::Bmp));
+        assert_eq!(
+            kind("webp").try_binary(b"RIFF\x00\x00\x00\x00WEBPVP8 "),
+            Some(gpui::ImageFormat::Webp)
+        );
+        assert_eq!(kind("gif").try_binary(b"GIF89axxx"), Some(gpui::ImageFormat::Gif));
+        // 后缀骗不过：.png 装着文本字节 → None（zed 开图失败 → 灰屏同构）
+        assert_eq!(kind("png").try_binary(b"plain text no magic"), None);
+        // vendored gpui 无 Tiff/Ico variant（zed 新版才有）→ 不认领落灰屏
+        assert_eq!(kind("png").try_binary(b"II*\x00tiff"), None);
+        // 文本类 kind 不认领二进制
+        assert_eq!(kind("txt").try_binary(b"\x89PNG\r\n\x1a\n"), None);
+        assert_eq!(kind("rs").try_binary(b"\xFF\xD8\xFF"), None);
     }
 
     /// 浏览器打开判据：只认 html/htm（大小写不敏感）；xml 同 kind 但不开。

@@ -272,10 +272,18 @@ pub(crate) struct FileTab {
     pub(crate) reload_pending: bool,
     /// 最后一次用户编辑时刻（自动保存静默期判定）
     pub(crate) last_edit: Option<std::time::Instant>,
-    /// 二进制占位 tab（仿 Zed Could not open file：二进制照开 tab，主体
-    /// 渲染「无法打开 {ext} 类型文件」灰屏）：无文本缓冲无编辑器——保存/
-    /// 自动保存/外部改动检测按此位全跳过
+    /// 非文本 tab（zed：ImageItem / InvalidItemView 都是「非 Buffer 视图」
+    /// 同构）：无文本缓冲无编辑器——保存/自动保存/外部改动检测按此位全跳
+    /// 过。binary=true 且 image=Some → 图片查看 tab（zed ImageView）；
+    /// image=None → 「无法打开」灰屏（zed InvalidItemView）
     pub(crate) binary: bool,
+    /// 图片 tab 的渲染格式（open_file_tab 认领时 magic 嗅探所得；灰屏为
+    /// None）。渲染帧 view.rs 按它分流 render_image_surface/unsupported_body
+    pub(crate) image: Option<gpui::ImageFormat>,
+    /// 磁盘文件编码（zed Buffer.encoding 同语义，file_content::decode_text
+    /// 所得）：保存按它编码回盘，BOM 往返保持
+    pub(crate) encoding: &'static encoding_rs::Encoding,
+    pub(crate) has_bom: bool,
 }
 
 
@@ -294,6 +302,10 @@ impl FileTab {
             reload_pending: false,
             last_edit: None,
             binary: false,
+            image: None,
+            // 打开/重载路径由 decode_text 覆写；UTF_8 是磁盘缺省（zed 同）
+            encoding: encoding_rs::UTF_8,
+            has_bom: false,
         }
     }
 }

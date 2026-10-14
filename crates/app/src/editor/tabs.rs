@@ -56,28 +56,38 @@ impl Chat {
                 return;
             }
         };
-        if bytes.contains(&0) {
-            // 仿 Zed（Could not open file）：二进制不再 toast 拒开——tab 照
-            // 开让用户看见是哪个文件，主体渲染「无法打开 {ext} 类型文件」
-            // 灰屏 + 默认应用兜底入口（view.rs unsupported_body）。无缓冲：
-            // 保存/外部改动检测按 binary 位门控跳过。
-            let mut ft = FileTab::from_disk(String::new());
+        // 打开路由对齐 zed ProjectItemRegistry 逆序尝试：图片类 kind 先认领
+        // （ImageItem::try_open 先于 editor），认领失败/文本类 kind 落文本
+        // 管线（decode_text），Binary → 无法打开灰屏（InvalidItemView 同构）
+        // ——不再「含 NUL 一律灰屏」，png/bmp 等真图片由此可开。
+        let kind = super::kind::kind_of(&path);
+        let mut ft = FileTab::from_disk(String::new());
+        if let Some(format) = kind.try_binary(&bytes) {
+            // 图片查看 tab（zed ImageView）：无缓冲，保存/冲突检测按 binary 位跳过
             ft.binary = true;
-            self.ws.file_cache.insert(path.clone(), ft);
-            self.ws.panel_tabs.push(PanelTab::File(path));
-            self.retain_file_watches();
-            let ix = self.ws.panel_tabs.len() - 1;
-            self.activate_panel_tab(ix, cx);
-            self.set_content_view(ContentView::File);
-            cx.notify();
-            return;
+            ft.image = Some(format);
+        } else {
+            // 文本管线：zed decode_text 同款——BOM/UTF-16/chardetng 嗅探；
+            // 二进制判败 → 灰屏 tab 照开让用户看见是哪个文件，主体渲染
+            // 「无法打开 {ext} 类型文件」（view.rs unsupported_body）
+            match super::file_content::decode_text(bytes) {
+                Ok(decoded) => {
+                    ft = FileTab::from_disk(decoded.text);
+                    ft.encoding = decoded.encoding;
+                    ft.has_bom = decoded.has_bom;
+                }
+                Err(_) => {
+                    ft.binary = true;
+                }
+            }
         }
-        let content = String::from_utf8_lossy(&bytes).to_string();
-        let sig = file_sig(&path);
-        let mut ft = FileTab::from_disk(content);
-        ft.disk_sig = sig;
-        self.ws.file_cache.insert(path.clone(), ft);
-        self.ws.pending_focus_file = Some(path.clone());
+        if ft.binary {
+            self.ws.file_cache.insert(path.clone(), ft);
+        } else {
+            ft.disk_sig = file_sig(&path);
+            self.ws.file_cache.insert(path.clone(), ft);
+            self.ws.pending_focus_file = Some(path.clone());
+        }
         self.ws.panel_tabs.push(PanelTab::File(path));
         // cwd 外文件：按所在目录补一条单文件监听（否则磁盘改了不同步）
         self.retain_file_watches();
@@ -294,13 +304,16 @@ impl Chat {
     /// 写盘 + 刷新磁盘真值/基准/脏位。Err = 写盘失败的错误串（调用方决定
     /// 提示方式：手动保存 toast，自动保存静默）。
     fn write_file_back(&mut self, path: &Path, cx: &mut Context<Self>) -> Option<String> {
-        let text = match self.ws.file_cache.get(path).and_then(|f| f.editor.as_ref()) {
-            Some(ed) => ed.read(cx).value().to_string(),
-            None => match self.ws.file_cache.get(path) {
-                Some(f) => f.content.clone(),
-                None => return None,
-            },
+        let Some(ft) = self.ws.file_cache.get(path) else {
+            return None;
         };
+        let text = match ft.editor.as_ref() {
+            Some(ed) => ed.read(cx).value().to_string(),
+            None => ft.content.clone(),
+        };
+        // 按 tab 记录的磁盘编码编码回盘（zed encode_text 同款：UTF-8 无 BOM
+        // 原样直写；UTF-16/遗留编码/BOM 文件往返保持，不静默转 UTF-8）
+        let bytes = super::file_content::encode_text(text.clone(), ft.encoding, ft.has_bom);
         // zed fs.save 同款：先建父目录再写——已删文件保存即重建（目录被
         // 一并删除时也能恢复）；目录健在时 create_dir_all 是空操作
         if let Some(parent) = path.parent() {
@@ -308,7 +321,7 @@ impl Chat {
                 return Some(e.to_string());
             }
         }
-        if let Err(e) = std::fs::write(path, &text) {
+        if let Err(e) = std::fs::write(path, &bytes) {
             return Some(e.to_string());
         }
         if let Some(ft) = self.ws.file_cache.get_mut(path) {
@@ -361,15 +374,18 @@ impl Chat {
 
     /// 冲突 banner「重新加载」：磁盘为准，丢弃本地未保存修改。
     pub(crate) fn file_reload_from_disk(&mut self, path: &Path, cx: &mut Context<Self>) {
-        let bytes = match std::fs::read(path) {
-            Ok(b) if !b.contains(&0) => b,
+        let decoded = match std::fs::read(path).map(super::file_content::decode_text) {
+            Ok(Ok(d)) => d,
             _ => {
+                // 读不出来/二进制化：视同消失（沿用既有口径）
                 self.set_status(crate::i18n::tr("conflict.deleted_on_disk").to_string(), cx);
                 return;
             }
         };
         if let Some(ft) = self.ws.file_cache.get_mut(path) {
-            ft.content = String::from_utf8_lossy(&bytes).to_string();
+            ft.content = decoded.text;
+            ft.encoding = decoded.encoding;
+            ft.has_bom = decoded.has_bom;
             ft.dirty = false;
             ft.reload_pending = true;
             ft.conflict = None;
@@ -426,11 +442,13 @@ impl Chat {
                     if sig.is_none() || sig == ft.disk_sig {
                         continue;
                     }
-                    match std::fs::read(&path) {
-                        Ok(b) if !b.contains(&0) => {
+                    match std::fs::read(&path).map(super::file_content::decode_text) {
+                        Ok(Ok(decoded)) => {
                             self.ws.ext_probe.1 += 1;
                             if !ft.dirty {
-                                ft.content = String::from_utf8_lossy(&b).to_string();
+                                ft.content = decoded.text;
+                                ft.encoding = decoded.encoding;
+                                ft.has_bom = decoded.has_bom;
                                 ft.reload_pending = true;
                                 ft.conflict = None;
                             } else if ft.conflict != Some(crate::FileConflict::Changed) {
