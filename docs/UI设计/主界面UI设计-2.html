@@ -104,13 +104,13 @@
      改为图标自身动效——上抬 1px + 放大约 1px（scale 1.06），颜色提亮保留。
      豁免：窗口控制钮（Windows 惯例底色）、关闭/删除/发送/resizer 语义色、
      文字 pill 与菜单行（ghost-btn/cmp-pill/set-nav/pm-item/hc-cancel 保持底色）。 */
-  .tb-icon-btn svg, .prj-act svg, .g-btn svg, .g-tab svg, .sb-tab svg,
+  .tb-icon-btn svg, .prj-act svg, .g-btn svg, .g-tab svg,
   .c-tab .x svg, .cmp-icon svg, .sel-btn svg,
   .msg-actions .act svg, .as-stats .act svg {
     transition: transform .12s ease;
   }
   .tb-icon-btn:hover svg, .prj-act:hover svg, .g-btn:hover svg, .g-tab:hover svg,
-  .sb-tab:hover svg, .c-tab .x:hover svg, .cmp-icon:hover svg,
+  .c-tab .x:hover svg, .cmp-icon:hover svg,
   .sel-btn:hover svg, .msg-actions .act:hover svg, .as-stats .act:hover svg {
     transform: translateY(-1px) scale(1.06);
   }
@@ -147,14 +147,29 @@
     background: var(--bg);
   }
 
-  .ls-label {
-    padding: 0 8px 2px;
-    font-size: 12px; font-weight: 600; color: #8a9d95;
-    display: flex; align-items: center;
-  }
-  .ls-label .prj-actions { opacity: 1; gap: 10px; }
-  .prj-act[data-tip="新建会话"] { margin-left: 2px; }
-  .prj-act.sort { margin-left: -1.5px; }
+  /* ---- 020-1 整合项目文件面板：会话列表(上) + 文件树(下)，默认各 50%，
+     分隔线可拖拽改比例；子面板至多收起到各自控制栏（控制栏+内容区） ---- */
+  .sub-panel { display: flex; flex-direction: column; min-height: 0; }
+  #subSess { flex: 0 0 var(--split, 50%); }
+  #subFiles { flex: 1 1 0; }
+  .dock:has(#subSess.min) #subSess { flex: 0 0 auto; }
+  .dock:has(#subFiles.min) #subSess { flex: 1 1 0; }
+  .sub-panel.min > .sp-body { display: none; }
+  #subFiles.min .ft-list { display: none; }
+  .sp-divider { flex: none; height: 7px; cursor: row-resize; position: relative; }
+  .sp-divider::after { content: ""; position: absolute; left: 10px; right: 10px; top: 3px;
+    height: 1px; background: rgba(175, 196, 186, .5); }
+  .sp-divider:hover::after, .sp-divider.dragging::after { background: var(--accent); }
+  /* 会话子面板控制栏：去 title 文字，左三 icon+文字（大图标）右二纯 icon */
+  .psp-ctrl { flex: none; height: 40px; display: flex; align-items: center; gap: 2px;
+    padding: 0 8px; }
+  .pc-btn { border: 0; background: transparent; border-radius: 8px; padding: 0 8px; height: 30px;
+    display: flex; align-items: center; gap: 6px; color: var(--text-dim);
+    font-family: inherit; font-size: 12.5px; font-weight: 600; cursor: default; }
+  .pc-btn:hover { background: var(--bg-hover); color: var(--text); }
+  .pc-btn svg { width: 19px; height: 19px; }
+  .pc-btn.icon { width: 28px; padding: 0; justify-content: center; }
+  .pc-spacer { flex: 1; }
   .prj-row {
     position: relative; flex: none;
     width: 100%;
@@ -279,7 +294,7 @@
   .hc-edit { flex: 1; min-width: 0; border: 1px solid var(--accent); border-radius: 6px;
     font: inherit; font-size: 13px; padding: 1px 6px; outline: 0;
     background: #fff; color: var(--text); }
-  #pmenu, #pmsub {
+  #pmenu {
     position: fixed; z-index: 99; min-width: 214px;
     background: var(--bg); border: 1px solid rgba(175, 196, 186, .55);
     border-radius: 9px; box-shadow: 0 10px 34px rgba(20, 40, 34, .16);
@@ -311,8 +326,12 @@
     width: 1px; background: transparent;
   }
   .slp-resizer:hover::after, .slp-resizer.dragging::after { background: var(--accent); }
-  .panel-view { display: none; flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 10px 12px; }
+  .panel-view { display: none; flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 10px 12px;
+    scrollbar-width: thin; scrollbar-color: rgba(175, 196, 186, .6) transparent; }
   .panel-view.on { display: block; }
+  .panel-view::-webkit-scrollbar { width: 6px; }
+  .panel-view::-webkit-scrollbar-thumb { background: rgba(175, 196, 186, .5); border-radius: 3px; }
+  .panel-view::-webkit-scrollbar-track { background: transparent; }
     /* 文件树（file_tree.rs）：顶部 40px 操作栏（项目名 + 4 钮），无根目录行；
        行高 24、每级缩进 20、参考线在 level*20+13；图标按后缀但统一染 text_dim；无持久选中 */
   #pv-files { position: relative; padding: 0; }
@@ -339,6 +358,9 @@
   .ft-row.l3 { padding-left: 70px; }
   .ft-guide { position: absolute; top: 4px; bottom: 6px; width: 1px; background: rgba(175, 196, 186, .4); }
     #pv-git.on { display: flex; flex-direction: column; padding: 0; }
+  /* 020-1 后 git 面板不再常驻 tab：仅经 #git 演示哈希整面板查看 */
+  .dock.git-on #subSess, .dock.git-on #subFiles, .dock.git-on .sp-divider { display: none; }
+  .dock.git-on #pv-git { display: flex; flex-direction: column; padding: 0; }
   .g-head { flex: none; display: flex; align-items: center;
     border-bottom: 1px solid rgba(175,196,186,.4); }
   .g-proj { display: flex; align-items: center; flex: none; min-width: 100px; max-width: 50%;
@@ -659,8 +681,8 @@
   .cmp-send:hover { background: var(--accent-hover); }
   .cmp-send svg { width: 16px; height: 16px; }
 
-    /* 状态栏（status_bar.rs）：高 40 与顶栏等高，只覆盖面板段宽；无上边框、无右缘线。
-       tabs 只有 会话/文件 两个（Git tab 2026-10-10 注释隐藏）；右侧 = 设置钮 */
+    /* 状态栏：高 40 与顶栏等高，只覆盖面板段宽；无上边框、无右缘线。
+       020-1 后会话/文件树整合进 slp，面板切换 tab 取消，仅剩右侧设置钮 */
   .statusbar {
     position: relative;
     width: var(--slp-w);
@@ -669,24 +691,7 @@
     display: flex; align-items: flex-end;
     font-size: 11px; color: var(--text-dim);
   }
-    .sb-btns { display: flex; align-items: flex-end; gap: 2px; padding-left: 12px; }
   .app.panes-hidden .statusbar { display: none; }
-    .sb-tab {
-    height: 36px; width: 46px; flex: none;
-    display: flex; align-items: center; justify-content: center;
-    border: 0; background: transparent; padding: 0;
-    color: var(--text-muted); font-family: inherit; cursor: default;
-  }
-  .sb-tab:hover { color: var(--text); border-radius: 0 0 8px 8px; }
-  .sb-tab.on {
-    height: 40px; margin-top: -4px;
-    background: var(--nav);
-    border: 1px solid rgba(175,196,186,.55); border-top: 0;
-    border-radius: 0 0 9px 9px;
-    color: var(--accent);
-  }
-  .sb-tab.on:hover { background: var(--nav); }
-  .sb-tab svg { width: 16px; height: 16px; }
   /* 右侧设置钮：46px 全高，sliders-horizontal，右缘对齐 pr=20 */
   .sb-settings {
     margin-left: auto; margin-right: 12px;
@@ -849,8 +854,21 @@
 
                     <aside class="dock">
             <div class="slp-resizer" id="slpResize" title="拖拽调整宽度（300–500），双击复位"></div>
-            <div class="panel-view on" id="pv-sessions"></div>
-          <div class="panel-view" id="pv-files">
+            <!-- 020-1 整合面板：会话列表(上) + 文件树(下)，默认各 50%，分隔线拖拽，可各自收起到控制栏 -->
+            <section class="sub-panel" id="subSess">
+            <div class="psp-ctrl">
+              <button class="pc-btn" id="ctrlProject" data-tip="打开项目 (Ctrl+P)"><svg viewBox="56 90 963 827" fill="currentColor" stroke="currentColor" stroke-width="35" stroke-linejoin="round"><path d="M738.06 466.5 436.26 466.5c-2.3 0-3.2-0.5-3.2-1.9 0-3.6 0-29.1 0-34.4 0-2.3 0-2.9 4.9-2.9l354.6 0c5.2 0 6 1.2 6 3 0 9.1 0 28 0 32.3 0 2.5 0 3.9-5.6 3.9l-36 0L738.06 466.5zM437.76 641.7c-4.7 0-4.7-1.3-4.7-4.5 0-5.1 0-27 0-32 0-1.8 0-2.7 5.3-2.7l354.3 0c5.8 0 5.8 1.7 5.8 4.3 0 5.4 0 26.2 0 29.8 0 3.9-0.9 5.1-4.6 5.1L437.76 641.7zM936.36 249c0-8.1-7.8-7.6-7.8-7.6s-398.4 0.3-380.2 0c-12.6 0.3-15.3-6.2-15.3-6.2s-32.2-45.7-41.7-60.8c-4.2-4.3-11.6-6.4-11.6-6.4L141.36 168c-6.1 0-7.9 7.9-7.9 7.9l0 662.6c0 8.8 5.6 9.5 5.6 9.5l793 0.1c4 0 4.3-3.2 4.3-3.2L936.36 249zM897.16 802c0 3.8-3 6.8-6.8 6.8L183.76 808.8c-7.5 0-11.1-8.7-11.1-17.5l-0.1-577.8c0-1.7 0-6.5 4.8-6.5 4.1 0 268.2 0 277.5 0 7.6 0 6.9 1.5 10.4 6.3 11.5 15.5 34.6 46.3 45.4 59.7 5.3 6.6 9.3 6.8 16.7 7.3l362.6 0.3c4.1 0 7.2 4.5 7.2 9.4L897.16 802z"/><path d="M307.2 424.96l44.032 0 0 44.032-44.032 0 0-44.032Z"/><path d="M307.2 600.064l44.032 0 0 44.032-44.032 0 0-44.032Z"/></svg>项目</button>
+              <button class="pc-btn" id="ctrlNew" data-tip="新建会话 (Ctrl+N)"><svg viewBox="118 155 824 767" fill="currentColor" stroke="currentColor" stroke-width="20" stroke-linejoin="round"><path d="M187.733333 708.736v-339.626667A127.530667 127.530667 0 0 1 315.306667 241.536h169.813333a25.6 25.6 0 0 1 0 51.2H315.306667c-42.154667 0-76.373333 34.176-76.373334 76.288v339.669333c0 42.154667 34.218667 76.373333 76.373334 76.373334h339.626666c42.154667 0 76.330667-34.218667 76.330667-76.373334v-169.813333a25.6 25.6 0 0 1 51.2 0v169.813333A127.488 127.488 0 0 1 654.933333 836.266667H315.264A127.488 127.488 0 0 1 187.733333 708.693333zM675.968 205.226667a59.605333 59.605333 0 0 1 84.224-0.042667L818.773333 263.68c23.296 23.253333 23.296 60.970667 0.042667 84.224l-276.650667 276.821333a59.648 59.648 0 0 1-30.378666 16.256l-123.562667 24.874667a25.557333 25.557333 0 0 1-30.122667-30.165333l24.96-123.392c2.304-11.52 7.936-22.058667 16.213334-30.336l276.693333-276.778667z m48.042667 36.138666a8.362667 8.362667 0 0 0-11.861334 0l-276.650666 276.864a8.405333 8.405333 0 0 0-2.304 4.266667l-17.322667 85.632 85.845333-17.28a8.362667 8.362667 0 0 0 4.266667-2.304l276.650667-276.778667a8.362667 8.362667 0 0 0 0-11.861333l-58.624-58.538667z"/></svg>会话</button>
+              <button class="pc-btn" id="ctrlSearch" data-tip="搜索会话 (Ctrl+K)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>搜索</button>
+              <span class="pc-spacer"></span>
+              <button class="pc-btn icon" id="listToggle" data-tip="切换为最近会话列表"><svg viewBox="0 0 1024 1024" fill="currentColor" stroke="currentColor" stroke-width="40" stroke-linejoin="round"><path d="M227.008 94.976h129.28c25.92 0 38.976 0 51.072 3.136 10.688 2.688 20.8 7.168 30.016 13.184 10.432 6.848 19.264 16.448 36.8 35.52l40.576 44.16c8.704 9.6 13.12 14.4 18.368 17.792a50.048 50.048 0 0 0 15.04 6.592c6.016 1.536 12.544 1.536 25.536 1.536h228.608c56.192 0 84.992 0.128 106.304 11.264 18.432 9.536 33.472 24.64 42.88 43.072 11.072 21.376 11.072 50.176 10.816 106.368l-1.792 390.144c-0.256 55.744-0.512 84.288-11.52 105.472a100.48 100.48 0 0 1-42.88 42.688c-21.312 11.008-49.792 11.072-105.6 11.072H227.008c-56 0-84.672-0.064-105.984-11.136a100.48 100.48 0 0 1-42.88-42.88c-11.008-21.312-11.136-49.92-11.136-105.984v-512c0-56 0.128-84.608 11.136-105.92a100.48 100.48 0 0 1 42.88-42.88c21.312-11.072 49.92-11.2 105.984-11.2z m0 64q-68.8 0-76.48 4.032-10.24 5.248-15.552 15.488-3.968 7.68-3.968 76.48V384h767.232v-6.656q0.32-69.12-3.648-76.8-5.248-10.304-15.488-15.616-7.68-4.032-76.8-4.032H573.696q-27.52 0-41.344-3.52-18.368-4.672-34.24-15.04-11.968-7.808-30.544-28.096l-40.576-44.16q-20.864-22.72-24.64-25.216-4.992-3.264-10.816-4.736-4.352-1.152-35.2-1.152H226.944zM897.92 448H131.008v318.976q0 68.864 3.968 76.544 5.312 10.24 15.552 15.488 7.68 3.968 76.48 3.968h573.504q68.48 0 76.16-3.904 10.24-5.312 15.552-15.488 3.968-7.68 4.288-76.16L897.984 448z"/></svg></button>
+              <button class="pc-btn icon" id="sessSize" data-tip="最小化"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M8 12h8"/></svg></button>
+            </div>
+            <div class="panel-view on sp-body" id="pv-sessions"></div>
+            </section>
+            <div class="sp-divider" id="spDivider" title="拖拽调整上下比例（双击复位 50%）"></div>
+            <section class="sub-panel" id="subFiles">
+          <div class="panel-view on" id="pv-files">
             <div class="ft-actions">
               <span class="ft-proj">pi-flash</span>
               <span class="ft-btns">
@@ -858,6 +876,7 @@
                 <span class="ft-act" data-tip="搜索文件"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg></span>
                 <span class="ft-act" data-tip="在资源管理器中打开"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg></span>
                 <span class="ft-act" data-tip="在终端中打开"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></svg></span>
+                <span class="ft-act" id="filesSize" data-tip="最小化"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M8 12h8"/></svg></span>
               </span>
             </div>
             <div class="ft-list">
@@ -882,6 +901,7 @@
             <div class="ft-row l0"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>README.md</div>
             </div>
           </div>
+            </section>
           <div class="panel-view" id="pv-git">
             <div class="g-head">
             <div class="g-proj"><span id="gitProj">pi-flash</span></div>
@@ -1185,11 +1205,13 @@
         <div class="md-view">
           <div class="md-page">
             <h1>主界面UI设计说明</h1>
-            <p>配套文件：主界面UI设计-2.html（可交互设计稿）· mist 主题。演示哈希：#collapsed 收起侧栏、#files / #git 切面板、#term 开终端、#md 开预览、#new 新会话页、#search 会话搜索、#settings 设置、#nav 展开导航。</p>
+            <p>配套文件：主界面UI设计-2.html（可交互设计稿）· mist 主题。演示哈希：#collapsed 收起侧栏、#git 查看git面板、#term 开终端、#md 开预览、#new 新会话页、#search 会话搜索、#settings 设置、#nav 展开导航。</p>
             <h2>布局总览</h2>
             <pre>topbar 40  [收放][─] [会话tab 激活][终端tab][文件tab] [─][□][×]
-slp 300px 项目+会话一体列表 │ 内容区（聊天 / 终端 / md 预览 / 新会话页）
-statusbar 40（会话/文件 tab + 设置钮）│</pre>
+slp 300px 会话列表+文件树 上下整合面板 │ 内容区（聊天 / 终端 / md 预览 / 新会话页）
+statusbar 40（设置钮）│</pre>
+            <h2>整合面板（020-1）</h2>
+            <p>会话列表与文件树整合为一个面板，上下两个子面板默认各占 50% 高度；分隔线可拖拽改比例（20%–80%，双击复位）。子面板 = 控制栏 + 内容区，至多收起到控制栏：控制栏右侧大小切换钮收起时变最大化图标。会话控制栏左三（项目 / 会话 / 搜索，icon+文字）右二（列表切换 / 大小切换，纯 icon）；文件树控制栏在原四钮最右加大小切换。</p>
             <h2>三层色阶</h2>
             <ul>
               <li>chrome #dfe9e5 — topbar + statusbar</li>
@@ -1241,11 +1263,7 @@ statusbar 40（会话/文件 tab + 设置钮）│</pre>
     </div>
 
         <div class="statusbar">
-      <div class="sb-btns">
-        <button class="sb-tab on" data-panel="sessions"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 10a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 14.286V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/><path d="M20 9a2 2 0 0 1 2 2v10.286a.71.71 0 0 1-1.212.502l-2.202-2.202A2 2 0 0 0 17.172 19H10a2 2 0 0 1-2-2v-1"/></svg></button>
-        <button class="sb-tab" data-panel="files"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-2.5a1 1 0 0 1-.8-.4l-.9-1.2A1 1 0 0 0 15 3h-2a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1Z"/><path d="M20 21a1 1 0 0 0 1-1v-3a1 1 0 0 0-1-1h-2.9a1 1 0 0 1-.88-.55l-.42-.85a1 1 0 0 0-.92-.6H13a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1Z"/><path d="M3 5a2 2 0 0 0 2 2h3"/><path d="M3 3v13a2 2 0 0 0 2 2h3"/></svg></button>
-        <!-- Git tab 2026-10-10 注释隐藏（status_bar.rs:74-80）；面板保留，经 psp/终端入口仍可触达 -->
-      </div>
+      <!-- 020-1：会话/文件树整合进 slp 上下子面板，面板切换 tab 取消；仅剩设置钮 -->
       <button class="sb-settings" id="sbSettings" data-tip="设置"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5H3"/><path d="M12 19H3"/><path d="M14 3v4"/><path d="M16 17v4"/><path d="M21 12h-9"/><path d="M21 19h-5"/><path d="M21 5h-7"/><path d="M8 10v4"/><path d="M8 12H3"/></svg></button>
     </div>
   </div>
@@ -1437,7 +1455,6 @@ statusbar 40（会话/文件 tab + 设置钮）│</pre>
 <div id="tooltip"></div>
 <div id="hcard"></div>
 <div id="pmenu"></div>
-<div id="pmsub"></div>
 
 <script>
   // ---- 示意数据：项目 → 会话 一体列表（≤5 个，按最近更新倒序；上限可在设置-其他调整） ----
@@ -1468,8 +1485,6 @@ statusbar 40（会话/文件 tab + 设置钮）│</pre>
       sessions: [ { t: "汇报当前项目进度", ago: 10, err: true, msgs: 12 } ] },
     { name: "agent_sprite_factory", path: "D:\\ai_workspace\\agent_sprite_factory", open: false, sessions: [] },
   ];
-  data.forEach((p, i) => { p._recent = i; p._manual = i; });
-  let sortMode = "time";
   let listMode = "grouped";
   function setListMode(m) { listMode = m; renderList(); }
 
@@ -1478,7 +1493,6 @@ statusbar 40（会话/文件 tab + 设置钮）│</pre>
   const app = document.getElementById("app");
   const hcard = document.getElementById("hcard");
   const pmenu = document.getElementById("pmenu");
-  const pmsub = document.getElementById("pmsub");
 
   const FOLDER_OPEN = `<svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>`;
   const FOLDER = `<svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>`;
@@ -1629,68 +1643,72 @@ statusbar 40（会话/文件 tab + 设置钮）│</pre>
     pmenu.style.top = Math.min(r.bottom + 6, window.innerHeight - pmenu.offsetHeight - 8) + "px";
   }
 
-  let subTimer = 0;
-  function hideSub() { pmsub.style.display = "none"; }
-  function hideSubSoon() { clearTimeout(subTimer); subTimer = setTimeout(hideSub, 200); }
-  pmsub.addEventListener("mouseenter", () => clearTimeout(subTimer));
-  pmsub.addEventListener("mouseleave", hideSubSoon);
-
-  const SUBMENUS = {
-    view: () => [
-      ["项目分组列表", () => setListMode("grouped"), ICON_GROUPED, listMode === "grouped"],
-      ["最近会话列表", () => setListMode("flat"), ICON_FLAT, listMode === "flat"],
-    ],
-    sort: () => [
-      ["按更新时间排序", () => { sortMode = "time"; data.sort((a, b) => a._recent - b._recent); renderList(); }, ICON_CLOCK, sortMode === "time"],
-      ["手动排序", () => { sortMode = "manual"; data.sort((a, b) => a._manual - b._manual); renderList(); }, ICON_HAND, sortMode === "manual"],
-    ],
-  };
-
-  function showSub(key, item) {
-    clearTimeout(subTimer);
-    pmsub.innerHTML = "";
-    SUBMENUS[key]().forEach(([label, fn, icon, active]) => {
-      const it = document.createElement("button");
-      it.className = "pm-item";
-      it.innerHTML = (icon || "") + `<span>${label}</span>` + (active ? ICON_CHECK : "");
-      it.addEventListener("click", () => { fn(); hideSub(); hideMenu(); });
-      pmsub.appendChild(it);
+  // 020-1 控制栏：列表方式直接切换（项目分组 ↔ 最近会话），icon 复用原弹出菜单 icon
+  {
+    const tgl = document.getElementById("listToggle");
+    const paint = () => {
+      tgl.innerHTML = listMode === "grouped" ? ICON_GROUPED : ICON_FLAT;
+      tgl.dataset.tip = listMode === "grouped" ? "切换为最近会话列表" : "切换为项目分组列表";
+    };
+    tgl.addEventListener("click", () => {
+      setListMode(listMode === "grouped" ? "flat" : "grouped");
+      paint();
     });
-    const mr = pmenu.getBoundingClientRect();
-    const ir = item.getBoundingClientRect();
-    pmsub.style.display = "block";
-    pmsub.style.left = (mr.right + 6) + "px";
-    pmsub.style.top = Math.min(ir.top - 4, window.innerHeight - pmsub.offsetHeight - 8) + "px";
+    paint();
+  }
+  // 控制栏左三：项目 = 打开项目（004，演示无弹窗）；会话 = 新会话页；搜索 = 会话搜索
+  document.getElementById("ctrlProject").addEventListener("click", () => {});
+  document.getElementById("ctrlNew").addEventListener("click", () => setContent("new"));
+  document.getElementById("ctrlSearch").addEventListener("click", () =>
+    document.getElementById("searchMask").classList.add("open"));
+
+  // 子面板 大小切换：panelMin 收起到控制栏 / panelMax 展开（最小时显示最大化图标）
+  {
+    const ICON_MIN = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M8 12h8"/></svg>`;
+    const ICON_MAX = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>`;
+    const bindSize = (btnId, panelId) => {
+      const btn = document.getElementById(btnId);
+      const panel = document.getElementById(panelId);
+      btn.addEventListener("click", () => {
+        const min = panel.classList.toggle("min");
+        btn.innerHTML = min ? ICON_MAX : ICON_MIN;
+        btn.dataset.tip = min ? "最大化" : "最小化";
+      });
+    };
+    bindSize("sessSize", "subSess");
+    bindSize("filesSize", "subFiles");
   }
 
-  function showDotsMenu(btn) {
-    hideSub();
-    document.querySelectorAll(".prj-act.menu-open").forEach(x => x.classList.remove("menu-open"));
-    btn.classList.add("menu-open");
-    pmenu.innerHTML = "";
-    [
-      ["列表方式", ICON_ORGANIZE, "view"],
-      ["排序方式", ICON_SORT, "sort"],
-    ].forEach(([label, icon, key]) => {
-      const it = document.createElement("button");
-      it.className = "pm-item";
-      it.innerHTML = icon + `<span>${label}</span>` + CHEV_R;
-      it.addEventListener("mouseenter", () => showSub(key, it));
-      it.addEventListener("mouseleave", hideSubSoon);
-      pmenu.appendChild(it);
+  // 子面板分隔线：拖拽改上下比例（20%–80%），双击复位 50%
+  {
+    const dz = document.getElementById("spDivider");
+    const dock = document.querySelector(".dock");
+    let dragging = false;
+    dz.addEventListener("pointerdown", e => {
+      dragging = true;
+      dz.classList.add("dragging");
+      dz.setPointerCapture(e.pointerId);
     });
-    const r = btn.getBoundingClientRect();
-    pmenu.style.display = "block";
-    pmenu.style.left = Math.max(8, r.left) + "px";
-    pmenu.style.top = Math.min(r.bottom + 6, window.innerHeight - pmenu.offsetHeight - 8) + "px";
+    dz.addEventListener("pointermove", e => {
+      if (!dragging) return;
+      const r = dock.getBoundingClientRect();
+      const pct = Math.min(80, Math.max(20, (e.clientY - r.top) / r.height * 100));
+      dock.style.setProperty("--split", pct + "%");
+    });
+    const stop = e => {
+      dragging = false;
+      dz.classList.remove("dragging");
+      dz.releasePointerCapture(e.pointerId);
+    };
+    dz.addEventListener("pointerup", stop);
+    dz.addEventListener("dblclick", () => dock.style.setProperty("--split", "50%"));
   }
 
   document.addEventListener("click", e => {
-    if (!e.target.closest("#pmenu") && !e.target.closest("#pmsub") && !e.target.closest(".prj-act")) {
+    if (!e.target.closest("#pmenu") && !e.target.closest(".prj-act")) {
       hideMenu();
       document.querySelectorAll(".prj-act.menu-open").forEach(x => x.classList.remove("menu-open"));
     }
-    hideSub();
     if (!e.target.closest("#hcard")) {
       const i = hcard.querySelector(".hc-edit");
       if (i) i.blur(); else hideCard();
@@ -1739,29 +1757,6 @@ statusbar 40（会话/文件 tab + 设置钮）│</pre>
 
   function renderList() {
     list.innerHTML = "";
-    const label = document.createElement("div");
-    label.className = "ls-label";
-    label.innerHTML = `<span>${listMode === "flat" ? "会话" : "项目"}</span><span class="prj-actions">` +
-      `<span class="prj-act" data-tip="打开项目">${ICON_PROJECT}</span>` +
-      `<span class="prj-act" data-tip="新建会话">${ICON_NEW_CHAT}</span>`+
-      `<span class="prj-act" data-tip="搜索会话">${SEARCH}</span>` +
-      `<span class="prj-act sort" data-tip="排序">${ELLIPSIS}</span></span>`;
-    label.querySelector(".prj-act.sort").addEventListener("click", e => {
-      e.stopPropagation();
-      showDotsMenu(e.currentTarget);
-    });
-    // 新建会话 → 012 新会话页（不立即插行，首条消息发出后才入列）
-    label.querySelectorAll(".prj-act")[1].addEventListener("click", e => {
-      e.stopPropagation();
-      setContent("new");
-    });
-    // 搜索会话 → 013 居中模态（范围 = 当前项目）
-    label.querySelectorAll(".prj-act")[2].addEventListener("click", e => {
-      e.stopPropagation();
-      document.getElementById("searchMask").classList.add("open");
-    });
-    list.appendChild(label);
-
     if (listMode === "flat") {
       data.forEach(p => p.sessions.forEach(s => list.appendChild(makeSessionRow(s, p))));
       return;
@@ -1825,18 +1820,10 @@ statusbar 40（会话/文件 tab + 设置钮）│</pre>
     el.addEventListener("click", () => app.classList.toggle("panes-hidden")));
   if (location.hash === "#collapsed") app.classList.add("panes-hidden");
 
-  // v17: slp 三面板 tabs（会话默认 / 文件树 / git），状态栏切换
-  const panelTabs = document.querySelectorAll(".sb-tab");
-  const panelViews = {
-    sessions: document.getElementById("pv-sessions"),
-    files: document.getElementById("pv-files"),
-    git: document.getElementById("pv-git"),
-  };
+  // 020-1：会话/文件树常驻整合面板，无面板切换 tab；git 面板仅经 #git 演示哈希整面板查看
   function setPanel(name) {
-    panelTabs.forEach(t => t.classList.toggle("on", t.dataset.panel === name));
-    Object.entries(panelViews).forEach(([k, v]) => v.classList.toggle("on", k === name));
+    document.querySelector(".dock").classList.toggle("git-on", name === "git");
   }
-  panelTabs.forEach(t => t.addEventListener("click", () => setPanel(t.dataset.panel)));
 
   // 内容区视图状态机（ContentView）：chat 默认 / term / md / new（012 新会话页）
   const mainCol = document.getElementById("mainCol");
@@ -1918,8 +1905,7 @@ statusbar 40（会话/文件 tab + 设置钮）│</pre>
       pn.classList.toggle("on", pn.id === "sp-" + b.dataset.sp));
   }));
 
-  // hash 预置：#files / #git / #term / #md / #new / #search / #settings / #nav 便于截图演示
-  if (location.hash === "#files") setPanel("files");
+  // hash 预置：#git / #term / #md / #new / #search / #settings / #nav 便于截图演示
   if (location.hash === "#git") setPanel("git");
   if (location.hash === "#history") { setPanel("git"); document.querySelector('.g-tab[data-gt="history"]').click(); }
   if (location.hash === "#term") setContent("term");
