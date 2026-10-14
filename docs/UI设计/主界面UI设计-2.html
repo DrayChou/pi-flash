@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>pi-flash · 主界面设计稿（项目会话一体列表 / slp 三面板 / 一体 composer / 会话导航）</title>
+<title>pi-flash · 主界面设计稿（对齐实现：40 顶栏/状态栏 / 状态栏双 tab+设置 / 顶栏标签条 / 段式导航 / 七页设置）</title>
 <style>
     :root {
         --bg: #f4f8f7;
@@ -14,14 +14,20 @@
     --text: #202e2b;
     --text-muted: #455f56;
     --text-dim: #52685f;
+    --text-soft: #8a9d95;
+    --text-faint: #a3b0aa;
     --accent: #1e6559;
     --accent-hover: #174f46;
     --accent-contrast: #ffffff;
     --user-bg: #e0efeb;
     --tool-bg: #ecf3f0;
         --unread: #2fa356;
+    --notice: #3aa6d0;            /* 未读/完成通知点（theme NOTICE） */
+    --warn: #facc15;              /* 内部中断警告点（theme WARN） */
+    --danger: #c25460;
+    --danger-hover: #d8626a;
         --chrome: #dfe9e5;            --chrome-hover: #e7efec;      --nav: #eef4f1;
-    --slp-w: 282px;
+    --slp-w: 300px;               /* 默认 300，拖拽范围 300–500，双击复位（render.rs） */
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -35,7 +41,7 @@
   }
 
     .topbar-l, .topbar-r {
-    height: 36px; flex: none; position: relative;
+    height: 40px; flex: none; position: relative;
     display: flex; align-items: center;
     user-select: none;
   }
@@ -43,12 +49,50 @@
     padding: 0;
     background: var(--chrome);
   }
-    .topbar-l #panesToggle { margin-left: 5px; }
+    .topbar-l #panesToggle { margin-left: 6px; }
   .topbar-r {
-    padding: 0 6px 0 4px;
+    padding: 0 6px 0 0;
     background: var(--chrome);
     border-bottom: 1px solid rgba(175, 196, 186, .45);
   }
+  /* 顶栏标签条（titlebar.rs）：宽 75%、pl 10、贴底排布；行尾 20px 留白 */
+  .tab-strip {
+    width: 75%; min-width: 0;
+    display: flex; align-items: flex-end; gap: 4px;
+    padding-left: 10px; padding-bottom: 0;
+    overflow-x: auto; scrollbar-width: none;
+    align-self: stretch;
+  }
+  .tab-strip::-webkit-scrollbar { display: none; }
+  .c-tab {
+    flex: none; display: flex; align-items: center; gap: 9px;
+    height: 36px; max-width: 100px;
+    background: transparent; border: 0; border-radius: 0;
+    padding: 0 12px;
+    font-size: 12px; color: var(--text-muted);
+    white-space: nowrap; cursor: default; overflow: hidden;
+  }
+  .c-tab > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .c-tab svg { width: 15px; height: 15px; flex: none; }
+  .c-tab:hover { color: var(--text); }
+  /* 激活 = Obsidian 卡片融底：bg=内容底、左右 1px 边框、上圆角 9、mb -1 压线 */
+  .c-tab.act {
+    max-width: 300px; margin-bottom: -1px; height: 36px;
+    background: var(--bg);
+    border: 1px solid rgba(175, 196, 186, .55); border-top: 0;
+    border-radius: 9px 9px 0 0;
+    color: var(--text);
+    padding: 0 5px 0 12px;
+  }
+  .c-tab .x {
+    width: 20px; height: 20px; flex: none; border-radius: 5px;
+    display: none; align-items: center; justify-content: center;
+    color: var(--text-dim);
+  }
+  .c-tab .x svg { width: 12px; height: 12px; }
+  .c-tab .x:hover { background: var(--bg-hover); color: var(--text); }
+  .c-tab.act .x { display: flex; }
+  .tab-strip::after { content: ""; flex: none; width: 20px; }
     .tb-icon-btn {
     width: 30px; height: 30px; flex: none;
     border: 0; border-radius: 7px; padding: 0;
@@ -61,12 +105,12 @@
      豁免：窗口控制钮（Windows 惯例底色）、关闭/删除/发送/resizer 语义色、
      文字 pill 与菜单行（ghost-btn/cmp-pill/set-nav/pm-item/hc-cancel 保持底色）。 */
   .tb-icon-btn svg, .prj-act svg, .g-btn svg, .g-tab svg, .sb-tab svg,
-  .term-tab .x svg, .md-tab .x svg, .cmp-icon svg, .sel-btn svg,
+  .c-tab .x svg, .cmp-icon svg, .sel-btn svg,
   .msg-actions .act svg, .as-stats .act svg {
     transition: transform .12s ease;
   }
   .tb-icon-btn:hover svg, .prj-act:hover svg, .g-btn:hover svg, .g-tab:hover svg,
-  .sb-tab:hover svg, .term-tab .x:hover svg, .md-tab .x:hover svg, .cmp-icon:hover svg,
+  .sb-tab:hover svg, .c-tab .x:hover svg, .cmp-icon:hover svg,
   .sel-btn:hover svg, .msg-actions .act:hover svg, .as-stats .act:hover svg {
     transform: translateY(-1px) scale(1.06);
   }
@@ -76,9 +120,9 @@
   .tb-divider { width: 1px; height: 18px; background: rgba(175, 196, 186, .55); margin: 0 6px; }
   .tb-spacer { flex: 1; }
   .tb-win { display: flex; align-items: center; }
-  .tb-win svg { width: 14px; height: 14px; }
+  .tb-win svg { width: 13px; height: 13px; }
   .tb-win > div {
-    width: 42px; height: 36px;
+    width: 42px; height: 40px;
     display: flex; align-items: center; justify-content: center;
     color: var(--text-muted); cursor: default;
   }
@@ -159,16 +203,31 @@
   /* 时间区：右侧相对时间（刚刚 / 10分 / 19小时 / 3天） */
   .ps-row .time { flex: none; width: 38px; text-align: right; font-size: 11px; color: var(--text-faint); }
   .ps-empty { padding: 5.5px 10px 6.5px 31px; font-size: 12.5px; color: var(--text-dim); }
+  /* 「显示更多」：每项目分页展示，页大小 = 设置-其他「会话显示数」（3–10） */
+  .ps-more { display: flex; align-items: center; padding: 5px 10px 6px 31px;
+    font-size: 12px; color: var(--text-dim); cursor: default; border-radius: 8px; }
+  .ps-more:hover { background: color-mix(in srgb, var(--text) 5%, transparent); color: var(--text); }
   .spin {
     width: 9px; height: 9px; border-radius: 50%; flex: none;
     border: 1.5px solid var(--accent); border-top-color: transparent;
     animation: rot 1s linear infinite;
   }
   @keyframes rot { to { transform: rotate(360deg); } }
+  /* 会话行状态槽优先级：运行 spinner > 错误红点 > 警告黄点 > 未读青蓝点（mod.rs:847-879） */
   .gdot {
     width: 7px; height: 7px; border-radius: 50%; flex: none;
-    background: var(--unread);
-    box-shadow: 0 0 0 2.5px rgba(47, 163, 86, .16);
+    background: var(--notice);
+    box-shadow: 0 0 0 2.5px rgba(58, 166, 208, .16);
+  }
+  .wdot {
+    width: 7px; height: 7px; border-radius: 50%; flex: none;
+    background: var(--warn);
+    box-shadow: 0 0 0 2.5px rgba(250, 204, 21, .18);
+  }
+  .edot {
+    width: 7px; height: 7px; border-radius: 50%; flex: none;
+    background: var(--danger);
+    box-shadow: 0 0 0 2.5px rgba(194, 84, 96, .16);
   }
 
   
@@ -178,7 +237,7 @@
     width: 0; min-width: 0; padding: 0;
     border-right: 0; opacity: 0; overflow: hidden;
   }
-  .app.panes-hidden .content-col { border-left: 0; margin-bottom: 0; }
+  .app.panes-hidden .content-col { border-left: 0; }
     .app.panes-hidden .topbar-l #panesToggle { display: none; }
   .topbar-r #panesToggleR { display: none; }
   .app.panes-hidden .topbar-r #panesToggleR { display: flex; }
@@ -200,8 +259,8 @@
   }
   .hc-head { display: flex; align-items: center; gap: 7px; }
   .hc-name { min-width: 0; font-size: 13.5px; font-weight: 600; color: var(--text);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: text;
-    padding: 1px 5px; margin: -1px -5px; border-radius: 6px; }
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+    cursor: text; padding: 1px 5px; margin: -1px -5px; border-radius: 6px; }
   .hc-name:hover { background: var(--bg-hover); }
   .hc-row { display: flex; align-items: center; gap: 8px; margin-top: 7.5px;
     font-size: 12.5px; color: var(--text); }
@@ -211,9 +270,9 @@
     padding: 3px 10px; font-size: 12px; color: #c25460; font-family: inherit; cursor: default; }
   .hc-del:hover { background: rgba(216, 98, 106, .10); border-color: rgba(216, 98, 106, .7); }
   .hc-actions { display: flex; justify-content: flex-end; gap: 6px; }
-  .hc-ok { border: 0; border-radius: 7px; background: #c25460; color: #fff;
-    padding: 3.5px 11px; font-size: 12px; font-family: inherit; cursor: default; }
-  .hc-ok:hover { background: #a12f3c; }
+  .hc-ok { border: 1px solid rgba(194, 84, 96, .45); border-radius: 7px; background: transparent;
+    padding: 3.5px 11px; font-size: 12px; color: #c25460; font-family: inherit; cursor: default; }
+  .hc-ok:hover { background: rgba(194, 84, 96, .10); border-color: rgba(194, 84, 96, .7); }
   .hc-cancel { border: 1px solid var(--border); border-radius: 7px; background: transparent;
     padding: 3px 10px; font-size: 12px; color: var(--text-dim); font-family: inherit; cursor: default; }
   .hc-cancel:hover { background: var(--bg-hover); color: var(--text); }
@@ -254,20 +313,31 @@
   .slp-resizer:hover::after, .slp-resizer.dragging::after { background: var(--accent); }
   .panel-view { display: none; flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 10px 12px; }
   .panel-view.on { display: block; }
-    #pv-files { position: relative; }
+    /* 文件树（file_tree.rs）：顶部 40px 操作栏（项目名 + 4 钮），无根目录行；
+       行高 24、每级缩进 20、参考线在 level*20+13；图标按后缀但统一染 text_dim；无持久选中 */
+  #pv-files { position: relative; padding: 0; }
+  #pv-files.on { display: flex; flex-direction: column; }
+  .ft-actions { flex: none; height: 40px; display: flex; align-items: center;
+    padding: 0 10px 0 14px; border-bottom: 1px solid rgba(175,196,186,.3); }
+  .ft-proj { font-size: 12px; font-weight: 600; color: var(--text-soft);
+    min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ft-btns { margin-left: auto; display: flex; gap: 2px; }
+  .ft-act { width: 26px; height: 26px; border-radius: 6px; flex: none;
+    display: flex; align-items: center; justify-content: center; color: var(--text-muted); cursor: default; }
+  .ft-act:hover { background: var(--bg-hover); color: var(--text); }
+  .ft-act svg { width: 15px; height: 15px; }
+  .ft-list { flex: 1; min-height: 0; overflow-y: auto; position: relative; padding: 4px 0 6px; }
   .ft-row {
-    position: relative; display: flex; align-items: center; gap: 7px;
-    padding: 4.5px 8px 4.5px 14px; border-radius: 0;
-    font-size: 12.5px; color: var(--text); cursor: default; white-space: nowrap;
+    position: relative; display: flex; align-items: center; gap: 6px;
+    height: 24px; padding: 0 8px 0 10px; border-radius: 0;
+    font-size: 12px; color: var(--text-dim); cursor: default; white-space: nowrap;
   }
   .ft-row:hover { background: var(--bg-hover); }
-  .ft-row.sel { background: var(--bg-hover); }
-  .ft-row .fico { width: 15px; height: 15px; flex: none; color: var(--text-muted); }
-  .ft-row.root { font-weight: 600; }
+  .ft-row .fico { width: 14px; height: 14px; flex: none; color: var(--text-dim); }
   .ft-row.l1 { padding-left: 30px; }
-  .ft-row.l2 { padding-left: 46px; }
-  .ft-row.l3 { padding-left: 62px; }
-  .ft-guide { position: absolute; top: 32px; bottom: 6px; width: 1px; background: rgba(175, 196, 186, .4); }
+  .ft-row.l2 { padding-left: 50px; }
+  .ft-row.l3 { padding-left: 70px; }
+  .ft-guide { position: absolute; top: 4px; bottom: 6px; width: 1px; background: rgba(175, 196, 186, .4); }
     #pv-git.on { display: flex; flex-direction: column; padding: 0; }
   .g-head { flex: none; display: flex; align-items: center;
     border-bottom: 1px solid rgba(175,196,186,.4); }
@@ -313,6 +383,10 @@
   .g-row.l2::before { left: 28px; }
   .g-cb { margin-left: auto; flex: none; width: 14px; height: 14px;
     border: 1px solid var(--border); border-radius: 3px; background: var(--bg); }
+  /* 已勾选（staged）：accent 底 + 白勾；目录行无复选框（git_panel.rs） */
+  .g-cb.on { border-color: var(--accent); background: var(--accent); position: relative; }
+  .g-cb.on::after { content: ""; position: absolute; left: 4px; top: 1.5px; width: 4px; height: 8px;
+    border: solid #fff; border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
   .g-plus { width: 15px; height: 15px; flex: none; color: #2e8b57; }
   .g-sec { display: flex; align-items: center; gap: 6px; padding: 5px 8px;
     font-size: 12px; font-weight: 600; color: var(--text); }
@@ -359,31 +433,24 @@
   .md-page pre { background: var(--bg-panel); border: 1px solid rgba(175,196,186,.4); border-radius: 8px;
     padding: 12px 14px; font-family: Consolas, monospace; font-size: 12px; line-height: 1.6;
     overflow-x: auto; margin-bottom: 10px; white-space: pre; }
-  .term-tab, .md-tab {
-    display: none;
-    align-self: center; height: 36px;
-    align-items: center; gap: 9px;
-    background: transparent; border: 0; border-radius: 0;
-    padding: 0 12px;
-    font-size: 12px; color: var(--text-muted);
-    white-space: nowrap; cursor: default;
-  }
-  .term-tab { margin-left: 10px; }
-  .md-tab { margin-left: 4px; }
-  .content-col.term-on .term-tab { display: flex; }
-  .content-col.md-on .md-tab { display: flex; }
+    /* 新会话页（012）：淡色 logo 背景水平居中偏上，问候语 + composer + 底部操作栏（打开项目 | 版本号） */
+  .new-view { display: none; flex: 1; min-height: 0; flex-direction: column;
+    align-items: center; justify-content: center; position: relative; }
+  .main.new-on .new-view { display: flex; }
+  .main.new-on .chat-wrap { display: none; }
+  .new-view .nw-logo { position: absolute; top: 40%; left: 50%; width: 340px; height: 340px;
+    transform: translate(-50%, -50%); opacity: .08; pointer-events: none; color: var(--accent); }
+  .nw-inner { position: relative; width: min(680px, 86%); display: flex; flex-direction: column; }
+  .nw-greet { font-size: 21px; font-weight: 600; color: var(--text); margin-bottom: 22px; text-align: center; }
+  .nw-bar { height: 40px; margin-top: 5px; display: flex; align-items: center;
+    padding: 0 4px; font-size: 12px; color: var(--text-dim); }
+  .nw-bar .proj { display: flex; align-items: center; gap: 6px; cursor: default;
+    padding: 4px 8px; border-radius: 7px; color: var(--text-muted); }
+  .nw-bar .proj:hover { background: var(--bg-hover); color: var(--text); }
+  .nw-bar .proj svg { width: 15px; height: 15px; }
+  .nw-bar .ver { margin-left: auto; font-size: 11px; color: var(--text-faint); }
+  /* 顶栏内容 tab 统一走 .c-tab（会话/终端/文件）；终端视图纯暗面 bg #141a17 */
   #panesToggleR { margin-right: 4px; }
-  .term-tab.act, .md-tab.act {
-    align-self: flex-end; height: 33px; margin-bottom: -1px;
-    background: var(--bg);
-    border: 1px solid rgba(175,196,186,.55); border-bottom: 0;
-    border-radius: 9px 9px 0 0;
-    color: var(--text);
-    padding: 0 5px 0 12px;
-  }
-  .term-tab .x, .md-tab .x { width: 20px; height: 20px; border-radius: 5px; display: none; align-items: center; justify-content: center; color: var(--text-dim); font-size: 13px; cursor: default; }
-  .term-tab .x:hover, .md-tab .x:hover { color: var(--text); }
-  .term-tab.act .x, .md-tab.act .x { display: flex; }
   .term-body { flex: 1; background: #141a17; color: #cfe0d9; font-family: Consolas, monospace; font-size: 12.5px; line-height: 1.7; padding: 14px 18px; overflow-y: auto; }
   .term-body .dim { color: #6e8a7d; }
   .tcur { display: inline-block; width: 7px; height: 14px; background: #cfe0d9; vertical-align: -2px; animation: blink 1.1s steps(1) infinite; }
@@ -391,39 +458,45 @@
 
     .main { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; background: var(--bg); }
 
-    .chat { flex: 1; min-height: 0; overflow-y: auto; padding: 22px 30px 135px 34px; scrollbar-width: none; }
+    .chat { flex: 1; min-height: 0; overflow-y: auto; padding: 22px 30px 150px 34px; scrollbar-width: none; }
   .chat::-webkit-scrollbar { display: none; }
   .chat-wrap { position: relative; }
   .chat-and-nav { flex: 1; min-height: 0; display: flex; }
+  /* 段式导航 rail（mod.rs nav_gutter）：gutter 14px = 段实体 10px + 右 4px 命中区；
+     rail 高 75%，段上限 10（TICK_MAX），>10 轮走桶映射；选中跟随滚动 */
   .nav-gutter {
-    position: relative; flex: none; width: 26px;
+    position: relative; flex: none; width: 14px;
     display: flex; flex-direction: column;
   }
   .msg-nav {
-    position: absolute; top: 50%; right: 0; width: 26px;
+    position: absolute; top: 50%; right: 4px; width: 10px;
     transform: translateY(-50%);
-    height: 65%; }
-    .nav-node {
-    position: absolute; left: 50%; transform: translate(-50%, -50%);
-    width: 7px; height: 7px; border-radius: 50%; padding: 0; border: 0;
-    background: #a9beb5; cursor: default;
+    height: 75%;
+    display: flex; flex-direction: column; gap: 2px;
   }
-  .nav-node:hover { background: var(--accent); }
-  .nav-node.on { width: 8px; height: 8px; background: var(--accent); }
-  .nav-seg {
-    position: absolute; left: 50%; transform: translateX(-50%);
-    width: 1px; background: rgba(175, 196, 186, .6);
+  .nav-seg2 {
+    flex: 1; width: 10px; border-radius: 2px;
+    background: rgba(30, 101, 89, .24);
+    border: 0; padding: 0; cursor: default;
   }
+  .nav-seg2:hover { background: var(--accent); }
+  .nav-seg2.on { background: rgba(30, 101, 89, .24); box-shadow: inset 0 0 0 2px var(--accent); }
     .nav-flyout {
-    position: absolute; right: 26px; top: 0; bottom: 0; width: 326px;
+    position: absolute; right: 14px; top: 0; bottom: 0; width: 400px;
     background: var(--bg);
     border-left: 1px solid rgba(175, 196, 186, .5);
     box-shadow: -10px 0 26px rgba(20, 40, 34, .07);
-    overflow-y: auto; padding: 8px 0;
+    overflow-y: auto; padding: 0 0 8px;
     opacity: 0; pointer-events: none;
     transition: opacity .15s ease;
   }
   .nav-gutter:hover .nav-flyout, .nav-gutter.open .nav-flyout { opacity: 1; pointer-events: auto; }
+  /* 顶部总结栏 32px 固定：{n}条消息：用户{u}条 助手{a}条 工具调用{t}次 */
+  .nv-sum { position: sticky; top: 0; z-index: 1; height: 32px; flex: none;
+    display: flex; align-items: center; padding: 0 34px 0 12px;
+    font-size: 11.5px; color: var(--text-dim);
+    background: var(--bg); border-bottom: 1px solid rgba(175, 196, 186, .35); }
+  .nv-sum b { color: var(--text); font-weight: 600; }
   .nv-turn { padding: 7px 34px 7px 12px; border-bottom: 1px solid rgba(175, 196, 186, .35); }
   .nv-turn.on { background: rgba(30, 101, 89, .06); box-shadow: inset 2px 0 0 var(--accent); }
   .nv-user { display: flex; gap: 9px; }
@@ -449,8 +522,9 @@
 
   .msg-user { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
   .bubble {
-    background: var(--user-bg); border-radius: 14px;
-    padding: 9px 15px; font-size: 14px; max-width: 62%;
+    background: var(--user-bg); border-radius: 12px;
+    border: 1px solid rgba(59, 130, 246, .2);
+    padding: 8px 14px; font-size: 14px; max-width: 85%;
   }
   .msg-actions { display: flex; align-items: center; gap: 12px; font-size: 11.5px; color: var(--text-dim); padding-right: 4px;
     opacity: 0; transition: opacity .15s ease; }
@@ -495,24 +569,24 @@
   .as-stats .act:hover { color: var(--text); }
   .as-stats > span:not(.act) { color: #a3b0aa; }
 
-    .phase-row { display: flex; align-items: center; gap: 9px; color: var(--accent); font-size: 13px; }
-  .phase-row .spark { width: 14px; height: 14px; }
-  .phase-row .spark { animation: spin 1.4s linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .phase-row .dots::after { content: ""; animation: dots 1.4s steps(4, end) infinite; }
-  @keyframes dots { 0% { content: ""; } 25% { content: "…"; } }
+    /* 流式等待 phase 行（mod.rs phase_pulse）：13px text_muted 文本，1.5s 透明度正弦脉冲；
+       文案 phase_label：「正在等待模型...」/「正在运行 {tool}...」 */
+  .phase-row { color: var(--text-muted); font-size: 13px;
+    animation: phasePulse 1.5s ease-in-out infinite; }
+  @keyframes phasePulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
 
     .input-wrap { position: absolute; left: 0; right: 0; bottom: 0;
     padding: 2px 34px 15px; pointer-events: none; }
   .input-wrap .composer { pointer-events: auto; }
   .composer {
-    width: 75%; min-width: 500px; margin: 0 auto;
-    border: 1.5px solid var(--border); border-radius: 16px;
+    width: 100%; max-width: 920px; margin: 0 auto;
+    border: 1px solid var(--border); border-radius: 16px;
     background: var(--bg);
     box-shadow: 0 8px 24px rgba(20,40,34,.10), 0 2px 6px rgba(20,40,34,.05);
     display: flex; flex-direction: column;
     padding: 5px 7px 3px;
   }
+  .composer:focus-within { border-color: var(--accent); }
   .composer-input {
     padding: 12px 12px 20px;
     font-size: 13.5px; color: #a3b0aa;
@@ -538,48 +612,74 @@
   .cmp-pill:hover { background: var(--bg-hover); color: var(--text); }
   .cmp-pill svg { width: 13px; height: 13px; }
   .cmp-pill .chev { width: 10px; height: 10px; color: var(--text-dim); flex: none; }
-    .ctx-ring {
-    width: 28px; height: 28px; border: 0; border-radius: 8px; padding: 0;
+    /* 上下文用量环：18px 双环、26px 命中；hover 不弹 tooltip 而是用量面板（ctx_tip 420px） */
+  .ctx-ring {
+    width: 26px; height: 26px; border: 0; border-radius: 8px; padding: 0;
     background: transparent; color: var(--text-muted);
     display: flex; align-items: center; justify-content: center; cursor: default;
   }
   .ctx-ring:hover { background: var(--bg-hover); }
+  /* 用量面板（简化示意）：标题行 + 进度条 + 分类占比两列 + token 分项 + 费用 + 压缩钮 */
+  .ctx-panel { position: absolute; bottom: 44px; right: 0; width: 420px;
+    background: var(--bg); border: 1px solid rgba(175, 196, 186, .55); border-radius: 8px;
+    box-shadow: 0 12px 36px rgba(20, 40, 34, .16);
+    padding: 12px 14px; display: none; z-index: 40; text-align: left; }
+  .ctx-panel.on { display: block; }
+  .ctx-panel .cp-head { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px;
+    font-weight: 600; color: var(--text); }
+  .ctx-panel .cp-head .mono { margin-left: auto; font-family: Consolas, monospace;
+    font-size: 11.5px; font-weight: 400; color: var(--text-dim); }
+  .ctx-panel .cp-bar { height: 6px; border-radius: 3px; background: var(--bg-selected);
+    margin: 9px 0 10px; overflow: hidden; }
+  .ctx-panel .cp-bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+  .ctx-panel .cp-sec { font-size: 11.5px; color: var(--text-dim); margin: 8px 0 5px; }
+  .ctx-panel .cp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 18px; }
+  .ctx-panel .cp-item { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text); }
+  .ctx-panel .cp-item i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .ctx-panel .cp-item .pct { margin-left: auto; font-family: Consolas, monospace; color: var(--text-dim); }
+  .ctx-panel .cp-toks { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 18px;
+    font-size: 11.5px; color: var(--text); }
+  .ctx-panel .cp-toks .k { color: var(--text-dim); }
+  .ctx-panel .cp-toks .v { font-family: Consolas, monospace; color: var(--text-dim); }
+  .ctx-panel .cp-toks .hi .v { color: var(--accent); }
+  .ctx-panel .cp-cost { font-size: 11.5px; color: var(--text); margin-top: 8px; }
+  .ctx-panel .cp-cost b { font-family: Consolas, monospace; font-weight: 400; color: var(--text-dim); }
+  .ctx-panel .cp-compact { margin-top: 10px; width: 100%;
+    border: 1px solid var(--border); border-radius: 7px; background: transparent;
+    padding: 4.5px 0; font-size: 12px; color: var(--text); font-family: inherit; cursor: default; }
+  .ctx-panel .cp-compact:hover { background: var(--bg-hover); }
+  /* 发送钮：36px；空闲圆形 accent+上箭头，运行中圆角方块+停止方块 */
   .cmp-send {
-    width: 28px; height: 28px; margin-left: 5px;
-    border: 0; border-radius: 50%; padding: 0;
+    width: 36px; height: 36px; margin-left: 5px;
+    border: 0; border-radius: 18px; padding: 0;
     background: var(--accent); color: var(--accent-contrast);
     display: flex; align-items: center; justify-content: center; cursor: default;
     transform: translateY(-3px);
   }
   .cmp-send:hover { background: var(--accent-hover); }
-  .cmp-send svg { width: 15px; height: 15px; }
+  .cmp-send svg { width: 16px; height: 16px; }
 
-    .statusbar {
+    /* 状态栏（status_bar.rs）：高 40 与顶栏等高，只覆盖面板段宽；无上边框、无右缘线。
+       tabs 只有 会话/文件 两个（Git tab 2026-10-10 注释隐藏）；右侧 = 设置钮 */
+  .statusbar {
     position: relative;
     width: var(--slp-w);
-    height: 30px; flex: none;
+    height: 40px; flex: none;
     background: var(--chrome);
-    border-top: 1px solid rgba(175, 196, 186, .5);
-    display: flex; align-items: center;
+    display: flex; align-items: flex-end;
     font-size: 11px; color: var(--text-dim);
   }
-  .statusbar::before {
-    content: ""; position: absolute;
-    right: 0; top: 0; bottom: 0; width: 1px;
-    background: rgba(175, 196, 186, .6);
-  }
-  /* 内容列下探 25px：statusbar 仅覆盖面板段 */
-  .content-col { margin-bottom: -30px; }
-    .sb-btns { display: flex; align-items: stretch; gap: 2px; padding-left: 16px; align-self: stretch; }
+    .sb-btns { display: flex; align-items: flex-end; gap: 2px; padding-left: 12px; }
   .app.panes-hidden .statusbar { display: none; }
     .sb-tab {
-    align-self: stretch; width: 46px; margin-top: -1px;
+    height: 36px; width: 46px; flex: none;
     display: flex; align-items: center; justify-content: center;
     border: 0; background: transparent; padding: 0;
     color: var(--text-muted); font-family: inherit; cursor: default;
   }
-  .sb-tab:hover { color: var(--text); }
+  .sb-tab:hover { color: var(--text); border-radius: 0 0 8px 8px; }
   .sb-tab.on {
+    height: 40px; margin-top: -4px;
     background: var(--nav);
     border: 1px solid rgba(175,196,186,.55); border-top: 0;
     border-radius: 0 0 9px 9px;
@@ -587,7 +687,16 @@
   }
   .sb-tab.on:hover { background: var(--nav); }
   .sb-tab svg { width: 16px; height: 16px; }
-    .sb-info { display: none; }
+  /* 右侧设置钮：46px 全高，sliders-horizontal，右缘对齐 pr=20 */
+  .sb-settings {
+    margin-left: auto; margin-right: 12px;
+    width: 46px; height: 40px; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    border: 0; background: transparent; padding: 0;
+    color: var(--text-muted); cursor: default;
+  }
+  .sb-settings:hover { background: var(--bg-hover); color: var(--text); }
+  .sb-settings svg { width: 16px; height: 16px; }
 
 
     .settings-mask {
@@ -618,7 +727,7 @@
   .settings-topbar .x:hover { background: #d8626a; color: #fff; }
   .settings-topbar .x svg { width: 13px; height: 13px; }
   .set-nav {
-    width: 200px; flex: none;
+    width: 160px; flex: none;
     background: var(--nav); border-right: 1px solid rgba(175, 196, 186, .4);
     display: flex; flex-direction: column; padding: 12px 8px;
   }
@@ -661,6 +770,66 @@
   .ghost-btn { border: 0; background: transparent; padding: 3px 8px; border-radius: 6px;
     font-size: 12px; color: var(--text-muted); font-family: inherit; cursor: default; }
   .ghost-btn:hover { background: var(--bg-hover); color: var(--text); }
+  /* ---- 设置新增件（对齐 settings/ 实现） ---- */
+  .set-sec { font-size: 12px; font-weight: 600; color: var(--text-soft); margin: 18px 0 10px; }
+  .set-sec:first-child { margin-top: 0; }
+  /* 主题卡片：两排各 5 槽；卡片 = 底色横条 h36 + 居中主题名，选中 2px accent 描边 */
+  .theme-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 10px; }
+  .theme-card { border: 1px solid rgba(175,196,186,.4); border-radius: 8px; overflow: hidden;
+    background: var(--bg); cursor: default; padding: 0; }
+  .theme-card.sel { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .theme-card .swatch { height: 36px; }
+  .theme-card .tname { font-size: 11px; color: var(--text-dim); text-align: center; padding: 4px 0 5px; }
+  .theme-card.empty { border-style: dashed; opacity: .5; min-height: 58px; }
+  /* 字体槽位行：130 标签 + 250 族下拉 + 100 字号下拉 */
+  .font-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+  .font-row .fl { width: 130px; flex: none; font-size: 12.5px; color: var(--text); }
+  .font-row .sel-btn { min-width: 250px; justify-content: space-between; }
+  .font-row .sel-btn.size { min-width: 100px; }
+  /* 三档 seg（时间窗口/折叠时间）与步进器 */
+  .seg3 { display: flex; gap: 4px; }
+  .seg3 button { border: 1px solid var(--border); border-radius: 7px; background: var(--bg);
+    padding: 3.5px 12px; font-size: 12px; color: var(--text-muted); font-family: inherit; cursor: default; }
+  .seg3 button.on { background: var(--bg-selected); color: var(--text); font-weight: 600; border-color: var(--accent); }
+  .stepper { display: flex; align-items: center; gap: 8px; }
+  .stepper button { width: 22px; height: 22px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg); color: var(--text-dim); font-size: 13px; cursor: default; }
+  .stepper b { min-width: 20px; text-align: center; font-size: 12.5px; color: var(--text); }
+  /* 语言 radio 排 */
+  .lang-row { display: flex; gap: 22px; }
+  .lang-row label { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text); cursor: default; }
+  .lang-row label i { width: 13px; height: 13px; border-radius: 50%; border: 1px solid var(--border); flex: none; }
+  .lang-row label.on i { border-color: var(--accent); box-shadow: inset 0 0 0 3.5px var(--accent); }
+  /* 分栏页（模型/技能/扩展/MCP）：左列表 350 + 右详情 */
+  .set-split { display: flex; gap: 0; min-height: 0; flex: 1; }
+  .set-split .sp-list { width: 350px; flex: none; border-right: 1px solid rgba(175,196,186,.3);
+    padding: 16px 10px 16px 4px; overflow-y: auto; }
+  .set-split .sp-detail { flex: 1; min-width: 0; padding: 16px 4px 16px 15px; overflow-y: auto; }
+  .sp-head { display: flex; align-items: center; gap: 8px; padding: 4px 8px 8px;
+    font-size: 12.5px; font-weight: 600; color: var(--text); }
+  .sp-head .cnt { margin-left: auto; font-family: Consolas, monospace; font-size: 11px;
+    font-weight: 400; color: var(--text-dim); }
+  .sp-li { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 8px;
+    font-size: 12.5px; color: var(--text); cursor: default; }
+  .sp-li:hover { background: var(--bg-hover); }
+  .sp-li.sel { background: var(--bg-selected); }
+  .sp-li .sub { display: block; font-size: 11px; color: var(--text-dim); margin-top: 1px;
+    font-family: Consolas, monospace; }
+  .sp-li .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--border); }
+  .sp-li .dot.on { background: var(--accent); }
+  .sp-li .badge { font-size: 10.5px; color: var(--text-dim); border: 1px solid var(--border);
+    border-radius: 4px; padding: 0 4px; flex: none; }
+  .sp-li .sw { margin-left: auto; }
+  .sp-detail h3 { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .sp-detail .field { margin-top: 12px; }
+  .sp-detail .field .fl2 { font-size: 11.5px; color: var(--text-dim); margin-bottom: 4px; }
+  .sp-detail .field .fv { font-size: 12.5px; color: var(--text); }
+  .sp-detail .note { font-size: 11.5px; color: var(--text-faint); margin-top: 14px; line-height: 1.6; }
+  .star-on { width: 14px; height: 14px; flex: none; color: #f5a623; }
+  .paste-box { border: 1px dashed var(--border); border-radius: 8px; background: var(--bg);
+    padding: 18px 12px; font-size: 12px; color: var(--text-faint); text-align: center; }
+  .mono-ex { font-family: Consolas, monospace; font-size: 11px; color: var(--text-dim);
+    padding: 3px 0; }
 </style>
 </head>
 <body>
@@ -679,29 +848,39 @@
         <div class="panel-row">
 
                     <aside class="dock">
-            <div class="slp-resizer" id="slpResize" title="拖拽调整宽度（250–500），双击复位"></div>
+            <div class="slp-resizer" id="slpResize" title="拖拽调整宽度（300–500），双击复位"></div>
             <div class="panel-view on" id="pv-sessions"></div>
           <div class="panel-view" id="pv-files">
-            <i class="ft-guide" style="left: 36px"></i>
-            <i class="ft-guide" style="left: 52px"></i>
-            <div class="ft-row root"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>pi-flash</div>
-            <div class="ft-row l1"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>.agents\skills\beads</div>
-            <div class="ft-row l1"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>.beads</div>
-            <div class="ft-row l1"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>.cargo</div>
-            <div class="ft-row l1"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>crates</div>
-            <div class="ft-row l1"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>docs</div>
-            <div class="ft-row l2"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>UI设计</div>
-            <div class="ft-row l3"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 12.5 8 15l2 2.5"/><path d="m14 12.5 2 2.5-2 2.5"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/></svg>主界面UI设计.html</div>
-            <div class="ft-row l3 sel"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>主界面UI设计说明.md</div>
-            <div class="ft-row l2"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>模块设计</div>
-            <div class="ft-row l3"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>004-项目管理.md</div>
-            <div class="ft-row l3"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>005-app-layout.md</div>
-            <div class="ft-row l3"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>020-项目会话列表.md</div>
-            <div class="ft-row l1"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>scripts</div>
-            <div class="ft-row l2"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>dev.sh</div>
-            <div class="ft-row l2"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>release.sh</div>
-            <div class="ft-row root"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5c0 1.1.9 2 2 2h1"/><path d="M16 21h1a2 2 0 0 0 2-2v-5c0-1.1.9-2 2-2a2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"/></svg>package.json</div>
-            <div class="ft-row root"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>README.md</div>
+            <div class="ft-actions">
+              <span class="ft-proj">pi-flash</span>
+              <span class="ft-btns">
+                <span class="ft-act" data-tip="只看变更"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><line x1="3" x2="9" y1="12" y2="12"/><line x1="15" x2="21" y1="12" y2="12"/></svg></span>
+                <span class="ft-act" data-tip="搜索文件"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg></span>
+                <span class="ft-act" data-tip="在资源管理器中打开"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg></span>
+                <span class="ft-act" data-tip="在终端中打开"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></svg></span>
+              </span>
+            </div>
+            <div class="ft-list">
+            <i class="ft-guide" style="left: 23px"></i>
+            <i class="ft-guide" style="left: 43px"></i>
+            <div class="ft-row l0 dir"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M2 10h20"/></svg>.agents</div>
+            <div class="ft-row l1 dir"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>skills</div>
+            <div class="ft-row l2 dir"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M2 10h20"/></svg>beads</div>
+            <div class="ft-row l0 dir"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>crates</div>
+            <div class="ft-row l1 dir"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>app</div>
+            <div class="ft-row l2"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>Cargo.toml</div>
+            <div class="ft-row l2"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 18 6-6-6-6"/><path d="m8 6-6 6 6 6"/></svg>main.rs</div>
+            <div class="ft-row l0 dir"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>docs</div>
+            <div class="ft-row l1 dir"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>UI设计</div>
+            <div class="ft-row l2"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 12.5 8 15l2 2.5"/><path d="m14 12.5 2 2.5-2 2.5"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/></svg>主界面UI设计-2.html</div>
+            <div class="ft-row l2"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>UI组件规范.md</div>
+            <div class="ft-row l1 dir"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M2 10h20"/></svg>模块设计</div>
+            <div class="ft-row l2"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>020-项目会话列表.md</div>
+            <div class="ft-row l2"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>031-输入面板.md</div>
+            <div class="ft-row l0 dir"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M2 10h20"/></svg>scripts</div>
+            <div class="ft-row l0"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>Cargo.toml</div>
+            <div class="ft-row l0"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>README.md</div>
+            </div>
           </div>
           <div class="panel-view" id="pv-git">
             <div class="g-head">
@@ -715,70 +894,68 @@
               <div class="g-actions">
                 <button class="g-ghost"><svg viewBox="0 0 1024 1024" fill="currentColor"><path d="M864 896H224a32 32 0 0 1 0-64h640a32 32 0 0 1 0 64zM544 704a32 32 0 0 1-32-32V448H224a32 32 0 0 1 0-64h288V160a32 32 0 0 1 64 0v224h288a32 32 0 0 1 0 64H576v224a32 32 0 0 1-32 32z"/></svg>View Diff</button>
                 <span style="flex:1"></span>
-                <button class="g-ghost"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16M7 12h10M10 19h4"/></svg></button>
                 <button class="g-btn">Stage All <svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button>
               </div>
               <div class="g-tree">
-                <div class="g-sec"><span class="tw">▾</span>Untracked <i class="g-cb"></i></div>
-                <div class="g-row sel"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>.zcode\plans <i class="g-cb"></i></div>
-                <div class="g-row l1"><svg class="g-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M12 8v8M8 12h8"/></svg>plan-sess_96b2d08b-cefb-45… <i class="g-cb"></i></div>
-                <div class="g-row"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>docs <i class="g-cb"></i></div>
-                <div class="g-row l1"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>UI设计 <i class="g-cb"></i></div>
-                <div class="g-row l2"><svg class="g-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M12 8v8M8 12h8"/></svg>主界面UI设计.html <i class="g-cb"></i></div>
+                <div class="g-row sel"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>.zcode\plans</div>
+                <div class="g-row l1"><svg class="g-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M12 8v8M8 12h8"/></svg>plan-sess_96b2d08b-cefb-45… <i class="g-cb on"></i></div>
+                <div class="g-row"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>docs</div>
+                <div class="g-row l1"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>UI设计</div>
+                <div class="g-row l2"><svg class="g-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M12 8v8M8 12h8"/></svg>主界面UI设计-2.html <i class="g-cb"></i></div>
                 <div class="g-row l2"><svg class="g-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M12 8v8M8 12h8"/></svg>主界面UI设计说明.md <i class="g-cb"></i></div>
-                <div class="g-row l1"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>模块设计 <i class="g-cb"></i></div>
-                <div class="g-row l2"><svg class="g-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M12 8v8M8 12h8"/></svg>004-项目管理.md <i class="g-cb"></i></div>
+                <div class="g-row l1"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>模块设计</div>
+                <div class="g-row l2"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>004-项目管理.md <i class="g-cb on"></i></div>
               </div>
               <div class="g-bottom">
                 <div class="g-branch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6a9 9 0 0 0-9 9V3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/></svg><span>main</span><button class="g-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>4 Push <svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button></div>
-                <div class="g-msg">Enter commit message
+                <div class="g-msg">提交信息（提交已暂存更改）
                 </div>
                 <div class="g-commit-row">
-                  <button class="g-btn">Commit Tracked <svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button>
+                  <button class="g-btn">提交已暂存 <svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button>
                 </div>
               </div>
-              <div class="g-last">
+              <div class="g-last" title="撤销上次提交（git reset --soft HEAD~1）">
                 <span class="t">refactor: purge all remaining dea…</span>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:auto"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left:auto"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
               </div>
             </div>
             <div class="g-view" id="gv-history">
               <div class="g-hist">
             <div class="gc-item">
               <div class="gc-title"><span class="t">refactor: purge all remaining dea…</span><span class="up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg></span></div>
-              <div class="gc-meta"><i class="gc-ava"></i><span>多多有鱼</span><span>·</span><span>12 hours ago</span><span>·</span><span>52f8b6e</span></div>
+              <div class="gc-meta"><i class="gc-ava"></i><span>多多有鱼</span><span>·</span><span>2026-10-13 21:47</span><span>·</span><span>52f8b6e</span></div>
             </div>
             <div class="gc-item">
               <div class="gc-title"><span class="t">beads: close pi-flash-719 (check…</span><span class="up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg></span></div>
-              <div class="gc-meta"><i class="gc-ava"></i><span>多多有鱼</span><span>·</span><span>12 hours ago</span><span>·</span><span>0946853</span></div>
+              <div class="gc-meta"><i class="gc-ava"></i><span>多多有鱼</span><span>·</span><span>2026-10-13 21:47</span><span>·</span><span>0946853</span></div>
             </div>
             <div class="gc-item">
               <div class="gc-title"><span class="t">docs: progress.md — check_arch…</span><span class="up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg></span></div>
-              <div class="gc-meta"><i class="gc-ava"></i><span>多多有鱼</span><span>·</span><span>12 hours ago</span><span>·</span><span>7b764da</span></div>
+              <div class="gc-meta"><i class="gc-ava"></i><span>多多有鱼</span><span>·</span><span>2026-10-13 21:47</span><span>·</span><span>7b764da</span></div>
             </div>
             <div class="gc-item">
               <div class="gc-title"><span class="t">refactor(check_arch): phase 3 —…</span><span class="up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg></span></div>
-              <div class="gc-meta"><i class="gc-ava"></i><span>多多有鱼</span><span>·</span><span>12 hours ago</span><span>·</span><span>b68faca</span></div>
+              <div class="gc-meta"><i class="gc-ava"></i><span>多多有鱼</span><span>·</span><span>2026-10-13 21:47</span><span>·</span><span>b68faca</span></div>
             </div>
             <div class="gc-item">
               <div class="gc-title"><span class="t">refactor(check_arch): phase 2 —…</span><span class="up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg></span></div>
-              <div class="gc-meta"><i class="gc-ava"></i><span>多多有鱼</span><span>·</span><span>Yesterday</span><span>·</span><span>a1bfff0</span></div>
+              <div class="gc-meta"><i class="gc-ava"></i><span>多多有鱼</span><span>·</span><span>2026-10-12 18:03</span><span>·</span><span>a1bfff0</span></div>
             </div>
             <div class="gc-item">
               <div class="gc-title"><span class="t">refactor(check_arch): phase 1 —…</span><span class="up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg></span></div>
-              <div class="gc-meta"><i class="gc-ava"></i><span>多多有鱼</span><span>·</span><span>Yesterday</span><span>·</span><span>3495a3b</span></div>
+              <div class="gc-meta"><i class="gc-ava"></i><span>多多有鱼</span><span>·</span><span>2026-10-12 15:26</span><span>·</span><span>3495a3b</span></div>
             </div>
             <div class="gc-item">
               <div class="gc-title"><span class="t">feat(006): font slots + icon the…</span><span class="up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg></span></div>
-              <div class="gc-meta"><i class="gc-ava"></i><span>多多有鱼</span><span>·</span><span>Yesterday</span><span>·</span><span>a5b7765</span></div>
+              <div class="gc-meta"><i class="gc-ava"></i><span>多多有鱼</span><span>·</span><span>2026-10-12 11:40</span><span>·</span><span>a5b7765</span></div>
             </div>
             <div class="gc-item">
               <div class="gc-title"><span class="t">feat(013): session content search</span><span class="up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg></span></div>
-              <div class="gc-meta"><i class="gc-ava"></i><span>多多有鱼</span><span>·</span><span>Yesterday</span><span>·</span><span>77b343d</span></div>
+              <div class="gc-meta"><i class="gc-ava"></i><span>多多有鱼</span><span>·</span><span>2026-10-12 10:15</span><span>·</span><span>77b343d</span></div>
             </div>
             <div class="gc-item">
               <div class="gc-title"><span class="t">chore: startup perf instrumentat…</span><span class="up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg></span></div>
-              <div class="gc-meta"><i class="gc-ava"></i><span>多多有鱼</span><span>·</span><span>2 days ago</span><span>·</span><span>1f9b276</span></div>
+              <div class="gc-meta"><i class="gc-ava"></i><span>多多有鱼</span><span>·</span><span>2026-10-11 20:33</span><span>·</span><span>1f9b276</span></div>
             </div>
               </div>
             </div>
@@ -792,19 +969,23 @@
           <button class="tb-icon-btn" id="panesToggleR" data-tip="展开侧栏">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1.5" y="2.5" width="13" height="11" rx="2"/><path d="M10.5 2.5v11"/></svg>
           </button>
-          <div class="term-tab" id="termTabBar">
-            <span>bash — pi_work</span>
-            <span class="x" id="termClose">×</span>
-          </div>
-          <div class="term-tab md-tab" id="mdTabBar">
-            <span>主界面UI设计说明.md</span>
-            <span class="x" id="mdClose">×</span>
+          <div class="tb-divider"></div>
+          <div class="tab-strip" id="tabStrip">
+            <button class="c-tab act" id="chatTab" data-tip="会话">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6V2H8"/><path d="M15 11v2"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="M20 16a2 2 0 0 1-2 2H8.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 4 20.286V8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z"/><path d="M9 11v2"/></svg>
+              <span>HTML设计后再讨论项目管理实</span>
+            </button>
+            <button class="c-tab" id="termTabBar" data-tip="终端">
+              <svg viewBox="0 0 1024 1024" fill="currentColor"><path d="M499.712 481.792l-128-128c-16.896-16.384-44.032-15.872-60.416 1.024-15.872 16.384-15.872 42.496 0 59.392L409.088 512l-97.792 97.792c-16.896 16.384-17.408 43.52-1.024 60.416s43.52 17.408 60.416 1.024l1.024-1.024 128-128c16.384-16.896 16.384-43.52 0-60.416zM682.496 597.504h-128c-23.552 0-42.496 18.944-42.496 42.496 0 23.552 18.944 42.496 42.496 42.496h128c23.552 0 42.496-18.944 42.496-42.496s-18.944-42.496-42.496-42.496z" p-id="90973"></path><path d="M810.496 128H213.504c-70.656 0-128 57.344-128 128v512c0 70.656 57.344 128 128 128h597.504c70.656 0 128-57.344 128-128V256c-0.512-70.656-57.856-128-128.512-128z m0 682.496H213.504c-23.552 0-42.496-18.944-42.496-42.496V256c0-23.552 18.944-42.496 42.496-42.496h597.504c23.552 0 42.496 18.944 42.496 42.496v512c0 23.552-19.456 42.496-43.008 42.496z" p-id="90974"></path></svg>
+              <span>pi_work</span>
+              <span class="x" id="termClose"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span>
+            </button>
+            <button class="c-tab" id="mdTabBar">
+              <span>主界面UI设计说明.md</span>
+              <span class="x" id="mdClose"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span>
+            </button>
           </div>
           <div class="tb-spacer"></div>
-          <button class="tb-icon-btn" data-tip="设置">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5H3"/><path d="M12 19H3"/><path d="M14 3v4"/><path d="M16 17v4"/><path d="M21 12h-9"/><path d="M21 19h-5"/><path d="M21 5h-7"/><path d="M8 10v4"/><path d="M8 12H3"/></svg>
-          </button>
-          <div class="tb-divider"></div>
           <div class="tb-win">
             <div><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M1 6h10"/></svg></div>
             <div><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="1.5" y="1.5" width="9" height="9" rx="1.5"/></svg></div>
@@ -820,7 +1001,7 @@
             <div class="msg-user">
               <div class="bubble">hello</div>
               <div class="msg-actions">
-                <span class="act"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>复制</span><span class="act"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg>编辑</span><span class="act"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6a9 9 0 0 0-9 9V3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/></svg>新分支</span>
+                <span class="act"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>复制</span><span class="act"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg>编辑</span>
                 <span class="when">8月25日 05:22</span>
               </div>
             </div>
@@ -841,13 +1022,13 @@
                 </ul>
                 <p>请告诉我你想做什么~</p>
               </div>
-              <div class="as-stats"><span class="act"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>复制</span><span>用时5秒</span><span>8月25日 05:22</span></div>
+              <div class="as-stats"><span class="act"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>复制</span><span class="act"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6a9 9 0 0 0-9 9V3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/></svg>新分支</span><span>用时3.2s</span><span>8月25日 05:22</span></div>
             </div>
 
             <div class="msg-user">
               <div class="bubble">帮我把这个项目画成架构图</div>
               <div class="msg-actions">
-                <span class="act"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>复制</span><span class="act"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg>编辑</span><span class="act"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6a9 9 0 0 0-9 9V3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/></svg>新分支</span>
+                <span class="act"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>复制</span><span class="act"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg>编辑</span>
                 <span class="when">8月25日 06:02</span>
               </div>
             </div>
@@ -858,13 +1039,13 @@
               <div class="as-body">
                 <p>已生成 <span class="code-chip">docs/architecture.svg</span>。分层：GPUI Shell / SessionRuntime / pi-link RPC / vendor pi CLI。</p>
               </div>
-              <div class="as-stats"><span class="act"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>复制</span><span>用时4秒</span><span>8月25日 06:02</span></div>
+              <div class="as-stats"><span class="act"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>复制</span><span class="act"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6a9 9 0 0 0-9 9V3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/></svg>新分支</span><span>用时1m24s</span><span>8月25日 06:02</span></div>
             </div>
 
             <div class="msg-user">
               <div class="bubble">个股调研的会话也并进侧栏吧</div>
               <div class="msg-actions">
-                <span class="act"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>复制</span><span class="act"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg>编辑</span><span class="act"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6a9 9 0 0 0-9 9V3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/></svg>新分支</span>
+                <span class="act"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>复制</span><span class="act"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg>编辑</span>
                 <span class="when">8月25日 06:10</span>
               </div>
             </div>
@@ -875,29 +1056,27 @@
               <div class="as-body">
                 <p>已并入。状态行 = 旋转圈（3 个在跑）+ 未读回执数（5）。</p>
               </div>
-              <div class="as-stats"><span class="act"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>复制</span><span>用时3秒</span><span>8月25日 06:10</span></div>
+              <div class="as-stats"><span class="act"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>复制</span><span class="act"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6a9 9 0 0 0-9 9V3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/></svg>新分支</span><span>用时812ms</span><span>8月25日 06:10</span></div>
             </div>
 
             <div class="msg-user">
               <div class="bubble">把 sidebar 的会话列表按项目分组，先出个方案</div>
               <div class="msg-actions">
-                <span class="act"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>复制</span><span class="act"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg>编辑</span><span class="act"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6a9 9 0 0 0-9 9V3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/></svg>新分支</span>
+                <span class="act"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>复制</span><span class="act"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg>编辑</span>
                 <span class="when">刚刚</span>
               </div>
             </div>
 
             <div class="msg-assistant">
               <div class="as-name">DeepSeek Flash</div>
-              <div class="phase-row">
-                <svg class="spark" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 1.5l1.8 4.7L14.5 8l-4.7 1.8L8 14.5 6.2 9.8 1.5 8l4.7-1.8z"/></svg>
-                <span class="dots">正在思考</span>
-              </div>
+              <div class="phase-row">正在等待模型...</div>
             </div>
           </div>
         </div>
 
                 <div class="nav-gutter">
           <div class="nav-flyout">
+            <div class="nv-sum"><b>86</b>条消息：用户<b>28</b>条 助手<b>30</b>条 工具调用<b>28</b>次</div>
             <div class="nv-turn">
               <div class="nv-user"><span class="nv-no">01</span><p>hello</p></div>
               <div class="nv-agent"><span class="nv-a">A</span><p>Hello! 👋 I'm ox-alpha，你的编程助手…</p></div>
@@ -912,7 +1091,7 @@
             </div>
             <div class="nv-turn on">
               <div class="nv-user"><span class="nv-no">04</span><p>把 sidebar 的会话列表按项目分组，先出个方案</p></div>
-              <div class="nv-agent"><span class="nv-a">A</span><p>正在思考…</p></div>
+              <div class="nv-agent"><span class="nv-a">A</span><p>正在等待模型...</p></div>
             </div>
           </div>
           <div class="msg-nav" id="msgNav">
@@ -922,34 +1101,67 @@
 
         <div class="input-wrap">
           <div class="composer">
-            <div class="composer-input">/使用命令，shift回车换行</div>
+            <div class="composer-input">/skill，@文件，！shell，Shift回车换行</div>
             <div class="composer-bar">
               <div class="c-left">
-                <button class="cmp-icon" data-tip="附加图片">
+                <button class="cmp-icon" data-tip="附加图片（≤10 张，单张 ≤10MB）">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
                 </button>
                 <button class="cmp-pill" data-tip="工具预设">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-                  默认
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg>
+                  full+
                   <svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg>
                 </button>
+                <button class="cmp-pill" data-tip="扩展">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-5"/><path d="M15 8V2"/><path d="M17 8a1 1 0 0 1 1 1v4a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1z"/><path d="M9 8V2"/></svg>
+                  2
+                </button>
+                <button class="cmp-pill" data-tip="MCP">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01M11 6.5h6M11 17.5h6"/></svg>
+                  MCP
+                </button>
               </div>
-              <div class="c-right">
-                <button class="ctx-ring" data-tip="上下文 15.2万 / 1.0M（15%）— 点击查看明细">
-                  <svg viewBox="0 0 16 16" width="15" height="15"><circle cx="8" cy="8" r="5.5" fill="none" stroke="#d7e4df" stroke-width="2"/><circle cx="8" cy="8" r="5.5" fill="none" stroke="#1e6559" stroke-width="2" stroke-dasharray="5.2 29.4" stroke-linecap="round" transform="rotate(-90 8 8)"/></svg>
+              <div class="c-right" style="position:relative">
+                <button class="ctx-ring" id="ctxRing">
+                  <svg viewBox="0 0 16 16" width="18" height="18"><circle cx="8" cy="8" r="5.5" fill="none" stroke="#d7e4df" stroke-width="2"/><circle cx="8" cy="8" r="5.5" fill="none" stroke="#1e6559" stroke-width="2" stroke-dasharray="2.6 32" stroke-linecap="round" transform="rotate(-90 8 8)"/></svg>
                 </button>
                 <button class="cmp-pill" data-tip="模型">
                   DeepSeek Flash
                   <svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg>
                 </button>
-                <button class="cmp-pill" data-tip="推理强度">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1.3.5 2.6 1.5 3.5.8.8 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
+                <button class="cmp-pill" data-tip="思考强度">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
                   high
                   <svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg>
                 </button>
                 <button class="cmp-send" data-tip="发送 (Enter) / 运行中变停止">
                   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 13V3M4 7l4-4 4 4"/></svg>
                 </button>
+                <!-- 上下文用量面板：hover 用量环弹出（ctx_tip） -->
+                <div class="ctx-panel" id="ctxPanel">
+                  <div class="cp-head">上下文容量<span class="mono">15,200K / 200,000K（7.6%）</span></div>
+                  <div class="cp-bar"><i style="width:7.6%"></i></div>
+                  <div class="cp-sec">分类占比</div>
+                  <div class="cp-grid">
+                    <div class="cp-item"><i style="background:#1e6559"></i>系统提示词<span class="pct">31.2%</span></div>
+                    <div class="cp-item"><i style="background:#2fa356"></i>工具定义<span class="pct">24.8%</span></div>
+                    <div class="cp-item"><i style="background:#3aa6d0"></i>消息<span class="pct">22.5%</span></div>
+                    <div class="cp-item"><i style="background:#d6a84b"></i>项目上下文<span class="pct">12.4%</span></div>
+                    <div class="cp-item"><i style="background:#8a9d95"></i>技能与扩展<span class="pct">6.1%</span></div>
+                    <div class="cp-item"><i style="background:#afc4ba"></i>其他<span class="pct">3.0%</span></div>
+                  </div>
+                  <div class="cp-sec">Token 分项</div>
+                  <div class="cp-toks">
+                    <div class="cp-item"><span class="k">输入</span><span class="v">1,842,310</span></div>
+                    <div class="cp-item"><span class="k">输出</span><span class="v">96,412</span></div>
+                    <div class="cp-item"><span class="k">缓存读</span><span class="v">1,204,551</span></div>
+                    <div class="cp-item"><span class="k">缓存写</span><span class="v">318,204</span></div>
+                    <div class="cp-item hi"><span class="k">Token 累计</span><span class="v">3,461,477</span></div>
+                    <div class="cp-item hi"><span class="k">缓存命中率</span><span class="v">65.4%</span></div>
+                  </div>
+                  <div class="cp-cost">费用 · 累计费用 <b>$0.4821</b></div>
+                  <button class="cp-compact">压 缩</button>
+                </div>
               </div>
             </div>
           </div>
@@ -973,20 +1185,55 @@
         <div class="md-view">
           <div class="md-page">
             <h1>主界面UI设计说明</h1>
-            <p>配套文件：主界面UI设计.html（可交互设计稿）· mist 主题。演示哈希：#collapsed 收起侧栏、#files / #git 切面板、#term 开终端。</p>
+            <p>配套文件：主界面UI设计-2.html（可交互设计稿）· mist 主题。演示哈希：#collapsed 收起侧栏、#files / #git 切面板、#term 开终端、#md 开预览、#new 新会话页、#search 会话搜索、#settings 设置、#nav 展开导航。</p>
             <h2>布局总览</h2>
-            <pre>topbar  [收放]                        [设置] [─][□][×]
-slp 282px 项目+会话一体列表 │ 内容区（聊天 / 终端 / 预览）
-statusbar（面板 tabs）     │</pre>
+            <pre>topbar 40  [收放][─] [会话tab 激活][终端tab][文件tab] [─][□][×]
+slp 300px 项目+会话一体列表 │ 内容区（聊天 / 终端 / md 预览 / 新会话页）
+statusbar 40（会话/文件 tab + 设置钮）│</pre>
             <h2>三层色阶</h2>
             <ul>
               <li>chrome #dfe9e5 — topbar + statusbar</li>
               <li>nav #eef4f1 — 项目/会话侧栏</li>
               <li>content #f4f8f7 — 聊天 / 预览</li>
             </ul>
-            <p>选中语言一句话：选中会话 = accent soft-tint；accent bar 只归活动项目行。</p>
+            <p>选中语言一句话：选中会话 = 前景 10% 薄纱（非 accent）；活动项目行 = 加粗提字，无底色。</p>
             <h2>会话导航</h2>
-            <p>topbar 下 100px 起，最高内容区 70%，节点硬上限 10 个；灰点灰线分段连接，悬停展开发言列表覆盖层。</p>
+            <p>右侧 14px 沟槽内段式 rail：高 75%、段上限 10（超出走桶映射）、常驻弱 accent；悬停展开 400px 发言列表，顶部 32px 总结栏「{n}条消息：用户{u}条 助手{a}条 工具调用{t}次」。</p>
+            <h2>会话行状态槽</h2>
+            <p>优先级：运行中旋转圈 &gt; 错误红点 #c25460 &gt; 警告黄点 #facc15 &gt; 未读青蓝点 #3aa6d0。时间列 38px：刚刚 / N分钟 / N小时 / N天。</p>
+            <h2>设置</h2>
+            <p>七页：界面 / 模型 / 技能 / 扩展 / MCP / 其他 / 关于；模型·技能·扩展·MCP 为左列表 350px + 右详情分栏。主题七款：雾青·蔷薇·One Light·Nord Light·Ayu Light + Nord Dark·One Dark。</p>
+          </div>
+        </div>
+        <div class="new-view">
+          <svg class="nw-logo" viewBox="0 0 256 256" fill="currentColor">
+            <g transform="translate(41.75 0) skewX(-15)">
+              <g transform="translate(-5.98 39.55) scale(0.682 0.6944)" fill="currentColor">
+                <path fill-rule="evenodd" d="M64 48H150A56 56 0 0 1 150 158H100V208H64ZM100 78H126A24 24 0 0 1 126 126H100Z"/>
+                <path transform="translate(187.364 13.6) scale(7 9.5)" d="M15.914 4a1.5 1.5 0 0 0-2.474-1.561l-9 9A1.5 1.5 0 0 0 5.5 14h4.002a.5.5 0 0 1 .471.666L8.086 20a1.5 1.5 0 0 0 2.475 1.56l9-9A1.5 1.5 0 0 0 18.5 10h-3.997a.5.5 0 0 1-.472-.667z"/>
+              </g>
+            </g>
+          </svg>
+          <div class="nw-inner">
+            <div class="nw-greet">Hi，打算让我做点什么？</div>
+            <div class="composer nw-composer">
+              <div class="composer-input">/skill，@文件，！shell，Shift回车换行</div>
+              <div class="composer-bar">
+                <div class="c-left">
+                  <button class="cmp-icon" data-tip="附加图片"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></button>
+                  <button class="cmp-pill" data-tip="工具预设"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg>full+<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button>
+                </div>
+                <div class="c-right">
+                  <button class="cmp-pill" data-tip="模型">DeepSeek Flash<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button>
+                  <button class="cmp-pill" data-tip="思考强度"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>high<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button>
+                  <button class="cmp-send" data-tip="发送 (Enter)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 13V3M4 7l4-4 4 4"/></svg></button>
+                </div>
+              </div>
+            </div>
+            <div class="nw-bar">
+              <span class="proj" data-tip="打开项目（Ctrl+P）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M2 10h20"/></svg>pi-flash</span>
+              <span class="ver">Pi-Flash v0.1.5</span>
+            </div>
           </div>
         </div>
         </main>
@@ -995,10 +1242,11 @@ statusbar（面板 tabs）     │</pre>
 
         <div class="statusbar">
       <div class="sb-btns">
-        <button class="sb-tab on" data-panel="sessions" data-tip="项目 / 会话"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 10a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 14.286V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/><path d="M20 9a2 2 0 0 1 2 2v10.286a.71.71 0 0 1-1.212.502l-2.202-2.202A2 2 0 0 0 17.172 19H10a2 2 0 0 1-2-2v-1"/></svg></button>
-        <button class="sb-tab" data-panel="files" data-tip="文件树"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-2.5a1 1 0 0 1-.8-.4l-.9-1.2A1 1 0 0 0 15 3h-2a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1Z"/><path d="M20 21a1 1 0 0 0 1-1v-3a1 1 0 0 0-1-1h-2.9a1 1 0 0 1-.88-.55l-.42-.85a1 1 0 0 0-.92-.6H13a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1Z"/><path d="M3 5a2 2 0 0 0 2 2h3"/><path d="M3 3v13a2 2 0 0 0 2 2h3"/></svg></button>
-        <button class="sb-tab" data-panel="git" data-tip="Git"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6a9 9 0 0 0-9 9V3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/></svg></button>
+        <button class="sb-tab on" data-panel="sessions"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 10a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 14.286V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/><path d="M20 9a2 2 0 0 1 2 2v10.286a.71.71 0 0 1-1.212.502l-2.202-2.202A2 2 0 0 0 17.172 19H10a2 2 0 0 1-2-2v-1"/></svg></button>
+        <button class="sb-tab" data-panel="files"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-2.5a1 1 0 0 1-.8-.4l-.9-1.2A1 1 0 0 0 15 3h-2a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1Z"/><path d="M20 21a1 1 0 0 0 1-1v-3a1 1 0 0 0-1-1h-2.9a1 1 0 0 1-.88-.55l-.42-.85a1 1 0 0 0-.92-.6H13a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1Z"/><path d="M3 5a2 2 0 0 0 2 2h3"/><path d="M3 3v13a2 2 0 0 0 2 2h3"/></svg></button>
+        <!-- Git tab 2026-10-10 注释隐藏（status_bar.rs:74-80）；面板保留，经 psp/终端入口仍可触达 -->
       </div>
+      <button class="sb-settings" id="sbSettings" data-tip="设置"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5H3"/><path d="M12 19H3"/><path d="M14 3v4"/><path d="M16 17v4"/><path d="M21 12h-9"/><path d="M21 19h-5"/><path d="M21 5h-7"/><path d="M8 10v4"/><path d="M8 12H3"/></svg></button>
     </div>
   </div>
 </div>
@@ -1011,65 +1259,179 @@ statusbar（面板 tabs）     │</pre>
         </div>
         <div style="flex:1;min-height:0;display:flex">
         <aside class="set-nav">
-              <button class="set-item on" data-sp="ui"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v4"/><path d="M8 21h8"/><path d="m9 17 6.1-6.1a2 2 0 0 1 2.81.01L22 15"/><circle cx="8" cy="9" r="2"/><rect x="2" y="3" width="20" height="14" rx="2"/></svg>界面</button>
-              <button class="set-item" data-sp="models"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20v2"/><path d="M12 2v2"/><path d="M17 20v2"/><path d="M17 2v2"/><path d="M2 12h2"/><path d="M2 17h2"/><path d="M2 7h2"/><path d="M20 12h2"/><path d="M20 17h2"/><path d="M20 7h2"/><path d="M7 20v2"/><path d="M7 2v2"/><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="8" y="8" width="8" height="8" rx="1"/></svg>模型</button>
-              <button class="set-item" data-sp="skills"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/></svg>技能</button>
-              <button class="set-item" data-sp="agents"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>子代理</button>
-              <button class="set-item" data-sp="plugins"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-5"/><path d="M15 8V2"/><path d="M17 8a1 1 0 0 1 1 1v4a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1z"/><path d="M9 8V2"/></svg>插件</button>
-              <button class="set-item" data-sp="misc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>其他</button>
+              <button class="set-item on" data-sp="ui"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>界面</button>
+              <button class="set-item" data-sp="models"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 15h3M1 9h3M1 15h3"/></svg>模型</button>
+              <button class="set-item" data-sp="skills"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg>技能</button>
+              <button class="set-item" data-sp="plugins"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-5"/><path d="M15 8V2"/><path d="M17 8a1 1 0 0 1 1 1v4a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1z"/><path d="M9 8V2"/></svg>扩展</button>
+              <button class="set-item" data-sp="mcp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01M11 6.5h6M11 17.5h6"/></svg>MCP</button>
+              <button class="set-item" data-sp="misc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>其他</button>
+              <button class="set-item" data-sp="about"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>关于</button>
         </aside>
         <div class="set-body">
+          <!-- 界面页：主题卡片（两排各 5 槽）+ 三字体槽位 + 开关两行 + 语言 radio -->
           <div class="set-pane on" id="sp-ui">
-            <div class="set-row"><div class="info"><div class="t">主题</div><div class="d">应用配色（mist / rose / one-light / nord / ayu）</div></div><button class="sel-btn">mist<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button></div>
-            <div class="set-row"><div class="info"><div class="t">图标主题</div><div class="d">内置 pi-web 图标集</div></div><button class="sel-btn">pi-web 内置<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button></div>
-            <div class="set-row"><div class="info"><div class="t">会话字体</div><div class="d">会话区正文与输入框字体</div></div><button class="sel-btn">Inter · 14.5<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button></div>
-            <div class="set-row"><div class="info"><div class="t">功能面板字体</div><div class="d">slp / 文件树 / git 面板字体</div></div><button class="sel-btn">Segoe UI · 13<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button></div>
-            <div class="set-row"><div class="info"><div class="t">Markdown 预览字体</div><div class="d">agent 输出的 markdown 渲染字体</div></div><button class="sel-btn">Inter · 14<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button></div>
-            <div class="set-row"><div class="info"><div class="t">界面语言</div><div class="d">中文 / English</div></div><button class="sel-btn">中文<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button></div>
-            <div class="set-row"><div class="info"><div class="t">提示音</div><div class="d">agent 运行结束播放系统提示音</div></div><i class="sw on"></i></div>
-            <div class="set-row"><div class="info"><div class="t">跨项目预载会话数</div><div class="d">启动时预载最近会话的消息尾部，0 关闭</div></div><button class="sel-btn">10<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button></div>
+            <div class="set-sec">主题</div>
+            <div class="theme-row">
+              <button class="theme-card sel"><div class="swatch" style="background:#f4f8f7;border-bottom:1px solid rgba(175,196,186,.4)"></div><div class="tname">雾青</div></button>
+              <button class="theme-card"><div class="swatch" style="background:#faf1f2"></div><div class="tname">蔷薇</div></button>
+              <button class="theme-card"><div class="swatch" style="background:#fafafa"></div><div class="tname">One Light</div></button>
+              <button class="theme-card"><div class="swatch" style="background:#eceff4"></div><div class="tname">Nord Light</div></button>
+              <button class="theme-card"><div class="swatch" style="background:#f8f8f7"></div><div class="tname">Ayu Light</div></button>
+            </div>
+            <div class="theme-row">
+              <button class="theme-card"><div class="swatch" style="background:#2e3440"></div><div class="tname">Nord Dark</div></button>
+              <button class="theme-card"><div class="swatch" style="background:#282c34"></div><div class="tname">One Dark</div></button>
+              <button class="theme-card empty"></button>
+              <button class="theme-card empty"></button>
+              <button class="theme-card empty"></button>
+            </div>
+            <div class="set-sec">字体</div>
+            <div class="font-row"><span class="fl">会话字体</span><button class="sel-btn">Segoe UI<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button><button class="sel-btn size">中 · 16<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button></div>
+            <div class="font-row"><span class="fl">面板字体</span><button class="sel-btn">Segoe UI<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button><button class="sel-btn size">小 · 15<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button></div>
+            <div class="font-row"><span class="fl">文档字体</span><button class="sel-btn">Inter<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button><button class="sel-btn size">小 · 15<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button></div>
+            <div class="set-row"><div class="info"><div class="t">展示思考</div><div class="d">思考默认展开或收起</div></div><i class="sw on"></i></div>
+            <div class="set-row"><div class="info"><div class="t">Markdown 所见即所得</div><div class="d">编辑 md 时隐藏语法标记，光标进入即显现（实验性）</div></div><i class="sw"></i></div>
+            <div class="set-sec">语言</div>
+            <div class="lang-row">
+              <label class="on"><i></i>简体中文</label>
+              <label><i></i>繁體中文</label>
+              <label><i></i>English</label>
+            </div>
           </div>
+          <!-- 模型页：左 Provider 列表 350px + 右详情 -->
           <div class="set-pane" id="sp-models">
-            <div class="set-row"><div class="info"><div class="t">默认模型</div><div class="d">新会话使用的模型</div></div><button class="sel-btn">DeepSeek Flash<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button></div>
-            <div class="set-row"><div class="info"><div class="t">默认思考强度</div><div class="d">auto / low / high / max</div></div><button class="sel-btn">auto<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button></div>
-            <div class="set-list">
-              <div class="set-li"><span class="grow">DeepSeek Flash</span><span class="mono">deepseek</span><i class="sw on"></i></div>
-              <div class="set-li"><span class="grow">GLM-5.3-Flash</span><span class="mono">zai</span><i class="sw on"></i></div>
-              <div class="set-li"><span class="grow">MiniMax 3.1 preview</span><span class="mono">minimax</span><i class="sw"></i></div>
-              <div class="set-li"><span class="grow">Kimi K2</span><span class="mono">moonshot</span><i class="sw"></i></div>
+            <div class="set-split">
+              <div class="sp-list">
+                <div class="sp-head">添加 Provider<svg style="width:14px;height:14px;color:var(--accent)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg></div>
+                <div class="sp-li sel"><i class="dot on" style="border-radius:4px"></i><div style="flex:1;min-width:0">DeepSeek<span class="sub">deepseek</span></div><span class="cnt">2/3</span><i class="sw on"></i></div>
+                <div class="sp-li" style="padding-left:26px"><div style="flex:1;min-width:0">DeepSeek Flash<svg class="star-on" viewBox="0 0 24 24" fill="currentColor" style="margin-left:4px;vertical-align:-2px"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.28 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.044 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"/></svg></div><i class="sw on"></i></div>
+                <div class="sp-li" style="padding-left:26px"><div style="flex:1;min-width:0">deepseek-chat</div><i class="sw on"></i></div>
+                <div class="sp-li" style="padding-left:26px"><div style="flex:1;min-width:0">deepseek-reasoner</div><i class="sw"></i></div>
+                <div class="sp-li"><i class="dot on" style="border-radius:4px"></i><div style="flex:1;min-width:0">智谱<span class="sub">zai</span></div><span class="cnt">1/1</span><i class="sw on"></i></div>
+                <div class="sp-li" style="padding-left:26px"><div style="flex:1;min-width:0">GLM-5.3-Flash</div><i class="sw on"></i></div>
+              </div>
+              <div class="sp-detail">
+                <h3>deepseek<span class="badge" style="font-size:10.5px;color:var(--text-dim);border:1px solid var(--border);border-radius:4px;padding:0 4px;font-weight:400">deepseek</span><span style="flex:1"></span><button class="ghost-btn" style="color:var(--danger)">移除</button></h3>
+                <div class="field"><div class="fl2">API Key</div>
+                  <div style="display:flex;gap:8px"><span class="fv mono" style="font-family:Consolas,monospace;color:var(--text-dim)">sk-••••••••••••••••3f2a</span><button class="g-btn" style="padding:2px 10px">保存</button></div>
+                </div>
+                <div class="field"><div class="fl2" style="display:flex;align-items:center">可用模型 2/3<span style="flex:1"></span><button class="g-btn" title="获取模型" style="padding:2px 6px"><svg style="width:12px;height:12px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button></div>
+                <div class="set-li"><span class="grow">DeepSeek Flash</span><span class="mono">deepseek-chat</span><i class="sw on"></i></div>
+                <div class="set-li"><span class="grow">DeepSeek Reasoner</span><span class="mono">deepseek-reasoner</span><i class="sw"></i></div>
+              </div>
             </div>
           </div>
+          <!-- 技能页：项目/全局分组 + 右详情 -->
           <div class="set-pane" id="sp-skills">
-            <div class="set-list">
-              <div class="set-li"><span class="grow">beads</span><span class="mono">项目任务追踪</span><i class="sw on"></i></div>
-              <div class="set-li"><span class="grow">mx-data</span><span class="mono">行情数据</span><i class="sw on"></i></div>
-              <div class="set-li"><span class="grow">frontend-design</span><span class="mono">前端设计</span><i class="sw on"></i></div>
-              <div class="set-li"><span class="grow">dark-diagram</span><span class="mono">示意图绘制</span><i class="sw"></i></div>
+            <div class="set-split">
+              <div class="sp-list">
+                <div class="sp-head">项目<span class="cnt">2/3</span><i class="sw on"></i></div>
+                <div class="sp-li sel"><i class="dot on"></i><div style="flex:1;min-width:0">beads</div><i class="sw on"></i></div>
+                <div class="sp-li"><i class="dot on"></i><div style="flex:1;min-width:0">pi-flash-ui-test</div><i class="sw on"></i></div>
+                <div class="sp-li" style="color:var(--text-faint)"><i class="dot"></i><div style="flex:1;min-width:0">dark-diagram</div><i class="sw"></i></div>
+                <div class="sp-head" style="margin-top:14px">全局<span class="cnt">2/2</span><i class="sw on"></i></div>
+                <div class="sp-li"><i class="dot on"></i><div style="flex:1;min-width:0">mx-data</div><i class="sw on"></i></div>
+                <div class="sp-li"><i class="dot on"></i><div style="flex:1;min-width:0">frontend-design</div><i class="sw on"></i></div>
+              </div>
+              <div class="sp-detail">
+                <h3>beads<span class="badge">项目</span><span style="flex:1"></span><i class="sw on"></i></h3>
+                <div class="field"><div class="fl2">路径</div><div class="fv mono" style="font-family:Consolas,monospace;font-size:11.5px;color:var(--text-dim)">.agents\skills\beads\SKILL.md</div></div>
+                <div class="field"><div class="fl2">名称</div><div class="fv">beads</div></div>
+                <div class="field"><div class="fl2">描述</div><div class="fv">Use Beads (bd) for durable project task tracking…</div></div>
+                <div class="field"><div class="fl2">说明大小</div><div class="fv mono" style="font-family:Consolas,monospace;color:var(--text-dim)">描述：23 · 正文：812 tokens</div></div>
+                <div class="note">在模型提示词中可见；开关关闭后进入休眠（对模型隐藏，仍可手动调用）。</div>
+              </div>
             </div>
           </div>
-          <div class="set-pane" id="sp-agents">
-            <div class="set-list">
-              <div class="set-li"><span class="grow">explorer</span><span class="mono">DeepSeek Flash · read-only</span><button class="ghost-btn">编辑</button></div>
-              <div class="set-li"><span class="grow">reviewer</span><span class="mono">GLM-5.3-Flash · chat-only</span><button class="ghost-btn">编辑</button></div>
-            </div>
-            <div style="margin-top:12px"><button class="sel-btn">＋ 新建档案</button></div>
-          </div>
+          <!-- 扩展页：顶部安装区 + 左列表 + 右详情 -->
           <div class="set-pane" id="sp-plugins">
-            <div class="set-list">
-              <div class="set-li"><span class="grow">pi-web-ext</span><span class="mono">global · 0.4.1</span><button class="ghost-btn">卸载</button></div>
-              <div class="set-li"><span class="grow">pi-review-tools</span><span class="mono">project · 0.2.0</span><button class="ghost-btn">卸载</button></div>
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px">
+              <input class="hc-edit" style="flex:none;width:400px" placeholder="例：pi install npm:pi-web-access">
+              <button class="g-btn" style="padding:4.5px 16px">安装</button>
             </div>
-            <div style="margin-top:12px"><button class="sel-btn">＋ 安装包</button></div>
+            <div style="font-size:11.5px;color:var(--text-faint);margin-bottom:10px">从 <span style="color:var(--accent)">https://pi.dev/packages</span> 复制安装命令，做全局安装</div>
+            <div class="set-split">
+              <div class="sp-list">
+                <div class="sp-head">配置全局默认扩展<span class="cnt">2/2</span><i class="sw on"></i></div>
+                <div class="sp-li sel"><div style="flex:1;min-width:0">pi-web-ext</div><i class="sw on"></i></div>
+                <div class="sp-li"><div style="flex:1;min-width:0">pi-review-tools</div><i class="sw on"></i></div>
+              </div>
+              <div class="sp-detail">
+                <h3><span class="badge">全局</span>pi-web-ext<span style="flex:1"></span><button class="ghost-btn" title="卸载"><svg style="width:14px;height:14px;color:var(--danger)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button></h3>
+                <div class="field"><div class="fl2">说明</div><div class="fv">pi-web 对等的扩展工具集（文件 / 剪贴板 / 外链）</div></div>
+                <div class="field"><div class="fl2">状态</div><div class="fv">已启用</div></div>
+                <div class="field"><div class="fl2">说明大小</div><div class="fv mono" style="font-family:Consolas,monospace;color:var(--text-dim)">—</div></div>
+                <div class="field"><div class="fl2">来源</div><div class="fv">npm:pi-web-access</div></div>
+                <div class="field"><div class="fl2">路径</div><div class="fv mono" style="font-family:Consolas,monospace;font-size:11px;color:var(--text-dim)">~\.pi\agent\extensions\pi-web-ext</div></div>
+              </div>
+            </div>
           </div>
+          <!-- MCP 页：左服务器列表 + 右配置表单 -->
+          <div class="set-pane" id="sp-mcp">
+            <div class="set-split">
+              <div class="sp-list">
+                <div class="sp-head">全局<span class="cnt">1/2</span><i class="sw on"></i></div>
+                <div class="sp-li sel"><i class="dot on"></i><div style="flex:1;min-width:0">docs</div><i class="sw on"></i></div>
+                <div class="sp-li"><i class="dot"></i><div style="flex:1;min-width:0">fetch<span class="badge" style="margin-left:6px">已关闭</span></div><i class="sw"></i></div>
+              </div>
+              <div class="sp-detail">
+                <h3>MCP名称<span style="flex:1"></span><button class="ghost-btn" style="color:var(--danger)">移除</button><button class="g-btn" style="padding:3px 14px">保存</button></h3>
+                <input class="hc-edit" style="width:100%;margin-top:8px" value="docs">
+                <div class="field"><div class="fl2">MCP配置</div></div>
+                <div class="paste-box">粘贴 JSON / url / 命令行 / pi mcp add...</div>
+                <div style="margin-top:8px">
+                  <div class="mono-ex">JSON：{"mcpServers": { "docs": { "url": "https://…" } } }</div>
+                  <div class="mono-ex">URL：https://example.com/mcp</div>
+                  <div class="mono-ex">命令行：npx -y some-mcp-server</div>
+                  <div class="mono-ex">pi命令：pi mcp add docs --url https://…</div>
+                </div>
+                <div class="note" style="color:var(--accent)">已保存，对新会话生效</div>
+              </div>
+            </div>
+          </div>
+          <!-- 其他页 -->
           <div class="set-pane" id="sp-misc">
-            <div class="set-row"><div class="info"><div class="t">pi 版本</div><div class="d">vendored pi-coding-agent</div></div><span class="mono" style="font-size:12px;color:var(--text-dim)">0.87.1</span></div>
             <div class="set-row"><div class="info"><div class="t">启动恢复</div><div class="d">启动时恢复上次激活的项目与会话</div></div><i class="sw on"></i></div>
-            <div class="set-row"><div class="info"><div class="t">默认加载项目数</div><div class="d">启动时按最近使用加载的项目数量</div></div><button class="sel-btn">5<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button></div>
-            <div class="set-row"><div class="info"><div class="t">工作区数据目录</div><div class="d">会话记忆 / 布局状态存放位置</div></div><span class="mono" style="font-size:11.5px;color:var(--text-dim)">~\.pi\agent</span></div>
+            <div class="set-row"><div class="info"><div class="t">加载时间窗口</div><div class="d">加载最近几天内活跃的会话</div></div><div class="seg3"><button class="on">7 天</button><button>14 天</button><button>30 天</button></div></div>
+            <div class="set-row"><div class="info"><div class="t">自动折叠时间</div><div class="d">启动时，超时未活动的项目默认折叠</div></div><div class="seg3"><button class="on">1 天</button><button>3 天</button><button>7 天</button></div></div>
+            <div class="set-row"><div class="info"><div class="t">会话显示数</div><div class="d">各项目默认显示的会话数量</div></div><div class="stepper"><button>−</button><b>5</b><button>＋</button></div></div>
+            <div class="set-row"><div class="info"><div class="t">提示音</div><div class="d">agent 运行结束播放系统提示音</div></div><i class="sw on"></i></div>
+            <div class="set-row"><div class="info"><div class="t">自动更新</div><div class="d">允许Pi-Flash自动更新</div></div><i class="sw on"></i></div>
+            <div class="set-row"><div class="info"><div class="t">工作区数据目录</div><div class="d">会话记忆 / 布局状态存放位置</div></div>
+              <div style="text-align:right">
+                <div style="display:flex;align-items:center;gap:6px"><span class="mono" style="font-family:Consolas,monospace;font-size:11px;color:var(--text-dim)">~\.pi-flash</span><button class="ghost-btn" title="打开"><svg style="width:13px;height:13px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg></button></div>
+                <div style="display:flex;align-items:center;gap:6px;margin-top:4px"><span class="mono" style="font-family:Consolas,monospace;font-size:11px;color:var(--text-dim)">~\.pi\agent</span><button class="ghost-btn" title="打开"><svg style="width:13px;height:13px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg></button></div>
+              </div></div>
+          </div>
+          <!-- 关于页 -->
+          <div class="set-pane" id="sp-about">
+            <div class="set-row"><div class="info"><div class="t">作者</div></div><span style="font-size:12.5px;color:var(--text)">不正常赛博捅讯社</span></div>
+            <div class="set-row"><div class="info"><div class="t">PF版本</div></div><span style="font-size:12.5px;color:var(--text)">Pi-Flash v0.1.5</span></div>
+            <div class="set-row"><div class="info"><div class="t">内核版本</div></div><span class="mono" style="font-family:Consolas,monospace;font-size:12px;color:var(--text-dim)">Pi v0.87.1</span></div>
+            <div class="set-row"><div class="info"><div class="t">GitHub</div></div><span class="mono" style="font-family:Consolas,monospace;font-size:12px;color:var(--accent);text-decoration:underline;cursor:default">https://github.com/danielbill/pi-flash</span></div>
+            <div class="field" style="margin-top:18px"><div class="fl2">说明</div>
+              <div style="font-size:12.5px;color:var(--text);line-height:1.8">Windows上Pi的极速Shell + 文件管理编辑<br>Pi-Flash将保持轻巧专注速度体验</div>
+            </div>
           </div>
         </div>
       </div>
     </div>
+</div>
+
+<!-- 会话搜索（013）：居中模态 620px；范围 = 当前项目；点遮罩 / Esc 关 -->
+<div class="settings-mask" id="searchMask">
+  <div class="settings" style="width:620px;height:auto;max-height:640px">
+    <div style="padding:14px 16px 0"><input class="hc-edit" id="searchInput" style="width:100%;padding:6px 10px" placeholder="搜索会话内容…"></div>
+    <div style="padding:8px 16px;font-size:11.5px;color:var(--text-faint)">输入关键词，搜索当前项目的会话内容</div>
+    <div style="padding:0 8px 10px;overflow-y:auto">
+      <div style="display:flex;align-items:center;padding:6px 8px 4px;font-size:12px;font-weight:600;color:var(--text)">
+        <span style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">HTML设计后再讨论项目管理实</span>
+        <span style="margin-left:auto;flex:none;font-size:11px;font-weight:400;color:var(--text-faint)">2天前</span>
+      </div>
+      <div class="pm-item" style="padding:6px 10px"><span style="flex:1;font-size:12px;color:var(--text-dim)">让 slp 的<mark style="background:rgba(30,101,89,.16);color:var(--accent);border-radius:3px;padding:0 2px">会话列表</mark>按项目分组，先出一版静态布局</span></div>
+      <div class="pm-item" style="padding:6px 10px"><span style="flex:1;font-size:12px;color:var(--text-dim)"><mark style="background:rgba(30,101,89,.16);color:var(--accent);border-radius:3px;padding:0 2px">会话列表</mark>时间列右对齐 38px，状态槽放行首</span></div>
+    </div>
+  </div>
 </div>
 
 <div id="tooltip"></div>
@@ -1090,7 +1452,7 @@ statusbar（面板 tabs）     │</pre>
   }
 
   const data = [
-    { name: "pi-flash", path: "D:\\ai_workspace\\pi-flash", open: true,
+    { name: "pi-flash", path: "D:\\ai_workspace\\pi-flash", open: true, more: true,
       sessions: [
         { t: "HTML设计后再讨论项目管理实", ago: 60 * 24 * 2, sel: true, msgs: 86 },
         { t: "实现pi-flash", ago: 60 * 24 * 3, msgs: 214 },
@@ -1103,7 +1465,7 @@ statusbar（面板 tabs）     │</pre>
       sessions: [ { t: "排查爆款热点抓取失败原因", ago: 2, run: true, msgs: 31 },
                   { t: "ghzw数据服务开放给本地Agent调用", ago: 60 * 24 * 6, msgs: 8 } ] },
     { name: "pi_work", path: "D:\\ai_workspace\\pi_work", open: true,
-      sessions: [ { t: "汇报当前项目进度", ago: 10, msgs: 12 } ] },
+      sessions: [ { t: "汇报当前项目进度", ago: 10, err: true, msgs: 12 } ] },
     { name: "agent_sprite_factory", path: "D:\\ai_workspace\\agent_sprite_factory", open: false, sessions: [] },
   ];
   data.forEach((p, i) => { p._recent = i; p._manual = i; });
@@ -1142,6 +1504,8 @@ statusbar（面板 tabs）     │</pre>
 
   function slotHtml(s) {
     if (s.run) return `<i class="spin"></i>`;
+    if (s.err) return `<span class="edot"></span>`;
+    if (s.warn) return `<span class="wdot"></span>`;
     if (s.unread) return `<span class="gdot"></span>`;
     return "";
   }
@@ -1209,6 +1573,30 @@ statusbar（面板 tabs）     │</pre>
   function hideMenu() { pmenu.style.display = "none";
     document.querySelectorAll(".prj-act.menu-open").forEach(x => x.classList.remove("menu-open")); }
 
+  function showDeleteConfirm(p, anchor) {
+    pmenu.innerHTML = "";
+    const box = document.createElement("div");
+    box.style.cssText = "min-width:380px;padding:12px 14px;border:1px solid rgba(194,84,96,.5);border-radius:8px";
+    box.innerHTML = `<div style="font-size:12.5px;color:var(--text)">删除项目 ${p.name} 及其所有会话？</div>`;
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex;justify-content:flex-end;gap:6px;margin-top:12px";
+    const cancel = document.createElement("button");
+    cancel.className = "hc-cancel"; cancel.textContent = "取消";
+    cancel.addEventListener("click", hideMenu);
+    const ok = document.createElement("button");
+    ok.className = "hc-ok"; ok.textContent = "确认删除";
+    ok.addEventListener("click", () => {
+      p.sessions = []; p.more = false; renderGroup(p); hideMenu();
+    });
+    row.append(cancel, ok);
+    box.appendChild(row);
+    pmenu.appendChild(box);
+    const r = anchor.getBoundingClientRect();
+    pmenu.style.display = "block";
+    pmenu.style.left = Math.max(8, r.left) + "px";
+    pmenu.style.top = Math.min(r.bottom + 6, window.innerHeight - pmenu.offsetHeight - 8) + "px";
+  }
+
   function showMenu(p, btn) {
     document.querySelectorAll(".prj-act.menu-open").forEach(x => x.classList.remove("menu-open"));
     btn.classList.add("menu-open");
@@ -1221,14 +1609,16 @@ statusbar（面板 tabs）     │</pre>
       const it = document.createElement("button");
       it.className = "pm-item" + (cls ? " " + cls : "");
       it.innerHTML = icon + `<span>${label}</span>`;
-      it.addEventListener("click", () => {
-        hideMenu();
+      it.addEventListener("click", (e) => {
         if (label === "在终端中打开") {
+          hideMenu();
           openTerm();
           setPanel("files");
         } else if (label === "删除项目及所有会话") {
-          p.sessions = [];
-          renderGroup(p);
+          // 删除走确认卡（psp_overlays）：锚定点击点，「取消 / 确认删除」
+          showDeleteConfirm(p, btn);
+        } else {
+          hideMenu();
         }
       });
       pmenu.appendChild(it);
@@ -1339,6 +1729,12 @@ statusbar（面板 tabs）     │</pre>
       return;
     }
     p.sessions.forEach(s => group.appendChild(makeSessionRow(s, p)));
+    if (p.more) {
+      const m = document.createElement("div");
+      m.className = "ps-more";
+      m.textContent = "显示更多";
+      group.appendChild(m);
+    }
   }
 
   function renderList() {
@@ -1348,11 +1744,21 @@ statusbar（面板 tabs）     │</pre>
     label.innerHTML = `<span>${listMode === "flat" ? "会话" : "项目"}</span><span class="prj-actions">` +
       `<span class="prj-act" data-tip="打开项目">${ICON_PROJECT}</span>` +
       `<span class="prj-act" data-tip="新建会话">${ICON_NEW_CHAT}</span>`+
-      `<span class="prj-act" data-tip="会话查询">${SEARCH}</span>` +
-      `<span class="prj-act sort">${ELLIPSIS}</span></span>`;
+      `<span class="prj-act" data-tip="搜索会话">${SEARCH}</span>` +
+      `<span class="prj-act sort" data-tip="排序">${ELLIPSIS}</span></span>`;
     label.querySelector(".prj-act.sort").addEventListener("click", e => {
       e.stopPropagation();
       showDotsMenu(e.currentTarget);
+    });
+    // 新建会话 → 012 新会话页（不立即插行，首条消息发出后才入列）
+    label.querySelectorAll(".prj-act")[1].addEventListener("click", e => {
+      e.stopPropagation();
+      setContent("new");
+    });
+    // 搜索会话 → 013 居中模态（范围 = 当前项目）
+    label.querySelectorAll(".prj-act")[2].addEventListener("click", e => {
+      e.stopPropagation();
+      document.getElementById("searchMask").classList.add("open");
     });
     list.appendChild(label);
 
@@ -1388,21 +1794,17 @@ statusbar（面板 tabs）     │</pre>
 
       const [mBtn, nBtn] = prj.querySelectorAll(".prj-act");
       mBtn.addEventListener("click", e => { e.stopPropagation(); showMenu(p, mBtn); });
+      // ＋ = 在此项目新建会话：切 012 新会话页（实现先 switch_project 再 new_session）
       nBtn.addEventListener("click", e => {
         e.stopPropagation();
-        const s = { t: "(新会话)", time: "刚刚", sel: true, msgs: 0 };
-        p.sessions.forEach(x => { x.sel = false; });
-        p.sessions.push(s);
         if (!p.open) {
           p.open = true;
           prj.querySelector(".p-fico").innerHTML = FOLDER_OPEN;
           p._group.classList.remove("off");
         }
-        renderGroup(p);
-        const rows = p._group.querySelectorAll(".ps-row");
-        rows[rows.length - 1].classList.add("sel");
         document.getElementById("gitProj").textContent = p.name;
         setActive(prj);
+        setContent("new");
       });
 
       const group = document.createElement("div");
@@ -1436,45 +1838,45 @@ statusbar（面板 tabs）     │</pre>
   }
   panelTabs.forEach(t => t.addEventListener("click", () => setPanel(t.dataset.panel)));
 
-  // 内容区视图状态机：chat 默认；terminal / markdown 预览以 topbar tab 打开
+  // 内容区视图状态机（ContentView）：chat 默认 / term / md / new（012 新会话页）
   const mainCol = document.getElementById("mainCol");
   const contentCol = document.querySelector(".content-col");
+  const chatTab = document.getElementById("chatTab");
   const termTabBar = document.getElementById("termTabBar");
   const mdTabBar = document.getElementById("mdTabBar");
-  let termOpen = false, mdOpen = false, contentView = "chat";
-  function renderContentTabs() {
-    termTabBar.classList.toggle("act", termOpen && contentView === "term");
-    mdTabBar.classList.toggle("act", mdOpen && contentView === "md");
-  }
+  let contentView = "chat";
   function setContent(v) {
     contentView = v;
     mainCol.classList.toggle("term-on", v === "term");
     mainCol.classList.toggle("md-on", v === "md");
+    mainCol.classList.toggle("new-on", v === "new");
     contentCol.classList.toggle("term-on", v === "term");
     contentCol.classList.toggle("md-on", v === "md");
-    renderContentTabs();
+    chatTab.classList.toggle("act", v === "chat");
+    termTabBar.classList.toggle("act", v === "term");
+    mdTabBar.classList.toggle("act", v === "md");
   }
-  function openTerm() { termOpen = true; setContent("term"); }
+  function openTerm() { setContent("term"); }
+  chatTab.addEventListener("click", () => setContent("chat"));
+  termTabBar.addEventListener("click", () => setContent("term"));
+  mdTabBar.addEventListener("click", () => setContent("md"));
   document.getElementById("termClose").addEventListener("click", e => {
-    e.stopPropagation(); termOpen = false;
-    if (contentView === "term") setContent(mdOpen ? "md" : "chat"); else renderContentTabs();
+    e.stopPropagation(); setContent("chat");
   });
   document.getElementById("mdClose").addEventListener("click", e => {
-    e.stopPropagation(); mdOpen = false;
-    if (contentView === "md") setContent(termOpen ? "term" : "chat"); else renderContentTabs();
+    e.stopPropagation(); setContent("chat");
   });
-  termTabBar.addEventListener("click", () => { if (termOpen) setContent("term"); });
-  mdTabBar.addEventListener("click", () => { if (mdOpen) setContent("md"); });
-  document.querySelectorAll("#pv-files .ft-row.l3").forEach(r =>
+  document.querySelectorAll("#pv-files .ft-row").forEach(r =>
     r.addEventListener("click", () => {
-      if (r.textContent.includes(".md")) { mdOpen = true; setContent("md"); }
+      if (r.textContent.includes(".md")) setContent("md");
+      if (r.textContent.includes(".html")) setContent("md");
     }));
 
   // slp 宽度拖拽：250–500px，双击复位；写 --slp-w 变量，所有依赖尺寸自动跟随
   {
     const rz = document.getElementById("slpResize");
     let startX = 0, startW = 0;
-    const clampW = w => Math.min(500, Math.max(250, w));
+    const clampW = w => Math.min(500, Math.max(300, w));
     rz.addEventListener("pointerdown", e => {
       startX = e.clientX;
       startW = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--slp-w"));
@@ -1491,7 +1893,7 @@ statusbar（面板 tabs）     │</pre>
       rz.releasePointerCapture(e.pointerId);
     });
     rz.addEventListener("dblclick", () =>
-      document.documentElement.style.setProperty("--slp-w", "282px"));
+      document.documentElement.style.setProperty("--slp-w", "300px"));
   }
 
   // git 面板页签切换
@@ -1516,31 +1918,52 @@ statusbar（面板 tabs）     │</pre>
       pn.classList.toggle("on", pn.id === "sp-" + b.dataset.sp));
   }));
 
-  // hash 预置：#files / #git / #term 便于截图演示
+  // hash 预置：#files / #git / #term / #md / #new / #search / #settings / #nav 便于截图演示
   if (location.hash === "#files") setPanel("files");
   if (location.hash === "#git") setPanel("git");
   if (location.hash === "#history") { setPanel("git"); document.querySelector('.g-tab[data-gt="history"]').click(); }
-  if (location.hash === "#term") { termOpen = true; setContent("term"); }
-  if (location.hash === "#md") { mdOpen = true; setContent("md"); }
-  if (location.hash === "#both") { termOpen = true; mdOpen = true; setContent("term"); }
+  if (location.hash === "#term") setContent("term");
+  if (location.hash === "#md") setContent("md");
+  if (location.hash === "#new") setContent("new");
+  if (location.hash === "#search") document.getElementById("searchMask").classList.add("open");
   if (location.hash === "#settings") settingsMask.classList.add("open");
   if (location.hash === "#nav") document.querySelector(".nav-gutter").classList.add("open");
 
-  // v28: 比例尺——10 个灰圆点 + 9 段灰线（线不穿点）；超 10 轮不增长只细分
-  const msgNav = document.getElementById("msgNav");
-  const DOTS = 10, ACTIVE = 7, step = 100 / (DOTS - 1);
-  for (let i = 0; i < DOTS; i++) {
-    const d = document.createElement("button");
-    d.className = "nav-node" + (i === ACTIVE ? " on" : "");
-    d.style.top = i * step + "%";
-    msgNav.appendChild(d);
-    if (i < DOTS - 1) {
-      const seg = document.createElement("i");
-      seg.className = "nav-seg";
-      seg.style.top = `calc(${i * step}% + 4.5px)`;
-      seg.style.height = `calc(${step}% - 9px)`;
-      msgNav.appendChild(seg);
+  // 会话搜索弹窗：点遮罩 / Esc 关
+  const searchMask = document.getElementById("searchMask");
+  searchMask.addEventListener("click", e => {
+    if (e.target === searchMask) searchMask.classList.remove("open");
+  });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape") {
+      searchMask.classList.remove("open");
+      settingsMask.classList.remove("open");
     }
+  });
+
+  // 上下文用量环：hover 弹用量面板（实现 ctx_tip：离开 200ms 后淡出，这里简化直切）
+  {
+    const ring = document.getElementById("ctxRing");
+    const panel = document.getElementById("ctxPanel");
+    if (ring && panel) {
+      ring.addEventListener("mouseenter", () => panel.classList.add("on"));
+      ring.addEventListener("mouseleave", () => panel.classList.remove("on"));
+      panel.addEventListener("mouseenter", () => panel.classList.add("on"));
+      panel.addEventListener("mouseleave", () => panel.classList.remove("on"));
+    }
+  }
+
+  // 段式导航 rail：段数 = 发言轮数（≤10 逐轮一段，>10 桶映射）；选中段跟随滚动（贴底=末段）
+  const msgNav = document.getElementById("msgNav");
+  const SEGS = 4, ACTIVE = 3;
+  for (let i = 0; i < SEGS; i++) {
+    const d = document.createElement("button");
+    d.className = "nav-seg2" + (i === ACTIVE ? " on" : "");
+    d.addEventListener("click", () => {
+      msgNav.querySelectorAll(".nav-seg2").forEach(x => x.classList.remove("on"));
+      d.classList.add("on");
+    });
+    msgNav.appendChild(d);
   }
 
   // topbar 图标按钮：悬停 tip 气泡（复用 #tooltip）
