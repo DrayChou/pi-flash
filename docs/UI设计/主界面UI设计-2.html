@@ -196,7 +196,8 @@
   .prj-act svg { width: 18px; height: 18px; }
   .prj-act.big svg { width: 21px; height: 21px; }
   .prj-group.off { display: none; }
-  .prj-row.active { color: var(--text); font-weight: 600; }
+  /* 活动项目：名称统一主题色粗体（与文件树操作栏项目名一致） */
+  .prj-row.active { color: var(--accent); font-weight: 700; }
   .ps-row {
     display: flex; align-items: center; gap: 8px;
     padding: 4px 4px 4px 10px; margin-bottom: 2px;
@@ -339,7 +340,7 @@
   #pv-files.on { display: flex; flex-direction: column; }
   .ft-actions { flex: none; height: 38px; display: flex; align-items: center;
     padding: 0 10px 0 14px; }
-  .ft-proj { font-size: 12px; font-weight: 600; color: var(--text-soft);
+  .ft-proj { font-size: 12px; font-weight: 700; color: var(--accent);
     min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ft-btns { margin-left: auto; display: flex; gap: 2px; }
   .ft-act { width: 26px; height: 26px; border-radius: 6px; flex: none;
