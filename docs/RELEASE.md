@@ -116,7 +116,9 @@ tag 推送后 `publish-npm.yml` 自动 OIDC 发薄壳（分钟级），无需干
       `gh release edit v<v> --notes-file <双语文件>` 补挂英文）
 - [ ] `npm view pi-flash version --registry=https://registry.npmjs.org/` == `<v>`
       （OIDC 自动发时另看 Actions `publish-npm` 绿。CI 绿 ≠ registry 立即可查：
-      npm "being processed" 有 **1–2 分钟**传播延迟，日志见 `+ pi-flash@<v>` 即发成功，稍等再核）
+      npm "being processed" 有 **1–2 分钟**传播延迟，日志见 `+ pi-flash@<v>` 即发成功，稍等再核。
+      npmjs.com 版本页显示 **Validating** = 已收件、校验中，registry 404 属预期——
+      **agent 不轮询等待，通知用户即可**，处置见 §6 校验滞留行）
 - [ ] 真机：`npm install -g pi-flash@latest --registry=https://registry.npmjs.org/`
       → 载荷下载/校验/落位成功 → `pi-flash` 启动正常
       （**本机 github.com 不通时用镜像验**：`PI_FLASH_MIRROR=http://127.0.0.1:<port>` +
@@ -138,6 +140,7 @@ tag 推送后 `publish-npm.yml` 自动 OIDC 发薄壳（分钟级），无需干
 | Trusted Publisher 过期 | npmjs 删除重建，2 天窗口内再发一版完成绑定 |
 | npm 版本发错 | 禁止重发同版本 → 前向修复，版本号由所有者拍板（§0） |
 | `publish-npm` 报 cannot publish over the previously published versions | 测试期手发过同号：先 `npm unpublish pi-flash@<v>`（**需登录 + 2FA，注意 72h 窗口**），再 `gh run rerun <publish-npm run id>` 让 OIDC 重发。本机 npmjs token 可能已失效（写操作 exit 0 但 registry 无变化）→ unpublish 后必须回 registry 核对 `npm view pi-flash versions` |
+| npmjs.com 版本页显示 **Validating**、registry 一直 404（0.1.6 实录：CI exit 0 + provenance 已签，滞留 1h+，status 页全绿） | 请求已被 npm 收件、正跑校验队列，非内容被拒。**禁重发、禁重跑 CI job**（实体化后必撞重号）；**agent 不轮询等待，通知用户即可，后续由用户定夺**。参考阈值：滞留 12h 可提 npm support 工单、24h 必提（材料：包名/版本/publish 时刻/CI run 链接/shasum/provenance 透明日志链接）。版本未实体化 ≠ 已发布（§0.3 不烧号），若最终被弃，经所有者点头可重发同号 |
 | 薄壳安装 404（包已上线、资产未挂） | 竞态窗口：等资产挂完，`npm rebuild pi-flash` 重试 |
 | 薄壳下载 SHA-256 不符 | 自动删除并失败；确认资产与 sidecar 同批上传，重装 |
 
