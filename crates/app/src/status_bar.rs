@@ -65,7 +65,8 @@ pub(crate) fn control_bar(
                     this.open_settings(0, cx);
                 },
             ))
-            .child(crate::ui::icon_hover("sliders-horizontal", 16., t.text_muted)),
+            // 大图标档 LG18（020-1 图标两档定夺：设置钮与 topbar 收放钮同档）
+            .child(crate::ui::icon_hover("sliders-horizontal", 18., t.text_muted)),
     );
     bar
 }

@@ -213,7 +213,8 @@ pub fn big_card(
             .cursor_pointer()
             .hover(|s| s.bg(rgb(0xd8626a)).text_color(rgb(0xffffff)))
             .on_mouse_down(MouseButton::Left, move |_, w, cx| dismiss(w, cx))
-            .child(crate::ui::icon_hover("x", 12., t.text_muted)),
+            // 大卡片顶条 ×：设计稿 .settings-topbar .x = 13
+            .child(crate::ui::icon_hover("x", 13., t.text_muted)),
     );
 
     let mut row = div().flex_1().min_h_0().flex();

@@ -244,9 +244,12 @@ impl gpui::Element for HoverIcon {
         _cx: &mut gpui::App,
     ) -> (gpui::LayoutId, Self::RequestLayoutState) {
         let mut style = gpui::Style::default();
+        // 绘制尺寸 = 布局尺寸 = 名义档位（§3 图标五档）：paint_svg 铺满
+        // bounds，曾写 size+2 使 icon_hover 比同名 icon() 大 2px——控制栏
+        // 小图标档（16）被画成 18 与大档混淆，图标大小纪律失真，已拔除
         style.size = gpui::Size {
-            width: gpui::px(self.size + 2.).into(),
-            height: gpui::px(self.size + 2.).into(),
+            width: gpui::px(self.size).into(),
+            height: gpui::px(self.size).into(),
         };
         let layout_id = window.request_layout(style, None, _cx);
         (layout_id, layout_id)

@@ -825,7 +825,7 @@ fn render_git_diff(chat: &Chat, weak: &gpui::WeakEntity<Chat>, path: &PathBuf, p
                                                         });
                                                     }
                                                 })
-                                                .child(icon_hover("x", 12., t.text_muted)),
+                                                .child(icon_hover("x", 13., t.text_muted)),
                                         ),
                                 )
                                 .child(
