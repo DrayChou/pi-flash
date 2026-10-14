@@ -862,7 +862,7 @@
               <button class="pc-btn" id="ctrlSearch" data-tip="搜索会话 (Ctrl+K)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>搜索</button>
               <span class="pc-spacer"></span>
               <button class="pc-btn icon" id="listToggle" data-tip="切换为最近会话列表"><svg viewBox="0 0 1024 1024" fill="currentColor" stroke="currentColor" stroke-width="40" stroke-linejoin="round"><path d="M227.008 94.976h129.28c25.92 0 38.976 0 51.072 3.136 10.688 2.688 20.8 7.168 30.016 13.184 10.432 6.848 19.264 16.448 36.8 35.52l40.576 44.16c8.704 9.6 13.12 14.4 18.368 17.792a50.048 50.048 0 0 0 15.04 6.592c6.016 1.536 12.544 1.536 25.536 1.536h228.608c56.192 0 84.992 0.128 106.304 11.264 18.432 9.536 33.472 24.64 42.88 43.072 11.072 21.376 11.072 50.176 10.816 106.368l-1.792 390.144c-0.256 55.744-0.512 84.288-11.52 105.472a100.48 100.48 0 0 1-42.88 42.688c-21.312 11.008-49.792 11.072-105.6 11.072H227.008c-56 0-84.672-0.064-105.984-11.136a100.48 100.48 0 0 1-42.88-42.88c-11.008-21.312-11.136-49.92-11.136-105.984v-512c0-56 0.128-84.608 11.136-105.92a100.48 100.48 0 0 1 42.88-42.88c21.312-11.072 49.92-11.2 105.984-11.2z m0 64q-68.8 0-76.48 4.032-10.24 5.248-15.552 15.488-3.968 7.68-3.968 76.48V384h767.232v-6.656q0.32-69.12-3.648-76.8-5.248-10.304-15.488-15.616-7.68-4.032-76.8-4.032H573.696q-27.52 0-41.344-3.52-18.368-4.672-34.24-15.04-11.968-7.808-30.544-28.096l-40.576-44.16q-20.864-22.72-24.64-25.216-4.992-3.264-10.816-4.736-4.352-1.152-35.2-1.152H226.944zM897.92 448H131.008v318.976q0 68.864 3.968 76.544 5.312 10.24 15.552 15.488 7.68 3.968 76.48 3.968h573.504q68.48 0 76.16-3.904 10.24-5.312 15.552-15.488 3.968-7.68 4.288-76.16L897.984 448z"/></svg></button>
-              <button class="pc-btn icon" id="sessSize" data-tip="最小化"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M8 12h8"/></svg></button>
+              <button class="pc-btn icon" id="sessSize" data-tip="最大化"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
             </div>
             <div class="panel-view on sp-body" id="pv-sessions"></div>
             </section>
@@ -876,7 +876,7 @@
                 <span class="ft-act" data-tip="搜索文件"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg></span>
                 <span class="ft-act" data-tip="在资源管理器中打开"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg></span>
                 <span class="ft-act" data-tip="在终端中打开"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></svg></span>
-                <span class="ft-act" id="filesSize" data-tip="最小化"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M8 12h8"/></svg></span>
+                <span class="ft-act" id="filesSize" data-tip="最大化"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg></span>
               </span>
             </div>
             <div class="ft-list">
@@ -1211,7 +1211,7 @@
 slp 300px 会话列表+文件树 上下整合面板 │ 内容区（聊天 / 终端 / md 预览 / 新会话页）
 statusbar 40（设置钮）│</pre>
             <h2>整合面板（020-1）</h2>
-            <p>会话列表与文件树整合为一个面板，上下两个子面板默认各占 50% 高度；分隔线可拖拽改比例，上推到底会话面板只剩控制栏、下拉到底文件树只剩操作栏（双击复位 50%）。子面板 = 控制栏 + 内容区，至多收起到控制栏：控制栏右侧大小切换钮收起时变最大化图标。会话控制栏左三（项目 / 会话 / 搜索，icon+文字）右二（列表切换 / 大小切换，纯 icon）；文件树控制栏在原四钮最右加大小切换。</p>
+            <p>会话列表与文件树整合为一个面板，上下两个子面板默认各占 50% 高度；分隔线可拖拽改比例，上推到底会话面板只剩控制栏、下拉到底文件树只剩操作栏（双击复位 50%）。子面板 = 控制栏 + 内容区；控制栏只放一个「最大化」钮：点击本面板最大化、另一面板自动收起到操作栏（无最小化钮，避免双最小化盲区），中间比例交给分隔线拖拽。会话控制栏左三（项目 / 会话 / 搜索，icon+文字）右二（列表切换 / 最大化，纯 icon）；文件树控制栏在原四钮最右加最大化。</p>
             <h2>三层色阶</h2>
             <ul>
               <li>chrome #dfe9e5 — topbar + statusbar</li>
@@ -1662,21 +1662,15 @@ statusbar 40（设置钮）│</pre>
   document.getElementById("ctrlSearch").addEventListener("click", () =>
     document.getElementById("searchMask").classList.add("open"));
 
-  // 子面板 大小切换：panelMin 收起到控制栏 / panelMax 展开（最小时显示最大化图标）
+  // 子面板「最大化」（020-1 定稿：单一最大化钮，无最小化钮，避免双最小化盲区）：
+  // 点击本面板最大化，另一面板自动收起到操作栏；中间比例交给分隔线拖拽（双击复位 50%）
   {
-    const ICON_MIN = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M8 12h8"/></svg>`;
-    const ICON_MAX = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>`;
-    const bindSize = (btnId, panelId) => {
-      const btn = document.getElementById(btnId);
-      const panel = document.getElementById(panelId);
-      btn.addEventListener("click", () => {
-        const min = panel.classList.toggle("min");
-        btn.innerHTML = min ? ICON_MAX : ICON_MIN;
-        btn.dataset.tip = min ? "最大化" : "最小化";
-      });
+    const maximize = (thisId, otherId) => {
+      document.getElementById(otherId).classList.add("min");
+      document.getElementById(thisId).classList.remove("min");
     };
-    bindSize("sessSize", "subSess");
-    bindSize("filesSize", "subFiles");
+    document.getElementById("sessSize").addEventListener("click", () => maximize("subSess", "subFiles"));
+    document.getElementById("filesSize").addEventListener("click", () => maximize("subFiles", "subSess"));
   }
 
   // 子面板分隔线：拖拽改上下比例；上下限 = 对面子面板只剩控制栏（020-1：最小态即操作栏）
