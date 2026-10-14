@@ -2,6 +2,34 @@
 
 All notable changes to released versions live here; see `docs/CHANGELOG规范.md` for the format.
 
+## [0.1.7] - 2026-10-15
+
+The left dock becomes an integrated sessions + file-tree panel (draggable divider, mutually-collapsing maximize), the composer gains a right-click menu; a self-swap fix ends the update dead loop for zip / direct-launch users; dot files are visible in the file tree by default; a batch of file-search and icon-alignment fixes.
+
+### Install & Update
+
+```bash
+npm install -g pi-flash@latest   # first install; re-run the same command to update
+pi-flash
+```
+
+Requires Node.js ≥ 22.19.
+Or download the zip, unzip it and double-click `pi-flash.exe` — no Node needed.
+Windows x64 only.
+
+### New
+- Integrated left dock: sessions (top) + file tree (bottom) in one panel — drag the divider to resize (double-click resets, ratio persisted), a single maximize button collapses the other side; the session control bar is three-left two-right (Projects / Sessions / Search + list toggle / maximize), and the status bar keeps a single "Projects" tab. The project-row hover buttons come along: the trash can opens the delete confirmation directly, + becomes a compact new-session entry (the ⋯ menu is gone). (b864750, 6391e36, 57207f6)
+- Composer right-click menu: undo / redo / select all + cut / copy / paste / delete (pasted images are attachment-ized first, same path as Ctrl+V; no shortcut column — the system handles those). (4046977)
+
+### Bug fixes
+- Update staging dead loop (observed on 0.1.6): users who double-click the payload exe directly, or run the zip build, could never apply a downloaded update ("Please restart to switch to x.x.x" forever) — the exe now self-swaps: on launch it detects a fresh staging mark, swaps it in and starts the new build; the "download complete" notice is now clickable to restart into the update immediately, so an update completes under every launch method. (e6a0d15)
+- Dot files visible in the file tree: .gitignore / .beads and friends were hidden by a "dot-prefixed means hidden" rule mislabeled as Zed semantics; now only Zed's default scan exclusions (.git / .DS_Store etc.) stay out of the tree, gitignored entries still render dimmed. (ba65eb6)
+- File-search panel batch: fixed the broken row file icons (asset path was double-prefixed); the panel widens to 700 (92% in small windows), row content aligns with the input text, over-long paths wrap, and the alignment baseline moved to the input box's left edge. (15c9fba, d0a7916, f5e1af1)
+- Project-row hover button column alignment: the 10px double-inset that shifted the whole group left is offset back — trash ↔ list-toggle and new-session ↔ maximize now share x per column. (b516dfa)
+
+### Improvements
+- Icon & chrome alignment batch (owner-decided): removed icon_hover's +2px draw inflation (the root cause of "icons look random" — same nominal size painted 2px larger than icon()), all sites back to the design-spec size tiers; the control bar's right pair aligns column-wise with the file-tree action bar (26×26 / 2 gap); the "Sessions" icon gets an 18→19 optical compensation; the status-bar settings button / projects tab move up to the large icon tier; the project-row path hover bar is turned off. (ed419c0, 8ec6754, edf5267, 9257cd5)
+
 ## [0.1.6] - 2026-10-14
 
 An editor open-capability batch: images open directly, legacy encodings like GBK/UTF-16 open and save; a tab context menu and a changelog entry point; fixes for frozen large single-line files and CJK crashes; scrolling feel aligned with Zed.
