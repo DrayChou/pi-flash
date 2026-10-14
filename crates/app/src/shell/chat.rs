@@ -182,6 +182,9 @@ pub(crate) struct DlgUi {
     /// 终端右键菜单（复制 / 粘贴 / 全选；渲染挂 psp_overlays 同层）。
     /// (终端 tab id, 鼠标 x, y)
     pub(crate) term_menu: Option<(usize, f32, f32)>,
+    /// 输入面板右键菜单（031：编辑块 撤销/恢复/全选 + 剪切/复制/粘贴/
+    /// 删除；渲染挂 psp_overlays 同层）。(鼠标 x, y)
+    pub(crate) input_menu: Option<(f32, f32)>,
     /// topbar 标签右键菜单（zed tab_bar 菜单移植：Close/Others/Left/
     /// Right/All；渲染挂 psp_overlays 同层）。(目标 tab, 鼠标 x, y)
     pub(crate) tab_menu: Option<(crate::TabMenuTarget, f32, f32)>,
@@ -536,6 +539,7 @@ impl Chat {
                 tree_edit: None,
                 editor_menu: None,
                 term_menu: None,
+                input_menu: None,
                 tab_menu: None,
                 tree_confirm_del: None,
                 tree_del_error: None,

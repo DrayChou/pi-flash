@@ -632,6 +632,11 @@ fn dialogs_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
             "x": x,
             "y": y,
         })),
+        // 031 输入面板右键菜单（input.context_menu 置槽；null=关）
+        "input_menu": chat.dlg.input_menu.map(|(x, y)| json!({
+            "x": x,
+            "y": y,
+        })),
         "ext_dialog": chat.aux.ext_dialog.is_some(),
         "toast": chat.dlg.status_toast.as_ref().map(|(t, _)| truncate(t, 200)),
         "settings_open": chat.dlg.settings.is_some(),

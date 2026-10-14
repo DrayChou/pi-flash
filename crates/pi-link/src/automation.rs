@@ -52,6 +52,12 @@ pub mod method {
     /// editor_menu 槽（与点菜单项外区域同效），回 {had_menu}；dialogs 面
     /// `editor_menu`（null=关）断言开合
     pub const FILE_CONTEXT_MENU_CLOSE: &str = "file.context_menu_close";
+    /// 031 输入面板右键菜单（自动化验证入口：状态与真右键同槽，x/y 缺省
+    /// 给视口中下部——胶囊位置）；dialogs 面 `input_menu`（null=关）断言开合
+    pub const INPUT_CONTEXT_MENU: &str = "input.context_menu";
+    /// 输入面板右键菜单收起（input.context_menu 的对向 op）：幂等清
+    /// input_menu 槽，回 {had_menu}
+    pub const INPUT_CONTEXT_MENU_CLOSE: &str = "input.context_menu_close";
     /// 文件树删除流（自动化验证入口，settings.remove_ext 同款两段式）：
     /// file.delete 弹确认浮层（与右键菜单「删除」同一方法
     /// confirm_tree_delete），file.delete_confirm 应答「确认」（与确认按钮

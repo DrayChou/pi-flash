@@ -297,6 +297,9 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("action.paste", "粘贴", "貼上", "Paste"),
     ("action.cut", "剪切", "剪下", "Cut"),
     ("action.select_all", "全选", "全選", "Select All"),
+    // 031 输入面板右键菜单（用户定案：redo 文案「恢复」）
+    ("action.undo", "撤销", "撤銷", "Undo"),
+    ("action.redo", "恢复", "恢復", "Redo"),
     ("file_view.preview", "预览", "預覽", "Preview"),
     ("file_tree.insert_at_mention", "@到会话输入框", "@到會話輸入框", "Mention in composer"),
     ("file_tree.rename", "改名", "改名", "Rename"),

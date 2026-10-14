@@ -39,6 +39,10 @@ pub(crate) fn psp_overlays(
     if chat.dlg.editor_menu.is_some() {
         el = el.child(editor_menu_layer(chat, vp, t, cx));
     }
+    // 输入面板右键菜单（031：编辑块 撤销/恢复/全选 + 剪切/复制/粘贴/删除）
+    if chat.dlg.input_menu.is_some() {
+        el = el.child(input_menu_layer(chat, vp, t, cx));
+    }
     // 终端右键菜单（复制/粘贴/全选）；tab 已关则不再挂（防挂到空气里）
     if let Some((tab_id, x, y)) = chat.dlg.term_menu
         && chat.ws.terminals.iter().any(|t| t.id == tab_id)
@@ -880,6 +884,131 @@ fn editor_menu_layer(
         };
     }
     layer.child(card).into_any_element()
+}
+
+/// 输入面板右键菜单（031 用户定案）：纯编辑块——撤销/恢复/全选 + 剪切/
+/// 复制/粘贴/删除，样式与编辑区菜单同套（menu_card/menu_item/menu_sep，
+/// 不出快捷键列：Ctrl+Z/Y/A/X/C/V 系统本就支持，菜单只是等价入口）。
+/// 动作先把焦点还给 composer 输入组件再派发 Input 动作（同编辑区菜单
+/// 编辑四项的接线）；粘贴派发 app 的 ComposerPaste，与 Ctrl+V 完全同
+/// 路径（剪贴板含图先附件化）。
+fn input_menu_layer(
+    chat: &mut Chat,
+    vp: (f32, f32),
+    t: &'static Theme,
+    cx: &mut gpui::Context<Chat>,
+) -> gpui::AnyElement {
+    let weak = cx.entity().downgrade();
+    let (x, y) = chat.dlg.input_menu.expect("checked by caller");
+    let edges = PopupEdges::around((x, y), vp, 0., 12.);
+    let weak_layer = weak.clone();
+    let layer = crate::ui::overlay::layer(false, Some(&chat.dlg.dialog_focus), move |_w, cx| {
+        let _ = weak_layer.update(cx, |c, cx| {
+            c.dlg.input_menu = None;
+            cx.notify();
+        });
+    });
+    let card = menu_card(edges, t)
+        .child(composer_edit_item(
+            &weak,
+            "cim-undo",
+            "undo-2",
+            tr("action.undo"),
+            || Box::new(gpui_component::input::Undo),
+        ))
+        .child(composer_edit_item(
+            &weak,
+            "cim-redo",
+            "redo-2",
+            tr("action.redo"),
+            || Box::new(gpui_component::input::Redo),
+        ))
+        .child(composer_edit_item(
+            &weak,
+            "cim-select-all",
+            "check",
+            tr("action.select_all"),
+            || Box::new(gpui_component::input::SelectAll),
+        ))
+        .child(menu_sep())
+        .child(composer_edit_item(
+            &weak,
+            "cim-cut",
+            "scissors",
+            tr("action.cut"),
+            || Box::new(gpui_component::input::Cut),
+        ))
+        .child(composer_edit_item(
+            &weak,
+            "cim-copy",
+            "copy",
+            tr("action.copy"),
+            || Box::new(gpui_component::input::Copy),
+        ))
+        .child(composer_paste_item(&weak, "cim-paste"))
+        .child(composer_edit_item(
+            &weak,
+            "cim-delete",
+            "trash",
+            tr("action.delete"),
+            || Box::new(gpui_component::input::Delete),
+        ));
+    layer.child(card).into_any_element()
+}
+
+/// 输入菜单动作项接线：点击 = 焦点归位 composer 输入组件 + 派发 Input
+/// 动作 + 收菜单（同 editor_edit_item，目标换成 composer 门面内的
+/// InputState——菜单打开不改变焦点归属，但点击可能让焦点漂移，保险
+/// 每次归位，收起后键盘接着在输入框里用）。
+fn composer_edit_item(
+    weak: &gpui::WeakEntity<Chat>,
+    id: &'static str,
+    icon_name: &'static str,
+    label: &str,
+    make: fn() -> Box<dyn gpui::Action>,
+) -> gpui::Stateful<gpui::Div> {
+    let weak = weak.clone();
+    menu_item(SharedString::from(id.to_string()), icon_name, label, false, false)
+        .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+            cx.stop_propagation();
+            let _ = weak.update(cx, |c, cx| {
+                if let Some(comp) = &c.composer.composer {
+                    let handle = comp.read(cx).focus_handle_in(cx);
+                    window.focus(&handle);
+                    window.dispatch_action(make(), cx);
+                }
+                c.dlg.input_menu = None;
+                cx.notify();
+            });
+        })
+}
+
+/// 输入菜单「粘贴」项：派发 app 的 ComposerPaste 而非组件 Paste——
+/// Ctrl+V 的完整路径（剪贴板含图先附件化，纯文本再走组件粘贴）。
+fn composer_paste_item(
+    weak: &gpui::WeakEntity<Chat>,
+    id: &'static str,
+) -> gpui::Stateful<gpui::Div> {
+    let weak = weak.clone();
+    menu_item(
+        SharedString::from(id.to_string()),
+        "clipboard",
+        tr("action.paste"),
+        false,
+        false,
+    )
+    .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+        cx.stop_propagation();
+        let _ = weak.update(cx, |c, cx| {
+            if let Some(comp) = &c.composer.composer {
+                let handle = comp.read(cx).focus_handle_in(cx);
+                window.focus(&handle);
+                window.dispatch_action(Box::new(crate::ComposerPaste), cx);
+            }
+            c.dlg.input_menu = None;
+            cx.notify();
+        });
+    })
 }
 
 /// 终端右键菜单（复制 / 粘贴 / 全选）：动作作用于右键那一个终端 tab

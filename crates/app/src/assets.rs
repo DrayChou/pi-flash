@@ -94,6 +94,9 @@ assets! {
     "icons/loader.svg",
     "icons/trash.svg",
     "icons/check.svg",
+    // 031 输入面板右键菜单：lucide undo-2 / redo-2（撤销/恢复）
+    "icons/undo-2.svg",
+    "icons/redo-2.svg",
     // 042 模型管理：默认模型五角星（空心/实心）
     "icons/star.svg",
     "icons/star-filled.svg",

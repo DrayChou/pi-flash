@@ -4,7 +4,7 @@
 
 use std::rc::Rc;
 
-use gpui::{Context, KeyDownEvent, MouseButton, SharedString, div, prelude::*, px, rgb};
+use gpui::{Context, KeyDownEvent, MouseButton, MouseDownEvent, SharedString, div, prelude::*, px, rgb};
 
 use crate::Chat;
 use crate::ComposerInput;
@@ -216,14 +216,30 @@ pub(crate) fn input_area(
                 .children(thumbs),
         );
     }
-    // 编辑区：真输入组件（多行 AutoGrow，超出 max 出纵向滚动条）
+    // 编辑区：真输入组件（多行 AutoGrow，超出 max 出纵向滚动条）；右键
+    // 弹输入菜单（031，事件从组件冒泡上来——vendored 组件右键只做
+    // 「无选区时移动光标」，不吞事件）。压缩锁期间整块是提示占位、无
+    // 可编辑对象，不弹
+    let weak_menu = weak.clone();
     capsule = capsule.child(
         div()
+            .id("composer-editor")
             .w_full()
             .min_h(px(60.))
             .pt(px(2.))
             .pb(px(2.))
             .px(px(6.))
+            .on_mouse_down(MouseButton::Right, move |ev: &MouseDownEvent, _, cx| {
+                if compacting {
+                    return;
+                }
+                cx.stop_propagation();
+                let _ = weak_menu.update(cx, |c, cx| {
+                    c.dlg.input_menu =
+                        Some((f32::from(ev.position.x), f32::from(ev.position.y)));
+                    cx.notify();
+                });
+            })
             .child(composer),
     );
     capsule = wire_composer_keys(capsule, cx);

@@ -343,6 +343,27 @@ pub(super) fn dispatch(
             cx.notify();
             Ok(json!({"ok": true, "had_menu": had_menu}))
         }
+        // 031 输入面板右键菜单（与真右键同槽；x/y 缺省给视口中下部——
+        // 胶囊常驻底部）。压缩锁期间真右键不弹，这里同样守卫（错误回包
+        // 供断言「锁住不弹」）
+        method::INPUT_CONTEXT_MENU => {
+            if chat.rt().read(cx).compacting {
+                return Err(bad("上下文压缩中，输入面板锁定"));
+            }
+            let x = params.get("x").and_then(Value::as_f64).unwrap_or(600.) as f32;
+            let y = params.get("y").and_then(Value::as_f64).unwrap_or(600.) as f32;
+            chat.dlg.input_menu = Some((x, y));
+            cx.notify();
+            ok()
+        }
+        // 输入面板右键菜单收起（input.context_menu 的对向 op，与点菜单项
+        // 外区域同效——清槽）。幂等：无菜单开着也 ok，回 had_menu 供断言
+        method::INPUT_CONTEXT_MENU_CLOSE => {
+            let had_menu = chat.dlg.input_menu.is_some();
+            chat.dlg.input_menu = None;
+            cx.notify();
+            Ok(json!({"ok": true, "had_menu": had_menu}))
+        }
         method::FILE_VIEW_MODE => {
             let path = params_path(params, "path")?;
             let mode = params
