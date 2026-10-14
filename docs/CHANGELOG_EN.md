@@ -29,7 +29,6 @@ Windows x64 only.
 
 ### Improvements
 - Icon & chrome alignment batch (owner-decided): removed icon_hover's +2px draw inflation (the root cause of "icons look random" — same nominal size painted 2px larger than icon()), all sites back to the design-spec size tiers; the control bar's right pair aligns column-wise with the file-tree action bar (26×26 / 2 gap); the "Sessions" icon gets an 18→19 optical compensation; the status-bar settings button / projects tab move up to the large icon tier; the project-row path hover bar is turned off. (ed419c0, 8ec6754, edf5267, 9257cd5)
-
 ## [0.1.6] - 2026-10-14
 
 An editor open-capability batch: images open directly, legacy encodings like GBK/UTF-16 open and save; a tab context menu and a changelog entry point; fixes for frozen large single-line files and CJK crashes; scrolling feel aligned with Zed.
