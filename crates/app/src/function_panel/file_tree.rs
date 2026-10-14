@@ -416,8 +416,8 @@ fn action_bar(
     let cwd_explorer = chat.ws.cwd.clone();
     let cwd_term = chat.ws.cwd.clone();
     // 021 二改定稿：操作栏即根行——项目名居左（020-1：主题色粗体）、
-    // 操作钮右对齐（间距 10px，各带 tooltip）；名字区右键 = 根目录菜单
-    // （树体不再有根行，根下的新建/改名等入口保留下）
+    // 操作钮右对齐（钮盒 26/间距 2，与会话控制栏右二列对齐，各带 tooltip）；
+    // 名字区右键 = 根目录菜单（树体不再有根行，根下的新建/改名等入口保留下）
     div()
         .id("ft-action-bar")
         .w_full()
@@ -460,7 +460,9 @@ fn action_bar(
                 .flex_shrink_0()
                 .flex()
                 .items_center()
-                .gap(px(10.))
+                // 020-1 列对齐：钮盒 26、间距 2，与会话控制栏右二同指标——
+                // 两排右缘图标逐列对齐（最大化列/次列同 x）
+                .gap(px(2.))
                 .child(bar_btn(
                     "ft-toggle-changes",
                     "git-commit-horizontal",

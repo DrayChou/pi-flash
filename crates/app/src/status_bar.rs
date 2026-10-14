@@ -91,7 +91,8 @@ fn project_tab(t: &'static crate::appearance::theme::Theme) -> impl gpui::IntoEl
         .rounded_br(px(9.))
         // 连体卡顶贴 dock（mt = −(bar−tab) = −4 时卡片顶缘 y=0）
         .mt(px(-4.))
-        .child(crate::ui::icon("icon-project", 16., t.accent))
+        // 大图标档 LG18（2026-10-14 用户定夺：与设置钮同档）
+        .child(crate::ui::icon("icon-project", 18., t.accent))
 }
 
 /// Persist the current shell layout (panel/width/modes/collapse).

@@ -388,8 +388,9 @@ fn psp_ctrl_bar(
     let w_toggle = weak.clone();
     let w_max = weak.clone();
     // 钮盒：h30（tokens::panel_ctrl::BTN_H）px8 gap6，左三带文字（ui_size
-    // 12.5 Semibold），右二定宽 28 纯 icon；hover = bg_hover + 前景变亮
-    //（icon 走同名 group 的 group_hover 同步变色）
+    // 12.5 Semibold），右二定宽 26 纯 icon（与文件树操作栏钮盒同宽，列对
+    // 齐见下方注释）；hover = bg_hover + 前景变亮（icon 走同名 group 的
+    // group_hover 同步变色）
     let btn = |id: &'static str| {
         div()
             .id(id)
@@ -454,12 +455,13 @@ fn psp_ctrl_bar(
                 .child(tr("psp.search")),
         )
         .child(div().flex_1())
-        // 右二：纯 icon
+        // 右二：纯 icon（钮盒 26 = 文件树操作栏 bar_btn 同款，bar gap 2 →
+        // 与下方操作栏右缘逐列对齐：最大化列、次列图标中心严格同 x）
         .child(
             // 列表切换：图标随当前模式换（分组 = folder-list，扁平 =
             // icon-flat），点击直切，不再走 ⋯ 菜单（020-1 定稿）
             btn("psp-list-toggle")
-                .w(px(28.))
+                .w(px(26.))
                 .px(px(0.))
                 .justify_center()
                 .with_tip(if grouped {
@@ -490,7 +492,7 @@ fn psp_ctrl_bar(
             // 最大化（单钮语义）：本面板填满，文件树收起到操作栏；拖分隔线
             // 即退出最大态
             btn("psp-panel-max")
-                .w(px(28.))
+                .w(px(26.))
                 .px(px(0.))
                 .justify_center()
                 .with_tip("psp.maximize")
