@@ -2,6 +2,36 @@
 
 All notable changes to released versions live here; see `docs/CHANGELOG规范.md` for the format.
 
+## [0.1.6] - 2026-10-14
+
+An editor open-capability batch: images open directly, legacy encodings like GBK/UTF-16 open and save; a tab context menu and a changelog entry point; fixes for frozen large single-line files and CJK crashes; scrolling feel aligned with Zed.
+
+### Install & Update
+
+```bash
+npm install -g pi-flash@latest   # first install; re-run the same command to update
+pi-flash
+```
+
+Requires Node.js ≥ 22.19.
+Or download the zip, unzip it and double-click `pi-flash.exe` — no Node needed.
+Windows x64 only.
+
+### New
+- Images open directly: the open route sniffs file headers (previously any file containing NUL bytes went gray-screen, so png and friends never got rendered); png/jpg/gif/webp/bmp etc. render in an image tab, and with tiff/ico/pnm added the set matches Zed's eight formats; svg opens as source (preview stays a separate action for later). (f8046cd, b8ba388)
+- Legacy encodings open and save: opening text now runs an encoding-detection pipeline (BOM / UTF-16 NUL distribution / chardetng sniffing + magic header table, ported line-by-line from Zed's file_content), so GBK and UTF-16LE files like .reg open, and saving writes back in the original encoding, round-trip-safe. (f8046cd)
+- Tab context menu: Close / Close Others / Close Left / Close Right / Close All (same as Zed); batch-closing folds multiple dirty files into a single confirmation (Save & Close / Close Without Saving applies to the whole batch); the first session tab can never be closed. (11331e6)
+- Click the version number on the new-session page to open the changelog: the dimmed idle version label is clickable — it reads the local cache first and fetches by tag if missing; a failed fetch now times out at 15s and shows "暂时无法连接 GitHub" (can't reach GitHub right now), and clicking again retries, instead of waiting 30s and landing on a misleading "no changelog". (e423e6b, 4a480f6)
+
+### Bug fixes
+- Large single-line files froze: opening minified frontend bundles (e.g. echarts.min.js, a 940k-character last line) froze for minutes per frame — syntax highlighting and text shaping are now clipped to the viewport byte window, back to milliseconds. (1d30077)
+- Crashes and misplaced highlights on CJK files: after viewport clipping, style spans no longer covered the whole visible text, so files containing Chinese were sliced mid-multibyte-character and crashed outright (0xc0000409), while ASCII files got silently misaligned highlights — default-style fillers before and after the window restore the tiling invariant. (17138f2)
+- Markdown soft-wrap regression: turning WYSIWYG off used to drag soft-wrap down with it; the two are decoupled and source editing wraps again (consistent with the preview state). (b654ae8)
+- First-launch-after-update popup accounting: dev/smoke builds no longer write last_seen — previously a single run polluted the ledger and swallowed the real update's first-launch popup. (dab6fe7)
+
+### Improvements
+- Scrolling feel aligned with Zed: per-frame tree-sitter re-queries and per-capture heap allocations inside the viewport are gone (verified equal by a differential test), the double frame per wheel tick is eliminated, and line heights snap to whole device pixels (fixing sub-pixel shimmer at 1.5× scaling); app-side overhead for large-file scrolling is essentially zero. (35836ff)
+
 ## [0.1.5] - 2026-10-13
 
 In-app updates gain mirror failover and a download percentage, the context usage popup gets a redesign, plus a batch of chrome alignment tweaks.
