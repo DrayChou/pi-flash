@@ -33,7 +33,10 @@ use crate::Chat;
 pub(crate) struct EditorConfig {
     /// gpui-component tree-sitter 语言名
     pub ts_lang: &'static str,
-    /// 软换行（023：md 关——wrap 与折叠正交；其余开）
+    /// 软换行（2026-10-14 用户定夺：所有 kind 恒开——6bc1f2f 口径「预览和
+    /// 编辑状态都要回行」；此前 md 关是与 WYSIWYG 连坐误关。唯一的例外态：
+    /// WYSIWYG 装饰挂上期间折行必须关（折叠与折行结构互斥，见
+    /// markdown::sync_live_decorations——耦合点收在那一个函数里）
     pub soft_wrap: bool,
     /// 剪贴板图片粘贴落盘钩子（025，仅 md）
     pub image_paste: bool,
@@ -131,7 +134,8 @@ struct CodeKind {
 }
 
 /// Markdown：双态（默认源码态 WYSIWYG，024 二改拍板；eye 切渲染预览）、
-/// 关软换行、图片粘贴插图钩子（025）。
+/// 图片粘贴插图钩子（025）。软换行开（stock 路径；仅 WYSIWYG 装饰挂上
+/// 期间由 sync_live_decorations 关——折叠与折行互斥）。
 struct MarkdownKind;
 
 /// 图片：gpui img() 查看器，无编辑器、只读。
@@ -168,7 +172,7 @@ impl FileKind for MarkdownKind {
         "markdown"
     }
     fn editor_config(&self) -> Option<EditorConfig> {
-        Some(EditorConfig { ts_lang: "markdown", soft_wrap: false, image_paste: true })
+        Some(EditorConfig { ts_lang: "markdown", soft_wrap: true, image_paste: true })
     }
     fn supports_view_mode(&self) -> bool {
         true
@@ -389,12 +393,14 @@ mod tests {
         assert_eq!(kind("txt").editor_config().unwrap().ts_lang, "text");
     }
 
-    /// 编辑器配置：md 关软换行 + 图片粘贴钩子；图片无编辑器。
+    /// 编辑器配置：全部 kind 软换行开（md 的关折行只存在于 WYSIWYG 装饰
+    /// 激活期间，由 sync_live_decorations 运行时收口）；md 带图片粘贴钩子；
+    /// 图片无编辑器。
     #[test]
     fn editor_configs() {
         let md = kind("md").editor_config().unwrap();
         assert_eq!(md.ts_lang, "markdown");
-        assert!(!md.soft_wrap);
+        assert!(md.soft_wrap);
         assert!(md.image_paste);
         let txt = kind("txt").editor_config().unwrap();
         assert!(txt.soft_wrap);

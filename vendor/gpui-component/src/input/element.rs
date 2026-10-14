@@ -701,8 +701,9 @@ impl TextElement {
             let line_slice = display_text.slice_line(row);
 
             // PF-024: 折叠态按折叠后行长单段 shaping——text_wrapper 是 doc
-            // 文本的行模型（含软换行），折叠后长度不再相等；md Live Preview
-            // 关软换行（wrap 与折叠正交），单段即全行。
+            // 文本的行模型（含软换行），折叠后长度不再相等；挂装饰的同时
+            // 必须关软换行（app 侧 sync_live_decorations 同步收口，折叠与
+            // 折行结构互斥），单段即全行。
             let folded = last_layout.decorations.is_some();
             if folded {
                 debug_assert!(

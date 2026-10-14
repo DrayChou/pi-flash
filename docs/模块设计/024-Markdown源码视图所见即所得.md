@@ -69,7 +69,12 @@ FoldSet（折叠集：doc↔vis 双向映射 + atomic 跳表）—— 映射单�
 - **铁律**：文档 = rope 源码；装饰只改视图，从不改写文档——复制/undo/IME/
   持久化零处理天然正确
 - reveal = 每帧纯函数（光标行 folds 退出折叠集），selection 变了自然生效
-- 源码态关软换行（wrap 与折叠正交，避免 text_wrapper 结构纠缠）
+- ~~源码态关软换行（wrap 与折叠正交，避免 text_wrapper 结构纠缠）~~
+  **2026-10-14 反转（用户定夺）**：折行是被 WYSIWYG 连坐误关的，md 源码
+  编辑器折行恢复恒开（kind.rs `EditorConfig`，6bc1f2f 口径「预览和编辑
+  状态都要回行」）；折叠与折行的结构互斥只约束「装饰挂上期间」——关折行
+  收口在 `markdown::doc::sync_live_decorations` 一处（挂装饰原子关、摘
+  装饰原子恢复）。stock 路径不再为 WYSIWYG 让步。
 
 ### vendor 缝（薄补丁，升级重放；实测过的实现见 git `5a7a7fe`）
 
@@ -133,7 +138,7 @@ crates/app/src/editor/
 | 风险 | 应对 |
 |---|---|
 | 再次误伤 preview | §5 三条验收红线；改动评审先看 diff 范围 |
-| 折叠与 wrap 结构纠缠 | 源码态关软换行（正交化） |
+| 折叠与 wrap 结构纠缠 | 装饰挂上期间关软换行（2026-10-14 起收口在 sync_live_decorations；stock 路径折行恒开） |
 | `pos_for` 漏一处 = 光标错位 | 映射收口 FoldSet 单点 + 性质测试 + pif-ui 按键断言 |
 | vendor 补丁随升级丢失 | 补丁面集中在 decorations/state/element/movement，升级 checklist 重放 |
 | 每帧全文解析/拷贝开销 | 典型笔记 <1ms；>1MB 再窗口化（P2 视实测） |

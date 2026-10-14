@@ -942,6 +942,12 @@ impl InputState {
 
     /// Update the soft wrap mode for multi-line input, default is true.
     pub fn set_soft_wrap(&mut self, wrap: bool, _: &mut Window, cx: &mut Context<Self>) {
+        self.set_soft_wrap_cx(wrap, cx);
+    }
+
+    /// PF 2026-10-14：无 window 变体（window 参数在上游签名里本就被忽略）——
+    /// app 的渲染帧同步点（sync_live_decorations）手里只有 `Context<Self>`。
+    pub fn set_soft_wrap_cx(&mut self, wrap: bool, cx: &mut Context<Self>) {
         debug_assert!(self.mode.is_multi_line());
         self.soft_wrap = wrap;
         if wrap {
