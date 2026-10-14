@@ -28,7 +28,6 @@ use crate::ui::{WithTip, icon, icon_hover, spinner};
 /// Flattened psp row model (one virtual list over all rows).
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum PspRow {
-    Title,
     Project(usize),
     Session { p: usize, s: usize },
     /// 伪标签（draft 已发送、pi 未落盘的占位行；key = 池 key draft-N）
@@ -46,7 +45,7 @@ fn psp_page() -> usize {
 }
 
 pub(crate) fn psp_rows(chat: &Chat) -> Vec<PspRow> {
-    let mut rows = vec![PspRow::Title];
+    let mut rows: Vec<PspRow> = Vec::new();
     // 伪标签归属：cwd 匹配项目组的插在组内会话行之前（它就是该项目最新的
     // 活动）；没有任何组可归（该项目还没有已落盘会话）的插在 Title 后。
     // 折叠的组里伪标签照常显示——它正是用户刚发出的那条消息的标签。
@@ -118,9 +117,9 @@ pub(crate) fn psp_rows(chat: &Chat) -> Vec<PspRow> {
         }
     }
     // 无组可归的伪标签（该项目组还没被 rebuild_projects 建出来）：插在
-    // Title 之后置顶——用户刚发的消息必须是第一眼能看到的东西
+    // 列表顶——用户刚发的消息必须是第一眼能看到的东西
     for (i, key) in orphan_pending.into_iter().enumerate() {
-        rows.insert(1 + i, PspRow::Pending { key });
+        rows.insert(i, PspRow::Pending { key });
     }
     rows
 }
@@ -232,27 +231,35 @@ pub(crate) fn psp_view(
     window: &mut gpui::Window,
     cx: &mut Context<Chat>,
 ) -> gpui::AnyElement {
-    // title 行固定在 dock 顶部（操作行永远可见），只有列表滚动。
-    // 之前 title 行放滚动容器内时，其按钮 hitbox 被 scroll mask 裁掉，
-    // 点击全部失效——这也是设计的本意：title 行不是列表内容。
+    // 020-1 会话子面板：控制栏固定在子面板顶（操作行永远可见），只有列表
+    // 滚动。之前操作行放滚动容器内时，其按钮 hitbox 被 scroll mask 裁掉，
+    // 点击全部失效——这也是设计的本意：操作行不是列表内容。
     let t = T();
-    // 统一对齐线（§7 / tokens::align）：topbar 收放钮图标与列表行图标共
+    // 统一对齐线（§7 / tokens::align）：控制栏钮图标与列表行图标共
     // 用视觉左缘 ICON_LINE。容器 px = LIST_PX 是唯一水平留白源，
     // 行内 pl = ROW_PL 是对齐补偿（LIST_PX + ROW_PL = ICON_LINE）；右线 =
     // LIST_PX。改线只改 tokens 里 ICON_LINE，这里全自动跟随。
-    let mut col = div()
-        .flex_1()
-        .min_h_0()
+    let sess_min = chat.layout.sess_min;
+    let files_min = chat.layout.files_min;
+    let mut panel = div()
+        .id("sub-sess")
         .w_full()
+        .overflow_hidden()
         .flex()
         .flex_col()
-        .px(px(align::LIST_PX))
-        .pt(px(6.))
-        .child(title_row(chat, &weak, t));
-    let rows: Vec<gpui::AnyElement> = psp_rows(chat)
-        .into_iter()
-        .filter(|row| !matches!(row, PspRow::Title))
-        .map(|row| match row {
+        .child(psp_ctrl_bar(chat, &weak, t));
+    if !sess_min {
+        let mut body = div()
+            .flex_1()
+            .min_h_0()
+            .w_full()
+            .flex()
+            .flex_col()
+            .px(px(align::LIST_PX))
+            .pt(px(6.));
+        let rows: Vec<gpui::AnyElement> = psp_rows(chat)
+            .into_iter()
+            .map(|row| match row {
             PspRow::Project(pi) => project_row(chat, pi, &weak, t),
             PspRow::Session { p, s } => session_row_view(chat, p, s, &weak, t, window, cx),
             PspRow::Pending { key } => pending_row_view(chat, &key, &weak, t),
@@ -287,13 +294,12 @@ pub(crate) fn psp_view(
                     .child(tr("settings.show_more"))
                     .into_any_element()
             }
-            PspRow::Title => div().into_any_element(),
         })
         .collect();
     // psp 会话列表滚动 + 右缘滚动条。Scrollbar 挂在与滚动容器平级的
     // relative 包裹上（贴 dock 右缘，不吃容器内 10px 留白）；ZED Regular
     // 视觉：只有 thumb 无 track（track 色已在 sync_gpui_tokens 透明化）。
-    col = col.child(
+    body = body.child(
         div()
             .id("psp-scroll-wrap")
             .relative()
@@ -348,119 +354,154 @@ pub(crate) fn psp_view(
                     )),
             ),
     );
-    col.into_any_element()
+        panel = panel.child(body);
+    }
+    // 子面板在 dock 列里的伸缩（020-1）：对面最大化 → 本面板填满；本面板
+    // 最小 → 只剩控制栏（auto 高）；常态 = 分隔线占比
+    if files_min {
+        panel = panel.flex_1().min_h_0();
+    } else if sess_min {
+        panel = panel.flex_shrink_0();
+    } else {
+        panel = panel
+            .flex_basis(gpui::relative(chat.layout.dock_split))
+            .flex_shrink_0()
+            .min_h_0();
+    }
+    panel.into_any_element()
 }
 
-/// title 行（操作行）：左文案（项目/会话），右 4 常显钮。
-fn title_row(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> gpui::AnyElement {
-    let label = match chat.psp.list_mode {
-        ListMode::Flat => tr("psp.session_label"),
-        _ => tr("scope.project"),
-    };
+/// 020-1 会话子面板控制栏（38px、无下 border）：左三 icon+文字（大图标
+/// LG18）= 项目（打开项目）/ 会话（新建会话）/ 搜索；右二纯 icon（小图标
+/// MD16）= 列表切换（项目分组 ↔ 最近会话，图标随模式换）+ 最大化（本面板
+/// 填满、文件树收起到操作栏）。左缘 = ICON_LINE 12（容器 pl4 + 钮 px8）、
+/// 右缘 = LIST_PX 10，与文件树操作栏同线。
+fn psp_ctrl_bar(
+    chat: &Chat,
+    weak: &gpui::WeakEntity<Chat>,
+    t: &'static Theme,
+) -> gpui::AnyElement {
+    let grouped = chat.psp.list_mode == ListMode::Grouped;
     let w_open = weak.clone();
     let w_new = weak.clone();
     let w_search = weak.clone();
-    let w_sort = weak.clone();
+    let w_toggle = weak.clone();
+    let w_max = weak.clone();
+    // 钮盒：h30（tokens::panel_ctrl::BTN_H）px8 gap6，左三带文字（ui_size
+    // 12.5 Semibold），右二定宽 28 纯 icon；hover = bg_hover + 前景变亮
+    //（icon 走同名 group 的 group_hover 同步变色）
+    let btn = |id: &'static str| {
+        div()
+            .id(id)
+            .h(px(crate::ui::tokens::panel_ctrl::BTN_H))
+            .px(px(8.))
+            .flex()
+            .items_center()
+            .gap(px(crate::ui::tokens::space::SP3))
+            .rounded(px(8.))
+            .cursor_pointer()
+            .group("pc-btn")
+            .text_size(crate::appearance::ui_size(12.5))
+            .font_weight(gpui::FontWeight::SEMIBOLD)
+            .text_color(rgb(t.text_dim))
+            .hover(move |s| s.bg(rgb(t.bg_hover)).text_color(rgb(t.text)))
+    };
+    let icon = |name: &'static str, size: f32| {
+        gpui::svg()
+            .path(SharedString::from(format!("icons/{name}.svg")))
+            .text_color(rgb(t.text_dim))
+            .group_hover("pc-btn", |s| s.text_color(rgb(t.text)))
+            .size(px(size))
+            .into_any_element()
+    };
     div()
-        .id("psp-title")
+        .id("psp-ctrl")
         .w_full()
-        .h(px(30.))
+        .flex_shrink_0()
+        .h(px(crate::ui::tokens::panel_ctrl::BAR_H))
         .flex()
         .items_center()
-        .pl(px(align::ROW_PL))
+        .gap(px(2.))
+        // 左线 = ICON_LINE（4 + 钮内边距 8）；右缘 = LIST_PX
+        .pl(px(4.))
         .pr(px(align::LIST_PX))
-
-        .text_size(crate::appearance::ui_size(12.))
-        .font_weight(gpui::FontWeight::SEMIBOLD)
-        .text_color(rgb(t.text_soft))
-        .child(div().flex_1().child(SharedString::from(label)))
+        // 左三：icon+文字
         .child(
-            div()
-                .ml_auto()
-                .flex()
-                .items_center()
-                .flex_shrink_0()
-                .gap(px(10.))
-
-                // 打开项目（iconfont 实底）
-                .child(
-                    div()
-                        .id("psp-open-project")
-                        .w(px(28.))
-                        .h_full()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .cursor_pointer()
-                        .hover(|s| s.text_color(rgb(t.text)))
-                        .with_tip_action("psp.open_project", &crate::OpenProjectPicker)
-                        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                            let _ = w_open.update(cx, |c, cx| c.open_project_picker(false, cx));
-                        })
-                        .child(icon_hover("icon-project", 18., t.text_dim)),
-                )
-                // 新建会话（19px 实底，ml 2）
-                .child(
-                    div()
-                        .id("psp-new-session")
-                        .ml(px(2.))
-                        .w(px(28.))
-                        .h_full()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .cursor_pointer()
-                        .hover(|s| s.text_color(rgb(t.text)))
-                        .with_tip_action("psp.new_session", &crate::NewSession)
-                        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                            let _ = w_new.update(cx, |c, cx| c.new_session(cx));
-                        })
-                        .child(icon_hover("icon-new-chat", 19., t.text_dim)),
-                )
-                // 会话查询（lucide search）
-                .child(
-                    div()
-                        .id("psp-search")
-                        .w(px(28.))
-                        .h_full()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .cursor_pointer()
-                        .hover(|s| s.text_color(rgb(t.text)))
-                        .with_tip_action("psp.search_sessions", &crate::OpenSessionSearch)
-                        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                            let _ = w_search.update(cx, |c, cx| c.open_session_search(cx));
-                        })
-                        .child(icon_hover("search", 18., t.text_dim)),
-                )
-                // 排序（ellipsis）
-                .child(
-                    div()
-                        .id("psp-sort-menu")
-                        .w(px(28.))
-                        .h_full()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .cursor_pointer()
-                        .hover(|s| s.text_color(rgb(t.text)))
-                        .with_tip("psp.sort")
-                        .on_mouse_down(MouseButton::Left, move |ev: &gpui::MouseDownEvent, _, cx| {
-                            cx.stop_propagation();
-                            let _ = w_sort.update(cx, |c, cx| {
-                                // 存原始点击点；方向与间距由渲染期统一弹出
-                                // 算法（ui::popup）决定，此处不再手工偏移
-                                c.dlg.psp_menu = Some(crate::function_panel::PspMenu::Sort {
-                                    sub: None,
-                                    x: f32::from(ev.position.x),
-                                    y: f32::from(ev.position.y),
-                                });
-                                cx.notify();
-                            });
-                        })
-                        .child(icon_hover("ellipsis", 18., t.text_dim)),
-                ),
+            btn("psp-open-project")
+                .with_tip_action("psp.open_project", &crate::OpenProjectPicker)
+                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                    let _ = w_open.update(cx, |c, cx| c.open_project_picker(false, cx));
+                })
+                .child(icon("icon-project", crate::ui::tokens::icon::LG))
+                .child(tr("scope.project")),
+        )
+        .child(
+            btn("psp-new-session")
+                .with_tip_action("psp.new_session", &crate::NewSession)
+                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                    let _ = w_new.update(cx, |c, cx| c.new_session(cx));
+                })
+                .child(icon("icon-new-chat", crate::ui::tokens::icon::LG))
+                .child(tr("psp.session_label")),
+        )
+        .child(
+            btn("psp-search")
+                .with_tip_action("psp.search_sessions", &crate::OpenSessionSearch)
+                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                    let _ = w_search.update(cx, |c, cx| c.open_session_search(cx));
+                })
+                .child(icon("search", crate::ui::tokens::icon::LG))
+                .child(tr("psp.search")),
+        )
+        .child(div().flex_1())
+        // 右二：纯 icon
+        .child(
+            // 列表切换：图标随当前模式换（分组 = folder-list，扁平 =
+            // icon-flat），点击直切，不再走 ⋯ 菜单（020-1 定稿）
+            btn("psp-list-toggle")
+                .w(px(28.))
+                .px(px(0.))
+                .justify_center()
+                .with_tip(if grouped {
+                    "psp.switch_to_flat"
+                } else {
+                    "psp.switch_to_grouped"
+                })
+                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                    let _ = w_toggle.update(cx, |c, cx| {
+                        c.psp.list_mode = match c.psp.list_mode {
+                            ListMode::Grouped => ListMode::Flat,
+                            ListMode::Flat => ListMode::Grouped,
+                        };
+                        c.persist_ui();
+                        cx.notify();
+                    });
+                })
+                .child(icon(
+                    if grouped {
+                        "icon-folder-list"
+                    } else {
+                        "icon-flat"
+                    },
+                    crate::ui::tokens::icon::MD,
+                )),
+        )
+        .child(
+            // 最大化（单钮语义）：本面板填满，文件树收起到操作栏；拖分隔线
+            // 即退出最大态
+            btn("psp-panel-max")
+                .w(px(28.))
+                .px(px(0.))
+                .justify_center()
+                .with_tip("psp.maximize")
+                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                    let _ = w_max.update(cx, |c, cx| {
+                        c.layout.files_min = true;
+                        c.layout.sess_min = false;
+                        cx.notify();
+                    });
+                })
+                .child(icon("maximize", crate::ui::tokens::icon::MD)),
         )
         .into_any_element()
 }
@@ -568,14 +609,15 @@ fn project_row(
                 .overflow_hidden()
                 .whitespace_nowrap()
                 .text_ellipsis()
-                // 项目标签 = 面板设置值（字体大小设置.md §1）
+                // 项目标签 = 面板设置值（字体大小设置.md §1）；
+                // 020-1：选中项目 = 主题色 + 粗体（与文件树操作栏项目名一致）
                 .text_size(crate::appearance::ui_size(12.))
                 .font_weight(if active {
-                    gpui::FontWeight::SEMIBOLD
+                    gpui::FontWeight::BOLD
                 } else {
                     gpui::FontWeight::MEDIUM
                 })
-                .text_color(if active { rgb(t.text) } else { rgb(t.text_dim) })
+                .text_color(if active { rgb(t.accent) } else { rgb(t.text_dim) })
                 .child(name),
         )
         .when(hovered, |d| {
@@ -1001,7 +1043,7 @@ fn pending_row_view(
 }
 
 // ---------------------------------------------------------------------------
-// dock container (015 v54): nav 底色 + 三视图 + 右缘 resizer
+// dock container (020-1 v54): nav 底色 + 上下子面板（会话/文件树）+ 分隔线
 // ---------------------------------------------------------------------------
 
 pub(crate) fn dock(
@@ -1012,11 +1054,24 @@ pub(crate) fn dock(
     cx: &mut Context<Chat>,
 ) -> gpui::AnyElement {
     let t = T();
-    let view: gpui::AnyElement = match chat.layout.dock_panel {
-        DockPanel::Sessions => psp_view(chat, entity, weak.clone(), window, cx),
-        DockPanel::Files => files_view(chat, weak, cx).into_any_element(),
-        DockPanel::Git => git_panel::view(chat, weak, cx).into_any_element(),
-    };
+    // git 面板保留独立视图（022；状态栏 tab 已隐藏，恢复走 git 历史找回）
+    if chat.layout.dock_panel == DockPanel::Git {
+        return div()
+            .id("dock")
+            .flex_1()
+            .min_h_0()
+            .relative()
+            .flex()
+            .flex_col()
+            .bg(rgb(t.nav))
+            .child(git_panel::view(chat, weak, cx))
+            .into_any_element();
+    }
+    // 020-1 整合面板：会话列表(上) + 文件树(下)，默认 50/50；分隔线拖拽
+    // 改占比（拖拽即退出两侧最小态、双击复位 50%），各自可收起到控制栏
+    //（单最大化钮，语义见 LayoutUi::sess_min / files_min）
+    let bounds_slot = chat.layout.dock_bounds.clone();
+    let split_drag = chat.layout.split_drag;
     div()
         .id("dock")
         .flex_1()
@@ -1025,7 +1080,57 @@ pub(crate) fn dock(
         .flex()
         .flex_col()
         .bg(rgb(t.nav))
-        .child(view)
+        // dock 容器 bounds 每帧捕获（PillBtns::tracker 同款 canvas）：
+        // app-body 层的拖拽跟踪要把窗口 y 换算成占比
+        .child(
+            gpui::canvas(
+                move |bounds, _, _| *bounds_slot.borrow_mut() = Some(bounds),
+                |_, _, _, _| {},
+            )
+            .absolute()
+            .inset_0(),
+        )
+        .child(psp_view(chat, entity, weak.clone(), window, cx))
+        // 子面板分隔线：7px 命中带 + 1px 视觉线（左右缩进 10 = 列表右线），
+        // hover/拖拽变 accent
+        .child(
+            div()
+                .id("sp-divider")
+                .with_tip("psp.split_tip")
+                .h(px(crate::ui::tokens::panel_ctrl::DIV_H))
+                .flex_shrink_0()
+                .relative()
+                .group("spdiv")
+                .cursor_row_resize()
+                .on_mouse_down(MouseButton::Left, {
+                    let weak_dz = weak.clone();
+                    move |ev: &gpui::MouseDownEvent, _, cx| {
+                        let _ = weak_dz.update(cx, |c, cx| {
+                            if ev.click_count == 2 {
+                                c.layout.dock_split = 0.5;
+                                c.layout.sess_min = false;
+                                c.layout.files_min = false;
+                                c.persist_ui();
+                            } else {
+                                c.layout.split_drag = true;
+                            }
+                            cx.notify();
+                        });
+                    }
+                })
+                .child(
+                    div()
+                        .absolute()
+                        .left(px(10.))
+                        .right(px(10.))
+                        .top(px(3.))
+                        .h(px(1.))
+                        .bg(rgb(t.border))
+                        .when(split_drag, |d| d.bg(rgb(t.accent)))
+                        .group_hover("spdiv", |d| d.bg(rgb(t.accent))),
+                ),
+        )
+        .child(files_view(chat, weak, cx))
         .into_any_element()
 }
 
@@ -1066,8 +1171,7 @@ pub(crate) struct HoverCard {
 
 #[derive(Debug, Clone)]
 pub(crate) enum PspMenu {
-    /// sub: 0=列表方式, 1=排序方式
-    Sort { sub: Option<u8>, x: f32, y: f32 },
+    /// 项目行 ⋯ 菜单（列表切换/排序已上收控制栏，020-1：仅剩项目菜单）
     Project { path: PathBuf, x: f32, y: f32 },
 }
 

@@ -267,6 +267,19 @@ pub(crate) struct LayoutUi {
     pub(crate) slp_drag: Option<(f32, f32)>,
     /// 分隔线响应区悬停（线加深加粗 + col_resize 光标已由 resizer 承担）
     pub(crate) slp_hover: bool,
+    /// 020-1 整合面板：会话子面板高度占比（0..1，分隔线拖拽/双击复位 0.5，
+    /// 持久化在 UiState.dock_split）
+    pub(crate) dock_split: f32,
+    /// 020-1 子面板最小态（= 对面最大化）。最大化语义：点谁谁填满、对面
+    /// 收起到控制栏；拖分隔线即双双退出最小态。会话级，不持久化。
+    pub(crate) sess_min: bool,
+    pub(crate) files_min: bool,
+    /// 子面板分隔线拖拽进行中（app-body 层跟踪 mouse move/up）
+    pub(crate) split_drag: bool,
+    /// dock 容器 bounds（canvas 每帧捕获，分隔线拖拽换算占比用；PillBtns
+    /// 同款 Rc<RefCell> 绕 paint 期实体借用限制）
+    pub(crate) dock_bounds:
+        std::rc::Rc<std::cell::RefCell<Option<gpui::Bounds<gpui::Pixels>>>>,
     pub(crate) content_view: ContentView,
     /// 浏览操作区的最后视图（Term/File）：文件树标签点击时恢复
     pub(crate) browse_last: ContentView,
@@ -457,6 +470,11 @@ impl Chat {
                 panes_hidden: ui.panes_hidden,
                 slp_drag: None,
                 slp_hover: false,
+                dock_split: ui.dock_split.unwrap_or(0.5),
+                sess_min: false,
+                files_min: false,
+                split_drag: false,
+                dock_bounds: std::rc::Rc::new(std::cell::RefCell::new(None)),
                 content_view: ContentView::Chat,
                 browse_last: ContentView::Term,
                 nav_open: false,

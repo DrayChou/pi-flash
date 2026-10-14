@@ -130,6 +130,14 @@ pub mod scrollbar {
     pub const THUMB_ACTIVE: f32 = 10.;
 }
 
+/// §5.10 面板控制栏（020-1 整合面板）：上下子面板控制栏统一高、一律无
+/// 下 border；分隔线总高含上下各 3px 命中带（视觉线 1px 居中）；钮盒高 30。
+pub mod panel_ctrl {
+    pub const BAR_H: f32 = 38.;
+    pub const DIV_H: f32 = 7.;
+    pub const BTN_H: f32 = 30.;
+}
+
 /// §2 渲染特例固定字号（px）：markdown 内部 chrome 不经 ui_size（§2 禁止
 /// 事项的"值入册"落点），改动 = 改规范再改这里。
 pub mod fixed {
@@ -220,6 +228,11 @@ mod tests {
         assert_eq!(
             [scrollbar::W, scrollbar::THUMB, scrollbar::THUMB_ACTIVE],
             [10., 6., 10.]
+        );
+        // §5.10 面板控制栏（020-1）
+        assert_eq!(
+            [panel_ctrl::BAR_H, panel_ctrl::DIV_H, panel_ctrl::BTN_H],
+            [38., 7., 30.]
         );
         // §7 图标对齐线（含推导值）
         assert_eq!(

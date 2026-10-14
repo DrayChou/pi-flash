@@ -1,22 +1,23 @@
-//! statusbar (v54): 40px，只在面板段（panel-col 内），三个面板 tab
-//! （psp / 文件树 / Git）46px 宽 icon 即标签。激活 tab = nav 色连体卡
-//! （顶无边、底圆角、accent 色），与 dock 背景连成一体。右端 = 设置钮
-//! （016 下放，原手机图标位；手机遥控迁 topbar 左段）。收起态整个隐藏
-//! （panel-col 随 panes_hidden 不渲染）。
+//! statusbar (v54): 40px，只在面板段（panel-col 内）。020-1 起面板 tab
+//! 只剩「项目」一个（46px 宽 briefcase icon 常亮连体卡，顶无边、底圆角、
+//! accent 色，与 dock 背景连成一体；文件树已并入整合面板，tab 位留给后续
+//! 新面板）。右端 = 设置钮（016 下放）。收起态整个隐藏（panel-col 随
+//! panes_hidden 不渲染）。
 
-use gpui::{MouseButton, SharedString, div, prelude::*, px, rgb};
+use gpui::{MouseButton, div, prelude::*, px, rgb};
 
 use crate::Chat;
-use crate::DockPanel;
 use crate::services::workspace::{save_ui_state, ui_state};
 use crate::appearance::theme::theme as T;
 use crate::ui::tokens::align;
 
 const HEIGHT: f32 = 40.;
 
-pub(crate) fn control_bar(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> impl gpui::IntoElement {
+pub(crate) fn control_bar(
+    _chat: &mut Chat,
+    cx: &mut gpui::Context<Chat>,
+) -> impl gpui::IntoElement {
     let t = T();
-    let active = chat.layout.dock_panel;
 
     let mut bar = div()
         .id("status-bar")
@@ -37,7 +38,10 @@ pub(crate) fn control_bar(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> impl
                 // 首 tab 卡片左缘落在图标对齐线（§7 / tokens::align，与上方
                 // psp 列表图标同线；2026-10-13 定夺）
                 .ml(px(align::ICON_LINE))
-                .children(tabs(active, t, cx)),
+                // 020-1：面板 tab 只剩「项目」一个（briefcase 图标；文件树
+                // tab 隐藏——文件树已并入上方整合面板）。tab 位保留，后续
+                // 新面板在此续 tab。
+                .child(project_tab(t)),
         );
     bar = bar.child(div().flex_1());
 
@@ -66,64 +70,27 @@ pub(crate) fn control_bar(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> impl
     bar
 }
 
-fn tabs(
-    active: DockPanel,
-    t: &'static crate::appearance::theme::Theme,
-    cx: &mut gpui::Context<Chat>,
-) -> Vec<impl gpui::IntoElement> {
-    [
-        (DockPanel::Sessions, "messages-square", "psp-tab"),
-        (DockPanel::Files, "folder-tree", "files-tab"),
-        // git tab 隐藏（2026-10-10 用户定夺：PF 定位傻瓜化，git 面板暂缓设计；
-        // 恢复走 git 历史找回本行）
-        // (DockPanel::Git, "git-branch", "git-tab"),
-    ]
-    .iter()
-    .map(|(panel, icon_name, id)| {
-        let on = *panel == active;
-        let panel = *panel;
-        div()
-            .id(SharedString::from(*id))
-            .w(px(46.))
-            // tab 高 = bar 高 −4（2026-10-13 定夺，上下两 bar 同规则）
-            .h(px(HEIGHT - 4.))
-            .flex()
-            .items_center()
-            .justify_center()
-            .cursor_pointer()
-            .text_color(if on { rgb(t.accent) } else { rgb(t.text_muted) })
-            .when(on, |d| {
-                // 连体卡：nav 底色 + 边框（顶无边）+ 底圆角 + 顶贴 dock
-                // （mt = −(bar−tab) = −4 时卡片顶缘 y=0，与上方 dock 连体；
-                // items_center 几何：element top = (H−h+mt)/2）
-                d.bg(rgb(t.nav))
-                    .border_1()
-                    .border_t_0()
-                    .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x8c)))
-                    .rounded_bl(px(9.))
-                    .rounded_br(px(9.))
-                    .mt(px(-4.))
-            })
-            .when(!on, |d| {
-                d.hover(|s| s.bg(rgb(t.bg_hover)).rounded_bl(px(8.)).rounded_br(px(8.)))
-            })
-            .on_mouse_down(MouseButton::Left, cx.listener(
-                move |this, _: &gpui::MouseDownEvent, _w, cx| {
-                    this.layout.dock_panel = panel;
-                    if panel == DockPanel::Git {
-                        this.refresh_git();
-                        this.refresh_git_log();
-                    }
-                    // 2026-10-13 用户定夺：功能面板切换与主窗口（内容区）解绑——
-                    // 旧的「会话 tab=chat / files tab=浏览区」绑定过时，面板归
-                    // 面板，内容区归内容区（titlebar 的 tab 条管内容区）。
-                    this.persist_ui();
-                    cx.notify();
-                },
-            ))
-            .child(crate::ui::icon_hover(icon_name, 16., if on { t.accent } else { t.text_muted }))
-    })
-    .collect()
+/// 「项目」tab（020-1）：常亮连体卡（nav 底 + 顶无边 + 底圆角 + accent
+/// 图标），与上方 dock 连成一体。整合面板常驻后无可切换对象，暂为纯
+/// 指示位；后续新面板在此续可点 tab（切换走 layout.dock_panel）。
+fn project_tab(t: &'static crate::appearance::theme::Theme) -> impl gpui::IntoElement {
+    div()
+        .id("project-tab")
+        .w(px(46.))
+        // tab 高 = bar 高 −4（2026-10-13 定夺，上下两 bar 同规则）
+        .h(px(HEIGHT - 4.))
+        .flex()
+        .items_center()
+        .justify_center()
+        .bg(rgb(t.nav))
+        .border_1()
+        .border_t_0()
+        .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x8c)))
+        .rounded_bl(px(9.))
+        .rounded_br(px(9.))
+        // 连体卡顶贴 dock（mt = −(bar−tab) = −4 时卡片顶缘 y=0）
+        .mt(px(-4.))
+        .child(crate::ui::icon("icon-project", 16., t.accent))
 }
 
 /// Persist the current shell layout (panel/width/modes/collapse).
@@ -133,6 +100,7 @@ impl Chat {
         st.panel = self.layout.dock_panel.as_str().to_string();
         st.slp_w = self.layout.slp_w;
         st.panes_hidden = self.layout.panes_hidden;
+        st.dock_split = Some(self.layout.dock_split);
         st.list_mode = match self.psp.list_mode {
             crate::ListMode::Flat => "flat".to_string(),
             crate::ListMode::Grouped => "grouped".to_string(),

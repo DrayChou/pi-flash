@@ -382,14 +382,8 @@ fn solid_danger_btn(
 }
 
 // ---------------------------------------------------------------------------
-// ⋯ 两级菜单 + 项目菜单
+// ⋯ 项目菜单（020-1：列表切换/排序已上收会话控制栏，⋯ 仅剩项目菜单）
 // ---------------------------------------------------------------------------
-
-type ApplyFn = Box<dyn Fn(&mut Chat, &mut gpui::Context<Chat>)>;
-
-/// menu_item 行距约定（py7×2 + 文本行高），二级菜单行锚定与父卡高度估算
-/// 都基于它——与既有实现的 34px 间距一致。
-const MENU_ROW: f32 = 34.;
 
 fn menu_layer(
     chat: &mut Chat,
@@ -399,112 +393,23 @@ fn menu_layer(
 ) -> gpui::AnyElement {
     let weak = cx.entity().downgrade();
     let (x, y) = match chat.dlg.psp_menu.clone().expect("checked by caller") {
-        crate::function_panel::PspMenu::Sort { x, y, .. } => (x, y),
         crate::function_panel::PspMenu::Project { x, y, .. } => (x, y),
     };
     // 统一弹出定位（2026-10-11）：锚点 = ⋯ 按钮点击点，向下弹距 12px、
     // 向上弹同样让 12px；左右象限决定横向展开方向。
     let parent_edges = PopupEdges::around((x, y), vp, 0., 12.);
-    let pop_up = parent_edges.top.is_none();
     // 浮层公共基座（遮挡不穿透 + 点外关闭 + ESC 关闭）
     let weak_layer = weak.clone();
-    let mut layer = crate::ui::overlay::layer(false, Some(&chat.dlg.dialog_focus), move |_w, cx| {
+    let layer = crate::ui::overlay::layer(false, Some(&chat.dlg.dialog_focus), move |_w, cx| {
         let _ = weak_layer.update(cx, |c, cx| {
             c.dlg.psp_menu = None;
             cx.notify();
         });
     });
     let mut card = menu_card(parent_edges, t);
-    match chat.dlg.psp_menu.clone().expect("re-checked") {
-        crate::function_panel::PspMenu::Sort { sub, .. } => {
-            let mut view = menu_item("m-list", "icon-organize", tr("psp.list_mode"), false, false);
-            view = view.on_hover(cx.listener(|this, h: &bool, _w, cx| {
-                if *h {
-                    if let Some(crate::function_panel::PspMenu::Sort { sub, .. }) = this.dlg.psp_menu.as_mut() {
-                        *sub = Some(0);
-                    }
-                    cx.notify();
-                }
-            }));
-            let mut sort = menu_item("m-sort", "icon-sort", tr("psp.sort_mode"), false, false);
-            sort = sort.on_hover(cx.listener(|this, h: &bool, _w, cx| {
-                if *h {
-                    if let Some(crate::function_panel::PspMenu::Sort { sub, .. }) = this.dlg.psp_menu.as_mut() {
-                        *sub = Some(1);
-                    }
-                    cx.notify();
-                }
-            }));
-            card = card
-                .child(view.child(menu_chev(t)))
-                .child(sort.child(menu_chev(t)));
-            // 二级菜单：锚定父项所在行（行屏幕 y 按父卡贴边方向折算——
-            // 向上弹时卡底缘已知，行位 = 卡顶缘 + 4 + ix×行距），展开方向
-            // 仍由统一算法按该行所在象限决定。
-            if let Some(sub_ix) = sub {
-                let card_h = 8. + 2. * MENU_ROW; // 排序菜单固定两行
-                let row_y = if pop_up {
-                    vp.1 - y + 12. - card_h + 4. + sub_ix as f32 * MENU_ROW
-                } else {
-                    y + 12. + 4. + sub_ix as f32 * MENU_ROW
-                };
-                let mut sub_card = menu_card(PopupEdges::around((x + 218., row_y), vp, 0., 0.), t);
-                let items: Vec<(&'static str, &str, bool, ApplyFn)> = if sub_ix == 0 {
-                    vec![
-                        (
-                            "icon-grouped",
-                            tr("psp.project_groups"),
-                            chat.psp.list_mode == crate::ListMode::Grouped,
-                            Box::new(|c, _cx| c.psp.list_mode = crate::ListMode::Grouped),
-                        ),
-                        (
-                            "icon-flat",
-                            tr("psp.recent_sessions"),
-                            chat.psp.list_mode == crate::ListMode::Flat,
-                            Box::new(|c, _cx| c.psp.list_mode = crate::ListMode::Flat),
-                        ),
-                    ]
-                } else {
-                    vec![
-                        (
-                            "icon-clock-solid",
-                            tr("psp.sort_by_time"),
-                            chat.psp.sort_mode == crate::SortMode::Time,
-                            Box::new(|c, _cx| c.psp.sort_mode = crate::SortMode::Time),
-                        ),
-                        (
-                            "icon-hand",
-                            tr("psp.sort_manual"),
-                            chat.psp.sort_mode == crate::SortMode::Manual,
-                            Box::new(|c, _cx| c.psp.sort_mode = crate::SortMode::Manual),
-                        ),
-                    ]
-                };
-                for (i, (icon_name, label, active, apply)) in items.into_iter().enumerate() {
-                    let weak = weak.clone();
-                    let it = menu_item(
-                        SharedString::from(format!("msub-{sub_ix}-{i}")),
-                        icon_name,
-                        label,
-                        false,
-                        active,
-                    )
-                    .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                        cx.stop_propagation();
-                        let _ = weak.update(cx, |c, cx| {
-                            apply(c, cx);
-                            c.persist_ui();
-                            c.dlg.psp_menu = None;
-                            cx.notify();
-                        });
-                    });
-                    sub_card = sub_card.child(it);
-                }
-                layer = layer.child(sub_card);
-            }
-        }
-        crate::function_panel::PspMenu::Project { path, .. } => {
-            card = card
+    let crate::function_panel::PspMenu::Project { path, .. } =
+        chat.dlg.psp_menu.clone().expect("re-checked");
+    card = card
                 .child(
                     menu_item(
                         "pm-explorer",
@@ -565,8 +470,6 @@ fn menu_layer(
                         }
                     }),
                 );
-        }
-    }
     layer.child(card).into_any_element()
 }
 
@@ -619,10 +522,6 @@ fn menu_item<S: Into<SharedString>>(
         .child(icon(icon_name, 14., if danger { t.danger } else { t.text_muted }))
         .child(div().flex_1().child(SharedString::from(label.to_string())))
         .children(checked.then(|| icon("check", 12., t.accent)))
-}
-
-fn menu_chev(t: &'static Theme) -> impl gpui::IntoElement {
-    icon("chevron-right", 12., t.text_dim)
 }
 
 /// 删除项目确认浮层（锚定菜单点击处，统一算法定向）。

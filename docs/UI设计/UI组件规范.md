@@ -250,6 +250,10 @@ composer 胶囊（rounded16、pt10 pb12、AutoGrow 3–10 行）为既有特例�
 
 不属 tooltip 的悬浮物：psp 项目路径悬浮条 / 会话详情卡（自绘 overlay，可交互、有宽限期，见 psp_overlays.rs）。
 
+### 5.11 面板控制栏（020-1 整合面板）
+
+上下子面板（会话列表 / 文件树）的**控制栏统一 38px 高、一律无下 border**（2026-10-14 定夺，视觉统一清晰）；控制栏钮盒高 30、图标档位左三 LG18（icon+文字）/ 右二 MD16（纯 icon）；分隔条总高 7px（视觉线 1px 居中，左右缩进 10，hover/拖拽变 accent，双击复位 50%）。代码落点 `tokens::panel_ctrl`（BAR_H=38 / DIV_H=7 / BTN_H=30）。
+
 ---
 
 ## 6. 颜色使用规则（交互态）

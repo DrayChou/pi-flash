@@ -145,8 +145,9 @@ impl Render for Chat {
             // 不再被逐帧抢回——那正是「改名焦点捕捉不到」的根因（首发聚焦
             // 请求见 open_file_new / open_file_rename 的 focus_soon；用户点
             // 别处造成的真夺焦（对话框/终端/编辑器/设置）走前面各分支，本
-            // 分支看不到，blur 收场照常触发）。
-            match self.dlg.tree_edit.as_ref().filter(|_| self.layout.dock_panel == DockPanel::Files) {
+            // 分支看不到，blur 收场照常触发）。020-1：文件树并入整合面板
+            // 常驻显示，只要面板不是 git 视图就按在树前处理。
+            match self.dlg.tree_edit.as_ref().filter(|_| self.layout.dock_panel != DockPanel::Git) {
                 Some(edit) if edit.input.read(cx).has_inner() => {
                     let handle = edit.input.read(cx).focus_handle_in(cx);
                     if !handle.is_focused(window) {
@@ -350,6 +351,24 @@ impl Render for Chat {
                         c.layout.slp_w = (start_w + f32::from(ev.position.x) - start_x).clamp(300., 500.);
                         cx.notify();
                     }
+                    // 020-1 子面板分隔线拖拽：按 dock 实测 bounds 把窗口 y
+                    // 换算成占比，钳到两控制栏之间（上推/下拉到底 = 对面只剩
+                    // 控制栏）；拖拽即退出两侧最小态
+                    if c.layout.split_drag {
+                        if let Some(b) = c.layout.dock_bounds.borrow().as_ref() {
+                            let dock_h = f32::from(b.size.height);
+                            if dock_h > 100. {
+                                let bar = crate::ui::tokens::panel_ctrl::BAR_H;
+                                let div_h = crate::ui::tokens::panel_ctrl::DIV_H;
+                                let r = (f32::from(ev.position.y) - f32::from(b.origin.y)) / dock_h;
+                                c.layout.sess_min = false;
+                                c.layout.files_min = false;
+                                c.layout.dock_split =
+                                    r.clamp(bar / dock_h, (dock_h - div_h - bar) / dock_h);
+                                cx.notify();
+                            }
+                        }
+                    }
                 });
             })
             .on_mouse_up(
@@ -358,7 +377,15 @@ impl Render for Chat {
                     let weak = weak.clone();
                     move |_, _, cx| {
                         let _ = weak.update(cx, |c, cx| {
+                            let mut changed = false;
                             if c.layout.slp_drag.take().is_some() {
+                                changed = true;
+                            }
+                            if c.layout.split_drag {
+                                c.layout.split_drag = false;
+                                changed = true;
+                            }
+                            if changed {
                                 c.persist_ui();
                                 cx.notify();
                             }

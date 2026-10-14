@@ -282,6 +282,8 @@ pub struct UiState {
     pub collapsed: Vec<String>,
     /// 021 文件树操作栏「切换显示变更」开关（只列 git 变更文件）
     pub tree_changes_only: bool,
+    /// 020-1 整合面板：会话子面板高度占比（0..1）；None = 默认 50/50
+    pub dock_split: Option<f32>,
 }
 
 impl Default for UiState {
@@ -294,6 +296,7 @@ impl Default for UiState {
             sort_mode: "time".into(),
             collapsed: Vec::new(),
             tree_changes_only: false,
+            dock_split: None,
         }
     }
 }
@@ -346,6 +349,10 @@ pub fn ui_state() -> UiState {
             .get("tree_changes_only")
             .and_then(|b| b.as_bool())
             .unwrap_or(false),
+        dock_split: v
+            .get("dock_split")
+            .and_then(|r| r.as_f64())
+            .map(|r| (r as f32).clamp(0.1, 0.9)),
     }
 }
 
@@ -357,6 +364,7 @@ pub fn save_ui_state(s: &UiState) {
             "panel": s.panel, "slp_w": s.slp_w, "panes_hidden": s.panes_hidden,
             "list_mode": s.list_mode, "sort_mode": s.sort_mode, "collapsed": s.collapsed,
             "tree_changes_only": s.tree_changes_only,
+            "dock_split": s.dock_split,
         }),
     );
     set_memory(&map);

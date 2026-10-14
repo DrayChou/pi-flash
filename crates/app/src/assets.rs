@@ -146,6 +146,10 @@ assets! {
     "icons/icon-clock-solid.svg",
     "icons/icon-hand.svg",
     "icons/icon-viewdiff.svg",
+    // 020-1 整合面板：项目=briefcase（icon-project 内容已换）、列表切换
+    // 分组态=folder-list（原 icon-project 形）、子面板最大化=lucide maximize
+    "icons/icon-folder-list.svg",
+    "icons/maximize.svg",
     // v54 UI: composer context ring（进度弧 ring-p{1-99} 运行时生成）
     "icons/spark.svg",
     "icons/ring-track.svg",

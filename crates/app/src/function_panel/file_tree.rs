@@ -87,19 +87,24 @@ pub(crate) fn files_view(
     weak: &gpui::WeakEntity<Chat>,
     cx: &mut gpui::Context<Chat>,
 ) -> gpui::AnyElement {
+    let files_min = chat.layout.files_min;
     let rows = chat.ws.tree_rows.clone();
     let changes_only = chat.ws.changes_only;
     let weak = weak.clone();
     let t = theme::theme();
-    // 021 操作栏：项目目录行固定在树顶（高度 40），名字居左、操作钮
-    // 右对齐（切换显示变更 / 搜索文件 / 资源管理器 / 终端），不随列表滚动
+    // 021 操作栏：项目目录行固定在树顶，名字居左、操作钮右对齐（切换显示
+    // 变更 / 搜索文件 / 资源管理器 / 终端 / 最大化），不随列表滚动
     let mut col = div()
-        .flex_1()
-        .min_h_0()
+        .id("sub-files")
+        .w_full()
+        .overflow_hidden()
         .flex()
         .flex_col()
-        .overflow_hidden()
         .bg(rgb(t.nav))
+        // 020-1 文件树子面板伸缩：常态（含上会话面板最小）吃满 dock 剩余
+        // 高度；本面板最小 → 只剩操作栏（auto 高）
+        .when(files_min, |d| d.flex_shrink_0())
+        .when(!files_min, |d| d.flex_1().min_h_0())
         // Zed EditState 收场主路：行内编辑激活时，面板内任何左键按下
         // （点别的行/空白/操作栏）= 提交。Zed 里这次点击先靠 uniform_list
         // `track_focus` 把焦点抢到面板（编辑行随之 blur → confirm_edit），
@@ -119,7 +124,9 @@ pub(crate) fn files_view(
             }
         })
         .child(action_bar(chat, &weak, t));
-    if changes_only {
+    // 020-1：文件树最小态 = 只剩操作栏，列表体不渲染（vlist 句柄在
+    // thread_local 表里，恢复时滚动位不丢）
+    if !files_min && changes_only {
         // 「只看变更」= 扁平列表（021 二改定稿：不要树状）。头行 =
         // N 个文件 + numstat（+绿 -红，色同 git 徽标盘）；行 = 文件名
         // 前置左对齐 + 目录段后置（目录段可截断、文件名恒可见）。
@@ -198,7 +205,7 @@ pub(crate) fn files_view(
                     },
                 )),
         );
-    } else {
+    } else if !files_min {
         let weak_bg = weak.clone();
         let cwd_bg = chat.ws.cwd.clone();
         let edit = chat.dlg.tree_edit.clone();
@@ -233,7 +240,11 @@ pub(crate) fn files_view(
                 .flex()
                 .flex_col()
                 .overflow_hidden()
-                .py(px(10.))
+                // 设计稿 .ft-list（020-1）：上 4 左右 6 下 6；根行图标随
+                // 容器 pl6 + 行内 CONTENT_PAD 6 落到 ICON_LINE 12
+                .pt(px(4.))
+                .px(px(6.))
+                .pb(px(6.))
                 // 空白处右键 = 根目录菜单（同变更分支，根行入口兜底）
                 .on_mouse_down(gpui::MouseButton::Right,
                     move |ev: &gpui::MouseDownEvent, _, cx| {
@@ -380,10 +391,10 @@ fn changes_row(
         .into_any_element()
 }
 
-/// 021 操作栏（高 40，固定）：左侧 4 颗图标钮——切换显示变更（开 =
-/// accent 高亮）/ 搜索文件 / 在资源管理器中打开 / 在终端中打开，其后
-/// 是项目目录名（flex_1 ellipsis）。按钮命中区 26px（§5.2 槽位），
-/// 视觉与 psp 标题行同族。
+/// 021 操作栏（020-1 起 38px、无下 border，与 psp 控制栏同规）：左侧
+/// 项目目录名（选中项目 = 主题色粗体）+ 右侧 5 颗图标钮——切换显示变更
+/// （开 = accent 高亮）/ 搜索文件 / 在资源管理器中打开 / 在终端中打开 /
+/// 最大化。按钮命中区 26px（§5.2 槽位），图标统一小档 MD16。
 fn action_bar(
     chat: &Chat,
     weak: &gpui::WeakEntity<Chat>,
@@ -400,24 +411,23 @@ fn action_bar(
     let w_search = weak.clone();
     let w_term = weak.clone();
     let w_menu = weak.clone();
+    let w_max = weak.clone();
     let cwd_menu = chat.ws.cwd.clone();
     let cwd_explorer = chat.ws.cwd.clone();
     let cwd_term = chat.ws.cwd.clone();
-    // 021 二改定稿：操作栏即根行——项目名居左（粗体）、操作钮右对齐
-    // （间距 10px，各带 tooltip）；名字区右键 = 根目录菜单（树体不再有
-    // 根行，根下的新建/改名等入口保留下）
+    // 021 二改定稿：操作栏即根行——项目名居左（020-1：主题色粗体）、
+    // 操作钮右对齐（间距 10px，各带 tooltip）；名字区右键 = 根目录菜单
+    // （树体不再有根行，根下的新建/改名等入口保留下）
     div()
         .id("ft-action-bar")
         .w_full()
-        .h(px(40.))
+        .h(px(crate::ui::tokens::panel_ctrl::BAR_H))
         .flex_shrink_0()
         .flex()
         .items_center()
-        .pl(px(10.))
-        .pr(px(10.))
+        .pl(px(crate::ui::tokens::align::ICON_LINE))
+        .pr(px(crate::ui::tokens::align::LIST_PX))
         .gap(px(2.))
-        .border_b_1()
-        .border_color(rgb(t.border))
         .child(
             div()
                 .id("ft-project")
@@ -427,8 +437,9 @@ fn action_bar(
                 .whitespace_nowrap()
                 .text_ellipsis()
                 .text_size(crate::appearance::ui_size(12.))
-                .font_weight(gpui::FontWeight::SEMIBOLD)
-                .text_color(rgb(t.text_soft))
+                // 020-1：当前项目名 = 主题色 + 粗体（与项目列表选中行一致）
+                .font_weight(gpui::FontWeight::BOLD)
+                .text_color(rgb(t.accent))
                 .child(project)
                 .on_mouse_down(gpui::MouseButton::Right,
                     move |ev: &gpui::MouseDownEvent, _, cx| {
@@ -489,6 +500,21 @@ fn action_bar(
                     move |_, window, cx| {
                         let _ = w_term.update(cx, |c, cx| {
                             c.open_terminal_in(cwd_term.clone(), window, cx)
+                        });
+                    },
+                ))
+                .child(bar_btn(
+                    "ft-panel-max",
+                    "maximize",
+                    tr("psp.maximize"),
+                    t,
+                    false,
+                    move |_, _, cx| {
+                        let _ = w_max.update(cx, |c, cx| {
+                            // 020-1 单最大化钮：本面板填满，会话列表收起到控制栏
+                            c.layout.sess_min = true;
+                            c.layout.files_min = false;
+                            cx.notify();
                         });
                     },
                 )),
