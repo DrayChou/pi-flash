@@ -626,6 +626,7 @@ fn project_row(
                             .group("prj-act")
                             .text_color(rgb(t.text_dim))
                             .hover(|s| s.bg(rgb(t.bg_hover)))
+                            .with_tip("psp.delete_project")
                             .on_mouse_down(
                                 MouseButton::Left,
                                 move |ev: &gpui::MouseDownEvent, _, cx| {
@@ -664,6 +665,7 @@ fn project_row(
                             .group("prj-act")
                             .text_color(rgb(t.text_dim))
                             .hover(|s| s.bg(rgb(t.bg_hover)))
+                            .with_tip("psp.new_session_in_project")
                             .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                                 cx.stop_propagation();
                                 let _ = w_new.update(cx, |c, cx| {
