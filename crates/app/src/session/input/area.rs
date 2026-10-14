@@ -128,93 +128,9 @@ pub(crate) fn input_area(
         .flex_col()
         .pt(px(10.))
         .pb(px(12.)); // 操作栏到下边框的距离
-    // 附加图片缩略图（v58 图片粘贴）：56×56 圆角方块，panel 左上角并列、
-    // 间隔 5px；右上角悬浮 16px 圆形 X 点击删除（pi-web ImagePreview 布局
-    // parity：X 偏移 -4,-4 半嵌在缩略图角上）
-    if !chat.composer.pending_images.is_empty() {
-        let thumbs: Vec<gpui::AnyElement> = chat
-            .composer.pending_images
-            .iter()
-            .enumerate()
-            .map(|(i, img)| {
-                let weak_i = weak.clone();
-                let weak_open = weak.clone();
-                let thumb = img.thumb.clone();
-                let thumb_for_open = thumb.clone();
-                div()
-                    .id(SharedString::from(format!("img-thumb-{i}")))
-                    .relative()
-                    .size(px(56.))
-                    .flex_shrink_0()
-                    .child(
-                        // 点击看大图（X 是 sibling 不在祖先链，两 handler 互不误触）
-                        div()
-                            .id(SharedString::from(format!("img-view-{i}")))
-                            .size_full()
-                            .rounded(px(6.))
-                            .border_1()
-                            .border_color(rgb(t.border))
-                            .bg(rgb(t.bg_panel))
-                            .overflow_hidden()
-                            .cursor_pointer()
-                            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                                let Some(image) = thumb_for_open.clone() else { return; };
-                                let _ = weak_open.update(cx, |c, cx| {
-                                    c.dlg.dialog = Some(crate::Dialog::ImagePreview { image });
-                                    cx.notify();
-                                });
-                            })
-                            .child(match thumb {
-                                Some(image) => gpui::img(image)
-                                    .size_full()
-                                    .object_fit(gpui::ObjectFit::Cover)
-                                    .into_any_element(),
-                                None => div().into_any_element(),
-                            }),
-                    )
-                    .child(
-                        div()
-                            .id(SharedString::from(format!("img-del-{i}")))
-                            .absolute()
-                            .top(px(-4.))
-                            .right(px(-4.))
-                            .size(px(16.))
-                            .rounded_full()
-                            .bg(rgb(t.bg_panel))
-                            .border_1()
-                            .border_color(rgb(t.border))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .cursor_pointer()
-                            .hover(|s| s.bg(rgb(t.bg_hover)))
-                            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                                // X 与图片盒的 hitbox 都含点击点（X 叠在其角
-                                // 上），且二者非祖先——不拦截会继续派发到图
-                                // 片盒的"开大图"handler（实测删除前弹预览）
-                                cx.stop_propagation();
-                                let _ = weak_i.update(cx, |c, cx| {
-                                    if i < c.composer.pending_images.len() {
-                                        c.composer.pending_images.remove(i);
-                                    }
-                                    cx.notify();
-                                });
-                            })
-                            .child(icon("x", 12., t.text_muted)),
-                    )
-                    .into_any_element()
-            })
-            .collect();
-        capsule = capsule.child(
-            div()
-                .w_full()
-                .pt(px(4.))
-                .px(px(12.))
-                .flex()
-                .flex_wrap()
-                .gap(px(5.))
-                .children(thumbs),
-        );
+    // 附加图片缩略图条（v58 图片粘贴；布局与删除/预览交互见 pending_images_strip）
+    if let Some(strip) = pending_images_strip(chat, weak, t) {
+        capsule = capsule.child(strip);
     }
     // 编辑区：真输入组件（多行 AutoGrow，超出 max 出纵向滚动条）；右键
     // 弹输入菜单（031，事件从组件冒泡上来——vendored 组件右键只做
@@ -318,6 +234,103 @@ pub(crate) fn input_area(
             ),
         );
     composer_wrap(inner, hero, show_scroll_btn, weak, t)
+}
+
+/// 附加图片缩略图（v58 图片粘贴）：56×56 圆角方块，panel 左上角并列、
+/// 间隔 5px；右上角悬浮 16px 圆形 X 点击删除（pi-web ImagePreview 布局
+/// parity：X 偏移 -4,-4 半嵌在缩略图角上）。无附件返回 None。
+fn pending_images_strip(
+    chat: &Chat,
+    weak: &gpui::WeakEntity<Chat>,
+    t: &'static crate::appearance::theme::Theme,
+) -> Option<gpui::AnyElement> {
+    if chat.composer.pending_images.is_empty() {
+        return None;
+    }
+    let thumbs: Vec<gpui::AnyElement> = chat
+        .composer.pending_images
+        .iter()
+        .enumerate()
+        .map(|(i, img)| {
+            let weak_i = weak.clone();
+            let weak_open = weak.clone();
+            let thumb = img.thumb.clone();
+            let thumb_for_open = thumb.clone();
+            div()
+                .id(SharedString::from(format!("img-thumb-{i}")))
+                .relative()
+                .size(px(56.))
+                .flex_shrink_0()
+                .child(
+                    // 点击看大图（X 是 sibling 不在祖先链，两 handler 互不误触）
+                    div()
+                        .id(SharedString::from(format!("img-view-{i}")))
+                        .size_full()
+                        .rounded(px(6.))
+                        .border_1()
+                        .border_color(rgb(t.border))
+                        .bg(rgb(t.bg_panel))
+                        .overflow_hidden()
+                        .cursor_pointer()
+                        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                            let Some(image) = thumb_for_open.clone() else { return; };
+                            let _ = weak_open.update(cx, |c, cx| {
+                                c.dlg.dialog = Some(crate::Dialog::ImagePreview { image });
+                                cx.notify();
+                            });
+                        })
+                        .child(match thumb {
+                            Some(image) => gpui::img(image)
+                                .size_full()
+                                .object_fit(gpui::ObjectFit::Cover)
+                                .into_any_element(),
+                            None => div().into_any_element(),
+                        }),
+                )
+                .child(
+                    div()
+                        .id(SharedString::from(format!("img-del-{i}")))
+                        .absolute()
+                        .top(px(-4.))
+                        .right(px(-4.))
+                        .size(px(16.))
+                        .rounded_full()
+                        .bg(rgb(t.bg_panel))
+                        .border_1()
+                        .border_color(rgb(t.border))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .cursor_pointer()
+                        .hover(|s| s.bg(rgb(t.bg_hover)))
+                        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                            // X 与图片盒的 hitbox 都含点击点（X 叠在其角
+                            // 上），且二者非祖先——不拦截会继续派发到图
+                            // 片盒的"开大图"handler（实测删除前弹预览）
+                            cx.stop_propagation();
+                            let _ = weak_i.update(cx, |c, cx| {
+                                if i < c.composer.pending_images.len() {
+                                    c.composer.pending_images.remove(i);
+                                }
+                                cx.notify();
+                            });
+                        })
+                        .child(icon("x", 12., t.text_muted)),
+                )
+                .into_any_element()
+        })
+        .collect();
+    Some(
+        div()
+            .w_full()
+            .pt(px(4.))
+            .px(px(12.))
+            .flex()
+            .flex_wrap()
+            .gap(px(5.))
+            .children(thumbs)
+            .into_any_element(),
+    )
 }
 
 /// 按键路由：组件处理的键（Enter/方向键/粘贴/undo…）到不了这里；这里只
