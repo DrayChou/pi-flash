@@ -149,7 +149,7 @@
 
   /* ---- 020-1 整合项目文件面板：会话列表(上) + 文件树(下)，默认各 50%，
      分隔线可拖拽改比例；子面板至多收起到各自控制栏（控制栏+内容区） ---- */
-  .sub-panel { display: flex; flex-direction: column; min-height: 0; }
+  .sub-panel { display: flex; flex-direction: column; min-height: 0; position: relative; }
   #subSess { flex: 0 0 var(--split, 50%); }
   #subFiles { flex: 1 1 0; }
   #subSess.min, #subFiles.min { flex: 0 0 auto; }   /* 收起后不参与 grow，只剩控制栏高度 */
@@ -163,7 +163,8 @@
   /* 会话子面板控制栏：去 title 文字，左三 icon+文字（大图标）右二纯 icon。
      注意事项：两个控制栏统一 38px 高、一律无下 border */
   .psp-ctrl { flex: none; height: 38px; display: flex; align-items: center; gap: 2px;
-    padding: 0 8px; }
+    /* 内容左线 = ICON_LINE 12（4 + 按钮内边距 8），右线 = 距面板右 20 */
+    padding: 0 20px 0 4px; }
   .pc-btn { border: 0; background: transparent; border-radius: 8px; padding: 0 8px; height: 30px;
     display: flex; align-items: center; gap: 6px; color: var(--text-dim);
     font-family: inherit; font-size: 12.5px; font-weight: 600; cursor: default; }
@@ -176,8 +177,8 @@
     width: 100%;
     border: 0; cursor: default; text-align: left;
     background: transparent; color: var(--text-dim);
-    border-radius: 8px; margin-bottom: 2px;
-    padding: 6px 4px 6px 10px;
+    border-radius: 8px;
+    height: 32px; padding: 0 10px 0 2px;
     display: flex; align-items: center; gap: 8px;
     font-family: inherit; font-size: 13px; font-weight: 500;
   }
@@ -198,9 +199,12 @@
   .prj-group.off { display: none; }
   /* 活动项目：名称统一主题色粗体（与文件树操作栏项目名一致） */
   .prj-row.active { color: var(--accent); font-weight: 700; }
+  /* 对齐实现（mod.rs + tokens::align）：容器 px=LIST_PX(10) 是唯一水平留白；
+     行 pl=ROW_PL(2) 是对齐补偿 → 行图标左缘 = ICON_LINE(12)；行 pr=10 →
+     文字/时间右线 = 距面板右 20。行高 32 打包（§5.8，mb 补间距已废除） */
   .ps-row {
     display: flex; align-items: center; gap: 8px;
-    padding: 4px 4px 4px 10px; margin-bottom: 2px;
+    height: 32px; padding: 0 10px 0 2px;
     border-radius: 8px; cursor: default;
     font-size: 13px; color: var(--text);
   }
@@ -219,9 +223,9 @@
   }
   /* 时间区：右侧相对时间（刚刚 / 10分 / 19小时 / 3天） */
   .ps-row .time { flex: none; width: 38px; text-align: right; font-size: 11px; color: var(--text-faint); }
-  .ps-empty { padding: 5.5px 10px 6.5px 31px; font-size: 12.5px; color: var(--text-dim); }
+  .ps-empty { padding: 5px 10px 6px 45px; font-size: 12.5px; color: var(--text-dim); }
   /* 「显示更多」：每项目分页展示，页大小 = 设置-其他「会话显示数」（3–10） */
-  .ps-more { display: flex; align-items: center; padding: 5px 10px 6px 31px;
+  .ps-more { display: flex; align-items: center; padding: 5px 10px 6px 45px;
     font-size: 12px; color: var(--text-dim); cursor: default; border-radius: 8px; }
   .ps-more:hover { background: color-mix(in srgb, var(--text) 5%, transparent); color: var(--text); }
   .spin {
@@ -328,18 +332,22 @@
     width: 1px; background: transparent;
   }
   .slp-resizer:hover::after, .slp-resizer.dragging::after { background: var(--accent); }
-  .panel-view { display: none; flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 10px 12px;
-    scrollbar-width: thin; scrollbar-color: rgba(175, 196, 186, .6) transparent; }
+  /* 滚动条（tokens::scrollbar）：容器统一 w10、thumb 6→悬停 10，且为悬浮
+     overlay 不占布局——原生滚动条隐藏，由 JS 画 .osb */
+  .panel-view { display: none; flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 6px 10px;
+    scrollbar-width: none; }
   .panel-view.on { display: block; }
-  .panel-view::-webkit-scrollbar { width: 6px; }
-  .panel-view::-webkit-scrollbar-thumb { background: rgba(175, 196, 186, .5); border-radius: 3px; }
-  .panel-view::-webkit-scrollbar-track { background: transparent; }
+  .panel-view::-webkit-scrollbar, .ft-list::-webkit-scrollbar { display: none; }
+  .osb { position: absolute; top: 0; bottom: 0; right: 0; width: 10px; z-index: 5; }
+  .osb-thumb { position: absolute; right: 2px; width: 6px; border-radius: 3px;
+    background: rgba(175, 196, 186, .55); transition: width .12s ease, right .12s ease; }
+  .osb:hover .osb-thumb { right: 0; width: 10px; }
     /* 文件树（file_tree.rs）：顶部 40px 操作栏（项目名 + 4 钮），无根目录行；
        行高 24、每级缩进 20、参考线在 level*20+13；图标按后缀但统一染 text_dim；无持久选中 */
   #pv-files { position: relative; padding: 0; }
   #pv-files.on { display: flex; flex-direction: column; }
   .ft-actions { flex: none; height: 38px; display: flex; align-items: center;
-    padding: 0 10px 0 14px; }
+    padding: 0 10px; }
   .ft-proj { font-size: 12px; font-weight: 700; color: var(--accent);
     min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ft-btns { margin-left: auto; display: flex; gap: 2px; }
@@ -350,14 +358,15 @@
   .ft-list { flex: 1; min-height: 0; overflow-y: auto; position: relative; padding: 4px 0 6px; }
   .ft-row {
     position: relative; display: flex; align-items: center; gap: 6px;
-    height: 24px; padding: 0 8px 0 10px; border-radius: 0;
+    height: 24px; padding: 0 8px 0 6px; border-radius: 4px;
     font-size: 12px; color: var(--text-dim); cursor: default; white-space: nowrap;
   }
   .ft-row:hover { background: var(--bg-hover); }
   .ft-row .fico { width: 14px; height: 14px; flex: none; color: var(--text-dim); }
-  .ft-row.l1 { padding-left: 30px; }
-  .ft-row.l2 { padding-left: 50px; }
-  .ft-row.l3 { padding-left: 70px; }
+  /* 内容列 = ml(深度×20) + px(6)：根图标 x=6，l1=26 / l2=46 / l3=66 */
+  .ft-row.l1 { padding-left: 26px; }
+  .ft-row.l2 { padding-left: 46px; }
+  .ft-row.l3 { padding-left: 66px; }
   .ft-guide { position: absolute; top: 4px; bottom: 6px; width: 1px; background: rgba(175, 196, 186, .4); }
     #pv-git.on { display: flex; flex-direction: column; padding: 0; }
   /* 020-1 后 git 面板不再常驻 tab：仅经 #git 演示哈希整面板查看 */
@@ -882,8 +891,8 @@
               </span>
             </div>
             <div class="ft-list">
-            <i class="ft-guide" style="left: 23px"></i>
-            <i class="ft-guide" style="left: 43px"></i>
+            <i class="ft-guide" style="left: 13px"></i>
+            <i class="ft-guide" style="left: 33px"></i>
             <div class="ft-row l0 dir"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M2 10h20"/></svg>.agents</div>
             <div class="ft-row l1 dir"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>skills</div>
             <div class="ft-row l2 dir"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M2 10h20"/></svg>beads</div>
@@ -1941,6 +1950,35 @@ statusbar 40（设置钮）│</pre>
       panel.addEventListener("mouseenter", () => panel.classList.add("on"));
       panel.addEventListener("mouseleave", () => panel.classList.remove("on"));
     }
+  }
+
+  // 悬浮滚动条（tokens::scrollbar：槽 10、thumb 6→hover 10，不占布局）
+  {
+    const decorate = el => {
+      const parent = el.parentElement;                 // 定位父级（subSess / #pv-files 均 relative）
+      const bar = document.createElement("div");
+      bar.className = "osb";
+      const thumb = document.createElement("div");
+      thumb.className = "osb-thumb";
+      bar.appendChild(thumb);
+      const place = () => {
+        bar.style.top = el.offsetTop + "px";
+        bar.style.height = el.clientHeight + "px";
+      };
+      const update = () => {
+        const { scrollTop, scrollHeight, clientHeight } = el;
+        if (scrollHeight <= clientHeight + 1) { bar.style.display = "none"; return; }
+        bar.style.display = "block";
+        const th = Math.max(24, clientHeight * clientHeight / scrollHeight);
+        thumb.style.height = th + "px";
+        thumb.style.top = (scrollTop / scrollHeight) * clientHeight + "px";
+      };
+      el.addEventListener("scroll", update);
+      new ResizeObserver(() => { place(); update(); }).observe(el);
+      parent.appendChild(bar);
+      place(); update();
+    };
+    document.querySelectorAll("#pv-sessions, .ft-list").forEach(decorate);
   }
 
   // 段式导航 rail：段数 = 发言轮数（≤10 逐轮一段，>10 桶映射）；选中段跟随滚动（贴底=末段）
