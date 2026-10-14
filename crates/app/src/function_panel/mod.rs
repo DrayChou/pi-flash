@@ -524,14 +524,12 @@ fn project_row(
     let hovered = chat.psp.hovered_project == Some(pi);
     let path = g.path.clone();
     let path_toggle = path.clone();
-    let path_tip = path.clone();
     let path_menu = path.clone();
     let name: SharedString = g.name.clone().into();
     let w_toggle = weak.clone();
     let w_menu = weak.clone();
     let w_new = weak.clone();
     let w_tip_on = weak.clone();
-    let w_tip_off = weak.clone();
 
     div()
         .id(SharedString::from(format!("prj-{pi}")))
@@ -578,22 +576,8 @@ fn project_row(
                 }
             });
         })
-        .on_mouse_move(move |ev: &gpui::MouseMoveEvent, _, cx| {
-            let (x, y) = (f32::from(ev.position.x), f32::from(ev.position.y));
-            let _ = w_tip_off.update(cx, |c, cx| {
-                let path = path_tip.clone();
-                let path_str = path.to_string_lossy().to_string();
-                if c.dlg.proj_tip.as_ref().is_none_or(|(p, _, _)| {
-                    !same_ws(&p.to_string_lossy(), &path_str)
-                }) {
-                    c.dlg.proj_tip = Some((path, x, y));
-                    cx.notify();
-                } else if let Some(p) = c.dlg.proj_tip.as_mut() {
-                    p.1 = x;
-                    p.2 = y;
-                }
-            });
-        })
+        // 项目路径悬浮条（proj_tip）已关：用户肯定知道自己的目录路径
+        //（2026-10-14 定夺）——触发器摘除，机制保留
         .child(icon(
             if collapsed { "folder" } else { "folder-open" },
             15.,
