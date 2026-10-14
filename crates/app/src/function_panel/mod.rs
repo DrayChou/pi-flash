@@ -442,7 +442,10 @@ fn psp_ctrl_bar(
                 .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                     let _ = w_new.update(cx, |c, cx| c.new_session(cx));
                 })
-                .child(icon("icon-new-chat", crate::ui::tokens::icon::LG))
+                // 会话 icon 是 iconfont 实底形（viewBox 824×767，笔画内容
+                // 占 ~79%），比 lucide 描边形（~83%）光学上小一圈——19 =
+                // 旧操作行验证过的补偿值（其余两颗 18 时它 19），维持同视高
+                .child(icon("icon-new-chat", 19.))
                 .child(tr("psp.session_label")),
         )
         .child(
