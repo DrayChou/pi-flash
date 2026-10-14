@@ -14,7 +14,7 @@ use crate::i18n::{tf, tr};
 use crate::session::model_picker::RegistryState;
 use crate::services::format::time_ago;
 use crate::appearance::theme;
-use crate::ui::{icon, icon_hover};
+use crate::ui::{icon, icon_hover, icon_path};
 
 /// 弹窗公共外壳 = `ui::overlay::layer`（遮挡/外点关闭/ESC 关闭三条全局规则
 /// 的唯一实现）+ 居中排布 + 卡片停传播。参数 `chat` 只用来取浮层焦点。
@@ -141,7 +141,9 @@ fn render_file_search(
                     let rel = rel_c.clone();
                     let _ = weak_row.update(cx, |c, cx| c.open_file_search_hit(&rel, cx));
                 })
-                .child(icon(crate::services::file_icons::get_icon(&abs), 14., t.text_dim))
+                // get_icon 返回完整资产路径，须走 icon_path（icon 会再拼
+                // icons/ 前缀，拼出不存在路径 → 14px 空白占位，2026-10-14）
+                .child(icon_path(crate::services::file_icons::get_icon(&abs), 14., t.text_dim))
                 .child(
                     div()
                         .flex_shrink_0()
