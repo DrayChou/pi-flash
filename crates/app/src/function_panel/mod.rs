@@ -23,7 +23,7 @@ use crate::ListMode;
 use crate::SortMode;
 use crate::appearance::theme::{Theme, theme as T};
 use crate::ui::tokens::align;
-use crate::ui::{WithTip, icon, icon_hover, spinner};
+use crate::ui::{WithTip, icon, spinner};
 
 /// Flattened psp row model (one virtual list over all rows).
 #[derive(Debug, Clone, PartialEq)]
@@ -318,17 +318,15 @@ pub(crate) fn psp_view(
                         this.psp.psp_sb_state.set_parent_hovered(*hovered);
                         cx.notify();
                     }))
-                    // 滚动时立刻关掉全部浮层（详情卡/⋯菜单/项目tooltip/删除
-                    // 确认）——它们锚定的是行位置，滚动后锚点漂移，钉在原地
+                    // 滚动时立刻关掉全部浮层（详情卡/项目tooltip/删除确认）
+                    //——它们锚定的是行位置，滚动后锚点漂移，钉在原地
                     // 只会错位（用户定稿：滚动 = 菜单立即消失）
                     .on_scroll_wheel(cx.listener(|this, _: &gpui::ScrollWheelEvent, _w, cx| {
                         if this.dlg.hover_card.is_some()
-                            || this.dlg.psp_menu.is_some()
                             || this.dlg.proj_tip.is_some()
                             || this.dlg.confirm_prj_del.is_some()
                         {
                             this.dlg.hover_card = None;
-                            this.dlg.psp_menu = None;
                             this.dlg.proj_tip = None;
                             this.dlg.confirm_prj_del = None;
                             cx.notify();
@@ -511,7 +509,7 @@ fn psp_ctrl_bar(
         .into_any_element()
 }
 
-/// 项目行：folder 开合图标 + 名字；点击 = 组收起/展开；hover 显 ⋯/＋。
+/// 项目行：folder 开合图标 + 名字；点击 = 组收起/展开；hover 显 垃圾桶/新会话。
 fn project_row(
     chat: &Chat,
     pi: usize,
@@ -523,13 +521,7 @@ fn project_row(
     };
     let active = same_ws(&g.path.to_string_lossy(), &chat.ws.cwd.to_string_lossy());
     let collapsed = chat.psp.collapsed_keys.contains(&same_ws_key(&g.path.to_string_lossy()));
-    let hovered = chat.psp.hovered_project == Some(pi)
-        // ⋯ 菜单打开中：按钮保持显示（交互进行中不消失）
-        || matches!(
-            &chat.dlg.psp_menu,
-            Some(crate::function_panel::PspMenu::Project { path: mp, .. })
-            if crate::services::workspace::same_path(mp, &g.path)
-        );
+    let hovered = chat.psp.hovered_project == Some(pi);
     let path = g.path.clone();
     let path_toggle = path.clone();
     let path_tip = path.clone();
@@ -629,48 +621,63 @@ fn project_row(
             d.child(
                 div()
                     .flex()
-                    .gap(px(10.))
-                    // ⋯ 项目菜单
+                    // 020-1 列对齐：钮盒 26 / 间距 2，与会话控制栏右二同指标
+                    // ——垃圾桶/新会话与上方 列表切换/最大化 逐列同 x
+                    .gap(px(2.))
+                    // 垃圾桶 = 删除项目及所有会话（⋯ 项目菜单已撤：浏览器/
+                    // 终端入口文件树操作栏已有，删除直接弹确认卡、锚定点击点）
                     .child(
                         div()
-                            .id(SharedString::from(format!("prj-menu-{pi}")))
-                            .size(px(28.))
+                            .id(SharedString::from(format!("prj-del-{pi}")))
+                            .w(px(26.))
+                            .h(px(26.))
                             .flex()
                             .items_center()
                             .justify_center()
                             .rounded(px(6.))
-                            .text_color(rgb(t.text_dim))
                             .cursor_pointer()
-                            .hover(|s| s.text_color(rgb(t.text)))
+                            .group("prj-act")
+                            .text_color(rgb(t.text_dim))
+                            .hover(|s| s.bg(rgb(t.bg_hover)))
+                            .with_tip("psp.delete_project")
                             .on_mouse_down(
                                 MouseButton::Left,
                                 move |ev: &gpui::MouseDownEvent, _, cx| {
                                     cx.stop_propagation();
                                     let _ = w_menu.update(cx, |c, cx| {
-                                        // 同排序菜单：存原始点击点，定向交统一算法
-                                        c.dlg.psp_menu = Some(crate::function_panel::PspMenu::Project {
-                                            path: path_menu.clone(),
-                                            x: f32::from(ev.position.x),
-                                            y: f32::from(ev.position.y),
-                                        });
+                                        c.dlg.confirm_prj_del = Some((
+                                            path_menu.clone(),
+                                            f32::from(ev.position.x),
+                                            f32::from(ev.position.y),
+                                        ));
                                         cx.notify();
                                     });
                                 },
                             )
-                            .child(icon_hover("ellipsis", 18., t.text_dim)),
+                            .child(
+                                gpui::svg()
+                                    .path(SharedString::from("icons/icon-trash-solid.svg"))
+                                    .text_color(rgb(t.text_dim))
+                                    // 危险语义：悬停变 danger 红（§6 danger 系）
+                                    .group_hover("prj-act", |s| s.text_color(rgb(t.danger)))
+                                    .size(px(crate::ui::tokens::icon::MD))
+                                    .into_any_element(),
+                            ),
                     )
-                    // ＋ 新会话入组
+                    // ＋ → 小号新建会话 icon（与控制栏「会话」同图形，小档）
                     .child(
                         div()
                             .id(SharedString::from(format!("prj-new-{pi}")))
-                            .size(px(28.))
+                            .w(px(26.))
+                            .h(px(26.))
                             .flex()
                             .items_center()
                             .justify_center()
                             .rounded(px(6.))
-                            .text_color(rgb(t.text_dim))
                             .cursor_pointer()
-                            .hover(|s| s.text_color(rgb(t.text)))
+                            .group("prj-act")
+                            .text_color(rgb(t.text_dim))
+                            .hover(|s| s.bg(rgb(t.bg_hover)))
                             .with_tip("psp.new_session_in_project")
                             .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                                 cx.stop_propagation();
@@ -678,7 +685,14 @@ fn project_row(
                                     c.new_session_in(path.clone(), cx);
                                 });
                             })
-                            .child(icon_hover("plus", 18., t.text_dim)),
+                            .child(
+                                gpui::svg()
+                                    .path(SharedString::from("icons/icon-new-chat.svg"))
+                                    .text_color(rgb(t.text_dim))
+                                    .group_hover("prj-act", |s| s.text_color(rgb(t.text)))
+                                    .size(px(crate::ui::tokens::icon::MD))
+                                    .into_any_element(),
+                            ),
                     ),
             )
         })
@@ -1172,12 +1186,6 @@ pub(crate) struct HoverCard {
     /// 标题点击后原地改名（设计稿：卡内变输入框，Enter 提交 / Esc 取消）
     pub renaming: bool,
     pub rename_input: Option<gpui::Entity<crate::ui::TextInput>>,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) enum PspMenu {
-    /// 项目行 ⋯ 菜单（列表切换/排序已上收控制栏，020-1：仅剩项目菜单）
-    Project { path: PathBuf, x: f32, y: f32 },
 }
 
 #[derive(Debug, Clone)]

@@ -5,7 +5,7 @@
 //! 字段数与 impl 块数不写死在注释里（随演进漂移，查数用 grep）。
 
 use crate::*;
-use crate::function_panel::{HoverCard, PspMenu, TreeEdit, TreeMenu};
+use crate::function_panel::{HoverCard, TreeEdit, TreeMenu};
 use crate::session::input::{AtFilterCache, AtIndexState};
 use crate::settings::models::McProbe;
 use crate::settings::plugins::PkgOp;
@@ -170,7 +170,6 @@ pub(crate) struct DlgUi {
     pub(crate) confirm_delete: Option<PathBuf>,
     pub(crate) proj_tip: Option<(PathBuf, f32, f32)>,
     pub(crate) hover_card: Option<HoverCard>,
-    pub(crate) psp_menu: Option<PspMenu>,
     pub(crate) confirm_prj_del: Option<(PathBuf, f32, f32)>,
     /// 021 文件树右键菜单状态槽（渲染挂 psp_overlays 同层）
     pub(crate) tree_menu: Option<TreeMenu>,
@@ -532,7 +531,6 @@ impl Chat {
                 confirm_delete: None,
                 proj_tip: None,
                 hover_card: None,
-                psp_menu: None,
                 confirm_prj_del: None,
                 tree_menu: None,
                 tree_edit: None,

@@ -51,9 +51,6 @@ pub(crate) fn psp_overlays(
             el = el.child(hover_card(chat, vp, t, cx));
         }
     }
-    if chat.dlg.psp_menu.is_some() {
-        el = el.child(menu_layer(chat, vp, t, cx));
-    }
     if chat.dlg.tree_menu.is_some() {
         el = el.child(tree_menu_layer(chat, vp, t, cx));
     }
@@ -382,96 +379,9 @@ fn solid_danger_btn(
 }
 
 // ---------------------------------------------------------------------------
-// ⋯ 项目菜单（020-1：列表切换/排序已上收会话控制栏，⋯ 仅剩项目菜单）
+// psp 菜单（⋯ 项目菜单已于 020-1 撤除：浏览器/终端入口在文件树操作栏，
+// 删除由项目行垃圾桶直弹确认卡）
 // ---------------------------------------------------------------------------
-
-fn menu_layer(
-    chat: &mut Chat,
-    vp: (f32, f32),
-    t: &'static Theme,
-    cx: &mut gpui::Context<Chat>,
-) -> gpui::AnyElement {
-    let weak = cx.entity().downgrade();
-    let (x, y) = match chat.dlg.psp_menu.clone().expect("checked by caller") {
-        crate::function_panel::PspMenu::Project { x, y, .. } => (x, y),
-    };
-    // 统一弹出定位（2026-10-11）：锚点 = ⋯ 按钮点击点，向下弹距 12px、
-    // 向上弹同样让 12px；左右象限决定横向展开方向。
-    let parent_edges = PopupEdges::around((x, y), vp, 0., 12.);
-    // 浮层公共基座（遮挡不穿透 + 点外关闭 + ESC 关闭）
-    let weak_layer = weak.clone();
-    let layer = crate::ui::overlay::layer(false, Some(&chat.dlg.dialog_focus), move |_w, cx| {
-        let _ = weak_layer.update(cx, |c, cx| {
-            c.dlg.psp_menu = None;
-            cx.notify();
-        });
-    });
-    let mut card = menu_card(parent_edges, t);
-    let crate::function_panel::PspMenu::Project { path, .. } =
-        chat.dlg.psp_menu.clone().expect("re-checked");
-    card = card
-                .child(
-                    menu_item(
-                        "pm-explorer",
-                        "folder-input",
-                        tr("psp.open_in_file_browser"),
-                        false,
-                        false,
-                    )
-                    .on_mouse_down(MouseButton::Left, {
-                        let weak = weak.clone();
-                        let path = path.clone();
-                        move |_, _, cx| {
-                            cx.stop_propagation();
-                            let _ = weak.update(cx, |c, cx| {
-                                crate::services::shell_open::open_in_explorer(&path);
-                                c.dlg.psp_menu = None;
-                                cx.notify();
-                            });
-                        }
-                    }),
-                )
-                .child(
-                    menu_item("pm-terminal", "icon-terminal-solid", tr("file_tree.open_in_terminal"), false, false)
-                        .on_mouse_down(MouseButton::Left, {
-                            let weak = weak.clone();
-                            let path = path.clone();
-                            move |_, window, cx| {
-                                cx.stop_propagation();
-                                let _ = weak.update(cx, |c, cx| {
-                                    // 只开终端 tab（内容区切过去），dock 面板
-                                    // 留在原处——会话列表里开终端不切文件树
-                                    c.open_terminal_in(path.clone(), window, cx);
-                                    c.dlg.psp_menu = None;
-                                    cx.notify();
-                                });
-                            }
-                        }),
-                )
-                .child(
-                    menu_item(
-                        "pm-del",
-                        "icon-trash-solid",
-                        tr("psp.delete_project"),
-                        true,
-                        false,
-                    )
-                    .on_mouse_down(MouseButton::Left, {
-                        let weak = weak.clone();
-                        let path = path.clone();
-                        move |ev: &gpui::MouseDownEvent, _, cx| {
-                            cx.stop_propagation();
-                            let (x, y) = (f32::from(ev.position.x), f32::from(ev.position.y));
-                            let _ = weak.update(cx, |c, cx| {
-                                c.dlg.psp_menu = None;
-                                c.dlg.confirm_prj_del = Some((path.clone(), x, y));
-                                cx.notify();
-                            });
-                        }
-                    }),
-                );
-    layer.child(card).into_any_element()
-}
 
 /// 统一菜单卡座：absolute 弹层基座，贴边由统一算法的 [`PopupEdges`] 决定。
 pub(crate) fn menu_card(edges: PopupEdges, t: &'static Theme) -> gpui::Div {
