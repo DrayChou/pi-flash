@@ -688,13 +688,31 @@ impl Element for Scrollbar {
         let is_hover_to_show = cx.theme().scrollbar_show.is_hover();
 
         // Update last_scroll_time when offset is changed.
+        //
+        // PF 2026-10-16（pi-flash 滚屏优化）：offset 变化时不再立即
+        // `cx.notify`——宿主（如 InputState::on_scroll_wheel）对同一次变化
+        // 已经 notify 过，这里再发一次 = 每个滚动 tick 渲染两个全窗帧。
+        // 改为就地调度 FADE_OUT_DELAY 后的渐隐定时器（与 prepaint idle
+        // 分支共用 idle_timer_scheduled 防重入）；定时器到点 notify 后，
+        // 渐隐 rAF 链路照旧。中途再滚动时定时器提前触发只会多一次与滚动
+        // 帧合并的 notify，下一 tick 会重新调度，语义不变。
         if self.scroll_handle.offset() != self.state.get().last_scroll_offset {
             self.state.set(
                 self.state
                     .get()
                     .with_last_scroll(self.scroll_handle.offset(), Some(Instant::now())),
             );
-            cx.notify(view_id);
+            if !self.state.get().idle_timer_scheduled {
+                self.state
+                    .set(self.state.get().with_idle_timer_scheduled(true));
+                let state = self.state.clone();
+                window.spawn(cx, async move |cx| {
+                    Timer::after(Duration::from_secs_f32(FADE_OUT_DELAY)).await;
+                    state.set(state.get().with_idle_timer_scheduled(false));
+                    cx.update(|_, cx| cx.notify(view_id)).ok();
+                })
+                .detach();
+            }
         }
 
         window.with_content_mask(

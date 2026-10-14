@@ -7,7 +7,7 @@ use gpui::{HighlightStyle, SharedString};
 use ropey::{ChunkCursor, Rope};
 use std::{
     cell::RefCell,
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     ops::Range,
     usize,
 };
@@ -22,7 +22,7 @@ use tree_sitter::{
 pub struct SyntaxHighlighter {
     language: SharedString,
     query: Option<Query>,
-    injection_queries: HashMap<SharedString, Query>,
+    injection_queries: HashMap<SharedString, InjectionQuery>,
 
     locals_pattern_index: usize,
     highlights_pattern_index: usize,
@@ -41,7 +41,12 @@ pub struct SyntaxHighlighter {
     /// The last parsed tree.
     tree: Option<Tree>,
 
-    /// PF 修复（2026-10-12）：注入语言（`<style>`/`<script>` 等）的解析成品
+    /// PF 修复（2026-10-16，pi-flash 滚屏优化）：主 query 的捕获名表，构造时
+    /// 一次性建好。原先 `match_styles` 对每个 capture 都
+    /// `SharedString::from(name.to_string())`——滚动帧窗口内有 ~1-2K 捕获，
+    /// 即 ~1-2K 次堆分配/帧。
+    capture_names: Vec<SharedString>,
+    /// PF 修复（2026-10-16，pi-flash 滚屏优化）：注入语言（`<style>`/`<script>` 等）的解析成品
     /// 缓存，key = (语言, 注入节点在宿主文本里的字节范围)。见
     /// [`Self::handle_injection`] 的性能说明。`update()` 换文本时整表清空。
     injection_cache: RefCell<HashMap<(SharedString, usize, usize), InjectionParse>>,
@@ -117,6 +122,13 @@ impl HighlightItem {
             name: name.into(),
         }
     }
+}
+
+/// 注入语言的 query + 捕获名表（PF 2026-10-16：名表随 query 一次性建好，
+/// 匹配时零分配）。
+struct InjectionQuery {
+    query: Query,
+    capture_names: Vec<SharedString>,
 }
 
 impl sum_tree::Item for HighlightItem {
@@ -287,7 +299,18 @@ impl SyntaxHighlighter {
             if let Some(inj_config) = LanguageRegistry::singleton().language(&inj_language) {
                 match Query::new(&inj_config.language, &inj_config.highlights) {
                     Ok(q) => {
-                        injection_queries.insert(inj_config.name.clone(), q);
+                        let capture_names: Vec<SharedString> = q
+                            .capture_names()
+                            .into_iter()
+                            .map(|n| SharedString::from(n.to_string()))
+                            .collect();
+                        injection_queries.insert(
+                            inj_config.name.clone(),
+                            InjectionQuery {
+                                query: q,
+                                capture_names,
+                            },
+                        );
                     }
                     Err(e) => {
                         tracing::error!(
@@ -302,11 +325,20 @@ impl SyntaxHighlighter {
 
         // let highlight_indices = vec![None; query.capture_names().len()];
 
+        // PF 2026-10-16：主 query 捕获名表一次性建好（原先每 capture 一次
+        // String 分配，滚动帧每帧 ~1-2K 次）。
+        let capture_names: Vec<SharedString> = query
+            .capture_names()
+            .into_iter()
+            .map(|n| SharedString::from(n.to_string()))
+            .collect();
+
         Ok(Self {
             language: config.name.clone(),
             query: Some(query),
             injection_queries,
             injection_cache: RefCell::new(HashMap::new()),
+            capture_names,
 
             locals_pattern_index,
             highlights_pattern_index,
@@ -413,12 +445,14 @@ impl SyntaxHighlighter {
             for cap in query_match.captures {
                 let node = cap.node;
 
-                let Some(highlight_name) = query.capture_names().get(cap.index as usize) else {
+                // PF 2026-10-16：查预建名表 + Arc 克隆（原先每 capture 一次
+                // to_string 堆分配，滚动帧每帧 ~1-2K 次）。
+                let Some(highlight_name) = self.capture_names.get(cap.index as usize) else {
                     continue;
                 };
+                let highlight_name = highlight_name.clone();
 
                 let node_range: Range<usize> = node.start_byte()..node.end_byte();
-                let highlight_name = SharedString::from(highlight_name.to_string());
 
                 // Merge near range and same highlight name
                 let last_item = highlights.last();
@@ -474,7 +508,7 @@ impl SyntaxHighlighter {
         injection_language: &str,
         node: Node,
         range: &Range<usize>,
-    ) -> Vec<(Range<usize>, String)> {
+    ) -> Vec<(Range<usize>, SharedString)> {
         // Ensure byte offsets are on char boundaries for UTF-8 safety
         let start_offset = self.text.clip_offset(node.start_byte(), Bias::Left);
         let end_offset = self.text.clip_offset(node.end_byte(), Bias::Right);
@@ -482,9 +516,10 @@ impl SyntaxHighlighter {
             return vec![];
         }
 
-        let Some(query) = &self.injection_queries.get(injection_language) else {
+        let Some(inj_query) = self.injection_queries.get(injection_language) else {
             return vec![];
         };
+        let query = &inj_query.query;
 
         let key = (
             SharedString::from(injection_language.to_string()),
@@ -552,9 +587,9 @@ impl SyntaxHighlighter {
                     break;
                 }
 
-                if let Some(highlight_name) = query.capture_names().get(cap.index as usize) {
+                if let Some(highlight_name) = inj_query.capture_names.get(cap.index as usize) {
                     last_end = node_range.end;
-                    out.push((node_range, highlight_name.to_string()));
+                    out.push((node_range, highlight_name.clone()));
                 }
             }
         }
@@ -694,7 +729,16 @@ impl SyntaxHighlighter {
 /// To:
 ///
 /// AABCCDDCEEEE
-pub(crate) fn unique_styles(
+///
+/// PF 2026-10-16（pi-flash 滚屏优化）：原实现是「区间 × 样式」全量二重扫
+/// O(N²)——视口字节窗内也有 ~1-2K 条样式，滚动帧每帧数百万次比较。改为
+/// 边界扫描线 O(N log N)：按位置推进，维护**按原序号组织**的活跃样式集
+/// （BTreeMap），区间样式 = 活跃集按原 index 升序 merge——与旧实现「按
+/// styles 向量顺序扫描全部覆盖者并依次 merge」语义严格一致（未覆盖区间
+/// 照旧输出 default，总覆盖含 total_range 之外的间隙也与旧实现一致）。
+/// `pub` 供宿主（pi-flash app 侧测试目标）做新旧差分回归。
+#[doc(hidden)]
+pub fn unique_styles(
     total_range: &Range<usize>,
     styles: Vec<(Range<usize>, HighlightStyle)>,
 ) -> Vec<(Range<usize>, HighlightStyle)> {
@@ -702,52 +746,73 @@ pub(crate) fn unique_styles(
         return styles;
     }
 
-    let mut intervals = BTreeSet::new();
-    let mut significant_intervals = BTreeSet::new();
-
-    // For example
-    //
-    // from: [(6..11), (6..11), (11..17), (17..25), (16..19), (25..59))]
-    // to:   [6, 11, 16, 17, 19, 25, 59]
-    intervals.insert(total_range.start);
-    intervals.insert(total_range.end);
+    let mut bounds: Vec<usize> = Vec::with_capacity(styles.len() * 2 + 2);
+    bounds.push(total_range.start);
+    bounds.push(total_range.end);
     for (range, _) in &styles {
-        intervals.insert(range.start);
-        intervals.insert(range.end);
+        bounds.push(range.start);
+        bounds.push(range.end);
+    }
+    bounds.sort_unstable();
+    bounds.dedup();
+
+    // 样式终点是「显著边界」，相邻同色区间跨它不合并（与旧实现一致）。
+    let mut significant_intervals = BTreeSet::new();
+    for (range, _) in &styles {
         significant_intervals.insert(range.end); // End points are significant for merging decisions
     }
 
-    let intervals: Vec<usize> = intervals.into_iter().collect();
-    let mut result = Vec::with_capacity(intervals.len().saturating_sub(1));
+    // 事件 (位置, 类别, 序号)：同一位置先 End(0) 后 Start(1)——区间的活跃
+    // 集定义是 start <= p && end > p（旧实现 range.start <= interval.start
+    // && interval.end <= range.end，两者等价：end 是边界，end > p ⇔ end >=
+    // 下一边界）。零长样式（start == end）不覆盖任何区间，直接丢弃。
+    const END: u8 = 0;
+    const START: u8 = 1;
+    let mut events: Vec<(usize, u8, usize)> = Vec::with_capacity(styles.len() * 2);
+    for (ix, (range, _)) in styles.iter().enumerate() {
+        if range.start < range.end {
+            events.push((range.start, START, ix));
+            events.push((range.end, END, ix));
+        }
+    }
+    events.sort_unstable();
 
-    // For each interval between boundaries, find the top-most style
-    //
-    // Result e.g.:
-    //
-    // [(6..11, red), (11..16, green), (16..17, blue), (17..19, red), (19..25, clean), (25..59, blue)]
-    for i in 0..intervals.len().saturating_sub(1) {
-        let interval = intervals[i]..intervals[i + 1];
-        if interval.start >= interval.end {
+    let mut active: BTreeMap<usize, ()> = BTreeMap::new();
+    let mut ei = 0;
+    let mut result: Vec<(Range<usize>, HighlightStyle)> = Vec::with_capacity(bounds.len());
+
+    for w in 0..bounds.len().saturating_sub(1) {
+        let start = bounds[w];
+        let end = bounds[w + 1];
+        if start >= end {
             continue;
         }
 
-        // Find the last (top-most) style that covers this interval
-        let mut top_style: Option<HighlightStyle> = None;
-        for (range, style) in &styles {
-            if range.start <= interval.start && interval.end <= range.end {
-                if let Some(top_style) = &mut top_style {
-                    merge_highlight_style(top_style, style);
-                } else {
-                    top_style = Some(*style);
-                }
+        while ei < events.len() && events[ei].0 <= start {
+            let (_, kind, ix) = events[ei];
+            if kind == END {
+                active.remove(&ix);
+            } else {
+                active.insert(ix, ());
             }
+            ei += 1;
         }
 
-        if let Some(style) = top_style {
-            result.push((interval, style));
-        } else {
-            result.push((interval, HighlightStyle::default()));
+        // 活跃集按原序号升序 merge（BTreeMap 迭代序 = index 序），与旧实现
+        // 「顺序扫描 styles、对覆盖者依次 merge（后者覆盖前者字段）」一致。
+        let mut top_style: Option<HighlightStyle> = None;
+        for (&ix, _) in active.iter() {
+            let style = &styles[ix].1;
+            top_style = match top_style {
+                None => Some(*style),
+                Some(mut merged) => {
+                    merge_highlight_style(&mut merged, style);
+                    Some(merged)
+                }
+            };
         }
+
+        result.push((start..end, top_style.unwrap_or_default()));
     }
 
     // Merge adjacent ranges with the same style, but not across significant boundaries

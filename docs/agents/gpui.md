@@ -11,6 +11,12 @@
 - `uniform_list` 契约 = 容器 fixed/max 高（Fill 需 relative+flex_1 外包 + absolute 定死四角，否则画全部内容）；**UniformListScrollHandle 必须跨帧复用**（每帧 `new()` = 滚动全丢）→ `ui::vlist` thread_local 句柄表按 id 复用。
 - 滚轮派发给**所有**命中可滚动 hitbox 含祖先（嵌套 = 内外同时滚，非先内后外）。
 - 滚屏铁律：Bottom 对齐下内容填不满视口 → 强制 logical=None 贴底（钉顶必须靠 spacer 垫片，常数化最稳）；`ListState::reset()` 清滚动位（notify 前存、后恢复）；`scroll_to*` 不触发 notify（程序化滚动自补通知 + window.refresh）；滚动回调内**严禁**触碰 ListState（BorrowMutError → 置标记渲染帧补账）。
+- **编辑器滚动手感对照 Zed（2026-10-16 排查结论，pi-flash 滚屏优化）**：Zed 滚动帧 = 视口行排版（gpui 两帧 LineLayoutCache 命中，只有新进入行 shape）+ 从 sum-tree 缓存读高亮（**无每帧树逃逸查询**）+ f64 滚动位置设备像素吸附；PF 已有同款排版缓存，差距在三处，均已修：
+  1. **每帧高亮查询**：视口字节窗内每帧重跑 tree-sitter query + `unique_styles` 平方扫 + 每捕获 String 分配 → 捕获名 intern（highlighter.rs）+ unique_styles 边界扫描线 O(N log N)（语义经 app 侧差分测试 `crates/app/tests/vendor_highlight_diff.rs` 钉死，2000 组随机输入与旧实现全等）；
+  2. **每 tick 双帧**：Scrollbar::paint 检测到 offset 变化会再 `cx.notify` 一次（scrollbar.rs），宿主（InputState）对同一变化已 notify → 每个 wheel tick 渲染两个全窗帧 → 改为 paint 时就地调度 FADE_OUT_DELAY 定时器，不再立即 notify。注意 PF 主题是 `ScrollbarShow::Always`（composer 常显，用户定夺），渐隐链路本就不跑，此改动对 PF 零视觉影响；
+  3. **亚像素抖动**：行高默认 1.5×字号，非整倍缩放下是小数（1.5× 缩放、14px → 设备 31.5px），滚轮步进 = N×行高 → 整屏行落在小数设备像素 → `snap_line_height`（element.rs，request_layout/prepaint/paint 三处同一纯函数）吸附整设备像素。Zed 对应物是 editor element 的 pixel_snap。
+  仍未对齐（结构性，另立项）：每次 notify 全 Chat 重建（见「交互与实体」节）；PF 侧 wheel 是 Lines 量化（WM_MOUSEWHEEL 系统行为，Zed Windows 同款），无 trackpad 像素路径。
+- vendor 测试目标跑不了：`cargo test -p gpui-component` 报 "requires dev-dependencies and is not a member of the workspace"（workspace 排除所致，非编译错误）→ vendor 纯函数回归测试放 app 侧（见 crates/app/tests/vendor_highlight_diff.rs 模式：旧实现照抄做参照 + 差分）。
 
 ## overlay 与 hitbox
 
@@ -101,3 +107,4 @@
 - **vendor 本地改动（升级必须重套）**：`input/state.rs` `set_selected_range` 显式清 `selection_reversed`（不变式：该 setter 光标恒在选区尾）+ 新增 `set_selected_range_reversed`（光标锚选区**起点**，滚动保起点可见）——app `TextInput::select_all_on_focus` 全选改走它（改名框头部可见，2026-10-13 用户定夺）；`cursor()`/滚动早有 reversed 分支，此补丁只补公开设置口。
 - **vendor 本地改动（升级必须重套）**：`input/state.rs` `set_soft_wrap` 抽出无 window 变体 `set_soft_wrap_cx`（上游签名里 window 参数本就被忽略）——app 渲染帧同步点（sync_live_decorations）手里只有 `Context<Self>`；`set_soft_wrap` 原签名保留并委托。
 - **vendor 本地改动（升级必须重套）**：`input/element.rs` 视口字节窗（`viewport_byte_window` + `EXTRA_SHAPE_ROWS`：`highlight_lines` 逐行查询与窗求交 + 窗前/窗后默认样式 filler 保「从 0 连续平铺」不变式、`layout_lines` 窗外软换行段垫等 len 空 ShapedLine、`calculate_visible_range` 非等高路径钳逻辑行数）+ `input/text_wrapper.rs`（`LineLayout::paint` 跳空 text 段；`closest_index_for_x`/`closest_index_for_position`/`index_for_position` 字节累加改用覆写后 `len()`）——超大单行（minified js）每帧假死修复，2026-10-14，pi-flash-jtt；平铺 filler 补丁 2026-10-15（CJK 文件 char boundary panic）。
+- **vendor 本地改动（升级必须重套）**：`highlighter/highlighter.rs`（`capture_names`/`InjectionQuery.capture_names` 预建捕获名表 intern，`match_styles`/`handle_injection` 零分配；`unique_styles` 改边界扫描线 O(N log N) 并 `#[doc(hidden)] pub` 导出——语义由 app 侧 `crates/app/tests/vendor_highlight_diff.rs` 差分钉死）+ `input/element.rs`（`snap_line_height` 行高设备像素吸附，request_layout/prepaint/paint 三处统一）+ `scroll/scrollbar.rs`（paint 的 offset-change 不再立即 `cx.notify`，就地调度渐隐定时器——PF 主题 Always 常显下零视觉影响）——滚屏手感对齐 Zed 三项，2026-10-16。

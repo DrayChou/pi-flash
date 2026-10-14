@@ -23,6 +23,20 @@ pub(super) const LINE_NUMBER_RIGHT_MARGIN: Pixels = px(10.);
 /// 1-2 行，这些行要保持真实 shaped（preferred_column 取 x 用）。
 const EXTRA_SHAPE_ROWS: usize = 2;
 
+/// PF 2026-10-16（pi-flash 滚屏优化）：行高吸附到**整设备像素**。行高默认
+/// 是 1.5 × 字号，非整倍显示缩放下常见小数（如 1.5× 缩放、14px 字号 →
+/// 逻辑 21px = 设备 31.5px）；滚轮步进 = N × 行高，行落在小数设备像素上
+/// 滚动时整屏亚像素抖动/发虚（Zed editor 的 pixel_snap 同款问题域）。
+/// 吸附后所有行的 y 都落在整设备像素。纯函数——request_layout/prepaint/
+/// paint 三处必须用同一份，否则同帧内位置不一致。
+fn snap_line_height(line_height: Pixels, scale_factor: f32) -> Pixels {
+    if scale_factor > 0. {
+        px((f32::from(line_height) * scale_factor).round() / scale_factor)
+    } else {
+        line_height
+    }
+}
+
 /// 视口字节窗（PF 修复 2026-10-14，见 docs/agents/gpui.md「文本与绘制」）：
 /// `visible_range` 是**逻辑行**粒度，minified 单行文件（echarts.min.js 一行
 /// 94 万字符）会把整行送进高亮查询与 shaping——高亮 `match_styles` 产出
@@ -911,7 +925,7 @@ impl Element for TextElement {
         cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
         let state = self.state.read(cx);
-        let line_height = window.line_height();
+        let line_height = snap_line_height(window.line_height(), window.scale_factor());
 
         let mut style = Style::default();
         style.size.width = relative(1.).into();
@@ -943,7 +957,7 @@ impl Element for TextElement {
         cx: &mut App,
     ) -> Self::PrepaintState {
         let state = self.state.read(cx);
-        let line_height = window.line_height();
+        let line_height = snap_line_height(window.line_height(), window.scale_factor());
 
         let (visible_range, visible_top) =
             self.calculate_visible_range(&state, line_height, bounds.size.height);
@@ -1332,7 +1346,7 @@ impl Element for TextElement {
         });
 
         // Paint multi line text
-        let line_height = window.line_height();
+        let line_height = snap_line_height(window.line_height(), window.scale_factor());
         let origin = bounds.origin;
 
         let invisible_top_padding = prepaint.last_layout.visible_top;
