@@ -4,8 +4,8 @@
 //!   `ignore` crate 的 Gitignore 匹配，与 Zed 同一实现）；本仓暂不接
 //!   global gitignore（Zed 的 global_ignore_root 来自其 fs 层，后续补）。
 //! - [`flatten`] 把「根目录 + 展开集合」变成排序好的 [`TreeRow`] 扁平表：
-//!   每目录读一次盘、按 Zed 语义排序（`paths_sort`）、过滤 dot 文件与
-//!   ignore 条目、回填 git 徽标与「子树有变更」目录圆点。渲染层
+//!   每目录读一次盘、按 Zed 语义排序（`paths_sort`）、跳过扫描排除项、
+//!   标记 ignore 条目、回填 git 徽标与「子树有变更」目录圆点。渲染层
 //!   （function_panel::file_tree）只消费这个缓存，不再碰磁盘。
 
 use std::cmp::Ordering;
@@ -165,8 +165,9 @@ fn changed_ancestor_dirs(cwd: &Path, files: &[GitFile]) -> HashSet<PathBuf> {
 }
 
 /// Flatten every directory in `expanded` into rows. Sorting/filtering
-/// follow Zed semantics: dot files hidden, `.git` skipped, gitignored
-/// entries shown dimmed (`ignored`), directories first, natural sort.
+/// follow Zed semantics: dot files **visible**（v61 起对齐 Zed，此前误随
+/// pi-web 藏点）, only the default scan exclusions (`.git` etc.) skipped,
+/// gitignored entries shown dimmed (`ignored`), directories first, natural sort.
 ///
 /// 021 定稿（二改）：**根行不再进树**——项目名由操作栏承载（树顶 40px
 /// 固定行，名字居左、操作钮右对齐，右键弹根目录菜单），树体直接从根的
@@ -245,6 +246,19 @@ fn build_gitignore_at(dir: &Path, rel: &str) -> Option<Gitignore> {
     Some(builder.build().unwrap_or_else(|_| Gitignore::empty()))
 }
 
+/// Zed 默认 `file_scan_exclusions`：任何层级匹配这些名字的条目整个不进树
+/// （Zed project panel 同款名单；除此之外 dot 文件默认可见）。
+const SCAN_EXCLUSIONS: &[&str] = &[
+    ".git",
+    ".svn",
+    ".hg",
+    "CVS",
+    ".DS_Store",
+    "Thumbs.db",
+    ".classpath",
+    ".settings",
+];
+
 #[allow(clippy::too_many_arguments)]
 fn walk(
     dir: &Path,
@@ -262,8 +276,9 @@ fn walk(
     let mut entries: Vec<(PathBuf, String, bool, bool)> = Vec::new();
     for e in rd.flatten() {
         let name = e.file_name().to_string_lossy().to_string();
-        // pi-web 语义：dot 文件不显示（Zed 的 hidden_files 设置后续再接）
-        if name.starts_with('.') {
+        // Zed parity：dot 文件默认可见（此前「点开头全隐藏」是 pi-web 语义，
+        // 与 Zed 不符）；仅扫描排除名单整个不进树。
+        if SCAN_EXCLUSIONS.contains(&name.as_str()) {
             continue;
         }
         let Ok(ty) = e.file_type() else { continue };
@@ -478,11 +493,16 @@ mod tests {
         let keep = by_name("keep.log");
         assert!(!keep.ignored, "whitelist survives as normal");
         assert!(!by_name("src").ignored, "normal dir unmarked");
+        // v61 起 dot 文件可见（Zed parity）：.gitignore 本身也是普通行
+        assert!(!by_name(".gitignore").ignored, "dot file shown as normal row");
         // src/ 未展开不显示子文件，但目录本身在
         let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
-        assert_eq!(names, vec!["build", "src", "debug.log", "keep.log"]);
+        assert_eq!(
+            names,
+            vec!["build", "src", ".gitignore", "debug.log", "keep.log"]
+        );
 
-        // .git/info/exclude 也生效（同样显示但标记）
+        // .git/info/exclude 也生效（同样显示但标记）；.git 目录本身不进树
         let git_dir = t.0.join(".git");
         std::fs::create_dir_all(git_dir.join("info")).unwrap();
         std::fs::write(git_dir.join("info").join("exclude"), "secret.txt\n").unwrap();
@@ -493,6 +513,34 @@ mod tests {
             .find(|r| r.name == "secret.txt")
             .expect("excluded file shown");
         assert!(secret.ignored, "repo-excluded file shown dimmed");
+        assert!(rows.iter().all(|r| r.name != ".git"), ".git scanned out");
+    }
+
+    #[test]
+    fn dot_files_visible_but_scan_exclusions_hidden() {
+        let t = TempTree::new("dotvis");
+        std::fs::write(t.0.join(".gitignore"), ".beads/\n").unwrap();
+        t.file(".gitattributes");
+        t.dir(".beads");
+        t.file(".beads/issues.jsonl");
+        std::fs::create_dir_all(t.0.join(".git").join("objects")).unwrap();
+        t.file(".DS_Store");
+
+        let mut expanded = HashSet::new();
+        expanded.insert(t.0.clone());
+        expanded.insert(t.0.join(".beads"));
+        let rows = flatten(&t.0, &expanded, &[]);
+        let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
+        // 目录先（.beads 展开随后子行），dot 文件按普通条目参与排序
+        assert_eq!(
+            names,
+            vec![".beads", "issues.jsonl", ".gitattributes", ".gitignore"]
+        );
+        assert!(rows[0].ignored, "gitignored dot dir shown dimmed");
+        assert!(rows[1].ignored, "ignored dir children inherit the mark");
+        assert!(!rows[2].ignored && !rows[3].ignored, "plain dot files normal");
+        // Zed 默认 file_scan_exclusions：.git / .DS_Store 整个不进树
+        assert!(names.iter().all(|n| *n != ".git" && *n != ".DS_Store"));
     }
 
     #[test]
