@@ -347,7 +347,8 @@
   #pv-files { position: relative; padding: 0; }
   #pv-files.on { display: flex; flex-direction: column; }
   .ft-actions { flex: none; height: 38px; display: flex; align-items: center;
-    padding: 0 10px; }
+    /* 项目名与 ICON_LINE 对齐 = 12；右缘 10 与会话控制栏一致 */
+    padding: 0 10px 0 12px; }
   .ft-proj { font-size: 12px; font-weight: 700; color: var(--accent);
     min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ft-btns { margin-left: auto; display: flex; gap: 2px; }
@@ -355,7 +356,9 @@
     display: flex; align-items: center; justify-content: center; color: var(--text-muted); cursor: default; }
   .ft-act:hover { background: var(--bg-hover); color: var(--text); }
   .ft-act svg { width: 15px; height: 15px; }
-  .ft-list { flex: 1; min-height: 0; overflow-y: auto; position: relative; padding: 4px 0 6px; }
+  /* 左线并入 ICON_LINE 12（020-1 整合后与上方面板同线）：列表 pl 6 + 内容列 px6
+     → 根图标 x=12；参考线 = 父级图标列中心（12+7=19，逐级 +20） */
+  .ft-list { flex: 1; min-height: 0; overflow-y: auto; position: relative; padding: 4px 6px 6px; }
   .ft-row {
     position: relative; display: flex; align-items: center; gap: 6px;
     height: 24px; padding: 0 8px 0 6px; border-radius: 4px;
@@ -363,10 +366,9 @@
   }
   .ft-row:hover { background: var(--bg-hover); }
   .ft-row .fico { width: 14px; height: 14px; flex: none; color: var(--text-dim); }
-  /* 内容列 = ml(深度×20) + px(6)：根图标 x=6，l1=26 / l2=46 / l3=66 */
-  .ft-row.l1 { padding-left: 26px; }
-  .ft-row.l2 { padding-left: 46px; }
-  .ft-row.l3 { padding-left: 66px; }
+  .ft-row.l1 { padding-left: 32px; }
+  .ft-row.l2 { padding-left: 52px; }
+  .ft-row.l3 { padding-left: 72px; }
   .ft-guide { position: absolute; top: 4px; bottom: 6px; width: 1px; background: rgba(175, 196, 186, .4); }
     #pv-git.on { display: flex; flex-direction: column; padding: 0; }
   /* 020-1 后 git 面板不再常驻 tab：仅经 #git 演示哈希整面板查看 */
@@ -891,8 +893,8 @@
               </span>
             </div>
             <div class="ft-list">
-            <i class="ft-guide" style="left: 13px"></i>
-            <i class="ft-guide" style="left: 33px"></i>
+            <i class="ft-guide" style="left: 19px"></i>
+            <i class="ft-guide" style="left: 39px"></i>
             <div class="ft-row l0 dir"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M2 10h20"/></svg>.agents</div>
             <div class="ft-row l1 dir"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>skills</div>
             <div class="ft-row l2 dir"><svg class="fico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M2 10h20"/></svg>beads</div>
