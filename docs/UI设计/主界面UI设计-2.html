@@ -1686,6 +1686,9 @@ statusbar 40（设置钮）│</pre>
     });
     dz.addEventListener("pointermove", e => {
       if (!dragging) return;
+      // 拖拽即退出最大化态：清除 .min，两面板恢复按比例分配并跟随
+      document.getElementById("subSess").classList.remove("min");
+      document.getElementById("subFiles").classList.remove("min");
       const r = dock.getBoundingClientRect();
       const ctrlT = document.querySelector("#subSess .psp-ctrl").offsetHeight;
       const ctrlB = document.querySelector("#subFiles .ft-actions").offsetHeight;
