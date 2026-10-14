@@ -1,7 +1,8 @@
 //! 软件自动更新（081-软件自动更新.md）：揭幕后延迟加载阶段后台检查 GitHub
 //! release → on=后台下载→SHA-256 校验→解压 staging（薄壳启动器下次启动
 //! swap 落位）→inputpanel 右下版本号位提示；off=版本号「x.x.x↑」可点击开
-//! release 页。新版本首启自动开 topbar「更新日志」tab。
+//! release 页。新版本首启自动开 topbar「更新日志」tab；新会话页版本号
+//! 淡字点击 = 手动开同一页（show_changelog）。
 //!
 //! 落位协议（与 npm 薄壳 080 §3 协作）：
 //! ```text
@@ -650,23 +651,46 @@ impl crate::Chat {
         let cur = current_version().to_string();
         match read_last_seen() {
             Some(seen) if version_gt(&cur, &seen) => {
-                let cached = read_changelog_cache(&cur);
-                self.aux.changelog = Some(ChangelogPage {
-                    version: cur.clone(),
-                    fetching: cached.is_none(),
-                    body: cached,
-                });
-                self.open_changelog_tab(cx);
+                self.show_changelog(cur.clone(), cx);
                 write_last_seen(&cur);
-                // 缓存缺失：后台按 tag 现拉一份
-                if self.aux.changelog.as_ref().is_some_and(|p| p.fetching) {
-                    self.spawn_changelog_fetch(cur, cx);
-                }
             }
             None => write_last_seen(&cur), // 首次运行：只记账，不开页
             _ => {}
         }
         self.spawn_update_check(cx);
+    }
+
+    /// 打开某版本的更新日志页（新版本首启钩子与新会话页版本号点击共用）：
+    /// 内存已有同版本页 = 正文在就直接开；拉取中不打断；两者皆无（上次
+    /// 拉取失败）置回 fetching 重试。否则读本地缓存装页，缺失则后台按
+    /// tag 现拉（只展示不回写缓存——看一次的页面）。
+    pub(crate) fn show_changelog(&mut self, version: String, cx: &mut gpui::Context<Self>) {
+        let mut need_fetch = false;
+        if self
+            .aux
+            .changelog
+            .as_ref()
+            .is_some_and(|p| p.version == version)
+        {
+            if let Some(p) = self.aux.changelog.as_mut() {
+                if p.body.is_none() && !p.fetching {
+                    p.fetching = true;
+                    need_fetch = true;
+                }
+            }
+        } else {
+            let cached = read_changelog_cache(&version);
+            need_fetch = cached.is_none();
+            self.aux.changelog = Some(ChangelogPage {
+                version: version.clone(),
+                fetching: need_fetch,
+                body: cached,
+            });
+        }
+        self.open_changelog_tab(cx);
+        if need_fetch {
+            self.spawn_changelog_fetch(version, cx);
+        }
     }
 
     fn spawn_changelog_fetch(&mut self, version: String, cx: &mut gpui::Context<Self>) {

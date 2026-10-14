@@ -206,6 +206,7 @@ fn action_bar(
     // pi-flash 版本号（placeholder 同款淡色，用户 2026-10-07 定稿）。
     // 081：状态化——下载中转圈（faint）、就绪提示重启（青蓝 NOTICE）、
     // 关自动更新且有新版 = 可点击「↑」开 release 页（青蓝）。
+    // Idle = 淡字版本号可点击，手动开当前版本更新日志页（2026-10-14）。
     {
         use crate::services::updater::UpdateState;
         let version_el: gpui::AnyElement = match &chat.aux.update {
@@ -247,7 +248,18 @@ fn action_bar(
                     .into_any_element()
             }
             UpdateState::Idle => {
-                SharedString::from(format!("v{}", env!("CARGO_PKG_VERSION"))).into_any_element()
+                let ver = env!("CARGO_PKG_VERSION");
+                let w_ver = weak.clone();
+                div()
+                    .id("ns-version")
+                    .cursor_pointer()
+                    .child(SharedString::from(format!("v{ver}")))
+                    .hover(|s| s.text_color(rgb(t.text)))
+                    .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                        cx.stop_propagation();
+                        let _ = w_ver.update(cx, |c, cx| c.show_changelog(ver.to_string(), cx));
+                    })
+                    .into_any_element()
             }
         };
         let version_color = match &chat.aux.update {
