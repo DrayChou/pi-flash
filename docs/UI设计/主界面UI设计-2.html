@@ -160,8 +160,9 @@
   .sp-divider::after { content: ""; position: absolute; left: 10px; right: 10px; top: 3px;
     height: 1px; background: rgba(175, 196, 186, .5); }
   .sp-divider:hover::after, .sp-divider.dragging::after { background: var(--accent); }
-  /* 会话子面板控制栏：去 title 文字，左三 icon+文字（大图标）右二纯 icon */
-  .psp-ctrl { flex: none; height: 40px; display: flex; align-items: center; gap: 2px;
+  /* 会话子面板控制栏：去 title 文字，左三 icon+文字（大图标）右二纯 icon。
+     注意事项：两个控制栏统一 38px 高、一律无下 border */
+  .psp-ctrl { flex: none; height: 38px; display: flex; align-items: center; gap: 2px;
     padding: 0 8px; }
   .pc-btn { border: 0; background: transparent; border-radius: 8px; padding: 0 8px; height: 30px;
     display: flex; align-items: center; gap: 6px; color: var(--text-dim);
@@ -336,8 +337,8 @@
        行高 24、每级缩进 20、参考线在 level*20+13；图标按后缀但统一染 text_dim；无持久选中 */
   #pv-files { position: relative; padding: 0; }
   #pv-files.on { display: flex; flex-direction: column; }
-  .ft-actions { flex: none; height: 40px; display: flex; align-items: center;
-    padding: 0 10px 0 14px; border-bottom: 1px solid rgba(175,196,186,.3); }
+  .ft-actions { flex: none; height: 38px; display: flex; align-items: center;
+    padding: 0 10px 0 14px; }
   .ft-proj { font-size: 12px; font-weight: 600; color: var(--text-soft);
     min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ft-btns { margin-left: auto; display: flex; gap: 2px; }
