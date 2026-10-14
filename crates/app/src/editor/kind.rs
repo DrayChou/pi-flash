@@ -222,10 +222,11 @@ impl FileKind for ImageKind {
     fn name(&self) -> &'static str {
         "image"
     }
-    /// zed `create_gpui_image` 同款 match：magic bytes 说了算，映射到
-    /// gpui::ImageFormat；不在表内（avif/tga/dds/hdr/exr/qoi、tiff/ico/
-    /// pnm——最后三者在 vendored gpui 0.2.2 的 ImageFormat 里还没有对应
-    /// variant，zed 新版才加）一律 None 落灰屏。
+    /// zed `create_gpui_image` 同款 match（全集）：magic bytes 说了算，
+    /// 映射到 gpui::ImageFormat；不在表内（avif/tga/dds/hdr/exr/qoi/
+    /// farbfeld——后缀门放进来了但 magic 解不出）一律 None 落灰屏。
+    /// Tiff variant 是 vendored gpui 0.2.2 自带，Ico/Pnm 由 vendor 补丁
+    /// 从 zed HEAD 移植（见 docs/agents/gpui.md「vendor 本地改动」）。
     fn try_binary(&self, bytes: &[u8]) -> Option<gpui::ImageFormat> {
         let format = image::guess_format(bytes).ok()?;
         match format {
@@ -234,6 +235,9 @@ impl FileKind for ImageKind {
             image::ImageFormat::Gif => Some(gpui::ImageFormat::Gif),
             image::ImageFormat::WebP => Some(gpui::ImageFormat::Webp),
             image::ImageFormat::Bmp => Some(gpui::ImageFormat::Bmp),
+            image::ImageFormat::Tiff => Some(gpui::ImageFormat::Tiff),
+            image::ImageFormat::Ico => Some(gpui::ImageFormat::Ico),
+            image::ImageFormat::Pnm => Some(gpui::ImageFormat::Pnm),
             _ => None,
         }
     }
@@ -253,6 +257,9 @@ static IMG_JPEG: ImageKind = ImageKind { format: gpui::ImageFormat::Jpeg };
 static IMG_GIF: ImageKind = ImageKind { format: gpui::ImageFormat::Gif };
 static IMG_WEBP: ImageKind = ImageKind { format: gpui::ImageFormat::Webp };
 static IMG_BMP: ImageKind = ImageKind { format: gpui::ImageFormat::Bmp };
+static IMG_TIFF: ImageKind = ImageKind { format: gpui::ImageFormat::Tiff };
+static IMG_ICO: ImageKind = ImageKind { format: gpui::ImageFormat::Ico };
+static IMG_PNM: ImageKind = ImageKind { format: gpui::ImageFormat::Pnm };
 
 static RUST: CodeKind = CodeKind { ts_lang: "rust" };
 static PYTHON: CodeKind = CodeKind { ts_lang: "python" };
@@ -299,6 +306,11 @@ fn registry() -> &'static HashMap<&'static str, &'static dyn FileKind> {
         put(&["gif"], &IMG_GIF);
         put(&["webp"], &IMG_WEBP);
         put(&["bmp"], &IMG_BMP);
+        // tiff/ico/pnm 族：zed create_gpui_image 全集（gpui variant 由
+        // vendor 补丁补齐）；pnm = Netpbm 家族（pbm/pgm/ppm/pam）
+        put(&["tif", "tiff"], &IMG_TIFF);
+        put(&["ico"], &IMG_ICO);
+        put(&["pbm", "pgm", "ppm", "pam"], &IMG_PNM);
         put(&["rs"], &RUST);
         put(&["py", "pyw"], &PYTHON);
         put(&["js", "jsx", "mjs", "cjs"], &JAVASCRIPT);
@@ -409,7 +421,7 @@ mod tests {
     /// 落文本管线（decode_text Binary → 灰屏）。
     #[test]
     fn image_binary_claim_by_magic() {
-        // 真 magic：五种 gpui 支持的格式全认领
+        // 真 magic：zed create_gpui_image 全集八种格式全认领
         assert_eq!(
             kind("png").try_binary(b"\x89PNG\r\n\x1a\nrest"),
             Some(gpui::ImageFormat::Png)
@@ -421,10 +433,13 @@ mod tests {
             Some(gpui::ImageFormat::Webp)
         );
         assert_eq!(kind("gif").try_binary(b"GIF89axxx"), Some(gpui::ImageFormat::Gif));
+        assert_eq!(kind("tiff").try_binary(b"II*\x00tiff"), Some(gpui::ImageFormat::Tiff));
+        assert_eq!(kind("ico").try_binary(b"\x00\x00\x01\x00ico"), Some(gpui::ImageFormat::Ico));
+        assert_eq!(kind("pbm").try_binary(b"P6\n1 1\n255\n"), Some(gpui::ImageFormat::Pnm));
         // 后缀骗不过：.png 装着文本字节 → None（zed 开图失败 → 灰屏同构）
         assert_eq!(kind("png").try_binary(b"plain text no magic"), None);
-        // vendored gpui 无 Tiff/Ico variant（zed 新版才有）→ 不认领落灰屏
-        assert_eq!(kind("png").try_binary(b"II*\x00tiff"), None);
+        // avif 等过扩展门但 magic 解不出（不在 create_gpui_image 表内）→ None
+        assert_eq!(kind("png").try_binary(b"\x00\x00\x00 ftypavif"), None);
         // 文本类 kind 不认领二进制
         assert_eq!(kind("txt").try_binary(b"\x89PNG\r\n\x1a\n"), None);
         assert_eq!(kind("rs").try_binary(b"\xFF\xD8\xFF"), None);

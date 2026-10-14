@@ -444,6 +444,8 @@ impl From<ImageFormat> for image::ImageFormat {
             // TODO: ImageFormat::Svg
             ImageFormat::Bmp => image::ImageFormat::Bmp,
             ImageFormat::Tiff => image::ImageFormat::Tiff,
+            ImageFormat::Ico => image::ImageFormat::Ico,
+            ImageFormat::Pnm => image::ImageFormat::Pnm,
             _ => unreachable!(),
         }
     }

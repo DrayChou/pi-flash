@@ -1650,6 +1650,10 @@ pub enum ImageFormat {
     Bmp,
     /// .tif or .tiff
     Tiff,
+    /// .ico
+    Ico,
+    /// Netpbm image formats (.pbm, .ppm, .pgm).
+    Pnm,
 }
 
 impl ImageFormat {
@@ -1663,19 +1667,26 @@ impl ImageFormat {
             ImageFormat::Svg => "image/svg+xml",
             ImageFormat::Bmp => "image/bmp",
             ImageFormat::Tiff => "image/tiff",
+            ImageFormat::Ico => "image/ico",
+            ImageFormat::Pnm => "image/x-portable-anymap",
         }
     }
 
     /// Returns the ImageFormat for the given mime type
     pub fn from_mime_type(mime_type: &str) -> Option<Self> {
+        use strum::IntoEnumIterator;
+        Self::iter()
+            .find(|format| format.mime_type() == mime_type)
+            .or_else(|| Self::from_mime_type_alias(mime_type))
+    }
+
+    /// Non-canonical mime types that some producers use in the wild.
+    /// Unlike `mime_type()` which returns the single canonical form,
+    /// these are legacy or shortened variants we still need to recognize.
+    fn from_mime_type_alias(mime_type: &str) -> Option<Self> {
         match mime_type {
-            "image/png" => Some(Self::Png),
-            "image/jpeg" | "image/jpg" => Some(Self::Jpeg),
-            "image/webp" => Some(Self::Webp),
-            "image/gif" => Some(Self::Gif),
-            "image/svg+xml" => Some(Self::Svg),
-            "image/bmp" => Some(Self::Bmp),
-            "image/tiff" | "image/tif" => Some(Self::Tiff),
+            "image/jpg" => Some(Self::Jpeg),
+            "image/tif" => Some(Self::Tiff),
             _ => None,
         }
     }
@@ -1782,6 +1793,8 @@ impl Image {
             ImageFormat::Webp => frames_for_image(&self.bytes, image::ImageFormat::WebP)?,
             ImageFormat::Bmp => frames_for_image(&self.bytes, image::ImageFormat::Bmp)?,
             ImageFormat::Tiff => frames_for_image(&self.bytes, image::ImageFormat::Tiff)?,
+            ImageFormat::Ico => frames_for_image(&self.bytes, image::ImageFormat::Ico)?,
+            ImageFormat::Pnm => frames_for_image(&self.bytes, image::ImageFormat::Pnm)?,
             ImageFormat::Svg => {
                 let pixmap = svg_renderer.render_pixmap(&self.bytes, SvgSize::ScaleFactor(1.0))?;
 

@@ -86,6 +86,8 @@ x11rb::atom_manager! {
         SVG__MIME: ImageFormat::mime_type(ImageFormat::Svg ).as_bytes(),
         BMP__MIME: ImageFormat::mime_type(ImageFormat::Bmp ).as_bytes(),
         TIFF_MIME: ImageFormat::mime_type(ImageFormat::Tiff).as_bytes(),
+        ICO__MIME: ImageFormat::mime_type(ImageFormat::Ico ).as_bytes(),
+        PNM__MIME: ImageFormat::mime_type(ImageFormat::Pnm ).as_bytes(),
 
         // This is just some random name for the property on our window, into which
         // the clipboard owner writes the data we requested.
@@ -1003,6 +1005,8 @@ impl Clipboard {
             ImageFormat::Svg => self.inner.atoms.SVG__MIME,
             ImageFormat::Bmp => self.inner.atoms.BMP__MIME,
             ImageFormat::Tiff => self.inner.atoms.TIFF_MIME,
+            ImageFormat::Ico => self.inner.atoms.ICO__MIME,
+            ImageFormat::Pnm => self.inner.atoms.PNM__MIME,
         };
         let data = vec![ClipboardData {
             bytes: image.bytes,
@@ -1012,7 +1016,7 @@ impl Clipboard {
     }
 
     pub(crate) fn get_any(&self, selection: ClipboardKind) -> Result<ClipboardItem> {
-        const IMAGE_FORMAT_COUNT: usize = 7;
+        const IMAGE_FORMAT_COUNT: usize = 9;
         let image_format_atoms: [Atom; IMAGE_FORMAT_COUNT] = [
             self.inner.atoms.PNG__MIME,
             self.inner.atoms.JPEG_MIME,
@@ -1021,6 +1025,8 @@ impl Clipboard {
             self.inner.atoms.SVG__MIME,
             self.inner.atoms.BMP__MIME,
             self.inner.atoms.TIFF_MIME,
+            self.inner.atoms.ICO__MIME,
+            self.inner.atoms.PNM__MIME,
         ];
         let image_formats: [ImageFormat; IMAGE_FORMAT_COUNT] = [
             ImageFormat::Png,
@@ -1030,6 +1036,8 @@ impl Clipboard {
             ImageFormat::Svg,
             ImageFormat::Bmp,
             ImageFormat::Tiff,
+            ImageFormat::Ico,
+            ImageFormat::Pnm,
         ];
 
         const TEXT_FORMAT_COUNT: usize = 6;

@@ -1327,6 +1327,11 @@ impl MacPlatform {
 }
 
 fn try_clipboard_image(pasteboard: id, format: ImageFormat) -> Option<ClipboardItem> {
+    // UTType 无 ico/pnm 等价物（From 里对应臂只是穷尽占位）：NSPasteboard
+    // 不承载这两种格式，直接跳过
+    if matches!(format, ImageFormat::Ico | ImageFormat::Pnm) {
+        return None;
+    }
     let mut ut_type: UTType = format.into();
 
     unsafe {
@@ -1607,6 +1612,9 @@ impl From<ImageFormat> for UTType {
             ImageFormat::Gif => Self::gif(),
             ImageFormat::Bmp => Self::bmp(),
             ImageFormat::Svg => Self::svg(),
+            // UTType 无 ico/pnm 内建；png() 只是 match 穷尽占位——
+            // try_clipboard_image 对这两种格式提前返回 None，永不到此
+            ImageFormat::Ico | ImageFormat::Pnm => Self::png(),
         }
     }
 }
