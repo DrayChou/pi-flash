@@ -152,8 +152,8 @@
   .sub-panel { display: flex; flex-direction: column; min-height: 0; }
   #subSess { flex: 0 0 var(--split, 50%); }
   #subFiles { flex: 1 1 0; }
-  .dock:has(#subSess.min) #subSess { flex: 0 0 auto; }
-  .dock:has(#subFiles.min) #subSess { flex: 1 1 0; }
+  #subSess.min, #subFiles.min { flex: 0 0 auto; }   /* 收起后不参与 grow，只剩控制栏高度 */
+  .dock:has(#subFiles.min) #subSess { flex: 1 1 0; }  /* 文件树收起时会话填满剩余 */
   .sub-panel.min > .sp-body { display: none; }
   #subFiles.min .ft-list { display: none; }
   .sp-divider { flex: none; height: 7px; cursor: row-resize; position: relative; }
