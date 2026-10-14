@@ -163,8 +163,8 @@
   /* 会话子面板控制栏：去 title 文字，左三 icon+文字（大图标）右二纯 icon。
      注意事项：两个控制栏统一 38px 高、一律无下 border */
   .psp-ctrl { flex: none; height: 38px; display: flex; align-items: center; gap: 2px;
-    /* 内容左线 = ICON_LINE 12（4 + 按钮内边距 8），右线 = 距面板右 20 */
-    padding: 0 20px 0 4px; }
+    /* 左线 = ICON_LINE 12（4 + 按钮内边距 8）；右缘与文件树操作栏对齐 = 距右 10 */
+    padding: 0 10px 0 4px; }
   .pc-btn { border: 0; background: transparent; border-radius: 8px; padding: 0 8px; height: 30px;
     display: flex; align-items: center; gap: 6px; color: var(--text-dim);
     font-family: inherit; font-size: 12.5px; font-weight: 600; cursor: default; }
