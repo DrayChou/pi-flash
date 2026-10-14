@@ -1211,7 +1211,7 @@
 slp 300px 会话列表+文件树 上下整合面板 │ 内容区（聊天 / 终端 / md 预览 / 新会话页）
 statusbar 40（设置钮）│</pre>
             <h2>整合面板（020-1）</h2>
-            <p>会话列表与文件树整合为一个面板，上下两个子面板默认各占 50% 高度；分隔线可拖拽改比例（20%–80%，双击复位）。子面板 = 控制栏 + 内容区，至多收起到控制栏：控制栏右侧大小切换钮收起时变最大化图标。会话控制栏左三（项目 / 会话 / 搜索，icon+文字）右二（列表切换 / 大小切换，纯 icon）；文件树控制栏在原四钮最右加大小切换。</p>
+            <p>会话列表与文件树整合为一个面板，上下两个子面板默认各占 50% 高度；分隔线可拖拽改比例，上推到底会话面板只剩控制栏、下拉到底文件树只剩操作栏（双击复位 50%）。子面板 = 控制栏 + 内容区，至多收起到控制栏：控制栏右侧大小切换钮收起时变最大化图标。会话控制栏左三（项目 / 会话 / 搜索，icon+文字）右二（列表切换 / 大小切换，纯 icon）；文件树控制栏在原四钮最右加大小切换。</p>
             <h2>三层色阶</h2>
             <ul>
               <li>chrome #dfe9e5 — topbar + statusbar</li>
@@ -1679,7 +1679,7 @@ statusbar 40（设置钮）│</pre>
     bindSize("filesSize", "subFiles");
   }
 
-  // 子面板分隔线：拖拽改上下比例（20%–80%），双击复位 50%
+  // 子面板分隔线：拖拽改上下比例；上下限 = 对面子面板只剩控制栏（020-1：最小态即操作栏）
   {
     const dz = document.getElementById("spDivider");
     const dock = document.querySelector(".dock");
@@ -1692,8 +1692,13 @@ statusbar 40（设置钮）│</pre>
     dz.addEventListener("pointermove", e => {
       if (!dragging) return;
       const r = dock.getBoundingClientRect();
-      const pct = Math.min(80, Math.max(20, (e.clientY - r.top) / r.height * 100));
-      dock.style.setProperty("--split", pct + "%");
+      const ctrlT = document.querySelector("#subSess .psp-ctrl").offsetHeight;
+      const ctrlB = document.querySelector("#subFiles .ft-actions").offsetHeight;
+      const divH = dz.offsetHeight;
+      const minPx = ctrlT;                    // 上推到底：会话面板只剩控制栏
+      const maxPx = r.height - divH - ctrlB;  // 下拉到底：文件树只剩操作栏
+      const px = Math.min(maxPx, Math.max(minPx, e.clientY - r.top));
+      dock.style.setProperty("--split", (px / r.height * 100) + "%");
     });
     const stop = e => {
       dragging = false;
