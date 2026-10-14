@@ -82,10 +82,14 @@ pub(crate) fn render_dialogs(
     root
 }
 
-/// 021 文件树操作栏「搜索文件」：500×500 居中（§5.7 中型档 + 项目选择
-/// 同尺寸先例）——顶部文件名输入框，下方命中列表（文件类型图标 + 名字
-/// + 所在目录副文案），点击即打开文件 tab。数据由 open_file_search /
-/// file_search_changed 后台扫盘回填，代际防抖。
+/// 021 文件树操作栏「搜索文件」：700×500 居中（2026-10-14 用户定稿加宽
+/// 200px；小窗 max_w 92% 兜底）——顶部文件名输入框，下方命中列表（文件
+/// 类型图标 + 名字 + 所在目录副文案），点击即打开文件 tab。数据由
+/// open_file_search / file_search_changed 后台扫盘回填，代际防抖。
+///
+/// 行对齐契约（2026-10-14 用户定稿）：行内容左缘 = 输入框文字左缘
+/// （面板 p_4 16px + 输入框 1px 边框 + Medium 档 input_px 12px = 29px，
+/// 行 pl 13 补齐）；路径跟在名字后面左对齐，超长自动折行（行 min_h）。
 fn render_file_search(
     chat: &Chat,
     weak: &gpui::WeakEntity<Chat>,
@@ -104,7 +108,7 @@ fn render_file_search(
         crate::i18n::tf("file_tree.files", &[("n", chat.ws.file_search_hits.len().to_string())]).into()
     };
     let cwd = chat.ws.cwd.clone();
-    let mut list = div().flex().flex_col();
+    let mut list = div().flex().flex_col().w_full();
     for (ix, rel) in chat.ws.file_search_hits.iter().enumerate() {
         let abs = cwd.join(rel);
         let name = rel.rsplit('/').next().unwrap_or(rel);
@@ -119,8 +123,14 @@ fn render_file_search(
         list = list.child(
             div()
                 .id(SharedString::from(format!("fs-hit-{ix}")))
-                .h(px(34.))
-                .px_2()
+                .w_full()
+                // min_h：路径折行时行要长高（固定 h 会截掉第二行）
+                .min_h(px(34.))
+                // 左缩进 13 = 输入框文字内缩（1px 边框 + Medium 档 input_px
+                // 12），叠面板 p_4 的 16px 合计 29px——图标列与输入框文字
+                // 同一条左线
+                .pl(px(13.))
+                .pr_2()
                 .flex()
                 .items_center()
                 .gap_2()
@@ -144,13 +154,11 @@ fn render_file_search(
                         .child(SharedString::from(name.to_string())),
                 )
                 .child(
+                    // 路径跟在名字后面左对齐（不右贴行尾），超长自动折行
                     div()
                         .flex_1()
                         .min_w_0()
                         .overflow_hidden()
-                        .whitespace_nowrap()
-                        .text_ellipsis()
-                        .text_right()
                         .text_size(crate::appearance::ui_size(10.5))
                         .text_color(rgb(t.text_faint))
                         .child(dir_label),
@@ -158,7 +166,9 @@ fn render_file_search(
         );
     }
     let panel = div()
-        .w(px(500.))
+        .w(px(700.))
+        // 小窗兜底：窄于面板时收到窗宽 92%，不裁边
+        .max_w(relative(0.92))
         .h(px(500.))
         .bg(rgb(t.bg_panel))
         .border_1()
