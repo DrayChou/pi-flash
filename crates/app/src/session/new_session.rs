@@ -204,7 +204,8 @@ fn action_bar(
             .child(project),
     );
     // pi-flash 版本号（placeholder 同款淡色，用户 2026-10-07 定稿）。
-    // 081：状态化——下载中转圈（faint）、就绪提示重启（青蓝 NOTICE）、
+    // 081：状态化——下载中转圈（faint）、就绪 = 可点击「下载完成，点击
+    // 重启更新」（青蓝 NOTICE，点击 spawn swap helper 立即切换，081 §7）、
     // 关自动更新且有新版 = 可点击「↑」开 release 页（青蓝）。
     // Idle = 淡字版本号可点击，手动开当前版本更新日志页（2026-10-14）。
     {
@@ -225,11 +226,20 @@ fn action_bar(
                     .child(SharedString::from(text))
                     .into_any_element()
             }
-            UpdateState::Ready { version } => SharedString::from(crate::i18n::tf(
-                "update.restart_required",
-                &[("v", version.clone())],
-            ))
-            .into_any_element(),
+            UpdateState::Ready { .. } => {
+                let w_upd = weak.clone();
+                div()
+                    .id("ns-update-ready")
+                    .cursor_pointer()
+                    .text_color(rgb(crate::appearance::theme::NOTICE))
+                    .hover(|s| s.text_color(rgb(t.text)))
+                    .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                        cx.stop_propagation();
+                        let _ = w_upd.update(cx, |c, cx| c.restart_to_apply_update(cx));
+                    })
+                    .child(SharedString::from(tr("update.ready_click")))
+                    .into_any_element()
+            }
             UpdateState::Available { version } => {
                 let ver = version.clone();
                 div()

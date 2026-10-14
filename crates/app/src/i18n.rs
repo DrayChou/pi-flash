@@ -230,7 +230,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("about.auto_update", "自动更新", "自動更新", "Auto-update"),
     ("settings.auto_update_hint", "允许Pi-Flash自动更新", "允許Pi-Flash自動更新", "Let Pi-Flash update itself automatically"),
     ("about.downloading_v", "下载 {v} 版本中…", "下載 {v} 版本中…", "Downloading v{v}…"),
-    ("update.restart_required", "请重启软件切换至 {v} 版本", "請重啟軟體切換至 {v} 版本", "Restart to switch to v{v}"),
+    ("update.ready_click", "下载完成，点击重启更新", "下載完成，點擊重啟更新", "Download complete — click to restart and update"),
     ("about.changelog", "更新日志", "更新日誌", "Changelog"),
     ("about.fetching_changelog", "正在获取更新日志…", "正在獲取更新日誌…", "Fetching changelog…"),
     ("about.no_changelog_available", "暂无更新日志", "暫無更新日誌", "No changelog available"),

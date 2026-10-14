@@ -10,8 +10,11 @@
 //! <pkg>/payload.stage-<ver>/        下载解压好的新载荷（含 .payload-version 戳）
 //! <pkg>/update-staged.json          staging 标记 {"version","staged_at"}——原子写
 //! ```
-//! swap 只由启动器做（彼时旧进程已退出、目录无锁）：rename payload→old、
-//! rename staging→payload、删标记、删 old。exe 从不自己动 payload 目录。
+//! swap 执行者有两个（彼时旧进程已退出、目录无锁）：npm 启动器（命令行
+//! `pi-flash` 路径）与 **exe 自交换**（2026-10-14 补：双击/快捷方式直启
+//! exe 不经启动器，staging 永远没人落位、Ready 提示死循环——0.1.6 实测）。
+//! exe 自己也从不碰 payload 目录：它 spawn 一个分离的 powershell helper，
+//! 等本进程退出后完成 rename 并拉起新 exe（见下方「exe 自交换」节）。
 //!
 //! 网络纪律（设计文档定）：检测 timeout 30s，失败重试 2 次、间隔 10 分钟，
 //! 全程后台线程，绝不阻塞主进程；失败静默回落 Idle，下次启动再来。
@@ -169,16 +172,169 @@ fn write_staged_in(pkg: &Path, staged: &StagedUpdate) -> std::io::Result<()> {
     std::fs::rename(&tmp, &path)
 }
 
-/// 启动时初始状态：已有合法 staging = Ready（不花网络）；否则 Idle。
+/// 启动时初始状态：已有合法 staging（且确实更新）= Ready（不花网络）；
+/// 标记残留但不比当前新 = 垃圾清掉落 Idle。
 pub(crate) fn initial_state() -> UpdateState {
     let Some(pkg) = pkg_dir() else {
         return UpdateState::Idle;
     };
     match read_staged_in(&pkg) {
-        Some(s) => UpdateState::Ready {
+        Some(s) if version_gt(&s.version, current_version()) => UpdateState::Ready {
             version: s.version,
         },
+        Some(_) => {
+            let _ = std::fs::remove_file(marker_path(&pkg));
+            UpdateState::Idle
+        }
         None => UpdateState::Idle,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// exe 自交换（081 §7，2026-10-14）：swap 执行点上移到 exe 自己
+// ---------------------------------------------------------------------------
+
+/// 启动最前处（main 开窗之前）调用：有合法 staging 标记且版本确实更新 =
+/// 该让位给 swap helper。标记版本不比当前新（残留垃圾）→ 清标记落 Idle。
+pub(crate) fn startup_swap_pending() -> bool {
+    let Some(pkg) = pkg_dir() else {
+        return false;
+    };
+    match read_staged_in(&pkg) {
+        Some(s) if version_gt(&s.version, current_version()) => true,
+        Some(_) => {
+            let _ = std::fs::remove_file(marker_path(&pkg));
+            false
+        }
+        None => false,
+    }
+}
+
+/// powershell swap 脚本（swap 细节照抄启动器 applyStagedUpdate，npm/bin/lib.js）：
+/// ① 等目标进程退出（≤15s，超时全盘放弃）→ ② rename payload→old（payload
+/// 不在 = 上次半途崩，直接走搬回；rename 被挡重试 ≤5s）→ ③ rename staging→
+/// payload（失败把 old 搬回）→ 删标记 → ④ 拉起载荷 exe（沿用原工作目录；
+/// swap 成败都拉——用户永远有窗口，只是版本新旧之别）→ ⑤ 最后删 old。
+/// 占位符用唯一 token replace 而非 format!，避开 PS 花括号转义；单引号路径
+/// 内的单引号翻倍转义。exe_name 参数化供测试注入假 exe。
+/// 占位 token 取真实路径不可能出现的形状：多轮 replace 时先前注入的路径
+/// 不会再被后续 token 命中。
+fn swap_script(target_pid: u32, pkg: &Path, stage: &Path, work: &Path, exe_name: &str) -> String {
+    let esc = |s: &Path| s.to_string_lossy().replace('\'', "''");
+    let mut s = String::from(
+        r#"$ErrorActionPreference = 'SilentlyContinue'
+$target = __PF_PID__
+$pkg    = '__PF_PKG__'
+$stage  = '__PF_STAGE__'
+$work   = '__PF_WORK__'
+# ① 等旧进程退出（≤15s；超时放弃，什么都不动）
+$alive = $true
+for ($i = 0; $i -lt 150; $i++) {
+    $alive = $null -ne (Get-Process -Id $target -ErrorAction SilentlyContinue)
+    if (-not $alive) { break }
+    Start-Sleep -Milliseconds 100
+}
+if ($alive) { exit 1 }
+# ② swap 上半场：payload → old。payload 不在 = 上次 swap 半途崩，直接跳到
+# 搬回；在则 rename（他实例占用时重试 ≤5s；现代 Windows 的目录 rename 不受
+# 运行中镜像/CWD 阻挡，重试只为老系统与杀软句柄兜底）
+$payload = Join-Path $pkg 'payload'
+$oldName = 'payload.old-' + (Get-Date -Format 'yyyyMMddHHmmssfff')
+$old = Join-Path $pkg $oldName
+$moved = $false
+if (Test-Path -LiteralPath $payload) {
+    for ($i = 0; $i -lt 10; $i++) {
+        if (Rename-Item -LiteralPath $payload -NewName $oldName -PassThru) { $moved = $true; break }
+        Start-Sleep -Milliseconds 500
+    }
+}
+# ③ swap 下半场：staging → payload；失败把 old 搬回；payload 缺失（半途崩）
+# 也把 old 搬回
+$swapped = $false
+if ($moved) {
+    if (Rename-Item -LiteralPath $stage -NewName 'payload' -PassThru) {
+        Remove-Item -LiteralPath (Join-Path $pkg 'update-staged.json') -Force
+        $swapped = $true
+    } else {
+        Rename-Item -LiteralPath $old -NewName 'payload'
+    }
+} else {
+    $prev = Get-ChildItem -LiteralPath $pkg -Directory -Filter 'payload.old-*' | Select-Object -First 1
+    if ($prev) { Rename-Item -LiteralPath $prev.FullName -NewName 'payload' | Out-Null }
+}
+# ④ 拉起载荷 exe（swap 成败都拉，应用永远打得开）
+$newExe = Join-Path $payload '__PF_EXE__'
+if (Test-Path -LiteralPath $newExe) {
+    if (Test-Path -LiteralPath $work) {
+        Start-Process -FilePath $newExe -WorkingDirectory $work
+    } else {
+        Start-Process -FilePath $newExe
+    }
+}
+# ⑤ 最后删 old（此刻 payload 已就位，删失败无碍）
+if (Test-Path -LiteralPath $old) { Remove-Item -LiteralPath $old -Recurse -Force }
+if ($swapped) { exit 0 } else { exit 1 }
+"#,
+    );
+    let pid = target_pid.to_string();
+    for (ph, val) in [
+        ("__PF_PID__", &pid),
+        ("__PF_PKG__", &esc(pkg)),
+        ("__PF_STAGE__", &esc(stage)),
+        ("__PF_WORK__", &esc(work)),
+        ("__PF_EXE__", &exe_name.replace('\'', "''")),
+    ] {
+        s = s.replace(ph, val);
+    }
+    s
+}
+
+/// 脚本走 -EncodedCommand（UTF-16LE base64）：绕开引号/换行在命令行上的
+/// 二次解释，路径含任意字符都安全。
+#[cfg(windows)]
+fn encode_ps(script: &str) -> String {
+    use base64::Engine as _;
+    let utf16le: Vec<u8> = script
+        .encode_utf16()
+        .flat_map(|u| u.to_le_bytes())
+        .collect();
+    base64::engine::general_purpose::STANDARD.encode(utf16le)
+}
+
+/// spawn 分离 swap helper（等本进程退出后 swap + 拉起新 exe）。helper 必须
+/// 是系统二进制：新旧 exe 都躺在待 rename 的目录里，运行中的镜像会锁死目录。
+/// false = 没起来（读不到合法标记 / powershell 缺失）——调用方继续按旧版跑。
+pub(crate) fn spawn_swap_helper() -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // CREATE_NO_WINDOW：不闪黑框。helper 与本进程无管道相连，本进程
+        // 随后退出不影响它。
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let Some(pkg) = pkg_dir() else {
+            return false;
+        };
+        let Some(staged) = read_staged_in(&pkg) else {
+            return false;
+        };
+        let stage = staging_dir(&pkg, &staged.version);
+        let work = std::env::current_dir().unwrap_or_else(|_| pkg.clone());
+        let script = swap_script(std::process::id(), &pkg, &stage, &work, "pi-flash.exe");
+        std::process::Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-EncodedCommand",
+                &encode_ps(&script),
+            ])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .is_ok()
+    }
+    #[cfg(not(windows))]
+    {
+        false
     }
 }
 
@@ -747,6 +903,16 @@ impl crate::Chat {
         cx.notify();
     }
 
+    /// Ready 提示点击（「下载完成，点击重启更新」）：persist UI → spawn
+    /// swap helper（等本进程退出后落位新载荷并拉起新 exe）→ 本进程退出。
+    /// helper 起不来就原地不动，提示留给下次启动的自动交接。
+    pub(crate) fn restart_to_apply_update(&mut self, cx: &mut gpui::Context<Self>) {
+        self.persist_ui();
+        if spawn_swap_helper() {
+            cx.quit();
+        }
+    }
+
     /// 后台检查更新（on=下载 staging，off=只提示 ↑）。检测失败重试 2 次、
     /// 间隔 10 分钟（设计文档定），全程不阻塞主进程，最终失败静默。
     pub(crate) fn spawn_update_check(&mut self, cx: &mut gpui::Context<Self>) {
@@ -925,6 +1091,155 @@ mod tests {
         std::fs::remove_dir_all(staging_dir(&pkg, "0.1.2")).unwrap();
         assert!(read_staged_in(&pkg).is_none());
         assert!(!marker_path(&pkg).exists(), "残缺标记一并清除");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // --- exe 自交换（081 §7）：脚本生成 + 真 powershell 端到端 --------------
+
+    #[test]
+    fn swap_script_build() {
+        let script = swap_script(
+            4242,
+            Path::new("C:\\app pi'flash"),
+            Path::new("C:\\app pi'flash\\payload.stage-0.2.0"),
+            Path::new("C:\\my work"),
+            "pi-flash.exe",
+        );
+        assert!(script.contains("$target = 4242"));
+        assert!(script.contains("'C:\\app pi''flash'"), "路径内单引号翻倍转义");
+        assert!(!script.contains("__PF_"), "占位符全部替换");
+    }
+
+    /// 真 powershell 跑通 swap 全流程（假 exe）：等真退出的进程 → payload
+    /// 翻转成新版 → 标记/staging/old 全清。这是 0.1.6「双击直启 Ready 死
+    /// 循环」bug 的修复主路径，必须真机绿。
+    #[cfg(windows)]
+    #[test]
+    fn swap_helper_end_to_end() {
+        let dir = std::env::temp_dir().join(format!(
+            "pf-swap-e2e-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .subsec_nanos()
+        ));
+        let pkg = dir.join("pkg");
+        let payload = pkg.join("payload");
+        std::fs::create_dir_all(payload.join("vendor")).unwrap();
+        std::fs::write(payload.join("pi-flash.exe"), b"old").unwrap();
+        std::fs::write(payload.join(".payload-version"), "0.1.5\n").unwrap();
+        let stage = staging_dir(&pkg, "0.1.6");
+        std::fs::create_dir_all(&stage).unwrap();
+        std::fs::write(stage.join("pi-flash.exe"), b"new").unwrap();
+        std::fs::write(stage.join(".payload-version"), "0.1.6\n").unwrap();
+        write_staged_in(
+            &pkg,
+            &StagedUpdate {
+                version: "0.1.6".into(),
+                staged_at: 1,
+            },
+        )
+        .unwrap();
+
+        // 已退出的真进程 pid：helper 的等退循环立刻通过
+        let mut dying = std::process::Command::new("cmd").args(["/C", "exit"]).spawn().unwrap();
+        let pid = dying.id();
+        dying.wait().unwrap();
+
+        let script = swap_script(pid, &pkg, &stage, &dir, "pi-flash.exe");
+        let out = std::process::Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-EncodedCommand",
+                &encode_ps(&script),
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "helper 应报成功：{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+
+        // 载荷已是新版；staging / 标记 / old 全清
+        assert_eq!(
+            std::fs::read_to_string(payload.join(".payload-version")).unwrap(),
+            "0.1.6\n"
+        );
+        assert!(!stage.exists(), "staging 应已翻转为 payload");
+        assert!(read_staged_in(&pkg).is_none(), "标记应已清除");
+        let leftovers: Vec<_> = std::fs::read_dir(&pkg)
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().starts_with("payload.old-"))
+            .collect();
+        assert!(leftovers.is_empty(), "old 目录应已删除：{leftovers:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 崩溃恢复：swap 半途崩过（payload 不在、payload.old-* 遗留、标记还在）
+    /// → helper 把 old 搬回、不动标记、仍尝试拉起（应用打得开）、报失败。
+    /// 注：现代 Windows 的目录 rename 不受运行中镜像/CWD 阻挡（镜像锁只挡
+    /// 文件自身删改名），「他实例占用」实际不可达，重试分支纯属老系统兜底。
+    #[cfg(windows)]
+    #[test]
+    fn swap_helper_recover_after_crash() {
+        let dir = std::env::temp_dir().join(format!(
+            "pf-swap-rec-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .subsec_nanos()
+        ));
+        let pkg = dir.join("pkg");
+        let payload = pkg.join("payload");
+        // 崩溃现场：payload 已被 rename 成 old，staging 与标记原样
+        let old = pkg.join("payload.old-20261014");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("pi-flash.exe"), b"old").unwrap();
+        std::fs::write(old.join(".payload-version"), "0.1.5\n").unwrap();
+        let stage = staging_dir(&pkg, "0.1.6");
+        std::fs::create_dir_all(&stage).unwrap();
+        std::fs::write(stage.join("pi-flash.exe"), b"new").unwrap();
+        std::fs::write(stage.join(".payload-version"), "0.1.6\n").unwrap();
+        write_staged_in(
+            &pkg,
+            &StagedUpdate {
+                version: "0.1.6".into(),
+                staged_at: 1,
+            },
+        )
+        .unwrap();
+
+        let mut dying = std::process::Command::new("cmd").args(["/C", "exit"]).spawn().unwrap();
+        let pid = dying.id();
+        dying.wait().unwrap();
+
+        let script = swap_script(pid, &pkg, &stage, &dir, "pi-flash.exe");
+        let out = std::process::Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-EncodedCommand",
+                &encode_ps(&script),
+            ])
+            .output()
+            .unwrap();
+        assert!(!out.status.success(), "swap 未完成应报失败");
+
+        // old 搬回成 payload（应用能启动旧版）；staging 与标记原样留待下次
+        assert_eq!(
+            std::fs::read_to_string(payload.join(".payload-version")).unwrap(),
+            "0.1.5\n",
+            "old 应被搬回成 payload"
+        );
+        assert!(stage.exists(), "staging 不应被动");
+        assert!(read_staged_in(&pkg).is_some(), "标记应留待下次");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

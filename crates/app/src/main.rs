@@ -80,6 +80,13 @@ pub(crate) const MODEL_PICKER_ROWS: usize = 12;
 
 fn main() {
     let _ = T0.set(std::time::Instant::now());
+    // 081 §7 exe 自交换：双击/快捷方式直启不经 npm 启动器，staging 没人
+    // 落位（0.1.6 实测 Ready 死循环）。开窗之前检测到更新的合法新载荷就
+    // spawn 分离 helper（等本进程退出后 swap + 拉起新 exe）随即让位——用户
+    // 只感觉这次启动慢半拍。helper 起不来则照常启动旧版（Ready 提示可点）。
+    if services::updater::startup_swap_pending() && services::updater::spawn_swap_helper() {
+        return;
+    }
     // 启动第一步（010-启动.md §4/§10）：建 ~/.pi-flash/、旧 pi-flash-*.json 搬家、
     // recents 首启种子。必须早于任何读盘者（workspace 记忆 / recents / 会话扫描器
     // 都是进程级惰性单例）。
