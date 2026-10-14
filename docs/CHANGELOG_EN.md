@@ -31,7 +31,6 @@ Windows x64 only.
 
 ### Improvements
 - Scrolling feel aligned with Zed: per-frame tree-sitter re-queries and per-capture heap allocations inside the viewport are gone (verified equal by a differential test), the double frame per wheel tick is eliminated, and line heights snap to whole device pixels (fixing sub-pixel shimmer at 1.5× scaling); app-side overhead for large-file scrolling is essentially zero. (35836ff)
-
 ## [0.1.5] - 2026-10-13
 
 In-app updates gain mirror failover and a download percentage, the context usage popup gets a redesign, plus a batch of chrome alignment tweaks.
