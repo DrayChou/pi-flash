@@ -470,7 +470,79 @@ pub(crate) fn render_ask_card(chat: &mut Chat, weak: &gpui::WeakEntity<Chat>) ->
         }
     };
 
-    // ---- tab 栏 ----
+    // ---- tab 栏（含右上角 ×；装配见 ask_tab_bar） ----
+    let tabs = ask_tab_bar(&card, weak, t);
+
+    // ---- 题面（qcol + 可选预览栏） ----
+    let with_pv = q.has_preview();
+    let mut qcol = div().flex().flex_col().gap(px(11.)).map(|d| if with_pv { d.w(px(400.)) } else { d.w_full() });
+    qcol = qcol.child(
+        div()
+            .text_size(crate::appearance::ui_size(15.))
+            .font_weight(FontWeight::SEMIBOLD)
+            .text_color(rgb(t.text))
+            .child(SharedString::from(q.question.clone())),
+    );
+
+    qcol = qcol.child(ask_option_rows(q, weak, t));
+
+    // 自定义答案行（AskCard 常驻模式）：active 题内嵌输入框，其余处只读回显
+    qcol = qcol.child(ask_other_row(chat, q, weak, t));
+
+    let mut pane = div().flex().gap(px(0.)).child(qcol);
+
+    // 预览侧栏（当前题任一选项带 preview 时出现；装配见 ask_preview_pane）
+    if with_pv {
+        pane = pane.child(ask_preview_pane(q, t));
+    }
+
+    // ---- 卡脚：提示 + 取消 + 确认 [n/N]（装配见 ask_footer） ----
+    let foot = ask_footer(weak, t, done, n, all_answered);
+
+    // ---- 装配（浮层由 session/mod.rs main_column 挂进 chat-wrap 中栏；
+    //      窄窗口下卡片随中栏收缩，两侧留 24px 呼吸边距） ----
+    let card_el = div()
+        .w(px(920.))
+        .max_w(gpui::relative(1.))
+        .bg(rgb(t.bg))
+        .border_1()
+        .border_color(rgb(t.border))
+        .rounded(px(12.))
+        .p(px(18.))
+        .flex()
+        .flex_col()
+        .gap(px(11.))
+        .shadow_lg()
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .child(tabs)
+        .child(pane)
+        .child(foot);
+
+    crate::ui::overlay::layer(true, Some(&chat.dlg.dialog_focus), dismiss)
+        .on_key_down(keys)
+        .flex()
+        .items_center()
+        .justify_center()
+        .child(
+            div()
+                .w_full()
+                .h_full()
+                .flex()
+                .items_center()
+                .justify_center()
+                .px(px(24.))
+                .child(card_el),
+        )
+        .into_any_element()
+}
+
+/// tab 栏：题签（ answered 实心点 / active 高亮 / 挂起题呼吸边）+ 右上角 ×
+/// 关闭钮。内切自 render_ask_card（check_arch 300 行上限，纯结构搬运）。
+fn ask_tab_bar(
+    card: &AskCard,
+    weak: &gpui::WeakEntity<Chat>,
+    t: &crate::appearance::theme::Theme,
+) -> gpui::Div {
     let mut tabs = div().flex().gap(px(5.)).items_center().pb(px(10.)).border_b_1().border_color(rgb(t.bg_selected));
     for (i, tq) in card.questions.iter().enumerate() {
         let answered = tq.answered();
@@ -536,7 +608,7 @@ pub(crate) fn render_ask_card(chat: &mut Chat, weak: &gpui::WeakEntity<Chat>) ->
     }
     // 右上角 X 关闭钮（点 × = 取消整卷；快捷键说明全部沉底）
     let weak_close = weak.clone();
-    tabs = tabs.child(
+    tabs.child(
         div()
             .flex_1()
             .flex()
@@ -559,20 +631,16 @@ pub(crate) fn render_ask_card(chat: &mut Chat, weak: &gpui::WeakEntity<Chat>) ->
                         let _ = weak_close.update(cx, |c, cx| c.ask_cancel(cx));
                     }),
             ),
-    );
+    )
+}
 
-    // ---- 题面（qcol + 可选预览栏） ----
-    let with_pv = q.has_preview();
-    let mut qcol = div().flex().flex_col().gap(px(11.)).map(|d| if with_pv { d.w(px(400.)) } else { d.w_full() });
-    qcol = qcol.child(
-        div()
-            .text_size(crate::appearance::ui_size(15.))
-            .font_weight(FontWeight::SEMIBOLD)
-            .text_color(rgb(t.text))
-            .child(SharedString::from(q.question.clone())),
-    );
-
-    // 选项行
+/// 选项行列表：序号徽标 + 标签/描述 + 选中标记，选中行 tint。
+/// 内切自 render_ask_card（check_arch 300 行上限，纯结构搬运）。
+fn ask_option_rows(
+    q: &AskQ,
+    weak: &gpui::WeakEntity<Chat>,
+    t: &crate::appearance::theme::Theme,
+) -> gpui::Div {
     let mut opts = div().flex().flex_col().gap(px(6.));
     for (j, opt) in q.options.iter().enumerate() {
         let sel = q.sel[j];
@@ -645,107 +713,118 @@ pub(crate) fn render_ask_card(chat: &mut Chat, weak: &gpui::WeakEntity<Chat>) ->
         }
         opts = opts.child(row);
     }
-    qcol = qcol.child(opts);
+    opts
+}
 
-    // 自定义答案行（AskCard 常驻模式）：active 题内嵌输入框，其余处只读回显
+/// 自定义答案行（AskCard 常驻模式）：active 题内嵌输入框，未选时只显示占位。
+/// 内切自 render_ask_card（check_arch 300 行上限，纯结构搬运）。
+fn ask_other_row(
+    chat: &Chat,
+    q: &AskQ,
+    weak: &gpui::WeakEntity<Chat>,
+    t: &crate::appearance::theme::Theme,
+) -> gpui::Stateful<gpui::Div> {
     let weak_other = weak.clone();
-    let other_row = {
-        let mut row = div()
-            .id("ask-other")
-            .flex()
-            .items_center()
-            .gap(px(10.))
-            .px(px(11.))
-            .py(px(7.))
-            .rounded(px(9.))
-            .border_1()
-            .cursor_pointer()
-            .child(option_mark(q.multi, q.other_sel, t))
-            .map(|d| {
-                if q.other_sel {
-                    d.bg(accent_tint(0.08)).border_color(accent_tint(0.35))
-                } else {
-                    d.border_color(rgb(t.bg_selected)).bg(rgb(t.bg)).hover(|s| s.bg(rgb(t.bg_hover)))
-                }
-            })
-            .on_mouse_down(MouseButton::Left, move |ev, window, cx| {
-                let _ = ev;
-                let _ = weak_other.update(cx, |c, cx| c.ask_other_click(window, cx));
-            });
-        if q.other_sel || !q.other_text.is_empty() {
-            row = row.child(chat.aux.ask_input.clone().into_any_element());
-        } else {
-            row = row.child(
-                div()
-                    .text_size(crate::appearance::ui_size(12.5))
-                    .text_color(rgb(t.text_faint))
-                    .child(SharedString::from(tr("ask.other_placeholder").to_string())),
-            );
-        }
-        row
-    };
-    qcol = qcol.child(other_row);
-
-    let mut pane = div().flex().gap(px(0.)).child(qcol);
-
-    // 预览侧栏（当前题任一选项带 preview 时出现）
-    if with_pv {
-        let pv_idx = q
-            .sel
-            .iter()
-            .position(|s| *s)
-            .or_else(|| q.options.iter().position(|o| o.preview.is_some()))
-            .unwrap_or(0);
-        let pv_text = q.options[pv_idx]
-            .preview
-            .clone()
-            .unwrap_or_else(|| tr("ask.no_preview").to_string());
-        let pv_name = q.options[pv_idx].label.clone();
-        pane = pane.child(
+    let mut row = div()
+        .id("ask-other")
+        .flex()
+        .items_center()
+        .gap(px(10.))
+        .px(px(11.))
+        .py(px(7.))
+        .rounded(px(9.))
+        .border_1()
+        .cursor_pointer()
+        .child(option_mark(q.multi, q.other_sel, t))
+        .map(|d| {
+            if q.other_sel {
+                d.bg(accent_tint(0.08)).border_color(accent_tint(0.35))
+            } else {
+                d.border_color(rgb(t.bg_selected)).bg(rgb(t.bg)).hover(|s| s.bg(rgb(t.bg_hover)))
+            }
+        })
+        .on_mouse_down(MouseButton::Left, move |ev, window, cx| {
+            let _ = ev;
+            let _ = weak_other.update(cx, |c, cx| c.ask_other_click(window, cx));
+        });
+    if q.other_sel || !q.other_text.is_empty() {
+        row = row.child(chat.aux.ask_input.clone().into_any_element());
+    } else {
+        row = row.child(
             div()
-                .flex_1()
-                .min_w_0()
-                .pl(px(16.))
-                .flex()
-                .flex_col()
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(8.))
-                        .pb(px(8.))
-                        .border_b_1()
-                        .border_color(rgb(t.bg_selected))
-                        .font_family(crate::editor::markdown::MONO_FAMILY)
-                        .text_size(crate::appearance::ui_size(10.5))
-                        .text_color(rgb(t.text_soft))
-                        .child(div().size(px(6.)).rounded_full().bg(rgb(t.accent)))
-                        .child(SharedString::from(format!("PREVIEW · {pv_name}"))),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .mt(px(10.))
-                        .max_h(px(240.))
-                        .overflow_hidden()
-                        .bg(rgb(t.tool_bg))
-                        .border_1()
-                        .border_color(rgb(t.border))
-                        .rounded(px(9.))
-                        .px(px(14.))
-                        .py(px(13.))
-                        .font_family(crate::editor::markdown::MONO_FAMILY)
-                        .text_size(crate::appearance::ui_size(11.5))
-                        .text_color(rgb(t.text_dim))
-                        .child(SharedString::from(pv_text)),
-                ),
+                .text_size(crate::appearance::ui_size(12.5))
+                .text_color(rgb(t.text_faint))
+                .child(SharedString::from(tr("ask.other_placeholder").to_string())),
         );
     }
+    row
+}
 
-    // ---- 卡脚：提示 + 取消 + 确认 [n/N] ----
+/// 预览侧栏：当前选中（或首个带 preview 的）选项的 PREVIEW 头 + mono 正文框。
+/// 内切自 render_ask_card（check_arch 300 行上限，纯结构搬运）。
+fn ask_preview_pane(q: &AskQ, t: &crate::appearance::theme::Theme) -> gpui::Div {
+    let pv_idx = q
+        .sel
+        .iter()
+        .position(|s| *s)
+        .or_else(|| q.options.iter().position(|o| o.preview.is_some()))
+        .unwrap_or(0);
+    let pv_text = q.options[pv_idx]
+        .preview
+        .clone()
+        .unwrap_or_else(|| tr("ask.no_preview").to_string());
+    let pv_name = q.options[pv_idx].label.clone();
+    div()
+        .flex_1()
+        .min_w_0()
+        .pl(px(16.))
+        .flex()
+        .flex_col()
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .pb(px(8.))
+                .border_b_1()
+                .border_color(rgb(t.bg_selected))
+                .font_family(crate::editor::markdown::MONO_FAMILY)
+                .text_size(crate::appearance::ui_size(10.5))
+                .text_color(rgb(t.text_soft))
+                .child(div().size(px(6.)).rounded_full().bg(rgb(t.accent)))
+                .child(SharedString::from(format!("PREVIEW · {pv_name}"))),
+        )
+        .child(
+            div()
+                .flex_1()
+                .mt(px(10.))
+                .max_h(px(240.))
+                .overflow_hidden()
+                .bg(rgb(t.tool_bg))
+                .border_1()
+                .border_color(rgb(t.border))
+                .rounded(px(9.))
+                .px(px(14.))
+                .py(px(13.))
+                .font_family(crate::editor::markdown::MONO_FAMILY)
+                .text_size(crate::appearance::ui_size(11.5))
+                .text_color(rgb(t.text_dim))
+                .child(SharedString::from(pv_text)),
+        )
+}
+
+/// 卡脚：快捷键提示行 + 取消 + 确认 [n/N]（全答完才亮起可点）。
+/// 内切自 render_ask_card（check_arch 300 行上限，纯结构搬运）。
+fn ask_footer(
+    weak: &gpui::WeakEntity<Chat>,
+    t: &crate::appearance::theme::Theme,
+    done: usize,
+    n: usize,
+    all_answered: bool,
+) -> gpui::Div {
     let weak_cancel2 = weak.clone();
     let weak_ok = weak.clone();
-    let foot = div()
+    div()
         .flex()
         .items_center()
         .gap(px(8.))
@@ -805,43 +884,7 @@ pub(crate) fn render_ask_card(chat: &mut Chat, weak: &gpui::WeakEntity<Chat>) ->
                 b = b.bg(rgb(t.bg_selected)).text_color(rgb(t.text_faint));
             }
             b
-        });
-
-    // ---- 装配（浮层由 session/mod.rs main_column 挂进 chat-wrap 中栏；
-    //      窄窗口下卡片随中栏收缩，两侧留 24px 呼吸边距） ----
-    let card_el = div()
-        .w(px(920.))
-        .max_w(gpui::relative(1.))
-        .bg(rgb(t.bg))
-        .border_1()
-        .border_color(rgb(t.border))
-        .rounded(px(12.))
-        .p(px(18.))
-        .flex()
-        .flex_col()
-        .gap(px(11.))
-        .shadow_lg()
-        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-        .child(tabs)
-        .child(pane)
-        .child(foot);
-
-    crate::ui::overlay::layer(true, Some(&chat.dlg.dialog_focus), dismiss)
-        .on_key_down(keys)
-        .flex()
-        .items_center()
-        .justify_center()
-        .child(
-            div()
-                .w_full()
-                .h_full()
-                .flex()
-                .items_center()
-                .justify_center()
-                .px(px(24.))
-                .child(card_el),
-        )
-        .into_any_element()
+        })
 }
 
 /// 选中标记：单选 = 圆（选中实心+白点），多选 = 方（选中 accent+白勾）
