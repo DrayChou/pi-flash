@@ -6,7 +6,7 @@
 //! 编排边界：文件打开/缓冲区/file_cache 状态仍在 Chat（main.rs），本文件
 //! 只管视图渲染与交互；md 所见即所得见 `super::markdown::wysiwyg`。
 
-use gpui::{Context, Focusable, MouseButton, SharedString, div, img, prelude::*, px, rgb};
+use gpui::{Context, Focusable, MouseButton, SharedString, div, img, prelude::*, px, relative, rgb};
 
 use super::kind::{BodyCtx, FileKind, ToolButton, kind_of};
 use crate::Chat;
@@ -709,6 +709,9 @@ pub(crate) fn render_editor_surface(
         .bg(rgb(t.bg))
         .font_family(file_font.family)
         .text_size(px(file_font.size))
+        // zed BufferLineHeight::Comfortable（默认档，1.618；Standard=1.3）：
+        // 组件原恒 1.25rem 行距过密（vendor 补丁让 code editor 模式吃继承值）
+        .line_height(relative(1.618))
         .on_mouse_down(
             gpui::MouseButton::Right,
             move |ev: &gpui::MouseDownEvent, _, cx| {

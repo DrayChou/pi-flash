@@ -238,6 +238,9 @@ impl RenderOnce for TextInput {
         const LINE_HEIGHT: Rems = Rems(1.25);
         let font = window.text_style().font();
         let font_size = window.text_style().font_size.to_pixels(window.rem_size());
+        // pi-flash patch: code editor 行高随容器继承（gpui TextStyle 默认
+        // phi=1.618，zed BufferLineHeight::Comfortable 同款）——原恒 1.25rem
+        // 把文件编辑器行距压得过密；单行/多行输入保持紧凑常量不动
 
         self.state.update(cx, |state, cx| {
             state.text_wrapper.set_font(font, font_size, cx);
@@ -351,7 +354,11 @@ impl RenderOnce for TextInput {
             .on_mouse_move(window.listener_for(&self.state, InputState::on_mouse_move))
             .on_scroll_wheel(window.listener_for(&self.state, InputState::on_scroll_wheel))
             .size_full()
-            .line_height(LINE_HEIGHT)
+            .line_height(if state.mode.is_code_editor() {
+                window.text_style().line_height
+            } else {
+                LINE_HEIGHT.into()
+            })
             .input_px(self.size)
             .input_py(self.size)
             .input_h(self.size)
