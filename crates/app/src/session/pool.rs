@@ -299,6 +299,12 @@ impl Chat {
         // recents (003-session管理): a fresh session file just landed
         pi_link::recents::touch_recent(&path);
         set_last_open(&rt.read(cx).cwd.to_string_lossy(), &path_key);
+        // 新会话落地的项目组若处于折叠态则自动展开：伪标签（draft）在折叠
+        // 组里照常显示，FileBound 一换真身就被折叠藏掉——用户眼里刚发的
+        // 会话凭空消失。fork / 微信端新会话同经此处（2026-10-15 用户报障）。
+        self.psp
+            .collapsed_keys
+            .remove(&same_ws_key(&rt.read(cx).cwd.to_string_lossy()));
         self.refresh_sessions();
         cx.notify();
     }
