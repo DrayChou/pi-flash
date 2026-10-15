@@ -1161,8 +1161,9 @@ pub(crate) fn files_view(
 #[derive(Debug, Clone)]
 pub(crate) struct HoverCard {
     pub path: PathBuf,
-    /// 悬停行的鼠标 x（视口坐标，进行那一刻）：详情卡左缘对齐锚点
-    /// （2026-10-15 定夺——原锚侧栏右缘外 8px，离鼠标太远）
+    /// 悬停行的鼠标 x（视口坐标，进行那一刻）：详情卡左缘锚点（渲染时
+    /// 加 20px 间距防误点弹窗；2026-10-15 定夺——原锚侧栏右缘外 8px 离
+    /// 鼠标太远）
     pub x: f32,
     /// 悬停行的真实顶部（prepaint 钩子校正，初始为鼠标 y − 半行高估计值）
     pub y: f32,
