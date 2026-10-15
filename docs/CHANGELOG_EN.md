@@ -2,6 +2,36 @@
 
 All notable changes to released versions live here; see `docs/CHANGELOG规范.md` for the format.
 
+## [0.1.8] - 2026-10-15
+
+Text selection & copy in the message area and drag-and-drop moves in the file tree land, plus a batch of interaction fixes around composer scrolling, the session scroll area and in-place file renaming.
+
+### Install & Update
+
+```bash
+npm install -g pi-flash@latest   # first install; re-run the same command to update
+pi-flash
+```
+
+Requires Node.js ≥ 22.19.
+Or download the zip, unzip it and double-click `pi-flash.exe` — no Node needed.
+Windows x64 only.
+
+### New
+- Message text selection (phase 1): finalized agent message blocks now render through TextView with mouse selection & copy, plus a right-click Copy menu; clickable file paths get link styling (link color + underline, visible on light themes); a batch of table rendering fixes (column widths weighted by display width, column drift, in-cell wrapping, bold headers). (eea59ce, dfa56dd, ef2d66c, 2b075ba, b013e6d, 585c594, 08d7051, 9c0bee6, 144fdd7)
+- File tree drag-and-drop moves: drag a file/folder onto a target folder to move it; hovering a collapsed folder auto-expands it after 500ms (ported from Zed's project_panel DnD). (e695eab)
+- Settings' document-font sizes gain 16/18/20/22 (other slots stay 15/16/17/18); all font-size slots now clamp to 10–30. (907a8b7)
+
+### Bug fixes
+- Composer multi-line cursor-movement jitter: in short viewports the scroll position flip-flopped on every keypress and the line count alternated 3↔4 (the vendor scroll_to top/bottom safe areas overlapped and never converged); also fixes the first line being clipped out of view when the cursor sits on the bottom line. (79910c6)
+- Session scroll wheel failure: with short content a small scroll jumped straight to the bottom and the scroll margin collapsed to zero; the wheel now only pauses the bottom-pinning — scrolling back to the bottom re-arms follow, and reading history no longer gets dragged along by streaming output. (386896b)
+- New sessions created inside a collapsed project group vanished: binding a session now auto-expands its group (fork and WeChat-created sessions take the same path). (26057ea)
+- Four in-place file-rename visual fixes: 1px jitter (the row border is now always mounted as a transparent placeholder), the text jumping up 1px, the font/size changing mid-rename (follows the panel font slot), and the text being indented 4px too far. (b0b6224, b686892, fec33d0, 08f1c31, 09a8437)
+- The editor body font now follows the settings' document-font slot (was hardcoded JetBrains Mono); line height aligns with Zed's Comfortable (1.618, was a fixed 1.25rem — too dense). (d5eddae, 0323612)
+
+### Improvements
+- The session-row detail card is now summoned by right-click: the hover auto-popup mechanism was removed entirely (the interaction couldn't be smoothed out — owner's call); right-click opens the card, clicking outside dismisses it, and the card never sits under the cursor. (64ab3f4)
+- The composer plug (extensions) icon went 13→16 (the standard middle size). (0a1dd18, 2d3a36e)
 ## [0.1.7] - 2026-10-15
 
 The left dock becomes an integrated sessions + file-tree panel (draggable divider, mutually-collapsing maximize), the composer gains a right-click menu; a self-swap fix ends the update dead loop for zip / direct-launch users; dot files are visible in the file tree by default; a batch of file-search and icon-alignment fixes.
