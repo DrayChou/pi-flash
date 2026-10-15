@@ -355,6 +355,9 @@ fn changes_row(
         .gap(px(7.))
         .overflow_hidden()
         .cursor_pointer()
+        // 行框恒挂透明占位（同 tree_row：编辑态只换色不动布局，防 1px 抖动）
+        .border_1()
+        .border_color(gpui::transparent_black())
         .hover(|s| s.bg(rgb(t.bg_hover)))
         .text_size(crate::appearance::ui_size(11.5));
     if let Some(e) = editing {
@@ -362,7 +365,6 @@ fn changes_row(
         // 消息同 Zed 编辑行
         let (border, message) = edit_chrome(&e, t);
         el = el
-            .border_1()
             .border_color(rgb(border))
             .relative()
             .child(edit_input_slot(e.input.clone()))
@@ -600,7 +602,12 @@ fn tree_row(
         // gitignored 行置灰（Zed parity：显示但 dimmed，仍可点开浏览）
         .text_color(rgb(if row.ignored { t.text_faint } else { t.text }))
         .cursor_pointer()
-        .hover(|s| s.bg(rgb(t.bg_hover)));
+        // Zed project_panel 行框几何（render_entry：border_1 恒挂、非聚焦
+        // 行边框色 = 背景色隐形占位，hover 同步换边色）——边框临挂临摘会
+        // 让整行内容抖 1px，改名框尤其明显；这里只换色不动布局
+        .border_1()
+        .border_color(gpui::transparent_black())
+        .hover(|s| s.bg(rgb(t.bg_hover)).border_color(rgb(t.bg_hover)));
 
     // 缩进引导线：Zed indent_guides 装饰层的行内画法（见 guide_lines）。
     for g in guide_lines(row.depth, prev_depth, next_depth, t.border) {
@@ -619,10 +626,11 @@ fn tree_row(
         .px(px(CONTENT_PAD));
 
     if let Some(e) = &editing {
-        // 编辑行 chrome（Zed show_focused_border + validation 同位）：边框
-        // 随校验态变色，校验消息浮在该行下缘
+        // 编辑行 chrome（Zed show_focused_border + validation 同位）：行框
+        // border_1 恒挂（见基样式），这里只把边框换成校验色，校验消息浮在
+        // 该行下缘
         let (border, message) = edit_chrome(e, t);
-        el = el.border_1().border_color(rgb(border));
+        el = el.border_color(rgb(border));
         let icon = if row.is_dir {
             file_icons::get_generic_folder_icon(false)
         } else {
