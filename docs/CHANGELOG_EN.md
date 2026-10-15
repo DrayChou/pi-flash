@@ -2,6 +2,33 @@
 
 All notable changes to released versions live here; see `docs/CHANGELOG规范.md` for the format.
 
+## [0.1.9] - 2026-10-15
+
+The ask_user_question full-survey card lands; in-app updates get the swap dead-loop fix and faster extraction; the WeChat bridge no longer auto-starts (pre-pluginization).
+
+### Install & Update
+
+```bash
+npm install -g pi-flash@latest   # first install; re-run the same command to update
+pi-flash
+```
+
+Requires Node.js ≥ 22.19.
+Or download the zip, unzip it and double-click `pi-flash.exe` — no Node needed.
+Windows x64 only.
+
+**On ≤ 0.1.8, prefer the npm command above or a fresh zip download this time**: the staging/extraction code that runs during an in-app update belongs to the OLD build (the fixes ship in this one); the command-line/zip path bypasses that entirely. From 0.1.9 on, in-app updates run the new logic.
+
+### New
+- ask_user_question survey card: multi-question surveys from the agent now render as one tabbed card — switch tabs freely (custom answers follow along), answered questions go ●→✓, confirm is gated by [n/]N (grey until complete), with a Tab/Enter/number/Esc keyboard model and an × in the corner to cancel the whole survey; a selected single-choice option with a preview upgrades to a side preview pane, and custom answers to single-choice go back as plain text. Confirming auto-answers the queued requests silently and clears itself when the stream ends. (e5fd391, 277fcab, b8fc012, bc03faf, 6a065b0, 8fb285f)
+
+### Bug fixes
+- Update staging dead loop (observed on 0.1.8): clicking "restart to update" flashed console windows forever without starting — when the swap was blocked by orphaned processes the staging marker survived, so the relaunched old build saw a valid staged update and started another round; the swap now clears this app's orphaned sidecars first and consumes the marker on failure (retried on next launch), crash-recovery semantics unchanged. (6126664)
+- Context usage popup cache-hit rate displayed ×100 (97.2% showed as 1.0%). (a00be40)
+
+### Improvements
+- In-app update experience: after download completes the pill switches to "Extracting & installing…" (no more frozen-looking wait); extraction is now parallel — the same package measured 26.9s → 10.1s. (02cd7a1)
+- The WeChat bridge no longer auto-starts with the app (the "another poller holds the lock" error on multi-instance is gone), as a prelude to pluginization; see module doc 060 in the repo for how to re-enable. (b1b5ac0)
 ## [0.1.8] - 2026-10-15
 
 Text selection & copy in the message area and drag-and-drop moves in the file tree land, plus a batch of interaction fixes around composer scrolling, the session scroll area and in-place file renaming.
