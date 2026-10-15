@@ -539,8 +539,30 @@ fn spawn_pump_120ms(cx: &mut gpui::Context<Chat>) {
                     let renaming = c.dlg.hover_card.as_ref().is_some_and(|h| h.renaming);
                     if !renaming {
                         if let Some(at) = c.dlg.hover_card.as_ref().and_then(|h| h.hide_at) {
-                            if at.elapsed() > std::time::Duration::from_millis(300) {
-                                c.dlg.hover_card = None;
+                            if at.elapsed() > std::time::Duration::from_millis(250) {
+                                // 滞留宽限到期：滞留期内鼠标停在的最后一行
+                                // （接手目标）直接接管并**立即显示**——若再走
+                                // 300ms 显示延迟，用户停稳在新行后卡迟迟不出
+                                // 像卡死。y/h 暂沿旧值，prepaint 钩子当帧按
+                                // 新行实测校正
+                                let takeover = c.dlg.hover_card.as_mut().and_then(|card| {
+                                    card.pending_path.take().map(|path| (path, card.y, card.h))
+                                });
+                                c.dlg.hover_card = takeover.map(|(path, y, h)| {
+                                    crate::function_panel::HoverCard {
+                                        path,
+                                        y,
+                                        h,
+                                        hide_at: None,
+                                        show_at: std::time::Instant::now(),
+                                        shown: true,
+                                        confirming: false,
+                                        card_hovered: false,
+                                        renaming: false,
+                                        rename_input: None,
+                                        pending_path: None,
+                                    }
+                                });
                                 dirty = true;
                             }
                         }

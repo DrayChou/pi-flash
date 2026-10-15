@@ -635,6 +635,7 @@ pub(super) fn dispatch(
                     card_hovered: true,
                     renaming: false,
                     rename_input: None,
+                    pending_path: None,
                 });
                 if params.get("rename").and_then(Value::as_bool) == Some(true) {
                     chat.hover_card_begin_rename(cx);

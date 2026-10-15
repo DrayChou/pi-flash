@@ -732,6 +732,7 @@ fn session_row_view(
     let path_click = path.clone();
     let path_card = path.clone();
     let path_bounds = path.clone();
+    let path_hover = path.clone();
     let w_click = weak.clone();
     let w_hover = weak.clone();
     let w_move = weak.clone();
@@ -857,6 +858,15 @@ fn session_row_view(
                         if !card.card_hovered {
                             card.hide_at = Some(std::time::Instant::now());
                         }
+                        // 鼠标从滞留接手目标行离开（移往别行/出窗）：目标
+                        // 作废——否则宽限到期会把卡闪给一个鼠标早已不在的行
+                        if card
+                            .pending_path
+                            .as_deref()
+                            .is_some_and(|p| crate::services::workspace::same_path(p, &path_hover))
+                        {
+                            card.pending_path = None;
+                        }
                     }
                 }
             });
@@ -869,27 +879,49 @@ fn session_row_view(
                     .as_ref()
                     .is_some_and(|card| crate::services::workspace::same_path(&card.path, &path_card));
                 if !same {
-                    c.dlg.hover_card = Some(crate::function_panel::HoverCard {
-                        path: path_card.clone(),
-                        // 临时估计（鼠标 y - 半行高）；prepaint 钩子会把
-                        // y 校正为本行的真实顶部（bounds.origin.y），行高
-                        // h 随同一钩子校正（详情卡贴行底对齐要用）
-                        y: y - 16.,
-                        h: crate::ui::tokens::row::MAIN,
-                        hide_at: None,
-                        show_at: std::time::Instant::now(),
-                        shown: false,
-                        confirming: false,
-                        card_hovered: false,
-                        renaming: false,
-                        rename_input: None,
-                    });
-                    cx.notify();
+                    // 离行滞留期（shown + hide_at 有值）内掠过别的行：不换
+                    // 卡——下半屏卡悬在行上方，用户从行正上穿邻行赶弹窗，
+                    // 一换卡（新卡 shown=false 要再等 300ms）已显示的卡立即
+                    // 消失、永远追不上。只记最后一行，250ms 宽限到期由
+                    // 120ms 泵把卡让给它（2026-10-15 用户定夺：滞留 250ms）
+                    let lingering = c
+                        .dlg
+                        .hover_card
+                        .as_ref()
+                        .is_some_and(|card| card.shown && card.hide_at.is_some());
+                    if lingering {
+                        if let Some(card) = c.dlg.hover_card.as_mut() {
+                            if card.pending_path.as_deref() != Some(path_card.as_path()) {
+                                card.pending_path = Some(path_card.clone());
+                                cx.notify();
+                            }
+                        }
+                    } else {
+                        c.dlg.hover_card = Some(crate::function_panel::HoverCard {
+                            path: path_card.clone(),
+                            // 临时估计（鼠标 y - 半行高）；prepaint 钩子会把
+                            // y 校正为本行的真实顶部（bounds.origin.y），行高
+                            // h 随同一钩子校正（详情卡贴行底对齐要用）
+                            y: y - 16.,
+                            h: crate::ui::tokens::row::MAIN,
+                            hide_at: None,
+                            show_at: std::time::Instant::now(),
+                            shown: false,
+                            confirming: false,
+                            card_hovered: false,
+                            renaming: false,
+                            rename_input: None,
+                            pending_path: None,
+                        });
+                        cx.notify();
+                    }
                 } else if let Some(card) = c.dlg.hover_card.as_mut() {
                     // 鼠标在本行内移动：只要不在卡上就持续取消消失宽限
                     if !card.card_hovered {
                         card.hide_at = None;
                     }
+                    // 回到本行 = 滞留结束，接手目标作废
+                    card.pending_path = None;
                 }
             });
         })
@@ -1174,6 +1206,10 @@ pub(crate) struct HoverCard {
     /// 标题点击后原地改名（设计稿：卡内变输入框，Enter 提交 / Esc 取消）
     pub renaming: bool,
     pub rename_input: Option<gpui::Entity<crate::ui::TextInput>>,
+    /// 离行滞留期内鼠标掠过的最后一行（接手目标）：滞留期内换卡会让已显示
+    /// 的卡立即消失（下半屏卡悬在行上方，穿邻行必掠过邻行），故只记不移；
+    /// 250ms 宽限到期由 120ms 泵把卡让给它（立即显示）
+    pub pending_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]

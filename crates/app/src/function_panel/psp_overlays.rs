@@ -150,10 +150,11 @@ fn proj_tip(
 }
 
 /// 会话 hover 详情卡：258px 浅色浮层，标题（点击=打开并改名）、项目/
-/// 最后活动/消息数信息行、删除确认流。300ms 离行宽限 + 进卡取消。
-/// 左缘固定 = 时间栏左线（slp_w − LIST_PX×2 − 38，弹出即盖住时间列；
-/// 2026-10-15 定夺：鼠标 x 锚乱跳，侧栏右缘外 8px 又离鼠标太远）；
-/// 统一算法只裁决纵边（行在下半 → 向上弹），纵向贴行顶/行底。
+/// 最后活动/消息数信息行、删除确认流。250ms 离行滞留 + 进卡取消；滞留
+/// 期内穿邻行不换卡（宽限到期把卡让给最后掠过的行，见 HoverCard::
+/// pending_path）。左缘固定 = 时间栏左线（slp_w − LIST_PX×2 − 38，弹出
+/// 即盖住时间列；2026-10-15 定夺：鼠标 x 锚乱跳，侧栏右缘外 8px 又离
+/// 鼠标太远）；统一算法只裁决纵边（行在下半 → 向上弹），纵向贴行顶/行底。
 fn hover_card(
     chat: &mut Chat,
     vp: (f32, f32),
@@ -218,6 +219,10 @@ fn hover_card(
             if let Some(card) = this.dlg.hover_card.as_mut() {
                 card.card_hovered = *h;
                 card.hide_at = (!*h).then(std::time::Instant::now);
+                // 进卡 = 滞留结束（卡已保住），接手目标作废
+                if *h {
+                    card.pending_path = None;
+                }
             }
             cx.notify();
         }));
