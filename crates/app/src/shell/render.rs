@@ -615,7 +615,7 @@ impl Render for Chat {
 
         if let Some(panel) = self.dlg.settings.clone() {
             let data = settings::SettingsFormData::snapshot(panel.read(cx), cx);
-            root = root.child(settings::render_settings(self, &weak_for_dialog, &data));
+            root = root.child(settings::render_settings(self, &weak_for_dialog, &data, window));
         }
         // 弹窗必须挂在 settings **之后**：后渲染者在上——原顺序（dialogs →
         // settings）让设置面板盖住从设置页打开的 ProviderPicker，遮挡层吃掉

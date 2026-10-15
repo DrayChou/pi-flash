@@ -13,6 +13,7 @@ pub(crate) mod misc;
 pub(crate) mod models;
 pub(crate) mod plugins;
 pub(crate) mod remote;
+pub(crate) mod shortcuts;
 pub(crate) mod skills;
 pub(crate) mod widgets;
 
@@ -27,8 +28,8 @@ pub(crate) use widgets::{
     section_title, set_row, sidebar_list, sidebar_shell, switch_base, status_dot, Btn, LIST_W,
 };
 
-/// 页签序：0 界面 · 1 模型 · 2 技能 · 3 扩展 · 4 MCP · 5 其他（6 远程控制
-/// 的 match 分支保留，导航入口已隐藏——2026-10-10 定）。
+/// 页签序：0 界面 · 1 模型 · 2 技能 · 3 扩展 · 4 MCP · 5 其他 · 8 快捷键
+/// （6 远程控制的 match 分支保留，导航入口已隐藏——2026-10-10 定）。
 pub(crate) const TAB_GENERAL: u8 = 0;
 pub(crate) const TAB_MODELS: u8 = 1;
 pub(crate) const TAB_SKILLS: u8 = 2;
@@ -37,6 +38,7 @@ pub(crate) const TAB_MCP: u8 = 4;
 pub(crate) const TAB_MISC: u8 = 5;
 pub(crate) const TAB_REMOTE: u8 = 6;
 pub(crate) const TAB_ABOUT: u8 = 7;
+pub(crate) const TAB_SHORTCUTS: u8 = 8;
 
 /// The settings modal's form state (pi-web SettingsPanel own-state parity).
 pub(crate) struct SettingsPanel {
@@ -323,6 +325,7 @@ pub(crate) fn render_settings(
     chat: &mut Chat,
     weak: &gpui::WeakEntity<Chat>,
     d: &SettingsFormData,
+    window: &gpui::Window,
 ) -> gpui::AnyElement {
     let t = T();
     let SettingsFormData { focus: _focus, tab, section, key_input, key_visible, model_filter, model_filter_value, enabled_filter, enabled_filter_value, mj_name, mj_base, mj_key, mj_id, mj_mname, mj_ctx, mj_api, mj_reasoning, install_input, mcp_add, mcp_add_value, mcp_name, error, font_popup, font_dd, font_filter, font_filter_value, size_popup, size_dd } =
@@ -351,6 +354,7 @@ pub(crate) fn render_settings(
         TAB_MISC => mc_misc_view(chat, weak),
         TAB_REMOTE => crate::settings::remote::mc_remote_view(chat, weak),
         TAB_ABOUT => crate::settings::about::mc_about_view(),
+        TAB_SHORTCUTS => crate::settings::shortcuts::mc_shortcuts_view(window),
         _ => mc_general_view(
             chat, weak, font_popup, &font_dd, &font_filter, &font_filter_value,
             size_popup, &size_dd,
@@ -359,7 +363,7 @@ pub(crate) fn render_settings(
 
     // 界面/其他页保持旧行为：body 滚动 + 大内边距；分栏页 body 不滚动、
     // pane 自身 h_full（顶条/底栏/侧栏滚动各自管理）
-    let single_column = tab == TAB_GENERAL || tab == TAB_MISC || tab == TAB_ABOUT;
+    let single_column = tab == TAB_GENERAL || tab == TAB_MISC || tab == TAB_ABOUT || tab == TAB_SHORTCUTS;
     let body = if single_column {
         div()
             .id("mc-body")
@@ -458,7 +462,7 @@ fn two_pane(sidebar: gpui::AnyElement, detail: gpui::AnyElement) -> gpui::AnyEle
         .into_any_element()
 }
 
-/// 左导航六项（icon + label；激活 = bg_selected + 600 + icon accent）。
+/// 左导航七项（icon + label；激活 = bg_selected + 600 + icon accent）。
 /// 原第七项「远程控制」（TAB_REMOTE）入口已隐藏——2026-10-10 用户定夺；
 /// 页面渲染分支仍在，重开只需往数组加回
 /// `(TAB_REMOTE, "远程控制", "message-square")`。
@@ -471,6 +475,7 @@ fn nav_items(tab: u8, weak_close: gpui::WeakEntity<Chat>) -> Vec<gpui::AnyElemen
         (TAB_PLUGINS, "扩展", "plug"),
         (TAB_MCP, "MCP", "server"),
         (TAB_MISC, "其他", "ellipsis"),
+        (TAB_SHORTCUTS, "快捷键", "keyboard"),
         (TAB_ABOUT, "关于", "info"),
     ]
     .iter()

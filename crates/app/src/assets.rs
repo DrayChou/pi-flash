@@ -108,6 +108,8 @@ assets! {
     // 取代 2026-10-10 的 circle-ellipsis）
     "icons/ellipsis.svg",
     "icons/info.svg",
+    // 082 设置「快捷键」页导航图标（lucide keyboard）
+    "icons/keyboard.svg",
     "icons/folder-open.svg",
     "icons/folder-closed.svg",
     "icons/folder-plus.svg",
