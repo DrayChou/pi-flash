@@ -106,7 +106,6 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("ask.advance_submit", "跳题/提交", "跳題/提交", "Skip/Submit"),
     ("ask.direct_pick", "直选", "直選", "Pick"),
     ("ask.other_placeholder", "自定义答案…", "自訂答案…", "Custom answer…"),
-    ("ask.pick", "提交序列化", "提交序列化", "Serialized"),
     ("ask.no_preview", "（无预览）", "（無預覽）", "(no preview)"),
     ("model.select_placeholder", "select model", "select model", "select model"),
     ("model.select_title", "选择模型", "選擇模型", "Select model"),

@@ -534,12 +534,30 @@ pub(crate) fn render_ask_card(chat: &mut Chat, weak: &gpui::WeakEntity<Chat>) ->
         }
         tabs = tabs.child(tab);
     }
+    // 右上角 X 关闭钮（点 × = 取消整卷；快捷键说明全部沉底）
+    let weak_close = weak.clone();
     tabs = tabs.child(
         div()
             .flex_1()
             .flex()
             .justify_end()
-            .child(hint_row(&[("esc", tr("ask.cancel_all"))], t)),
+            .child(
+                div()
+                    .id("ask-close")
+                    .size(px(24.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(6.))
+                    .text_size(crate::appearance::ui_size(14.))
+                    .text_color(rgb(t.text_faint))
+                    .cursor_pointer()
+                    .hover(|s| s.bg(rgb(t.bg_hover)).text_color(rgb(t.text)))
+                    .child("×")
+                    .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                        let _ = weak_close.update(cx, |c, cx| c.ask_cancel(cx));
+                    }),
+            ),
     );
 
     // ---- 题面（qcol + 可选预览栏） ----
@@ -667,27 +685,6 @@ pub(crate) fn render_ask_card(chat: &mut Chat, weak: &gpui::WeakEntity<Chat>) ->
     };
     qcol = qcol.child(other_row);
 
-    // 多选：序列化摘要条
-    if q.multi {
-        qcol = qcol.child(
-            div()
-                .font_family(crate::editor::markdown::MONO_FAMILY)
-                .text_size(crate::appearance::ui_size(10.5))
-                .text_color(rgb(t.text_dim))
-                .bg(rgb(t.bg))
-                .border_1()
-                .border_color(rgb(t.bg_selected))
-                .rounded(px(7.))
-                .px(px(10.))
-                .py(px(5.))
-                .child(SharedString::from(format!(
-                    "{} → \"{}\"",
-                    tr("ask.pick"),
-                    q.pick_text()
-                ))),
-        );
-    }
-
     let mut pane = div().flex().gap(px(0.)).child(qcol);
 
     // 预览侧栏（当前题任一选项带 preview 时出现）
@@ -752,7 +749,12 @@ pub(crate) fn render_ask_card(chat: &mut Chat, weak: &gpui::WeakEntity<Chat>) ->
         .items_center()
         .gap(px(8.))
         .child(hint_row(
-            &[("tab", tr("ask.next")), ("enter", tr("ask.advance_submit")), ("1-4", tr("ask.direct_pick"))],
+            &[
+                ("tab", tr("ask.next")),
+                ("enter", tr("ask.advance_submit")),
+                ("1-4", tr("ask.direct_pick")),
+                ("esc", tr("ask.cancel_all")),
+            ],
             t,
         ))
         .child(div().flex_1())
