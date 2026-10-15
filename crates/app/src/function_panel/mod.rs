@@ -4,6 +4,7 @@
 //! 详情卡 / 两级菜单 / 删除确认）由 `psp_overlays` 在根渲染挂载。
 
 pub(crate) mod file_tree;
+pub(crate) mod file_tree_drag;
 pub(crate) mod file_actions;
 pub(crate) mod psp_actions;
 pub(crate) mod git_panel;

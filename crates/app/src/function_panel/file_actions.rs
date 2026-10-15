@@ -472,15 +472,25 @@ impl Chat {
             return;
         }
         // 打开面重映射：tab 与缓冲持旧路径的话跟上（目录改名 = 整棵前缀）
+        self.remap_moved_entry(path, &target, is_dir);
+        self.refresh_git();
+        // 改名成功静默（同新建/删除：成功不提示，失败才提示）
+        cx.notify();
+    }
+
+    /// 移动/改名后的打开面重映射（`file_rename_commit` 与拖拽移动共用）：
+    /// 文件 tab、缓冲缓存、待聚焦编辑器按前缀跟随；目录时连带展开集合
+    /// 整棵前缀（023 编辑器实体的缓冲跟着 tab 路径走，无需另改）。
+    pub(crate) fn remap_moved_entry(&mut self, from: &Path, to: &Path, is_dir: bool) {
         let remap = |p: &PathBuf| -> PathBuf {
             let hit = if is_dir {
-                same_path(p, path) || p.starts_with(path)
+                same_path(p, from) || p.starts_with(from)
             } else {
-                same_path(p, path)
+                same_path(p, from)
             };
             if hit {
-                let rel = p.strip_prefix(path).unwrap_or(p);
-                target.join(rel)
+                let rel = p.strip_prefix(from).unwrap_or(p);
+                to.join(rel)
             } else {
                 p.clone()
             }
@@ -501,8 +511,56 @@ impl Chat {
                 .map(remap)
                 .collect();
         }
+    }
+
+    /// 拖拽移动提交（Zed drag_onto → move_worktree_entry 语义）：src 移入
+    /// dst_dir。落点合法性（原地/进自身子树 = no-op）由调用方
+    /// `drag_move_target` 先行过滤，这里只兜竞态与 fs 错误。Windows 跨盘
+    /// rename 直接报错（Zed 同：无复制降级）。
+    pub(crate) fn tree_move_commit(
+        &mut self,
+        src: &Path,
+        src_is_dir: bool,
+        dst_dir: &Path,
+        cx: &mut Context<Self>,
+    ) {
+        // 护栏：源与目标都必须在项目根内，根本身不可移动
+        let in_root = |p: &Path| {
+            same_path(p, &self.ws.cwd) || crate::services::workspace::is_under(p, &self.ws.cwd)
+        };
+        if same_path(src, &self.ws.cwd) || !in_root(src) || !in_root(dst_dir) {
+            return;
+        }
+        let Some(name) = src.file_name() else { return };
+        let target = dst_dir.join(name);
+        // 原地 no-op（Zed `(new_path != source_path).then(...)` 同款）
+        if same_path(&target, src) {
+            return;
+        }
+        if target.exists() {
+            self.set_status(
+                format!("{}：{}", tr("file_tree.already_exists"), target.display()),
+                cx,
+            );
+            return;
+        }
+        if let Err(e) = std::fs::rename(src, &target) {
+            self.set_status(crate::i18n::tf("file_tree.move_failed", &[("e", e.to_string())]), cx);
+            return;
+        }
+        self.remap_moved_entry(src, &target, src_is_dir);
+        self.retain_file_watches();
+        // 目标链沿途展开，让移动结果立即可见（同新建提交）
+        let mut anc = target.parent().map(|p| p.to_path_buf());
+        while let Some(p) = anc {
+            if same_path(&p, &self.ws.cwd) {
+                break;
+            }
+            self.ws.expanded_dirs.insert(p.clone());
+            anc = p.parent().map(|q| q.to_path_buf());
+        }
         self.refresh_git();
-        // 改名成功静默（同新建/删除：成功不提示，失败才提示）
+        // 移动成功静默（同改名：成功不提示，失败才提示）
         cx.notify();
     }
 

@@ -25,6 +25,7 @@ use gpui::{
 use crate::{Chat, i18n::tr, same_path};
 use crate::services::file_icons;
 use crate::services::file_tree::TreeRow;
+use crate::function_panel::file_tree_drag::{TreeDrag, TreeDragGhost, drag_move_target, DRAG_EXPAND_DELAY};
 use crate::appearance::theme;
 use crate::ui::{VListHeight, WithTip, icon_path, vlist};
 use crate::*;
@@ -207,6 +208,7 @@ pub(crate) fn files_view(
         );
     } else if !files_min {
         let weak_bg = weak.clone();
+        let weak_root_drop = weak.clone();
         let cwd_bg = chat.ws.cwd.clone();
         let edit = chat.dlg.tree_edit.clone();
         // 新建行的落点（Zed new_entry：虚拟行插在目录行下方、子项之前；
@@ -259,6 +261,15 @@ pub(crate) fn files_view(
                         });
                     },
                 )
+                // 列表空白处 drop = 移到项目根（Zed 背景落点语义）。行先于
+                // 容器拿走 drop（后代监听冒泡相先派发），这里只兜行与钉住
+                // 行之外的空隙；原地 drop 由 tree_move_commit 静默 no-op
+                .on_drop::<TreeDrag>(move |drag, _, cx| {
+                    let _ = weak_root_drop.update(cx, |c, cx| {
+                        let cwd = c.ws.cwd.clone();
+                        c.tree_move_commit(&drag.path, drag.is_dir, &cwd, cx);
+                    });
+                })
                 .child(vlist(
                     FILE_TREE_LIST_ID,
                     total,
@@ -381,7 +392,8 @@ fn changes_row(
         el = el.child(div().flex_1());
         let fp = row.path.clone();
         let weak_click = weak.clone();
-        el = el.on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
+        // on_click 与树行同款（mouse-up 触发，面板内点击语义统一）
+        el = el.on_click(move |_, _, cx| {
             let _ = weak_click.update(cx, |c, cx| {
                 c.open_file_tab(fp.clone(), cx);
             });
@@ -565,6 +577,8 @@ fn tree_row(
 ) -> gpui::AnyElement {
     let t = theme::theme();
     let weak_menu = weak.clone();
+    // 拖拽接线用的句柄：分支里的点击闭包会把 weak 吃掉，先取一份
+    let weak_drag = weak.clone();
     // 本行处于行内改名（Zed EditState 命中该行）：名字标签换输入框，点
     // 击展开/打开让位给输入框
     let editing = editing.filter(|e| {
@@ -635,7 +649,10 @@ fn tree_row(
             .child(name_label(&row.name));
         el = el.child(inner);
         let dir_path = row.path.clone();
-        el = el.on_mouse_down(MouseButton::Left, move |_, _, cx| {
+        // 折叠/展开挂 on_click（mouse-up）而非 on_mouse_down：gpui 的 click
+        // 与 drag 天然互斥（位移超阈值进 drag、未超阈值 mouse-up 才算
+        // click）——按下即触发的旧写法会在拖拽起手时先把目录翻个面
+        el = el.on_click(move |_, _, cx| {
             let _ = weak.update(cx, |c, cx| {
                 if !c.ws.expanded_dirs.remove(&dir_path) {
                     c.ws.expanded_dirs.insert(dir_path.clone());
@@ -662,7 +679,8 @@ fn tree_row(
         let fp = row.path.clone();
         // 023：文件点击一律进 fileView（编辑器区）。旧行为「带 git 变更
         // 徽标的文件点击弹 GitDiff」废弃——diff 入口收敛在 git 面板。
-        el = el.on_mouse_down(MouseButton::Left, move |_, _, cx| {
+        // on_click 同目录行：让位给拖拽起手（见上）
+        el = el.on_click(move |_, _, cx| {
             let _ = weak.update(cx, |c, cx| {
                 c.open_file_tab(fp.clone(), cx);
             });
@@ -680,7 +698,98 @@ fn tree_row(
             );
         }
     }
-    el.into_any_element()
+    tree_drag_wiring(el, &row, &weak_drag).into_any_element()
+}
+
+/// 树行的拖拽接线（Zed project_panel drag_and_drop 行侧三件套）：`on_drag`
+/// 发起（payload = 条目路径，幽灵 = 图标 + 名字小签）、`drag_over` 落点
+/// 高亮（只在「真实移动」上亮，原地/进自身子树不高亮——拖拽期 hover 底
+/// 被 gpui 抑制，亮色即落点指示）、`on_drop` 提交移动。拖到文件行 = 移到
+/// 其父目录（语义在 [`drag_move_target`]，drop 与高亮同源）。行内改名态
+/// 不接线（tree_row 提前 return）。
+fn tree_drag_wiring<E>(mut el: E, row: &TreeRow, weak: &gpui::WeakEntity<Chat>) -> E
+where
+    E: gpui::InteractiveElement + gpui::StatefulInteractiveElement,
+{
+    let t = theme::theme();
+    let drag = TreeDrag { path: row.path.clone(), is_dir: row.is_dir };
+    let ghost_path = row.path.clone();
+    let ghost_name = row.name.clone();
+    let ghost_is_dir = row.is_dir;
+    let hl_path = row.path.clone();
+    let hl_is_dir = row.is_dir;
+    let drop_path = row.path.clone();
+    let drop_is_dir = row.is_dir;
+    let weak_drop = weak.clone();
+    el = el.on_drag(
+        drag,
+        move |_, _, _, cx| {
+            cx.new(|_| TreeDragGhost {
+                path: ghost_path.clone(),
+                name: ghost_name.clone(),
+                is_dir: ghost_is_dir,
+            })
+        },
+    )
+    .drag_over::<TreeDrag>(move |style, drag, _, _| {
+        if drag_move_target(&drag.path, drag.is_dir, &hl_path, hl_is_dir).is_some() {
+            style.bg(rgb(t.bg_hover))
+        } else {
+            style
+        }
+    })
+    .on_drop::<TreeDrag>(move |drag, _, cx| {
+        let Some(dst) = drag_move_target(&drag.path, drag.is_dir, &drop_path, drop_is_dir) else {
+            return;
+        };
+        let _ = weak_drop.update(cx, |c, cx| {
+            c.tree_move_commit(&drag.path, drag.is_dir, &dst, cx);
+        });
+    });
+
+    // 悬停自动展开（Zed hover_expand_task 500ms）：只挂折叠目录行。任何
+    // 一次 mouse-move 会派发给**所有**在册行的 on_drag_move（capture 相、
+    // 无悬停过滤），离开用本行的 inside=false 清目标——鼠标只要还在窗口
+    // 里动就不会有陈旧目标；整体出窗后定时器仍触发的极端场景容忍一次
+    // 误展开。目标去重靠 ws.tree_drag_expand：同目标不重复起定时器。
+    if row.is_dir && !row.expanded {
+        let exp_path = row.path.clone();
+        let exp_is_dir = true;
+        let weak_exp = weak.clone();
+        el = el.on_drag_move::<TreeDrag>(move |ev, _, cx| {
+            let inside = ev.bounds.contains(&ev.event.position);
+            let drag = ev.drag(cx);
+            let (src, src_is_dir) = (drag.path.clone(), drag.is_dir);
+            let _ = weak_exp.update(cx, |c, cx| {
+                let pending =
+                    c.ws.tree_drag_expand.as_ref().is_some_and(|p| same_path(p, &exp_path));
+                if inside {
+                    let valid =
+                        drag_move_target(&src, src_is_dir, &exp_path, exp_is_dir).is_some();
+                    if valid && !pending {
+                        c.ws.tree_drag_expand = Some(exp_path.clone());
+                        let target = exp_path.clone();
+                        cx.spawn(async move |weak, cx| {
+                            cx.background_executor().timer(DRAG_EXPAND_DELAY).await;
+                            let _ = weak.update(cx, |c, cx| {
+                                // 目标未变（未被离开清除、未被别行覆盖）才展开
+                                if c.ws.tree_drag_expand.as_ref().is_some_and(|p| same_path(p, &target)) {
+                                    c.ws.tree_drag_expand = None;
+                                    c.ws.expanded_dirs.insert(target);
+                                    c.rebuild_tree();
+                                    cx.notify();
+                                }
+                            });
+                        })
+                        .detach();
+                    }
+                } else if pending {
+                    c.ws.tree_drag_expand = None;
+                }
+            });
+        });
+    }
+    el
 }
 
 fn name_label(name: &str) -> gpui::AnyElement {
@@ -980,6 +1089,12 @@ fn sticky_dir_row(
     // +1px 防「刚好落在钉住位上重新参与锚点判定」的抖动
     let target_y = px((slot as f32 - row_ix as f32) * ROW_H + 1.);
     let weak_menu = weak.clone();
+    // 拖拽落点：钉住的祖先目录同样可作目标（Zed 折叠目录条
+    // FoldedDirectoryDragTarget 同语义）。钉住行画在列表之上，冒泡相
+    // 先于底下压着的列表行拿走 drop（与上面右键拦截同一机制）
+    let drag_row_path = row.path.clone();
+    let drop_row_path = row.path.clone();
+    let weak_drop = weak.clone();
     el.on_mouse_down(MouseButton::Left, move |_, _, cx| {
         let handle = crate::ui::vlist::scroll_handle(FILE_TREE_LIST_ID);
         handle.0.borrow().base_handle.set_offset(point(px(0.), target_y));
@@ -987,6 +1102,21 @@ fn sticky_dir_row(
         cx.stop_propagation();
     })
     .child(tree_right_click(&weak_menu, row))
+    .drag_over::<TreeDrag>(move |style, drag, _, _| {
+        if drag_move_target(&drag.path, drag.is_dir, &drag_row_path, true).is_some() {
+            style.bg(rgb(theme::theme().bg_hover))
+        } else {
+            style
+        }
+    })
+    .on_drop::<TreeDrag>(move |drag, _, cx| {
+        let Some(dst) = drag_move_target(&drag.path, drag.is_dir, &drop_row_path, true) else {
+            return;
+        };
+        let _ = weak_drop.update(cx, |c, cx| {
+            c.tree_move_commit(&drag.path, drag.is_dir, &dst, cx);
+        });
+    })
     .into_any_element()
 }
 

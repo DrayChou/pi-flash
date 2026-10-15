@@ -323,6 +323,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("file_tree.show_changes_only", "只看变更", "只看變更", "Show changes only"),
     ("tree.delete_root_denied", "不能删除项目根目录", "不能刪除專案根目錄", "Cannot delete the project root"),
     ("file_tree.rename_failed", "重命名失败: {e}", "重新命名失敗: {e}", "Rename failed: {e}"),
+    ("file_tree.move_failed", "移动失败: {e}", "移動失敗: {e}", "Move failed: {e}"),
     // 会话功能栏（session::session_fn_bar，原 topbar ⋯ 菜单三入口）
     ("session.open_terminal", "打开终端", "開啟終端機", "Open terminal"),
     ("session.system_prompt", "系统提示词", "系統提示詞", "System prompt"),

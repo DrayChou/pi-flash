@@ -18,6 +18,33 @@
   仍未对齐（结构性，另立项）：每次 notify 全 Chat 重建（见「交互与实体」节）；PF 侧 wheel 是 Lines 量化（WM_MOUSEWHEEL 系统行为，Zed Windows 同款），无 trackpad 像素路径。
 - vendor 测试目标跑不了：`cargo test -p gpui-component` 报 "requires dev-dependencies and is not a member of the workspace"（workspace 排除所致，非编译错误）→ vendor 纯函数回归测试放 app 侧（见 crates/app/tests/vendor_highlight_diff.rs 模式：旧实现照抄做参照 + 差分）。
 
+## 拖拽（窗口内 DnD）
+
+- 0.2.2 API 面**全有**：`on_drag`（发起+造幽灵，Stateful 才行）/ `drag_over::<T>` /
+  `on_drop::<T>` / `on_drag_move::<T>` / `can_drop` / `DragMoveEvent` /
+  `cx.active_drag`·`has_active_drag`·`stop_active_drag` / OS 文件拖入
+  （`ExternalPaths` + FileDropEvent）。**缺** `external_drag_payload` 一族——
+  窗口内 drag 提升不成 OS 拖拽（拖不到资源管理器/其他窗口）。
+- drop 派发 = MouseUp bubble 按**绘制逆序**（后代先）：监听器注册在子元素
+  绘制之前（div.rs `paint_mouse_listeners` 先于 content 闭包），冒泡 `.rev()`
+  → 第一个 TypeId 匹配且 hovered 的监听 `active_drag.take()` + refresh +
+  stop_propagation。行上挂 `on_drop`、容器上挂兜底 `on_drop` 不会双触发；
+  出了任何 drop 目标的 mouse-up = 整个拖拽取消（active_drag 置空 + refresh）。
+- **拖拽期 hover 样式被抑制**（compute_style 在 `has_active_drag()` 时跳过
+  hover/group_hover）→ `drag_over` 高亮是唯一落点反馈；拖动期每个 mouse-move
+  全窗 refresh（幽灵跟随），drag_over 逐帧重估。
+- 拖拽发起 = pending_mouse_down + 左键 + 位移 > `DRAG_THRESHOLD`(2px)。**按下
+  即触发的动作（on_mouse_down）会在拖拽起手时先行误触发**——要拖拽的元素
+  动作挂 `on_click`（mouse-up，与 drag 天然互斥：drag 起手会清 clicked_state）。
+- `on_drag_move` 是 capture 相、**无悬停过滤**：所有在册元素每次 move 都收到，
+  必须自查 `event.bounds.contains(&event.event.position)`；做「悬停自动展开」
+  用它 + 目标去重状态 + 出界清目标 + timer 任务（pi-flash 文件树 500ms 案例在
+  function_panel/file_tree.rs `tree_drag_wiring`）。
+- 挂 `drag_over`/`on_drop`/`on_drag_move` 只需 `InteractiveElement`（无 id 的
+  div 也行）；`on_drag` 必须 `Stateful`（.id()）。
+- PF 案例（021 文件树拖拽移动）：file_tree_drag.rs（payload/幽灵/落点判定）+
+  file_tree.rs `tree_drag_wiring` + file_actions.rs `tree_move_commit`。
+
 ## overlay 与 hitbox
 
 - overlay 必须 `absolute().inset_0()` + `occlude()`（防 0 高容器裁掉子元素 / 鼠标穿透）；但 `occlude()` 会**截断祖先 hitbox**（hit_test 从后往前 break）→ 行级 hover 失效、滚轮困死——消息气泡禁止加 occlude。
