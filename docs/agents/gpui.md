@@ -73,10 +73,13 @@
   量法：隔离实例开文件后连打 `pif-ui exec app.info`，返回值 >1s 即此病复发。
 - svg 未登记进 `assets!()` 会**静默画空白**（有双向一致性测试守卫）。
 - **图标光学大小 = 笔迹占 viewBox 的比例，不是 size 参数**：`ui::icon` 的 size
-  只决定把 viewBox 画布整体缩进多大的方块，lucide 图标笔迹不满 24×24 画布时
-  （如 plug 本体仅占 50% 宽）等尺寸渲染就显小。新引入图标若目视偏小，收紧
-  viewBox 到笔迹包围盒即可（plug.svg 2026-10-15 已收成 `5 1 14 22`，含 stroke
-  外扩 1）；非方形 viewBox 走默认 xMidYMid meet 居中，resvg 处理无坑。
+  只决定把 viewBox 画布整体缩进多大的方形盒，meet 模式 scale 由 viewBox 长边
+  决定。lucide 图标笔迹统一占 24×24 画布 75–85%（stroke 2/24 也一致），**单独
+  给某个图标收紧 viewBox = glyph 含 stroke 等比放大**（plug 收到 5 1 14 22 后
+  settings 侧栏 15px 档直接撑满"巨大化"，2026-10-15 教训）——多场景共用资产时
+  必在 fill 率高的场景爆掉，此路不通。正解：保持 24 画布 + stroke 2 体系，
+  **改 path 把笔迹画宽/画胖**（plug 本体 12→16 宽、插脚 9/15→8/16，宽 fill
+  50%→75%，治窄不治高）。
 - **超大单行（minified js，94 万字符）每帧假死**：`visible_range` 是**逻辑行**
   粒度，旧实现把整行字节范围送进高亮查询与 shaping——`match_styles` 对
   94 万字符行产出 ~20 万条 capture，再进 `unique_styles` 的 O(区间×样式)
