@@ -23,6 +23,7 @@ mod assets;
 mod content;
 mod dialogs;
 mod editor;
+mod ask_card;
 mod ext_ui;
 mod function_panel;
 mod i18n;

@@ -225,6 +225,16 @@ impl Chat {
         cx: &mut Context<Self>,
     ) {
         use pi_link::protocol::ExtUiMethod;
+        // 问卷流接管：ask_user_question 的整卷卡（ask_card.rs）。
+        // 只拦截阻塞原语；未命中（无进行中问卷 / 题目不匹配）才落到下面的原 match。
+        if matches!(
+            req.method,
+            ExtUiMethod::Select { .. } | ExtUiMethod::Input { .. }
+        ) && self.ask_route_request(req.clone(), cx)
+        {
+            cx.notify();
+            return;
+        }
         match req.method {
             ExtUiMethod::SetStatus { status_key, status_text } => {
                 match status_text {
@@ -316,15 +326,28 @@ impl Chat {
         cx: &mut Context<Self>,
     ) {
         if let Some(req) = self.aux.ext_dialog.take() {
-            // 桌面端先应答 → 微信端放弃同一请求（060 §8 档 2 不重复消费）
-            self.aux.remote.clear_pending(&req.id);
-            self.rt().read(cx).rpc(&pi_link::protocol::Command::ExtensionUiResponse {
-                id: req.id,
-                value,
-                confirmed,
-                cancelled,
-            });
-            cx.notify();
+            self.ext_send(&req, value, confirmed, cancelled, cx);
         }
+    }
+
+    /// 底层应答：桌面端先应答 → 微信端放弃同一请求（060 §8 档 2 不重复消费）
+    /// → 发 extension_ui_response。ext_respond 与问卷卡（ask_card）共用。
+    pub(crate) fn ext_send(
+        &mut self,
+        req: &pi_link::protocol::ExtensionUiRequest,
+        value: Option<String>,
+        confirmed: Option<bool>,
+        cancelled: bool,
+        cx: &mut Context<Self>,
+    ) {
+        // 桌面端先应答 → 微信端放弃同一请求（060 §8 档 2 不重复消费）
+        self.aux.remote.clear_pending(&req.id);
+        self.rt().read(cx).rpc(&pi_link::protocol::Command::ExtensionUiResponse {
+            id: req.id.clone(),
+            value,
+            confirmed,
+            cancelled,
+        });
+        cx.notify();
     }
 }

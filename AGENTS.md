@@ -20,6 +20,7 @@ RUST_MIN_STACK=33554432 cargo test -p pi-link   # 协议/路径测试都在 pi-l
 - 完成任务保证编译通过后提交git，验收交给用户，禁止UI测试
 - **GitHub 推送**：origin 已直连 SSH over 443（`~/.ssh/config` 的 `Host github.com-443` 别名 → ssh.github.com:443，已配 IdentityFile），`git push`/`git fetch` 直接推拉即可。github HTTPS(443) 与 SSH(22) 间歇被墙，勿走 HTTPS 远端、勿手拼 GIT_SSH_COMMAND。gh CLI 走 api.github.com，一般不受影响。
 - UI绘制遵循 docs\UI设计\UI组件规范.md
+- **发布产物不落本机**：构建产物只留在 `target/`（如 `target/release/pi-flash.exe`），禁止复制/替换本机已安装的 `D:\softwares\...\payload\pi-flash.exe`，也不要在 payload 目录生成 `.new` 之类的暂存文件——装不装、何时装由用户自己决定
 - CHANGELOG发版驱动，平时勿碰！
 
 # 路径

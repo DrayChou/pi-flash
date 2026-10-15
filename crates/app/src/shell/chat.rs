@@ -38,6 +38,10 @@ pub(crate) struct AuxUi {
     pub(crate) ext_widgets: Vec<(String, Vec<String>, bool)>,
     pub(crate) ext_dialog: Option<pi_link::protocol::ExtensionUiRequest>,
     pub(crate) ext_input: gpui::Entity<TextInput>,
+    /// ask_user_question 整卷问卷卡（ask_card.rs）；None = 无进行中的问卷
+    pub(crate) ask: Option<ask_card::AskCard>,
+    /// 问卷卡「自定义答案」输入框（active 题内嵌，切题时同步存量）
+    pub(crate) ask_input: gpui::Entity<TextInput>,
     pub(crate) ext_notice: Option<(String, u8)>,
     /// 081 自动更新状态（新会话页 inputpanel 右下版本号位消费）
     pub(crate) update: services::updater::UpdateState,
@@ -607,6 +611,8 @@ impl Chat {
                 ext_widgets: Vec::new(),
                 ext_dialog: None,
                 ext_notice: None,
+                ask: None,
+                ask_input: cx.new(|cx| TextInput::new(cx)),
                 update: services::updater::initial_state(),
                 changelog: None,
                 changelog_scroll: gpui::ScrollHandle::new(),
@@ -633,6 +639,13 @@ impl Chat {
                 let _ = weak_ext.update(cx, |c, cx| {
                     c.ext_respond(Some(v.to_string()), None, false, cx);
                 });
+            }));
+        });
+        // 问卷卡自定义答案输入框：Enter = 跳下一未答题 / 全答完则提交
+        let weak_ask = cx.entity().downgrade();
+        chat.aux.ask_input.update(cx, |ti, _| {
+            ti.set_on_submit(Box::new(move |_v, cx| {
+                let _ = weak_ask.update(cx, |c, cx| c.ask_enter(cx));
             }));
         });
         chat.load_project_files();

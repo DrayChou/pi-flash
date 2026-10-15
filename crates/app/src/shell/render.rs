@@ -90,6 +90,13 @@ impl Render for Chat {
             if !handle.is_focused(window) {
                 window.focus(&handle);
             }
+        } else if self.aux.ask.as_ref().is_some_and(|a| a.open) {
+            // 问卷卡焦点保持：卡片持 dialog_focus（Tab/Enter/数字键），
+            // 用户点进自定义答案输入框后不被抢回；两者都不在时回收给卡片
+            let in_input = self.aux.ask_input.read(cx).focus_handle_in(cx).is_focused(window);
+            if !in_input && !self.dlg.dialog_focus.is_focused(window) {
+                window.focus(&self.dlg.dialog_focus);
+            }
         } else if self.aux.ext_dialog.is_some() {
             let ext_text = matches!(
                 self.aux.ext_dialog.as_ref().map(|r| &r.method),
@@ -98,13 +105,24 @@ impl Render for Chat {
                         | pi_link::protocol::ExtUiMethod::Editor { .. }
                 )
             );
+            // ext_input 必须用内件真句柄：focus_handle() 是建件前的 fallback，
+            // 不在元素树里，推上焦点位后焦点路径变空（见 text_input.rs has_inner
+            // 注释）；且每帧仲裁会把用户点进内件的焦点抢回——RPC 扩展弹窗
+            // （ask_user_question 的 input/多选填数题）因此打不进字。
+            // 内件未建（弹窗首帧）时本轮不抢，等 has_inner 后下一帧再聚焦。
             let handle = if ext_text {
-                self.aux.ext_input.read(cx).focus_handle()
+                self.aux
+                    .ext_input
+                    .read(cx)
+                    .has_inner()
+                    .then(|| self.aux.ext_input.read(cx).focus_handle_in(cx))
             } else {
-                self.dlg.dialog_focus.clone()
+                Some(self.dlg.dialog_focus.clone())
             };
-            if !handle.is_focused(window) {
-                window.focus(&handle);
+            if let Some(handle) = handle {
+                if !handle.is_focused(window) {
+                    window.focus(&handle);
+                }
             }
         } else if self.dlg.dialog.is_some()
             // overlay::confirm 三槽（文件树删除/项目删除/删除失败）不占
@@ -669,7 +687,10 @@ impl Render for Chat {
             );
         }
         // blocking extension dialog (select/confirm/input/editor)
-        if let Some(req) = &self.aux.ext_dialog {
+        if self.aux.ask.as_ref().is_some_and(|a| a.open) {
+            // 问卷卡（ask_user_question 整卷 tab 卡）优先于 legacy 扩展弹窗
+            root = root.child(crate::ask_card::render_ask_card(self, &weak_for_dialog));
+        } else if let Some(req) = &self.aux.ext_dialog {
             root = root.child(render_ext_dialog(self, req.clone(), &weak_for_dialog));
         }
         root
