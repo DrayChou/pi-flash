@@ -30,6 +30,17 @@
 
 ## 里程碑索引（新 → 旧；一行一条，细节看对应提交）
 
+- 2026-10-15 **消息划选一期回归修复**（用户实机反馈 4 项）：①Ctrl+C 无效
+  = gpui 键盘派发**绑定先于监听器**（window.rs:3843；composer 空选区
+  `ctrl-c→input::Copy` 吞键早退）→ main.rs 注册同 "Input" 深度后注册的
+  `ctrl-c→CopyMessageSelection` 抢占，渲染根 on_action 分流：有消息选区
+  复制消息、否则转发 input::Copy（None-context 绑定禁用——会抢终端监听
+  器的键）；②文件路径 code span 不可点 → vendor `set_path_link_detector`
+  钩子（detector = as_file_path → LinkMark → 应用内 tab）；③inline code
+  accent 实色底 → secondary 淡底；④表头不加粗/CJK 列截断 → render_table
+  表头加粗+底色、去 truncate 改自然换行。详见 gpui.md keymap 节与 vendor
+  清单；UI 验收留给用户。
+
 - 2026-10-15 **agent 消息划选一期**（gpui-component TextView，社区方案
   discussion #1147 / PR #1169，评估见 docs/调研/TextView消息划选评估.md）：
   定稿文本块走 `TextView::markdown().selectable()`（逐行感知划选 + 高亮，

@@ -52,7 +52,7 @@ pub(crate) use session::menu::slash_menu_view;
 // psp 全局三动作（OpenProjectPicker/NewSession/OpenSessionSearch）：无上下
 // 文全局绑定 Ctrl+P / Ctrl+N / Ctrl+K；psp 头部三钮的 tooltip 键位 chip 也
 // 查这三个动作（键位单一事实源 = keymap，绑定改了 chip 自动跟随）。
-actions!(app, [ComposerUp, ComposerDown, ComposerTab, ComposerPaste, FileSave, OpenProjectPicker, NewSession, OpenSessionSearch]);
+actions!(app, [ComposerUp, ComposerDown, ComposerTab, ComposerPaste, FileSave, OpenProjectPicker, NewSession, OpenSessionSearch, CopyMessageSelection]);
 use i18n::tr;
 use models_config::EnabledState;
 use crate::appearance::theme::theme as T;
@@ -136,6 +136,13 @@ fn main() {
                 }),
                 cx,
             );
+            // 消息划选：inline code span 里「形似本地文件路径」的内容标成
+            // 链接（旧渲染器 inline_code_box chip parity，仅 code span——
+            // 裸文本路径旧渲染器也不可点），点击仍走上面的 link handler
+            gpui_component::text::set_path_link_detector(
+                std::sync::Arc::new(|s: &str| crate::editor::markdown::as_file_path(s)),
+                cx,
+            );
             // composer 覆盖绑定：同深度("Input")后注册者优先，必须排在
             // gpui_component::init 之后（其绑定含 up/down/tab→组件移动/
             // 缩进）。被截获的键由 composer 的 on_action 处理（菜单导航/
@@ -147,6 +154,12 @@ fn main() {
                 // 图片粘贴：同深度后注册者优先（覆盖组件 ctrl-v→Paste），
                 // composer 内层处理图片附件，其余输入框由根节点兜底重派发
                 KeyBinding::new("ctrl-v", ComposerPaste, Some("Input")),
+                // 消息划选：抢占组件 ctrl-c→input::Copy（gpui 键盘派发绑定
+                // 先于 on_key_down 监听器，纯监听器兜底够不到 Input 焦点场景；
+                // composer 空选区时组件 Copy 直接 return 不写剪贴板但吞键）。
+                // 分流在渲染根 on_action：有消息选区复制消息，否则原样转发
+                // input::Copy，输入框选区照常复制
+                KeyBinding::new("ctrl-c", CopyMessageSelection, Some("Input")),
                 // 023 fileView：编辑器里 Ctrl+S 保存（composer 等其他 Input
                 // 上下文内无人监听该 action，自然空转）
                 KeyBinding::new("ctrl-s", FileSave, Some("Input")),

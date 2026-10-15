@@ -513,12 +513,24 @@ impl Render for Chat {
             .on_action(cx.listener(|this, _: &OpenSessionSearch, _window, cx| {
                 let _ = this.open_session_search(cx);
             }))
-            // 消息划选（gpui-component TextView 从不持焦 → 其键上下文的
-            // ctrl-c 复制绑定永不可达）：根级兜底——存在消息选区即复制并
-            // 拦截。点选区外（含点 composer/终端/编辑器）时 TextView 自身的
-            // outside-down 清除逻辑已先清选区，此处取不到自然放行；键监听
-            // 先于 action 绑定派发，composer 的 InputState on_key_down 只
-            // 暂停光标闪烁不停传播，ctrl-c 会 bubble 到这里
+            // 消息划选 Ctrl+C 分流（绑定在 main.rs："Input" 深度后注册抢占
+            // 组件 ctrl-c→input::Copy——gpui 键盘派发绑定先于 on_key_down
+            // 监听器，纯监听器够不到 composer 焦点场景）：有消息选区复制
+            // 消息；否则原样转发组件 Copy，输入框选区照常复制
+            //（ComposerPaste 兜底同款模式）
+            .on_action(cx.listener(|_, _: &CopyMessageSelection, window, cx| {
+                if let Some(text) = gpui_component::text::take_last_selected_text(cx) {
+                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
+                } else {
+                    window.dispatch_action(Box::new(gpui_component::input::Copy), cx);
+                }
+            }))
+            // 消息划选兜底（焦点不在任何 "Input" 上下文时——如 chat 根——
+            // 无 ctrl-c 绑定命中、监听器可达）：存在消息选区即复制并拦截。
+            // 点选区外（含点 composer/终端/编辑器）时 TextView 自身的
+            // outside-down 清除逻辑已先清选区，此处取不到自然放行。终端
+            // 焦点下 terminal_key 是更内层的监听器且两条 Ctrl+C 路径都吞键
+            // （bubble 内层先跑），不会到这里
             .on_key_down(|ev: &gpui::KeyDownEvent, _window, cx| {
                 let k = &ev.keystroke;
                 if k.key == "c"

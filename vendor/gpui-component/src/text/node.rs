@@ -611,7 +611,25 @@ impl Paragraph {
                         });
                     }
                     if style.code {
-                        highlight.background_color = Some(cx.theme().accent);
+                        // pi-flash patch: accent 原色实底过艳，降为中性淡底
+                        highlight.background_color = Some(cx.theme().secondary);
+                        // pi-flash patch: host path detector——形似本地文件
+                        // 路径的 code span 标成链接（点击走 dispatch_link，
+                        // 宿主拦截开应用内编辑器），仅当不是真链接时
+                        if style.link.is_none() {
+                            if let Some(url) =
+                                super::detect_path_link(&text[inner_range.clone()], cx)
+                            {
+                                links.push((
+                                    inner_range.clone(),
+                                    LinkMark {
+                                        url: SharedString::from(url),
+                                        identifier: None,
+                                        title: None,
+                                    },
+                                ));
+                            }
+                        }
                     }
 
                     if let Some(mut link_mark) = style.link.clone() {
@@ -810,10 +828,14 @@ impl Node {
                 .children({
                     let mut rows = Vec::with_capacity(table.children.len());
                     for (row_ix, row) in table.children.iter().enumerate() {
+                        // pi-flash patch: 首行 = 表头，加底色区分（单元格加粗
+                        // 在 cell 容器上挂，下同）
+                        let is_header = row_ix == 0;
                         rows.push(
                             div()
                                 .id("row")
                                 .w_full()
+                                .when(is_header, |this| this.bg(cx.theme().secondary))
                                 .when(row_ix < table.children.len() - 1, |this| this.border_b_1())
                                 .border_color(cx.theme().border)
                                 .flex()
@@ -833,6 +855,9 @@ impl Node {
                                             div()
                                                 .id("cell")
                                                 .flex()
+                                                .when(is_header, |this| {
+                                                    this.font_weight(FontWeight::SEMIBOLD)
+                                                })
                                                 .when(align == ColumnumnAlign::Center, |this| {
                                                     this.justify_center()
                                                 })
@@ -846,7 +871,8 @@ impl Node {
                                                     this.border_r_1()
                                                         .border_color(cx.theme().border)
                                                 })
-                                                .truncate()
+                                                // pi-flash patch: 去 truncate（单行
+                                                // 省略号会截断 CJK 长内容）→ 自然换行
                                                 .child(cell.children.render(node_cx, window, cx)),
                                         )
                                     }
