@@ -38,7 +38,9 @@
   器的键）；②文件路径 code span 不可点 → vendor `set_path_link_detector`
   钩子（detector = as_file_path → LinkMark → 应用内 tab）；③inline code
   accent 实色底 → secondary 淡底；④表头不加粗/CJK 列截断 → render_table
-  表头加粗+底色、去 truncate 改自然换行。详见 gpui.md keymap 节与 vendor
+  表头加粗+底色、去 truncate 改自然换行；⑤表格各行列位漂移（字节长当
+  fraction >100% 靠 flex 收缩碰摊）→ 钳制 [6,44] 归一化成和为 1 的分数
+  全表共用（自研渲染器同坑同修）。详见 gpui.md keymap 节与 vendor
   清单；UI 验收留给用户。
 
 - 2026-10-15 **agent 消息划选一期**（gpui-component TextView，社区方案

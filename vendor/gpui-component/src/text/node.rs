@@ -796,7 +796,6 @@ impl Node {
         cx: &mut App,
     ) -> impl IntoElement {
         const DEFAULT_LENGTH: usize = 5;
-        const MAX_LENGTH: usize = 150;
         let col_lens = match item {
             Node::Table(table) => {
                 let mut col_lens = vec![];
@@ -815,6 +814,24 @@ impl Node {
                 col_lens
             }
             _ => vec![],
+        };
+
+        // pi-flash patch: 列宽 = 列最大文本长钳制 [6,44] 后**归一化成和为 1
+        // 的分数**，全表共用同一组——跨行对齐成网格。原实现把字节长直接当
+        // fraction（>100%，靠 flex 收缩碰巧均摊），去 truncate 后各行列位
+        // 漂移；自研渲染器 render_table 同坑同修（其注释「flex_1 按内容分
+        // 配导致每行列位漂移，已废」即此）
+        const MIN_W: usize = 6;
+        const MAX_W: usize = 44;
+        let weights: Vec<usize> = col_lens.iter().map(|l| (*l).clamp(MIN_W, MAX_W)).collect();
+        let total: f32 = weights.iter().sum::<usize>() as f32;
+        let frac = |ix: usize| -> f32 {
+            let w = weights.get(ix).copied().unwrap_or(MIN_W) as f32;
+            if total > 0. {
+                w / total
+            } else {
+                1. / col_lens.len().max(1) as f32
+            }
         };
 
         match item {
@@ -845,16 +862,12 @@ impl Node {
                                     for (ix, cell) in row.children.iter().enumerate() {
                                         let align = table.column_align(ix);
                                         let is_last_col = ix == row.children.len() - 1;
-                                        let len = col_lens
-                                            .get(ix)
-                                            .copied()
-                                            .unwrap_or(MAX_LENGTH)
-                                            .min(MAX_LENGTH);
 
                                         cells.push(
                                             div()
                                                 .id("cell")
                                                 .flex()
+                                                .min_w_0()
                                                 .when(is_header, |this| {
                                                     this.font_weight(FontWeight::SEMIBOLD)
                                                 })
@@ -864,7 +877,7 @@ impl Node {
                                                 .when(align == ColumnumnAlign::Right, |this| {
                                                     this.justify_end()
                                                 })
-                                                .w(Length::Definite(relative(len as f32)))
+                                                .w(Length::Definite(relative(frac(ix))))
                                                 .px_2()
                                                 .py_1()
                                                 .when(!is_last_col, |this| {
