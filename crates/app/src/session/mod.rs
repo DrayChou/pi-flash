@@ -269,6 +269,10 @@ pub(crate) fn scroll_to_bottom_button(
         .id("scroll-to-bottom")
         .flex_shrink_0()
         .size(px(32.))
+        // 悬浮在消息列上（composer 悬浮簇成员），必须自挡穿透：不 occlude
+        // 时点击会漏进身后的消息文本——TextView 起选监听判定遮挡用 hitbox，
+        // 本钮自身无 BlockMouse hitbox 就挡不住（vendor text_view 修同期）
+        .occlude()
         .rounded_full()
         .border_1()
         .border_color(rgb(t.border))

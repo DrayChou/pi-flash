@@ -7,9 +7,10 @@ use std::time::Duration;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     div, AnyElement, App, AppContext, Bounds, ClipboardItem, Context, Element, ElementId, Entity,
-    EntityId, FocusHandle, GlobalElementId, InspectorElementId, InteractiveElement, IntoElement,
-    KeyBinding, LayoutId, MouseDownEvent, MouseMoveEvent, MouseButton, MouseUpEvent,
-    ParentElement, Pixels, Point, RenderOnce, SharedString, Size, Styled, Timer, Window,
+    EntityId, FocusHandle, GlobalElementId, Hitbox, HitboxBehavior, InspectorElementId,
+    InteractiveElement, IntoElement, KeyBinding, LayoutId, MouseDownEvent, MouseMoveEvent,
+    MouseButton, MouseUpEvent, ParentElement, Pixels, Point, RenderOnce, SharedString, Size,
+    Styled, Timer, Window,
 };
 use smol::stream::StreamExt;
 
@@ -508,7 +509,8 @@ impl IntoElement for TextView {
 
 impl Element for TextView {
     type RequestLayoutState = AnyElement;
-    type PrepaintState = ();
+    // pi-flash patch: prepaint 插自身 hitbox 传给 paint，供起选监听判遮挡
+    type PrepaintState = Hitbox;
 
     fn id(&self) -> Option<ElementId> {
         Some(self.id.clone())
@@ -611,12 +613,17 @@ impl Element for TextView {
         &mut self,
         _: Option<&GlobalElementId>,
         _: Option<&InspectorElementId>,
-        _: Bounds<Pixels>,
+        bounds: Bounds<Pixels>,
         request_layout: &mut Self::RequestLayoutState,
         window: &mut Window,
         cx: &mut App,
     ) -> Self::PrepaintState {
+        // pi-flash patch: Normal 行为 hitbox（不遮挡他人），插入先于子树 →
+        // 子元素与本 TextView 同帧后绘元素（宿主悬浮胶囊等 BlockMouse 层）
+        // 都在它之后，hit_test 遇 BlockMouse break 时本 hitbox 会被正确截掉
+        let hitbox = window.insert_hitbox(bounds, HitboxBehavior::Normal);
         request_layout.prepaint(window, cx);
+        hitbox
     }
 
     fn paint(
@@ -625,7 +632,7 @@ impl Element for TextView {
         _: Option<&InspectorElementId>,
         bounds: Bounds<Pixels>,
         request_layout: &mut Self::RequestLayoutState,
-        _: &mut Self::PrepaintState,
+        prepaint_state: &mut Self::PrepaintState,
         window: &mut Window,
         cx: &mut App,
     ) {
@@ -648,15 +655,25 @@ impl Element for TextView {
             let is_selecting = self.state.read(cx).is_selecting;
             let has_selection = self.state.read(cx).has_selection();
 
+            // pi-flash patch: 起选须尊重 hitbox 遮挡。裸监听收到全窗所有
+            // mouse-down，bounds.contains 只答「点在文本区内」不答「文本区
+            // 在点击点是否可见」——宿主悬浮胶囊（BlockMouse，后绘）叠在本
+            // TextView 上时，胶囊上划选会穿透选中身后的隐藏文本。用
+            // prepaint 插的自身 hitbox 判 is_hovered：hit_test 从后往前走，
+            // 遇 BlockMouse break，被遮挡者进不了 ids → is_hovered false。
+            let hitbox = prepaint_state.clone();
             window.on_mouse_event({
                 let state = self.state.clone();
-                move |event: &MouseDownEvent, phase, _, cx| {
+                move |event: &MouseDownEvent, phase, window, cx| {
                     if !bounds.contains(&event.position) || !phase.bubble() {
                         return;
                     }
                     // pi-flash patch: 仅左键起选区——右键留给宿主上下文
                     // 菜单，且不得重置已有划选（浏览器同语义）
                     if event.button != MouseButton::Left {
+                        return;
+                    }
+                    if !hitbox.is_hovered(window) {
                         return;
                     }
 
