@@ -356,7 +356,7 @@ impl Element for Inline {
                         Self::link_for_position(&text_layout, &links, event.position)
                     {
                         cx.stop_propagation();
-                        cx.open_url(&link.url);
+                        super::dispatch_link(&link.url, cx);
                     }
                 }
             });

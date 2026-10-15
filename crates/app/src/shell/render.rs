@@ -513,6 +513,24 @@ impl Render for Chat {
             .on_action(cx.listener(|this, _: &OpenSessionSearch, _window, cx| {
                 let _ = this.open_session_search(cx);
             }))
+            // 消息划选（gpui-component TextView 从不持焦 → 其键上下文的
+            // ctrl-c 复制绑定永不可达）：根级兜底——存在消息选区即复制并
+            // 拦截。点选区外（含点 composer/终端/编辑器）时 TextView 自身的
+            // outside-down 清除逻辑已先清选区，此处取不到自然放行；键监听
+            // 先于 action 绑定派发，composer 的 InputState on_key_down 只
+            // 暂停光标闪烁不停传播，ctrl-c 会 bubble 到这里
+            .on_key_down(|ev: &gpui::KeyDownEvent, _window, cx| {
+                let k = &ev.keystroke;
+                if k.key == "c"
+                    && k.modifiers.control
+                    && !k.modifiers.alt
+                    && !k.modifiers.shift
+                    && let Some(text) = gpui_component::text::take_last_selected_text(cx)
+                {
+                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
+                    cx.stop_propagation();
+                }
+            })
             .child(body);
 
         if let Some(panel) = self.dlg.settings.clone() {

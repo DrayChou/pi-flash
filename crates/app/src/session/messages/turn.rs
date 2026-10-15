@@ -29,8 +29,28 @@ pub(crate) fn render_block(
     thinking_dur: Option<i64>,
 ) -> gpui::Div {
     match b {
-        Block::Text { text, .. } if !text.trim().is_empty() => {
-            div().w_full().child(markdown::render(text, t, streaming))
+        Block::Text {
+            content_index,
+            text,
+            ..
+        } if !text.trim().is_empty() => {
+            // 定稿块走 TextView（划选 + Ctrl+C 复制，textview.rs）；流式块
+            // 仍走自研渲染器——TextView 文本变更是 200ms 防抖后台重解析，
+            // 会拖慢流式显示（消息划选一期定夺）
+            if streaming {
+                div().w_full().child(markdown::render(text, t, streaming))
+            } else {
+                let hash = {
+                    use std::hash::{Hash, Hasher};
+                    let mut h = std::collections::hash_map::DefaultHasher::new();
+                    text.hash(&mut h);
+                    h.finish()
+                };
+                div().w_full().child(AgentMarkdown::new(
+                    SharedString::from(format!("tv-{msg_ix}-{content_index}-{hash:x}")),
+                    text.clone(),
+                ))
+            }
         }
         Block::Thinking { text, content_index } if !text.trim().is_empty() => {
             let key = (msg_ix, *content_index);

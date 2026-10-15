@@ -460,12 +460,42 @@ impl TextView {
     }
 
     fn on_action_copy(state: &Entity<TextViewState>, cx: &mut App) {
+        // no-selection guard: selection_text() returns Some("") otherwise,
+        // which would clobber the clipboard with an empty string
+        if !state.read(cx).has_selection() {
+            return;
+        }
         let Some(selected_text) = state.read(cx).selection_text() else {
             return;
         };
 
         cx.write_to_clipboard(ClipboardItem::new_string(selected_text.trim().to_string()));
     }
+}
+
+/// The TextView that most recently started a mouse selection (pi-flash patch:
+/// host apps bind a global Ctrl+C fallback — the TextView itself never takes
+/// focus, so its own key-context binding can't fire).
+struct LastSelectionOwner(Option<Entity<TextViewState>>);
+
+impl gpui::Global for LastSelectionOwner {}
+
+/// Return the text of the most recent TextView mouse selection, if any.
+///
+/// `None` when no selection was ever started, or when the owning view has
+/// cleared it (outside click / resize / content re-parse) — the check is
+/// live, so stale owners are safe.
+pub fn take_last_selected_text(cx: &App) -> Option<String> {
+    let owner = cx
+        .try_global::<LastSelectionOwner>()
+        .and_then(|g| g.0.clone())?;
+    let state = owner.read(cx);
+    if !state.has_selection() {
+        return None;
+    }
+    let text = state.selection_text()?;
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.to_string())
 }
 
 impl IntoElement for TextView {
@@ -628,6 +658,7 @@ impl Element for TextView {
                     state.update(cx, |state, _| {
                         state.start_selection(event.position);
                     });
+                    cx.set_global(LastSelectionOwner(Some(state.clone())));
                     cx.notify(entity_id);
                 }
             });

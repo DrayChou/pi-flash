@@ -30,6 +30,19 @@
 
 ## 里程碑索引（新 → 旧；一行一条，细节看对应提交）
 
+- 2026-10-15 **agent 消息划选一期**（gpui-component TextView，社区方案
+  discussion #1147 / PR #1169，评估见 docs/调研/TextView消息划选评估.md）：
+  定稿文本块走 `TextView::markdown().selectable()`（逐行感知划选 + 高亮，
+  RenderOnce 包装 AgentMarkdown 在渲染期持 window/cx 构造——list 条目闭包
+  借用锁死 cx 传不进），流式块/用户消息仍走自研渲染器；id 带文本哈希防
+  会话切换串 keyed state。vendor 三补丁：①`text_view.rs` 选区归属全局
+  `take_last_selected_text` + on_action_copy 空选区守卫 ②`text/mod.rs`
+  链接路由钩子 `set_link_handler`（本地文件 → 应用内 tab，复用
+  dispatch_md_link）③inline/node 两处 open_url 改走钩子。Ctrl+C 兜底挂
+  渲染根 on_key_down（TextView 从不持焦、组件自身键绑定不可达；点选区外
+  自动清除天然消歧）。二期待办：代码块语言标签/复制按钮对齐 v56、流式
+  帧时间与长会话内存实测。UI 验收留给用户。
+
 - 2026-10-13 **架构整理下半场（bead pzy/4ea/o5z，发版前整理续）**：五巨石
   拆分（messages/runtime/input/terminal/markdown 全部入红线，protocol.rs
   假超标随口径修正消除）+ input_area/composer_bar 内切破 300；RPC 直发

@@ -128,6 +128,14 @@ fn main() {
             // gpui-component (widget library powering TextInput): global
             // init + token mapping from the active app theme
             gpui_component::init(cx);
+            // 消息划选一期：TextView 链接点击统一路由（组件默认 open_url 开
+            // 浏览器；本地文件链接须走应用内文件 tab，规则同自研渲染器）
+            gpui_component::text::set_link_handler(
+                std::sync::Arc::new(|url: &str, cx: &mut gpui::App| {
+                    crate::editor::markdown::dispatch_md_link(url, cx);
+                }),
+                cx,
+            );
             // composer 覆盖绑定：同深度("Input")后注册者优先，必须排在
             // gpui_component::init 之后（其绑定含 up/down/tab→组件移动/
             // 缩进）。被截获的键由 composer 的 on_action 处理（菜单导航/

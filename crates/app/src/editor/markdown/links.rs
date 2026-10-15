@@ -50,6 +50,18 @@ pub(super) fn open_path_with(target: Option<MdTarget>, path: String, cx: &mut gp
     }
 }
 
+/// TextView 消息区链接点击的统一入口（gpui-component link handler 转发至
+/// 此）：本地文件 → 应用内文件 tab（open_path_with），其余 → 系统浏览器。
+/// MD_TARGET 事件期读 thread_local（最后一次 render_msg 设置的 chat weak
+/// + None base），与自研渲染器 InteractiveText 闭包同值。
+pub(crate) fn dispatch_md_link(url: &str, cx: &mut gpui::App) {
+    if let Some(path) = as_file_path(url) {
+        open_path_with(md_target(), path, cx);
+    } else {
+        cx.open_url(url);
+    }
+}
+
 /// 行内 code 文本 / 链接 href 形似本地文件路径 → 可打开的路径串（已剥
 /// `:行[:列]` 后缀）。判定锚定 code span / href 边界，路径内允许空格与
 /// CJK（「已写入 `D:\...\1 每日博文\x.md`」场景）；不做盘上存在性检查

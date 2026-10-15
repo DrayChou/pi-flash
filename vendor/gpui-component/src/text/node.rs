@@ -582,7 +582,7 @@ impl Paragraph {
                                 })
                                 .on_click(move |_, _, cx| {
                                     cx.stop_propagation();
-                                    cx.open_url(&link.url);
+                                    super::dispatch_link(&link.url, cx);
                                 })
                         })
                         .into_any_element(),
