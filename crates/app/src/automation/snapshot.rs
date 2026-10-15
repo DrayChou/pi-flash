@@ -258,9 +258,28 @@ fn app_surface(chat: &Chat, window: &gpui::Window, cx: &Context<Chat>) -> Value 
                 &chat.aux.update,
                 crate::services::updater::UpdateState::Downloading { .. }
             ) {
-                crate::services::updater::download_percent()
+                // 按相位取对应通道：解压段读解压百分比，否则下载百分比
+                if crate::services::updater::update_phase()
+                    == crate::services::updater::PHASE_EXTRACT
+                {
+                    crate::services::updater::extract_percent()
+                } else {
+                    crate::services::updater::download_percent()
+                }
             } else {
                 None
+            },
+            "phase": if matches!(
+                &chat.aux.update,
+                crate::services::updater::UpdateState::Downloading { .. }
+            ) {
+                match crate::services::updater::update_phase() {
+                    crate::services::updater::PHASE_DOWNLOAD => "download",
+                    crate::services::updater::PHASE_EXTRACT => "extract",
+                    _ => "idle",
+                }
+            } else {
+                "idle"
             },
             "auto_update": crate::services::workspace::auto_update(),
             "changelog_open": chat.aux.changelog.as_ref().map(|p| p.version.clone()),

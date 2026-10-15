@@ -23,7 +23,8 @@
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 /// 下载/检查仓库坐标（与 npm/bin/lib.js DIRECT_BASE 同源）。
@@ -487,23 +488,105 @@ fn safe_zip_path(dest: &Path, name: &str) -> Option<PathBuf> {
     Some(out)
 }
 
+/// 并行解压。条目互不依赖，按原子下标工作窃取；Windows 瓶颈是 Defender
+/// 对每个新建文件的实时扫描，多线程摊薄单文件延迟（单线程 4 万小文件
+/// 分钟级，并行后 10s 上下）。进度写 EXTRACT_PCT 供版本号位读取。
+/// 任一 Worker 出错即置 failed 停止取活，返回首个错误（与旧单线程语义一致：
+/// 一处失败整个解压失败）。
 fn extract_zip(zip_path: &Path, dest: &Path) -> Result<(), String> {
     let f = std::fs::File::open(zip_path).map_err(|e| format!("{e}"))?;
-    let mut archive = zip::ZipArchive::new(f).map_err(|e| format!("{e}"))?;
-    for i in 0..archive.len() {
-        let mut entry = archive.by_index(i).map_err(|e| format!("{e}"))?;
-        let Some(out) = safe_zip_path(dest, entry.name()) else {
-            continue;
-        };
-        if entry.is_dir() {
-            std::fs::create_dir_all(&out).map_err(|e| format!("{e}"))?;
-            continue;
+    let total = {
+        let probe = zip::ZipArchive::new(f).map_err(|e| format!("{e}"))?;
+        probe.len()
+    };
+    let workers = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4)
+        .clamp(1, 8);
+    let next = Arc::new(AtomicUsize::new(0));
+    let done = Arc::new(AtomicUsize::new(0));
+    let failed = Arc::new(AtomicBool::new(false));
+    let first_err: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+
+    std::thread::scope(|s| {
+        for _ in 0..workers {
+            // 每 worker 独立打开：File::try_clone 复制的句柄共享文件指针，
+            // 各线程 seek 会互相踩（「failed to fill whole buffer」实录）
+            let f = match std::fs::File::open(zip_path) {
+                Ok(f) => f,
+                Err(e) => {
+                    failed.store(true, Ordering::Relaxed);
+                    let mut slot = first_err.lock().unwrap();
+                    if slot.is_none() {
+                        *slot = Some(format!("{e}"));
+                    }
+                    break;
+                }
+            };
+            let next = next.clone();
+            let done = done.clone();
+            let failed = failed.clone();
+            let first_err = first_err.clone();
+            s.spawn(move || {
+                let mut archive = match zip::ZipArchive::new(f) {
+                    Ok(a) => a,
+                    Err(e) => {
+                        failed.store(true, Ordering::Relaxed);
+                        let mut slot = first_err.lock().unwrap();
+                        if slot.is_none() {
+                            *slot = Some(format!("{e}"));
+                        }
+                        return;
+                    }
+                };
+                loop {
+                    if failed.load(Ordering::Relaxed) {
+                        return;
+                    }
+                    let i = next.fetch_add(1, Ordering::Relaxed);
+                    if i >= total {
+                        return;
+                    }
+                    let r = (|| -> Result<(), String> {
+                        let mut entry = archive.by_index(i).map_err(|e| format!("{e}"))?;
+                        let Some(out) = safe_zip_path(dest, entry.name()) else {
+                            return Ok(());
+                        };
+                        if entry.is_dir() {
+                            std::fs::create_dir_all(&out).map_err(|e| format!("{e}"))?;
+                            return Ok(());
+                        }
+                        if let Some(parent) = out.parent() {
+                            // 并行下兄弟条目可能同时在建同一父目录，
+                            // AlreadyExists 视为成功
+                            if let Err(e) = std::fs::create_dir_all(parent) {
+                                if e.kind() != std::io::ErrorKind::AlreadyExists {
+                                    return Err(format!("{e}"));
+                                }
+                            }
+                        }
+                        let mut out_f = std::fs::File::create(&out).map_err(|e| format!("{e}"))?;
+                        std::io::copy(&mut entry, &mut out_f).map(|_| ()).map_err(|e| format!("{e}"))
+                    })();
+                    let n = done.fetch_add(1, Ordering::Relaxed) + 1;
+                    if total > 0 {
+                        EXTRACT_PCT.store(((n * 100) / total).min(100) as u8, Ordering::Relaxed);
+                    }
+                    if let Err(e) = r {
+                        failed.store(true, Ordering::Relaxed);
+                        let mut slot = first_err.lock().unwrap();
+                        if slot.is_none() {
+                            *slot = Some(e);
+                        }
+                        return;
+                    }
+                }
+            });
         }
-        if let Some(parent) = out.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| format!("{e}"))?;
-        }
-        let mut out_f = std::fs::File::create(&out).map_err(|e| format!("{e}"))?;
-        std::io::copy(&mut entry, &mut out_f).map_err(|e| format!("{e}"))?;
+    });
+
+    if let Some(e) = first_err.lock().unwrap().take() {
+        return Err(e);
     }
     Ok(())
 }
@@ -540,6 +623,37 @@ fn set_download_percent(pct: Option<u8>) {
         None => PCT_UNKNOWN,
     };
     DOWNLOAD_PCT.store(v, Ordering::Relaxed);
+}
+
+/// 流水线相位：版本号位的进度通道二选一（下载 NN% / 解压 NN%）。
+/// 解压此前无通道，100% 后单线程解压 4 万小文件（Defender 逐个实时扫描）
+/// 要分钟级，UI 只能干等——0.1.8 用户实录「下载完卡一分钟」。相位 + 解压
+/// 百分比让等待显形，并行解压让等待变短。
+pub(crate) const PHASE_IDLE: u8 = 0;
+pub(crate) const PHASE_DOWNLOAD: u8 = 1;
+pub(crate) const PHASE_EXTRACT: u8 = 2;
+
+static UPDATE_PHASE: AtomicU8 = AtomicU8::new(PHASE_IDLE);
+static EXTRACT_PCT: AtomicU8 = AtomicU8::new(PCT_UNKNOWN);
+
+/// 当前相位（PHASE_*），供版本号位 UI 与 pif-ui snapshot 读取。
+pub(crate) fn update_phase() -> u8 {
+    UPDATE_PHASE.load(Ordering::Relaxed)
+}
+
+/// 解压进度（0-100），None = 无进度数据（不在解压相位）。
+pub(crate) fn extract_percent() -> Option<u8> {
+    match EXTRACT_PCT.load(Ordering::Relaxed) {
+        PCT_UNKNOWN => None,
+        pct => Some(pct),
+    }
+}
+
+/// 切相位并清两条进度通道（UI 永远吃不到上一相位的陈旧百分比）。
+fn set_phase(phase: u8) {
+    UPDATE_PHASE.store(phase, Ordering::Relaxed);
+    DOWNLOAD_PCT.store(PCT_UNKNOWN, Ordering::Relaxed);
+    EXTRACT_PCT.store(PCT_UNKNOWN, Ordering::Relaxed);
 }
 
 /// 测速参数（env 可调，与 npm/bin/lib.js 同名变量同默认值；测试注入更小的
@@ -708,6 +822,7 @@ fn stage_update(rel: &ReleaseInfo) -> Result<String, String> {
         let asset = asset_name(&ver);
         let zip_path = tmp.join(&asset);
 
+        set_phase(PHASE_DOWNLOAD);
         // 下载（测速自动换源：直连慢/挂就按序切镜像），边下边算 SHA-256
         let (zip_hash, chosen) = download_mirrored(&asset, &zip_path, &ver)?;
 
@@ -738,6 +853,7 @@ fn stage_update(rel: &ReleaseInfo) -> Result<String, String> {
             return Err(format!("SHA-256 不符（期望 {expected}，实际 {zip_hash}）"));
         }
 
+        set_phase(PHASE_EXTRACT);
         extract_zip(&zip_path, &tmp.join("x"))?;
         let root = locate_content_root(&tmp.join("x"))
             .ok_or("载荷结构异常：找不到 pi-flash.exe")?;
@@ -773,6 +889,7 @@ fn stage_update(rel: &ReleaseInfo) -> Result<String, String> {
         Ok(())
     })();
 
+    set_phase(PHASE_IDLE);
     let _ = std::fs::remove_dir_all(&tmp);
     result.map(|_| ver)
 }
@@ -1345,6 +1462,130 @@ mod tests {
         );
         assert!(stage.exists(), "staging 不应被动（留作下次安装的原料）");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 并行解压树完整性：Compress-Archive 造真 zip（嵌套目录 + PS 5.1 的
+    /// 反斜杠条目名——safe_zip_path 归一化正为此），并行解压后逐文件比对
+    /// 内容；进度终值必须到 100（pif-ui snapshot progress 的数据源）。
+    #[cfg(windows)]
+    #[test]
+    fn extract_zip_parallel_tree_intact() {
+        let dir = std::env::temp_dir().join(format!(
+            "pf-extract-par-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .subsec_nanos()
+        ));
+        let src = dir.join("pi-flash");
+        let mut files: Vec<(String, Vec<u8>)> = Vec::new();
+        for i in 0..120 {
+            let rel = if i % 3 == 0 {
+                format!("vendor/pi/deep/dir{i}/module_{i}.js")
+            } else if i % 3 == 1 {
+                format!("vendor/node_modules/pkg{i}/lib/index.js")
+            } else {
+                format!("assets/i18n/msg_{i}.json")
+            };
+            let body = format!("payload {i}: {}", "x".repeat(i * 37 % 900));
+            let p = src.join(&rel);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(&p, &body).unwrap();
+            files.push((rel, body.into_bytes()));
+        }
+        let zip_path = dir.join("t.zip");
+        let ps = format!(
+            "Compress-Archive -Path '{}' -DestinationPath '{}' -Force",
+            src.display(),
+            zip_path.display()
+        );
+        let out = std::process::Command::new("powershell.exe")
+            .args(["-NoProfile", "-Command", &ps])
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "Compress-Archive 失败：{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+
+        let dest = dir.join("out");
+        extract_zip(&zip_path, &dest).unwrap();
+        // Compress-Archive -Path <目录> 连包装目录一起进 zip：条目名带
+        // pi-flash/ 前缀（与 release.sh 产物同形，locate_content_root 消费）
+        for (rel, body) in &files {
+            let got = std::fs::read(dest.join("pi-flash").join(rel.replace('/', "\\")))
+                .unwrap_or_else(|e| panic!("{rel}: {e}"));
+            assert_eq!(&got, body, "{rel} 内容不符");
+        }
+        assert_eq!(extract_percent(), Some(100), "解压进度终值应为 100");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 真机计时（`cargo test -p app --bin pi-flash extract_real_dist -- --ignored
+    /// --nocapture`）：对 dist/ 里最新真 zip 跑并行解压，打印耗时与条目数。
+    /// 基线对照 = PowerShell Expand-Archive（单线程，≈旧实现）；dist/ 不存在
+    /// 时跳过。不进常规门禁。
+    #[cfg(windows)]
+    #[test]
+    #[ignore]
+    fn extract_real_dist_zip_timing() {
+        // cargo test 的 cwd 是 crate 根；CARGO_MANIFEST_DIR = <ws>/crates/app，
+        // 剥两级到工作区根（同 vendor.rs base_candidates 惯例）
+        let dist = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .unwrap()
+            .join("dist");
+        let mut best: Option<(std::path::PathBuf, std::time::Duration)> = None;
+        if let Ok(entries) = std::fs::read_dir(&dist) {
+            for e in entries.flatten() {
+                let name = e.file_name().to_string_lossy().to_string();
+                if name.starts_with("pi-flash-") && name.ends_with("-win32-x64.zip") {
+                    let score = e
+                        .metadata()
+                        .and_then(|m| m.modified())
+                        .map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default())
+                        .unwrap_or_default();
+                    if best.as_ref().map(|(_, s)| score > *s).unwrap_or(true) {
+                        best = Some((e.path(), score));
+                    }
+                }
+            }
+        }
+        let Some((zip_path, _)) = best else {
+            eprintln!("dist/ 无 zip，跳过");
+            return;
+        };
+        let dest = std::env::temp_dir().join(format!("pf-extract-real-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dest);
+        let t0 = std::time::Instant::now();
+        extract_zip(&zip_path, &dest).unwrap();
+        let dt = t0.elapsed();
+        let count = count_files(&dest);
+        eprintln!(
+            "并行解压 {:?}：{} 个文件，{:?}（{:?}/s）",
+            zip_path.file_name().unwrap(),
+            count,
+            dt,
+            (count as f64 / dt.as_secs_f64()) as u64
+        );
+        let _ = std::fs::remove_dir_all(&dest);
+    }
+
+    fn count_files(root: &Path) -> usize {
+        let mut n = 0;
+        if let Ok(entries) = std::fs::read_dir(root) {
+            for e in entries.flatten() {
+                if e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                    n += count_files(&e.path());
+                } else {
+                    n += 1;
+                }
+            }
+        }
+        n
     }
 
     // --- 下载引擎功能测试（本地裸 TCP 假源，真下载真哈希真守卫） ------------

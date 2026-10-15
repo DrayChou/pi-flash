@@ -212,11 +212,20 @@ fn action_bar(
         use crate::services::updater::UpdateState;
         let version_el: gpui::AnyElement = match &chat.aux.update {
             UpdateState::Downloading { version } => {
-                // 百分比来自下载线程的原子量；spinner 动画每帧触发本臂重跑，
-                // 文案随之刷新（无 content-length 时省略百分比）
-                let mut text = crate::i18n::tf("about.downloading_v", &[("v", version.clone())]);
-                if let Some(pct) = crate::services::updater::download_percent() {
-                    text = format!("{text} {pct}%");
+                // 百分比来自下载/解压线程的原子量；spinner 动画每帧触发本臂
+                // 重跑，文案随之刷新。下载段带 NN%；下载完切「解压安装中…」
+                // （解压段此前无提示，单线程解压分钟级只能干等——0.1.8 实录）
+                use crate::services::updater as u;
+                let extracting = u::update_phase() == u::PHASE_EXTRACT;
+                let mut text = if extracting {
+                    crate::i18n::tr("about.extracting_v").to_string()
+                } else {
+                    crate::i18n::tf("about.downloading_v", &[("v", version.clone())])
+                };
+                if !extracting {
+                    if let Some(pct) = u::download_percent() {
+                        text = format!("{text} {pct}%");
+                    }
                 }
                 div()
                     .flex()
