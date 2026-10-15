@@ -505,6 +505,74 @@ impl Chat {
         cx.notify();
     }
 
+    /// 082 视图切换：Ctrl+←/→ 切到当前标签左/右邻视图。tab 条 = 置顶会话
+    /// tab + 自由标签区，激活 tab 恒被挪到自由区首位（activate_panel_tab），
+    /// 故序列 [会话, p0..pn] 上的「左/右邻」= 会话↔自由区边界走 -1/+1。
+    /// 最左再往左、最右再往右 = no-op（不环绕，浏览器同语义）。焦点交接
+    /// 与 content_tab 的 switch 监听同款：终端直接给焦点句柄，文件走
+    /// pending_focus_file（编辑器实体渲染帧懒建）。返回是否发生切换。
+    pub(crate) fn cycle_content_tab(
+        &mut self,
+        offset: isize,
+        window: &mut gpui::Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        // 当前位置：会话 tab = None；自由区 = active_panel_tab 下标。
+        // 非会话视图但下标悬空（理论不可达）按自由区 0 处理
+        let cur = if self.layout.content_view == ContentView::Chat {
+            None
+        } else {
+            Some(self.ws.active_panel_tab.unwrap_or(0))
+        };
+        let target = match cur {
+            // 会话 tab：右 = 自由区第一颗；左 = 空
+            None => (offset > 0).then_some(Some(0)),
+            Some(cur_ix) => {
+                let next = cur_ix as isize + offset;
+                // 自由区最左 → 会话 tab；最右 → 空
+                if next < 0 {
+                    Some(None)
+                } else if (next as usize) < self.ws.panel_tabs.len() {
+                    Some(Some(next as usize))
+                } else {
+                    None
+                }
+            }
+        };
+        let Some(target) = target else { return false };
+        match target {
+            Some(ix) => {
+                let tab = self.ws.panel_tabs.get(ix).cloned();
+                let view = match tab {
+                    Some(PanelTab::Term(_)) => ContentView::Term,
+                    Some(PanelTab::Changelog) => ContentView::Changelog,
+                    _ => ContentView::File,
+                };
+                let focus_term = match tab {
+                    Some(PanelTab::Term(id)) => self
+                        .ws
+                        .terminals
+                        .iter()
+                        .find(|t| t.id == id)
+                        .map(|t| t.focus.clone()),
+                    Some(PanelTab::File(p)) => {
+                        self.ws.pending_focus_file = Some(p);
+                        None
+                    }
+                    _ => None,
+                };
+                self.activate_panel_tab(ix, cx);
+                self.set_content_view(view);
+                if let Some(f) = focus_term {
+                    window.focus(&f);
+                }
+            }
+            None => self.set_content_view(ContentView::Chat),
+        }
+        cx.notify();
+        true
+    }
+
     pub(crate) fn close_panel_tab(&mut self, ix: usize, cx: &mut Context<Self>) {
         if ix >= self.ws.panel_tabs.len() {
             return;

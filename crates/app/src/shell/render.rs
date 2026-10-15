@@ -587,6 +587,30 @@ impl Render for Chat {
                     cx.stop_propagation();
                 }
             }))
+            // 082 视图切换：Ctrl+←/→ 切到当前标签左/右邻视图。挂根节点
+            // 兜底（不能注册 None-context 绑定——那会连输入框的词移动一起
+            // 抢掉）：输入框焦点下 ctrl-left/right 由组件 Input 绑定先吞
+            // （MoveTo{Previous,Next}Word），终端焦点下 terminal_key 先吞
+            // （发 PTY），都到不了这里；模态/弹层打开不接管
+            //（modal_layer_open）。守卫过但边界不切换（最左/最右）时放行
+            .on_key_down(cx.listener(|this, ev: &gpui::KeyDownEvent, window, cx| {
+                let k = &ev.keystroke;
+                let step = match k.key.as_str() {
+                    "left" => Some(-1),
+                    "right" => Some(1),
+                    _ => None,
+                };
+                if let Some(step) = step
+                    && k.modifiers.control
+                    && !k.modifiers.alt
+                    && !k.modifiers.shift
+                    && !k.modifiers.platform
+                    && !this.modal_layer_open()
+                    && this.cycle_content_tab(step, window, cx)
+                {
+                    cx.stop_propagation();
+                }
+            }))
             .child(body);
 
         if let Some(panel) = self.dlg.settings.clone() {

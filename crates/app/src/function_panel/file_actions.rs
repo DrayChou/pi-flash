@@ -232,7 +232,7 @@ impl Chat {
     /// 也能改）。文件树不可见（面板隐藏/最小化/git 视图）或有模态弹层时
     /// 不接管。返回是否接管了这次按键（接管方 stop_propagation）。
     pub(crate) fn tree_f2_rename(&mut self, cx: &mut Context<Self>) -> bool {
-        if self.tree_keys_blocked()
+        if self.modal_layer_open()
             || self.layout.panes_hidden
             || self.layout.files_min
             || self.layout.dock_panel == DockPanel::Git
@@ -250,9 +250,11 @@ impl Chat {
         true
     }
 
-    /// 模态与弹层集中守卫：任一打开时文件树键语义（F2 改名）不接管——
-    /// 此时焦点级联都不归树，接管会把改名藏到弹层背后。
-    fn tree_keys_blocked(&self) -> bool {
+    /// 模态与弹层集中守卫：任一打开时，根节点按键兜底的域语义（082 文件
+    /// 树 F2 改名、Ctrl+←/→ 切视图）不接管——此时焦点级联都不归对应域，
+    /// 接管会把动作藏到弹层背后。纯输入框焦点不用这条守卫：那些键会被
+    /// Input 组件绑定先吞（词移动/复制），根本到不了根兜底。
+    pub(crate) fn modal_layer_open(&self) -> bool {
         self.dlg.dialog.is_some()
             || self.dlg.settings.is_some()
             || self.dlg.pill_menu.is_some()
