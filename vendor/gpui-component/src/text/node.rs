@@ -885,8 +885,18 @@ impl Node {
                                                         .border_color(cx.theme().border)
                                                 })
                                                 // pi-flash patch: 去 truncate（单行
-                                                // 省略号会截断 CJK 长内容）→ 自然换行
-                                                .child(cell.children.render(node_cx, window, cx)),
+                                                // 省略号会截断 CJK 长内容）→ 自然换行；
+                                                // 包一层 w_full 定宽容器——cell 是
+                                                // flex，段落子项按内容测宽会把长行
+                                                // 撑出格缘（文本 min-content 测量
+                                                // 不可靠不收缩），定宽后 StyledText
+                                                // 拿到约束才在格内折行
+                                                .child(
+                                                    div()
+                                                        .w_full()
+                                                        .min_w_0()
+                                                        .child(cell.children.render(node_cx, window, cx)),
+                                                ),
                                         )
                                     }
                                     cells
