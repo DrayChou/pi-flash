@@ -196,11 +196,19 @@ impl RemoteControl {
         ))
     }
 
+    /// 微信桥自启开关。**已断开**（2026-10-15 所有者定夺：回头抽成插件，
+    /// 插件落地前不再随启动拉起——配置存在也不再碰轮询锁，多实例也不再有
+    /// 「另一个轮询者」报错）。060 机器件全保留，恢复自启改回 true。
+    const SELF_START: bool = false;
+
     fn ensure_transport(&mut self) {
         if self.boot_attempted {
             return;
         }
         self.boot_attempted = true;
+        if !Self::SELF_START {
+            return;
+        }
         let st = wxprobe::state::load();
         // 有 chat_id = 之前已经建立过投递目标，跳过激活欢迎（等价于 ZCode
         // 持久化的 `weixinActivatedAt`）
