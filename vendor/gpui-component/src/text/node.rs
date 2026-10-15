@@ -292,10 +292,19 @@ impl Paragraph {
 
     /// Return length of children text.
     pub(crate) fn text_len(&self) -> usize {
+        // pi-flash patch: 按**显示宽度**计（>0x2E80 计 2，其余 1）——CJK
+        // 一字 3 字节，按字节比较会系统性低估纯 ASCII 列（"2026E" 列被
+        // 压到折行）；自研渲染器 cell_weight 同款度量。此 fn 仅用于表格
+        // 列宽加权与空判，无字节偏移语义
         self.children
             .iter()
-            .map(|node| node.text.len())
-            .sum::<usize>()
+            .map(|node| {
+                node.text
+                    .chars()
+                    .map(|c| if (c as u32) > 0x2e80 { 2 } else { 1 })
+                    .sum::<usize>()
+            })
+            .sum()
     }
 
     pub(crate) fn merge(&mut self, other: Self) {
