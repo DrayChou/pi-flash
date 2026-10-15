@@ -1793,7 +1793,15 @@ impl InputState {
 
         // Check if row_offset_y is out of the viewport
         // If row offset is not in the viewport, scroll to make it visible
-        let edge_height = 3 * line_height;
+        //
+        // PF 鬼畜振荡修复（2026-10-15，composer 多行光标移动）：edge 固定
+        // 3 行、视口 H < 2×edge（composer 3~5 行高必中）时上下「安全区」
+        // 重叠为空——两支的解互落对方触发区（0→-edge→H-2·edge→-edge…），
+        // move_to 每次光标移动都重算一次 → 滚动位逐键翻转、auto_grow 容器
+        // 3↔4 行交替（快速连按即鬼畜）。边距钳到半视口保证安全区非空；
+        // 解再钳进内容滚动范围——内容放得下时不裁顶（此前光标贴底行会把
+        // 首行推出视口外且停在那里）。
+        let edge_height = (3 * line_height).min(bounds.size.height / 2.0);
         if row_offset_y - edge_height < -scroll_offset.y {
             // Scroll up
             scroll_offset.y = -row_offset_y + edge_height;
@@ -1803,7 +1811,11 @@ impl InputState {
         }
 
         scroll_offset.x = scroll_offset.x.min(px(0.));
-        scroll_offset.y = scroll_offset.y.min(px(0.));
+        let max_scroll_up = f32::from(
+            self.text_wrapper.len() as f32 * line_height - bounds.size.height,
+        )
+        .max(0.0);
+        scroll_offset.y = scroll_offset.y.clamp(px(-max_scroll_up), px(0.));
         self.deferred_scroll_offset = Some(scroll_offset);
         cx.notify();
     }
