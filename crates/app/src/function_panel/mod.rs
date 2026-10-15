@@ -687,7 +687,7 @@ fn project_row(
         .into_any_element()
 }
 
-/// 会话行：15px 状态槽（运行=旋转圈 / 未读=绿点 / 空）+ 标题；hover 详情卡。
+/// 会话行：15px 状态槽（运行=旋转圈 / 未读=绿点 / 空）+ 标题；右键详情卡。
 fn session_row_view(
     chat: &Chat,
     p: usize,
@@ -731,12 +731,8 @@ fn session_row_view(
     let path = info.path.clone();
     let path_click = path.clone();
     let path_card = path.clone();
-    let path_bounds = path.clone();
-    let path_hover = path.clone();
     let w_click = weak.clone();
-    let w_hover = weak.clone();
-    let w_move = weak.clone();
-    let w_bounds = weak.clone();
+    let w_card = weak.clone();
 
     // ---- ZCode TaskListItem 样式 parity（源码实测值）----
     // 列表 p-3 留白 + 行 pl-2.5/pr-1/py-1 + space-y-0.5 行距 + rounded-lg；
@@ -797,35 +793,10 @@ fn session_row_view(
         title_w > available
     };
 
-    // 行顶对齐钩子：详情卡的 top = 本行 bounds.origin.y（ZCode 用
-    // getBoundingClientRect；gpui 等价物 = wrapper 的 children_prepainted）。
-    // 自下而上进入行时鼠标首事件落在行底，只靠 mouse move 会偏下——这里
-    // 用真实 bounds 校正；bounds 稳定后不再 notify。滚动时自动跟随。
-    // 行高 h 同步写入：详情卡向上弹要贴行底（y + h）。
-    let weak_for_row_el = weak.clone();
-    let _ = weak_for_row_el;
     div()
         // 与项目行同理：滚动容器 overflow 压缩时会连内部行一起压（内层
         // h(32) 被 wrapper 的收缩顶掉），列表行一律禁止收缩
         .flex_shrink_0()
-        .on_children_prepainted(move |children: Vec<gpui::Bounds<gpui::Pixels>>, _, cx| {
-            if let Some(b) = children.first() {
-                let top = b.origin.y;
-                let h = b.size.height;
-                let _ = w_bounds.update(cx, |c, cx| {
-                    if let Some(card) = c.dlg.hover_card.as_mut() {
-                        if crate::services::workspace::same_path(&card.path, &path_bounds)
-                            && ((card.y - f32::from(top)).abs() > 0.5
-                                || (card.h - f32::from(h)).abs() > 0.5)
-                        {
-                            card.y = f32::from(top);
-                            card.h = f32::from(h);
-                            cx.notify();
-                        }
-                    }
-                });
-            }
-        })
         .child(
     div()
         .id(SharedString::from(format!("ps-{}", info.id)))
@@ -848,81 +819,21 @@ fn session_row_view(
                 c.open_session(path_click.clone(), false, cx);
             });
         })
-        .on_hover(move |h, _w, cx| {
-            let leaving = !*h;
-            let _ = w_hover.update(cx, |c, _cx| {
-                if leaving {
-                    if let Some(card) = c.dlg.hover_card.as_mut() {
-                        // 鼠标若已进卡（card_hovered），行退出事件晚到
-                        // 也不得启动消失宽限
-                        if !card.card_hovered {
-                            card.hide_at = Some(std::time::Instant::now());
-                        }
-                        // 鼠标从滞留接手目标行离开（移往别行/出窗）：目标
-                        // 作废——否则宽限到期会把卡闪给一个鼠标早已不在的行
-                        if card
-                            .pending_path
-                            .as_deref()
-                            .is_some_and(|p| crate::services::workspace::same_path(p, &path_hover))
-                        {
-                            card.pending_path = None;
-                        }
-                    }
-                }
-            });
-        })
-        .on_mouse_move(move |ev: &gpui::MouseMoveEvent, _, cx| {
-            let y = f32::from(ev.position.y);
-            let _ = w_move.update(cx, |c, cx| {
-                let same = c
-                    .dlg.hover_card
-                    .as_ref()
-                    .is_some_and(|card| crate::services::workspace::same_path(&card.path, &path_card));
-                if !same {
-                    // 离行滞留期（shown + hide_at 有值）内掠过别的行：不换
-                    // 卡——下半屏卡悬在行上方，用户从行正上穿邻行赶弹窗，
-                    // 一换卡（新卡 shown=false 要再等 300ms）已显示的卡立即
-                    // 消失、永远追不上。只记最后一行，250ms 宽限到期由
-                    // 120ms 泵把卡让给它（2026-10-15 用户定夺：滞留 250ms）
-                    let lingering = c
-                        .dlg
-                        .hover_card
-                        .as_ref()
-                        .is_some_and(|card| card.shown && card.hide_at.is_some());
-                    if lingering {
-                        if let Some(card) = c.dlg.hover_card.as_mut() {
-                            if card.pending_path.as_deref() != Some(path_card.as_path()) {
-                                card.pending_path = Some(path_card.clone());
-                                cx.notify();
-                            }
-                        }
-                    } else {
-                        c.dlg.hover_card = Some(crate::function_panel::HoverCard {
-                            path: path_card.clone(),
-                            // 临时估计（鼠标 y - 半行高）；prepaint 钩子会把
-                            // y 校正为本行的真实顶部（bounds.origin.y），行高
-                            // h 随同一钩子校正（详情卡贴行底对齐要用）
-                            y: y - 16.,
-                            h: crate::ui::tokens::row::MAIN,
-                            hide_at: None,
-                            show_at: std::time::Instant::now(),
-                            shown: false,
-                            confirming: false,
-                            card_hovered: false,
-                            renaming: false,
-                            rename_input: None,
-                            pending_path: None,
-                        });
-                        cx.notify();
-                    }
-                } else if let Some(card) = c.dlg.hover_card.as_mut() {
-                    // 鼠标在本行内移动：只要不在卡上就持续取消消失宽限
-                    if !card.card_hovered {
-                        card.hide_at = None;
-                    }
-                    // 回到本行 = 滞留结束，接手目标作废
-                    card.pending_path = None;
-                }
+        .on_mouse_down(MouseButton::Right, move |ev: &gpui::MouseDownEvent, _, cx| {
+            // 右键详情卡（2026-10-15 定夺：悬停自动弹窗整体撤销——穿行
+            // 滞留/换卡修补不平交互，改上下文卡语义：定位右键点、上/下方
+            // 12px 弹出、点外即收）。锚点 = 鼠标视口坐标
+            let (x, y) = (f32::from(ev.position.x), f32::from(ev.position.y));
+            let _ = w_card.update(cx, |c, cx| {
+                c.dlg.hover_card = Some(crate::function_panel::HoverCard {
+                    path: path_card.clone(),
+                    x,
+                    y,
+                    confirming: false,
+                    renaming: false,
+                    rename_input: None,
+                });
+                cx.notify();
             });
         })
         .child(
@@ -1186,30 +1097,19 @@ pub(crate) fn files_view(
 
 // ---- psp/文件树 overlay 状态类型（自 shell/types.rs 下沉，本域自持）----
 
+/// 会话右键详情卡（2026-10-15 定夺：悬停自动弹窗整体撤销，改右键召唤的
+/// 上下文卡——定位右键点、上/下方弹出、点外即收；名称沿用 hover 时代）。
 #[derive(Debug, Clone)]
 pub(crate) struct HoverCard {
     pub path: PathBuf,
-    /// 悬停行的真实顶部（prepaint 钩子校正，初始为鼠标 y − 半行高估计值）
+    /// 右键点视口坐标：卡左缘对齐 x、上/下方 12px 弹出（PopupEdges 四象限）
+    pub x: f32,
     pub y: f32,
-    /// 悬停行高（prepaint 钩子随 y 同步校正）：详情卡向上弹时卡底 = y + h
-    /// （贴行底），向下弹卡顶 = y（贴行顶）——精准对齐是调用方语义
-    pub h: f32,
-    pub hide_at: Option<std::time::Instant>,
-    /// 创建时刻：悬停满 300ms 才显示（快速滑过列表不弹卡、不干扰行悬停）
-    pub show_at: std::time::Instant,
-    /// show_at 到期后由 120ms tick 置 true 并渲染一次
-    pub shown: bool,
+    /// 点「删除」后卡内换 取消/确认 两键
     pub confirming: bool,
-    /// 鼠标当前是否在卡上（gpui 的行退出/卡进入事件顺序不保证，
-    /// 行退出只在 !card_hovered 时才启动消失宽限）
-    pub card_hovered: bool,
-    /// 标题点击后原地改名（设计稿：卡内变输入框，Enter 提交 / Esc 取消）
+    /// 标题点击后原地改名（卡内变输入框，Enter 提交 / Esc 取消）
     pub renaming: bool,
     pub rename_input: Option<gpui::Entity<crate::ui::TextInput>>,
-    /// 离行滞留期内鼠标掠过的最后一行（接手目标）：滞留期内换卡会让已显示
-    /// 的卡立即消失（下半屏卡悬在行上方，穿邻行必掠过邻行），故只记不移；
-    /// 250ms 宽限到期由 120ms 泵把卡让给它（立即显示）
-    pub pending_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]

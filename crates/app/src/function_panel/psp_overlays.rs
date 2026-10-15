@@ -1,7 +1,6 @@
-//! psp 悬浮层 (v54): 项目路径 tooltip（深色，跟随鼠标）、会话 hover 详情卡
-//! （左缘固定 = 时间栏左线、弹出即盖住时间，改名/删除流）、⋯ 两级菜单
-//! （列表方式/排序方式带子菜单勾选态）、项目菜单、删除项目确认。全部挂在
-//! 根渲染，事件坐标定位。
+//! psp 悬浮层 (v54): 项目路径 tooltip（深色，跟随鼠标）、会话右键详情卡
+//! （锚右键点、点外即收，改名/删除流）、⋯ 两级菜单（列表方式/排序方式带
+//! 子菜单勾选态）、项目菜单、删除项目确认。全部挂在根渲染，事件坐标定位。
 //!
 //! 定位统一走 `ui::popup::PopupEdges`（2026-10-11 用户算法：锚点在视口
 //! 上半 → 向下弹，反之向上；左半 → 向右弹，反之向左）——列表拉到底时
@@ -54,11 +53,9 @@ pub(crate) fn psp_overlays(
     {
         el = el.child(term_menu_layer(chat, tab_id, x, y, vp, t, cx));
     }
-    if let Some(card) = &chat.dlg.hover_card {
-        // 延迟显示（0.3s）：快速滑过会话列表时不创建视觉，不干扰行悬停
-        if card.shown {
-            el = el.child(hover_card(chat, vp, t, cx));
-        }
+    if chat.dlg.hover_card.is_some() {
+        // 右键详情卡：打开即渲染（无悬停延迟），点卡外/再右键别行收换
+        el = el.child(hover_card(chat, vp, t, cx));
     }
     if chat.dlg.tree_menu.is_some() {
         el = el.child(tree_menu_layer(chat, vp, t, cx));
@@ -149,12 +146,10 @@ fn proj_tip(
         )
 }
 
-/// 会话 hover 详情卡：258px 浅色浮层，标题（点击=打开并改名）、项目/
-/// 最后活动/消息数信息行、删除确认流。250ms 离行滞留 + 进卡取消；滞留
-/// 期内穿邻行不换卡（宽限到期把卡让给最后掠过的行，见 HoverCard::
-/// pending_path）。左缘固定 = 时间栏左线（slp_w − LIST_PX×2 − 38，弹出
-/// 即盖住时间列；2026-10-15 定夺：鼠标 x 锚乱跳，侧栏右缘外 8px 又离
-/// 鼠标太远）；统一算法只裁决纵边（行在下半 → 向上弹），纵向贴行顶/行底。
+/// 会话右键详情卡：258px 浅色浮层，标题（点击=打开并改名）、项目/
+/// 最后活动/消息数信息行、删除确认流。2026-10-15 定夺：悬停自动弹窗撤销，
+/// 改右键召唤——锚点 = 右键点，统一算法四象限（左缘对齐鼠标 x、上/下方
+/// 12px 让出光标防误点）；点卡外即收（右键别行 = 换卡）。
 fn hover_card(
     chat: &mut Chat,
     vp: (f32, f32),
@@ -185,15 +180,8 @@ fn hover_card(
     };
     let path = card.path.clone();
     let confirming = card.confirming;
-    let renaming = card.renaming;
-    // 横向：固定左缘 = 时间栏左线（容器 px LIST_PX + 行 pr LIST_PX +
-    // 时间列 38 → slp_w − 58），弹出即盖住时间列（2026-10-15 三次定夺：
-    // 鼠标 x 锚随悬停点漂移「乱跳」，固定线才稳）。纵向：统一算法只裁决
-    // 上/下弹（行在下半 → 向上弹）；精准对齐是调用方语义（2026-10-11
-    // 二次定夺）：向下弹卡顶 = 行顶、向上弹卡底 = 行底——卡悬在行的
-    // 背离侧，行与相邻行都不被遮挡
-    let anchor_x = chat.layout.slp_w - crate::ui::tokens::align::LIST_PX * 2. - 38.;
-    let dir = PopupEdges::vertical(card.y, vp.1, 0.);
+    // 统一算法四象限：左缘对齐鼠标 x、上/下方让 12px（光标不压卡，防误点）
+    let dir = PopupEdges::around((card.x, card.y), vp, 0., 12.);
     let mut el = div()
         .id("psp-hcard")
         .absolute()
@@ -210,40 +198,25 @@ fn hover_card(
         .pb(px(9.))
         .flex()
         .flex_col()
-        // 卡内点击不落穿（改名/删除按钮依赖）
+        // 卡内点击不落穿（改名/删除按钮依赖；左右键都拦——右键穿下去会
+        // 在身下的行上再开一张卡）
         .on_mouse_down(MouseButton::Left, |_, _, cx| {
             cx.stop_propagation();
         })
-        // 进卡取消隐藏 / 离卡进入宽限
-        .on_hover(cx.listener(|this, h: &bool, _w, cx| {
-            if let Some(card) = this.dlg.hover_card.as_mut() {
-                card.card_hovered = *h;
-                card.hide_at = (!*h).then(std::time::Instant::now);
-                // 进卡 = 滞留结束（卡已保住），接手目标作废
-                if *h {
-                    card.pending_path = None;
-                }
-            }
-            cx.notify();
-        }));
-    // 改名中点卡外 = 取消（2026-11 用户定夺：原来只能改名或回车，像被卡住）
-    // 用 capture 阶段的 `on_mouse_down_out`（capture 只判「点不在卡 bounds
-    // 内」，本次点击照常冒泡给下层 = 点哪去哪），不铺全屏 catcher：铺了
-    // 会遮挡整窗 hit-test，侧栏行悬停会跟着失效。
-    if renaming {
+        .on_mouse_down(MouseButton::Right, |_, _, cx| {
+            cx.stop_propagation();
+        });
+    // 点卡外即收（上下文卡语义）。用 capture 阶段的 `on_mouse_down_out`
+    //（capture 只判「点不在卡 bounds 内」，本次点击照常冒泡给下层 = 点哪
+    // 去哪），不铺全屏 catcher：铺了会遮挡整窗 hit-test。右键别行 = 收旧
+    // 开新（行的右键处理器同帧置新卡）
+    {
         let weak = cx.entity().downgrade();
         el = el.on_mouse_down_out(move |_, _w, cx| {
             let _ = weak.update(cx, |c, cx| c.hover_card_rename_dismiss(cx));
         });
     }
-    // 横向固定：左缘 = 时间栏左线（不随鼠标漂移）
-    el = el.left(px(anchor_x));
-    // 纵向精准对齐：行底 y+h 由 prepaint 钩子实测写入
-    el = match (dir.top, dir.bottom) {
-        (Some(_), _) => el.top(px(card.y)),
-        (_, Some(_)) => el.bottom(px(vp.1 - card.y - card.h)),
-        _ => el,
-    };
+    el = dir.apply(el);
     el = el
         .children(if card.renaming {
             // 设计稿：标题原地变输入框（Enter 提交 / Esc 取消）

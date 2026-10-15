@@ -524,8 +524,8 @@ fn spawn_initial_attach(
     .detach();
 }
 
-/// 120ms 泵：悬停卡 / 导航 flyout / 状态条过期（光标闪烁由输入组件自管，
-/// 不再需要 2Hz 切换）。
+/// 120ms 泵：导航 flyout / 状态条过期（光标闪烁由输入组件自管，
+/// 不再需要 2Hz 切换；会话详情卡 2026-10-15 起改右键召唤，无定时逻辑）。
 fn spawn_pump_120ms(cx: &mut gpui::Context<Chat>) {
     cx.spawn(async move |this, cx| {
         loop {
@@ -535,49 +535,6 @@ fn spawn_pump_120ms(cx: &mut gpui::Context<Chat>) {
             let ok = this
                 .update(cx, |c, cx| {
                     let mut dirty = false;
-                    // 改名中：不打字时鼠标虽不在卡上，也不能清卡
-                    let renaming = c.dlg.hover_card.as_ref().is_some_and(|h| h.renaming);
-                    if !renaming {
-                        if let Some(at) = c.dlg.hover_card.as_ref().and_then(|h| h.hide_at) {
-                            if at.elapsed() > std::time::Duration::from_millis(250) {
-                                // 滞留宽限到期：滞留期内鼠标停在的最后一行
-                                // （接手目标）直接接管并**立即显示**——若再走
-                                // 300ms 显示延迟，用户停稳在新行后卡迟迟不出
-                                // 像卡死。y/h 暂沿旧值，prepaint 钩子当帧按
-                                // 新行实测校正
-                                let takeover = c.dlg.hover_card.as_mut().and_then(|card| {
-                                    card.pending_path.take().map(|path| (path, card.y, card.h))
-                                });
-                                c.dlg.hover_card = takeover.map(|(path, y, h)| {
-                                    crate::function_panel::HoverCard {
-                                        path,
-                                        y,
-                                        h,
-                                        hide_at: None,
-                                        show_at: std::time::Instant::now(),
-                                        shown: true,
-                                        confirming: false,
-                                        card_hovered: false,
-                                        renaming: false,
-                                        rename_input: None,
-                                        pending_path: None,
-                                    }
-                                });
-                                dirty = true;
-                            }
-                        }
-                    }
-                    // 详情卡延迟显示（0.3s）：悬停期满且鼠标未在离行宽限时才置
-                    // shown，下一次渲染把卡画出来
-                    if let Some(card) = c.dlg.hover_card.as_mut() {
-                        if !card.shown
-                            && card.hide_at.is_none()
-                            && card.show_at.elapsed() >= std::time::Duration::from_millis(300)
-                        {
-                            card.shown = true;
-                            dirty = true;
-                        }
-                    }
                     // 导航 flyout 250ms 离开宽限（pi-web PREVIEW_HIDE_DELAY parity）
                     if c.layout.nav_open {
                         if let Some(at) = c.layout.nav_hide_at {

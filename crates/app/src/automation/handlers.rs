@@ -612,10 +612,9 @@ pub(super) fn dispatch(
         // 调试专用：直置 psp 项目行 hover/收起态（绕过鼠标合成）。project
         // 缺省 = 清除 hover；collapse = 强制该项目收起(true)/展开(false)。
         method::UI_DEBUG_HOVER => {
-            // 会话详情卡直开（自动化复现 hover 卡路径；rename=true 直进
+            // 会话详情卡直开（自动化复现右键详情卡路径；rename=true 直进
             // 改名态——与标题点击同一 Chat::hover_card_begin_rename 槽）。
-            // shown 直置 true 免 300ms 悬停等待；card_hovered=true 免消失
-            // 宽限被 tick 拉起。
+            // 锚点取固定调试坐标（真路径 = 右键点视口坐标）。
             if let Some(sp) = params.get("session").and_then(Value::as_str) {
                 let path = std::path::PathBuf::from(sp);
                 let found = chat.psp.projects.iter().any(|g| {
@@ -626,16 +625,11 @@ pub(super) fn dispatch(
                 }
                 chat.dlg.hover_card = Some(crate::function_panel::HoverCard {
                     path: path.clone(),
+                    x: 300.,
                     y: 200.,
-                    h: 32.,
-                    hide_at: None,
-                    show_at: std::time::Instant::now() - std::time::Duration::from_secs(1),
-                    shown: true,
                     confirming: false,
-                    card_hovered: true,
                     renaming: false,
                     rename_input: None,
-                    pending_path: None,
                 });
                 if params.get("rename").and_then(Value::as_bool) == Some(true) {
                     chat.hover_card_begin_rename(cx);
