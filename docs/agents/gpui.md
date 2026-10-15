@@ -74,12 +74,12 @@
 - svg 未登记进 `assets!()` 会**静默画空白**（有双向一致性测试守卫）。
 - **图标光学大小 = 笔迹占 viewBox 的比例，不是 size 参数**：`ui::icon` 的 size
   只决定把 viewBox 画布整体缩进多大的方形盒，meet 模式 scale 由 viewBox 长边
-  决定。lucide 图标笔迹统一占 24×24 画布 75–85%（stroke 2/24 也一致），**单独
-  给某个图标收紧 viewBox = glyph 含 stroke 等比放大**（plug 收到 5 1 14 22 后
-  settings 侧栏 15px 档直接撑满"巨大化"，2026-10-15 教训）——多场景共用资产时
-  必在 fill 率高的场景爆掉，此路不通。正解：保持 24 画布 + stroke 2 体系，
-  **改 path 把笔迹画宽/画胖**（plug 本体 12→16 宽、插脚 9/15→8/16，宽 fill
-  50%→75%，治窄不治高）。
+  决定。lucide 图标笔迹统一占 24×24 画布 75–85%（stroke 2/24 也一致），单独
+  某图标显得偏小/偏大多半是它的 glyph 形状天然如此（plug 窄长，宽 fill 仅
+  50%）。**glyph 本体不动是铁律**（2026-10-15 两轮手术均被用户否决：viewBox
+  收紧 = glyph 连 stroke 等比放大，settings 15px 档直接巨大化；path 画宽 =
+  破坏 lucide 造型，"越改越难看"）。观感要调只能在**渲染 size 档**上做文章，
+  且必须走规范 §3 的五档，不新增杂值。
 - **超大单行（minified js，94 万字符）每帧假死**：`visible_range` 是**逻辑行**
   粒度，旧实现把整行字节范围送进高亮查询与 shaping——`match_styles` 对
   94 万字符行产出 ~20 万条 capture，再进 `unique_styles` 的 O(区间×样式)
