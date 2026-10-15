@@ -626,7 +626,6 @@ pub(super) fn dispatch(
                 }
                 chat.dlg.hover_card = Some(crate::function_panel::HoverCard {
                     path: path.clone(),
-                    x: 40.,
                     y: 200.,
                     h: 32.,
                     hide_at: None,

@@ -1,6 +1,7 @@
 //! psp 悬浮层 (v54): 项目路径 tooltip（深色，跟随鼠标）、会话 hover 详情卡
-//! （左缘 = 鼠标 x + 20，改名/删除流）、⋯ 两级菜单（列表方式/排序方式带
-//! 子菜单勾选态）、项目菜单、删除项目确认。全部挂在根渲染，事件坐标定位。
+//! （左缘固定 = 时间栏左线、弹出即盖住时间，改名/删除流）、⋯ 两级菜单
+//! （列表方式/排序方式带子菜单勾选态）、项目菜单、删除项目确认。全部挂在
+//! 根渲染，事件坐标定位。
 //!
 //! 定位统一走 `ui::popup::PopupEdges`（2026-10-11 用户算法：锚点在视口
 //! 上半 → 向下弹，反之向上；左半 → 向右弹，反之向左）——列表拉到底时
@@ -150,9 +151,9 @@ fn proj_tip(
 
 /// 会话 hover 详情卡：258px 浅色浮层，标题（点击=打开并改名）、项目/
 /// 最后活动/消息数信息行、删除确认流。300ms 离行宽限 + 进卡取消。
-/// 左缘 = 鼠标 x + 20（2026-10-15 定夺：原锚侧栏右缘外 8px 离鼠标太远，
-/// 贴缘相切又易误点）；统一算法只裁决纵边（行在下半 → 向上弹），
-/// 纵向贴行顶/行底。
+/// 左缘固定 = 时间栏左线（slp_w − LIST_PX×2 − 38，弹出即盖住时间列；
+/// 2026-10-15 定夺：鼠标 x 锚乱跳，侧栏右缘外 8px 又离鼠标太远）；
+/// 统一算法只裁决纵边（行在下半 → 向上弹），纵向贴行顶/行底。
 fn hover_card(
     chat: &mut Chat,
     vp: (f32, f32),
@@ -184,11 +185,14 @@ fn hover_card(
     let path = card.path.clone();
     let confirming = card.confirming;
     let renaming = card.renaming;
-    // 统一算法只裁决弹出方向（横锚 = 鼠标 x、纵锚 = 行顶 y）；精准对齐是
-    // 调用方语义（2026-10-11 二次定夺）：向下弹卡顶 = 行顶、向上弹卡底 =
-    // 行底——卡悬在行的背离侧，行与相邻行都不被遮挡。横向 gap 20：
-    // 卡左缘 = 鼠标 x + 20（2026-10-15 二次定夺：贴缘相切会误点弹窗）
-    let dir = PopupEdges::around((card.x, card.y), vp, 20., 0.);
+    // 横向：固定左缘 = 时间栏左线（容器 px LIST_PX + 行 pr LIST_PX +
+    // 时间列 38 → slp_w − 58），弹出即盖住时间列（2026-10-15 三次定夺：
+    // 鼠标 x 锚随悬停点漂移「乱跳」，固定线才稳）。纵向：统一算法只裁决
+    // 上/下弹（行在下半 → 向上弹）；精准对齐是调用方语义（2026-10-11
+    // 二次定夺）：向下弹卡顶 = 行顶、向上弹卡底 = 行底——卡悬在行的
+    // 背离侧，行与相邻行都不被遮挡
+    let anchor_x = chat.layout.slp_w - crate::ui::tokens::align::LIST_PX * 2. - 38.;
+    let dir = PopupEdges::vertical(card.y, vp.1, 0.);
     let mut el = div()
         .id("psp-hcard")
         .absolute()
@@ -227,13 +231,8 @@ fn hover_card(
             let _ = weak.update(cx, |c, cx| c.hover_card_rename_dismiss(cx));
         });
     }
-    // 横向：卡在左半（会话行恒在左 dock）→ 卡左缘 = 鼠标 x + 20（防误点
-    // 弹窗），反之右缘贴锚点
-    el = match (dir.left, dir.right) {
-        (Some(l), _) => el.left(l),
-        (_, Some(r)) => el.right(r),
-        _ => el,
-    };
+    // 横向固定：左缘 = 时间栏左线（不随鼠标漂移）
+    el = el.left(px(anchor_x));
     // 纵向精准对齐：行底 y+h 由 prepaint 钩子实测写入
     el = match (dir.top, dir.bottom) {
         (Some(_), _) => el.top(px(card.y)),
