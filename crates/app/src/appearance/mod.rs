@@ -72,6 +72,9 @@ pub fn sync_gpui_tokens(cx: &mut App) {
     c.caret = gpui::rgb(t.text).into();
     c.accent = gpui::rgb(t.accent).into();
     c.accent_foreground = gpui::rgb(t.accent_contrast).into();
+    // 链接色（TextView 可点路径/真链接读此 token；组件默认值近白，浅色
+    // 主题下不可见）。对齐旧渲染器 Style::Link 用色 = t.accent（pi-web a）
+    c.link = gpui::rgb(t.accent).into();
     c.muted = gpui::rgb(t.bg_hover).into();
     // 占位符用设计规范的 placeholder 专属色 text_faint（040：过深的
     // text_dim 与正文难区分；composer 自绘占位同色，两处一致）
