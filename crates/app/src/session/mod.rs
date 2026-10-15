@@ -133,6 +133,12 @@ pub(crate) fn main_column(
                             ))
                             .children(ext_widget_rows(chat, t, false));
                     }
+                    // ask_user_question 问卷卡浮层：挂进 chat-wrap（中栏）——
+                    // 与 composer 同一居中基准；挂整窗根会被左右侧栏挤偏
+                    //（用户实测不对齐）。窄窗口下卡片收缩不溢出。
+                    if chat.aux.ask.as_ref().is_some_and(|a| a.open) {
+                        wrap = wrap.child(crate::ask_card::render_ask_card(chat, weak));
+                    }
                     wrap
                 })
                 .child(nav_gutter(chat, rt_entity.clone(), weak.clone(), t, cx)),

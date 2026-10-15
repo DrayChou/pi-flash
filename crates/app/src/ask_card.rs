@@ -804,10 +804,11 @@ pub(crate) fn render_ask_card(chat: &mut Chat, weak: &gpui::WeakEntity<Chat>) ->
             b
         });
 
-    // ---- 装配 ----
+    // ---- 装配（浮层由 session/mod.rs main_column 挂进 chat-wrap 中栏；
+    //      窄窗口下卡片随中栏收缩，两侧留 24px 呼吸边距） ----
     let card_el = div()
-        // 与 inputpanel 同宽对齐（session/mod.rs 消息列 max_w 920）
         .w(px(920.))
+        .max_w(gpui::relative(1.))
         .bg(rgb(t.bg))
         .border_1()
         .border_color(rgb(t.border))
@@ -827,7 +828,16 @@ pub(crate) fn render_ask_card(chat: &mut Chat, weak: &gpui::WeakEntity<Chat>) ->
         .flex()
         .items_center()
         .justify_center()
-        .child(card_el)
+        .child(
+            div()
+                .w_full()
+                .h_full()
+                .flex()
+                .items_center()
+                .justify_center()
+                .px(px(24.))
+                .child(card_el),
+        )
         .into_any_element()
 }
 

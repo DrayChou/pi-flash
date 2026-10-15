@@ -687,10 +687,9 @@ impl Render for Chat {
             );
         }
         // blocking extension dialog (select/confirm/input/editor)
-        if self.aux.ask.as_ref().is_some_and(|a| a.open) {
-            // 问卷卡（ask_user_question 整卷 tab 卡）优先于 legacy 扩展弹窗
-            root = root.child(crate::ask_card::render_ask_card(self, &weak_for_dialog));
-        } else if let Some(req) = &self.aux.ext_dialog {
+        //（问卷卡浮层改挂 session/mod.rs main_column 的 chat-wrap 中栏，
+        //  与 composer 同基准居中；这里只剩 legacy 扩展弹窗）
+        if let Some(req) = &self.aux.ext_dialog {
             root = root.child(render_ext_dialog(self, req.clone(), &weak_for_dialog));
         }
         root
