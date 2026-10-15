@@ -94,6 +94,36 @@ function downloadBases() {
   return [DIRECT_BASE, ...extra, ...DEFAULT_MIRRORS];
 }
 
+// 版本预取（080，2026-10-15 实录）：npm 镜像同步滞后会让 @latest 装出旧壳，
+// 壳版本再传导成旧载荷。下载载荷前先问 GitHub releases API 要真实最新版
+// （api.github.com 轻量一般不被墙，与 app 侧更新器同名环境变量），任何失败
+// （网络/超时/格式）都回退壳自身版本——预取永不阻塞、永不改变失败语义。
+function releasesApiBase() {
+  return (
+    process.env.PI_FLASH_RELEASES_API ||
+    "https://api.github.com/repos/danielbill/pi-flash/releases"
+  );
+}
+
+async function resolveLatestVersion() {
+  try {
+    const res = await httpGet(`${releasesApiBase()}/latest`, 5, 5000);
+    const chunks = [];
+    let size = 0;
+    for await (const chunk of res) {
+      size += chunk.length;
+      if (size > 1024 * 1024) throw new Error("latest 响应超过 1MB，拒绝");
+      chunks.push(chunk);
+    }
+    const tag = String(JSON.parse(Buffer.concat(chunks).toString("utf8")).tag_name || "");
+    const v = tag.trim().replace(/^v/, "");
+    if (!/^\d+\.\d+\.\d+$/.test(v)) throw new Error(`latest 版本号异常：${tag}`);
+    return v;
+  } catch {
+    return pkgVersion;
+  }
+}
+
 function baseLabel(base) {
   return base === DIRECT_BASE ? "GitHub 直连" : `镜像 ${new URL(base).host}`;
 }
@@ -286,7 +316,7 @@ function clearProgress() {
   }
 }
 
-function httpGet(url, redirectsLeft = 5) {
+function httpGet(url, redirectsLeft = 5, timeoutMs = 30_000) {
   return new Promise((resolve, reject) => {
     const lib = url.startsWith("http:") ? http : https;
     const req = lib.get(url, { headers: { "user-agent": "pi-flash-installer" } }, (res) => {
@@ -294,7 +324,7 @@ function httpGet(url, redirectsLeft = 5) {
       if (status >= 300 && status < 400 && res.headers.location) {
         res.resume();
         if (redirectsLeft <= 0) return reject(new Error(`重定向次数过多：${url}`));
-        return resolve(httpGet(new URL(res.headers.location, url).toString(), redirectsLeft - 1));
+        return resolve(httpGet(new URL(res.headers.location, url).toString(), redirectsLeft - 1, timeoutMs));
       }
       if (status !== 200) {
         res.resume();
@@ -304,7 +334,7 @@ function httpGet(url, redirectsLeft = 5) {
       }
       resolve(res);
     });
-    req.setTimeout(30_000, () => req.destroy(new Error(`请求超时（30s）：${url}`)));
+    req.setTimeout(timeoutMs, () => req.destroy(new Error(`请求超时：${url}`)));
     req.on("error", reject);
   });
 }
@@ -356,13 +386,13 @@ async function downloadToFile(url, dest, { onProgress } = {}) {
 // 多源 failover：按序试 downloadBases()，速度过慢/网络错误都换下一个，
 // 全灭才报错（附 release 页与 PI_FLASH_MIRROR 用法）。返回命中的 base，
 // 供校验和钉定官方源用（080 §3.2）。
-async function downloadAssetFile(asset, dest) {
+async function downloadAssetFile(asset, dest, version = pkgVersion) {
   const errors = [];
   for (const base of downloadBases()) {
     const label = baseLabel(base);
     process.stderr.write(`   源：${label}\n`);
     try {
-      await downloadToFile(`${base}/v${pkgVersion}/${asset}`, dest, {
+      await downloadToFile(`${base}/v${version}/${asset}`, dest, {
         onProgress: drawProgress,
       });
       clearProgress();
@@ -421,13 +451,13 @@ function parseHashFor(text, filename) {
 // 校验和取用顺序：直连 sidecar → 直连 SHA256SUMS → 命中源 sidecar → 命中源
 // SHA256SUMS。直连优先钉定官方哈希（zip 走镜像时防串包）；单请求不做重试，
 // 源足够多，网络不通（非 404）直接换下一源。
-async function resolveExpectedHash(asset, chosenBase) {
+async function resolveExpectedHash(asset, chosenBase, version = pkgVersion) {
   const bases =
     chosenBase === DIRECT_BASE ? [DIRECT_BASE] : [DIRECT_BASE, chosenBase];
   for (const base of bases) {
     for (const url of [
-      `${base}/v${pkgVersion}/${asset}.sha256`,
-      `${base}/v${pkgVersion}/SHA256SUMS`,
+      `${base}/v${version}/${asset}.sha256`,
+      `${base}/v${version}/SHA256SUMS`,
     ]) {
       let text;
       try {
@@ -550,12 +580,15 @@ function replacePayload(contentRoot) {
   }
 }
 
-// 主流程：版本戳不合 → 清残留 → 测速选源下载 → 校验 → 解压 → 落位 → 最后写版本戳
-async function ensure({ force = false } = {}) {
+// 主流程：版本戳不合 → 清残留 → 预取真实最新版（壳可能来自滞后的 npm 镜像，
+// 载荷版本以 GitHub releases 为准）→ 测速选源下载 → 校验 → 解压 → 落位 →
+// 最后写版本戳
+async function ensure({ force = false, version = null } = {}) {
   const tag = platformTag(); // 不支持的平台在这里就明确报错
   if (!force && payloadOk(tag)) return;
 
-  const urls = assetUrls(tag);
+  const ver = version || (await resolveLatestVersion());
+  const urls = assetUrls(tag, ver);
   rmLeftovers();
   const tmp = path.join(pkgDir, `${TMP_PREFIX}${process.pid}`);
   fs.rmSync(tmp, { recursive: true, force: true });
@@ -565,12 +598,12 @@ async function ensure({ force = false } = {}) {
     const zipPath = path.join(tmp, urls.asset);
     const t0 = Date.now();
     console.error(`   下载载荷 ${urls.asset}`);
-    const chosen = await downloadAssetFile(urls.asset, zipPath);
+    const chosen = await downloadAssetFile(urls.asset, zipPath, ver);
     console.error(
       `   下载完成，用时 ${Math.max(1, Math.round((Date.now() - t0) / 1000))}s（源：${baseLabel(chosen)}）`,
     );
 
-    const expected = await resolveExpectedHash(urls.asset, chosen);
+    const expected = await resolveExpectedHash(urls.asset, chosen, ver);
     const actual = await sha256File(zipPath);
     if (actual !== expected) {
       throw new Error(
@@ -584,8 +617,8 @@ async function ensure({ force = false } = {}) {
     extractZip(zipPath, extractDir);
 
     replacePayload(locateContentRoot(extractDir, tag));
-    fs.writeFileSync(STAMP_FILE, `${pkgVersion}\n`); // 版本戳最后写：中途崩溃 = 未完成，下次重来
-    console.error(`   载荷就绪：${exePath(tag)}（v${pkgVersion}）`);
+    fs.writeFileSync(STAMP_FILE, `${ver}\n`); // 版本戳最后写：中途崩溃 = 未完成，下次重来
+    console.error(`   载荷就绪：${exePath(tag)}（v${ver}）`);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
@@ -618,6 +651,7 @@ module.exports = {
   resolveExpectedHash,
   downloadToFile,
   downloadAssetFile,
+  resolveLatestVersion,
   extractZip,
   ensure,
   busyMessage,

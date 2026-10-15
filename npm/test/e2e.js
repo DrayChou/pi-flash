@@ -13,6 +13,7 @@
 //   ⑨ 同版本快路径不重复下载
 //   ⑩ 081 应用内更新落位：staging+标记 → 启动时 swap
 //   ⑪ 载荷比薄壳新（应用内更新先行）→ 不降级、不重复下载
+//   ⑫ 版本预取：壳滞后于 GitHub latest → 载荷直接装 latest（080）
 //
 // 夹具：把 node 可执行文件冒充 pi-flash.exe（spawn 语义与真 exe 等价），
 // 载荷 zip 复刻 release.sh 的 Compress-Archive 包装目录布局（根为 pi-flash/）。
@@ -64,13 +65,18 @@ async function npm(args, env = {}) {
   // npm 是 .cmd，Node ≥18.20 对 .cmd 必须走 shell
   return runAsync(`npm ${args.join(" ")}`, [], {
     shell: true,
-    env: { ...process.env, ...env },
+    env: { ...process.env, ...baseEnv(), ...env },
   });
 }
 function nodeRun(script, args, env = {}) {
   return runAsync(process.execPath, [script, ...args], {
-    env: { ...process.env, ...env },
+    env: { ...process.env, ...baseEnv(), ...env },
   });
+}
+// 版本预取 API 默认指向 dead port：连不上即回退壳自身版本（lib.js 的兜底
+// 分支），现有用例的版本预期全部不变；⑫ 用真 API 夹具显式覆盖
+function baseEnv() {
+  return { PI_FLASH_RELEASES_API: "http://127.0.0.1:1/releases" };
 }
 function sha256File(file) {
   return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
@@ -163,6 +169,16 @@ async function main() {
   fs.appendFileSync(badZip, "CORRUPT");
   const badSrv = await startServer(badSite, PORT + 1);
   const badMirror = `http://127.0.0.1:${PORT + 1}`;
+
+  // 版本预取 API 夹具（⑫）：固定返回 TEST_NEW——壳 TEST_OLD 也能装到 TEST_NEW 载荷
+  const apiSite = path.join(WORK, "api");
+  fs.mkdirSync(path.join(apiSite, "releases"), { recursive: true });
+  fs.writeFileSync(
+    path.join(apiSite, "releases", "latest"),
+    JSON.stringify({ tag_name: `v${TEST_NEW}` }),
+  );
+  const apiSrv = await startServer(apiSite, PORT + 2);
+  const apiBase = `http://127.0.0.1:${PORT + 2}/releases`;
 
   // TEST_OLD 薄壳 tgz（改写副本版本字段，不碰仓库里的 npm/package.json）
   const pkgCopy = path.join(WORK, "pkg");
@@ -290,8 +306,28 @@ async function main() {
     fs.readFileSync(path.join(payloadDirOf(prefix5), "marker.txt"), "utf8").includes(`payload-v${TEST_NEW}`),
   );
 
+  console.log("\n⑫ 版本预取：壳滞后于 GitHub latest → 载荷直接装 latest");
+  const prefix6 = path.join(WORK, "prefix6");
+  r = await npm(["install", "-g", "--prefix", prefix6, tgz], {
+    PI_FLASH_MIRROR: mirror,
+    PI_FLASH_RELEASES_API: apiBase,
+  });
+  check("安装成功", r.status === 0, (r.stderr || "").slice(-300));
+  check(
+    `壳 ${TEST_OLD} 拿到载荷 ${TEST_NEW}`,
+    stampOf(prefix6) === TEST_NEW,
+    `实际 ${stampOf(prefix6)}`,
+  );
+  check(
+    `载荷内容为 ${TEST_NEW}`,
+    fs
+      .readFileSync(path.join(payloadDirOf(prefix6), "marker.txt"), "utf8")
+      .includes(`payload-v${TEST_NEW}`),
+  );
+
   siteSrv.close();
   badSrv.close();
+  apiSrv.close();
   if (!KEEP) fs.rmSync(WORK, { recursive: true, force: true });
 
   console.log(
