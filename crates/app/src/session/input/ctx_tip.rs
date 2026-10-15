@@ -421,7 +421,7 @@ fn ctx_tokens_cost_parts(
                     .text_color(rgb(t.accent))
                     .child(SharedString::from(
                         s.cache_hit_rate()
-                            .map(|r| format!("{r:.1}%"))
+                            .map(|r| format!("{:.1}%", r * 100.))
                             .unwrap_or_else(|| "\u{2014}".into()),
                     )),
             ),
