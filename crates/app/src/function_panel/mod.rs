@@ -492,12 +492,12 @@ fn psp_ctrl_bar(
         )
         .child(
             // 最大化（单钮语义）：本面板填满，文件树收起到操作栏；拖分隔线
-            // 即退出最大态
+            // 即退出最大态。Alt+1 = 同一键（082 全局绑定，chip 反查 keymap）
             btn("psp-panel-max")
                 .w(px(26.))
                 .px(px(0.))
                 .justify_center()
-                .with_tip("psp.maximize")
+                .with_tip_action("psp.maximize_session_list", &crate::MaximizeSessionList)
                 .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                     let _ = w_max.update(cx, |c, cx| {
                         c.layout.files_min = true;

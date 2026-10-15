@@ -531,6 +531,18 @@ impl Render for Chat {
             .on_action(cx.listener(|this, _: &OpenSessionSearch, _window, cx| {
                 let _ = this.open_session_search(cx);
             }))
+            // 082 全局最大化两键（Alt+1 / Alt+2，绑定见 main.rs bind_keys）：
+            // 与 psp/文件树头部最大化钮同一语义（点谁谁填满、对面收起到控制栏）
+            .on_action(cx.listener(|this, _: &MaximizeSessionList, _window, cx| {
+                this.layout.files_min = true;
+                this.layout.sess_min = false;
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &MaximizeFileTree, _window, cx| {
+                this.layout.sess_min = true;
+                this.layout.files_min = false;
+                cx.notify();
+            }))
             // 消息划选 Ctrl+C 分流（绑定在 main.rs："Input" 深度后注册抢占
             // 组件 ctrl-c→input::Copy——gpui 键盘派发绑定先于 on_key_down
             // 监听器，纯监听器够不到 composer 焦点场景）：有消息选区复制
@@ -561,6 +573,20 @@ impl Render for Chat {
                     cx.stop_propagation();
                 }
             })
+            // 082 文件树 F2 改名：条目选中（点击留存）时 F2 = 右键菜单
+            // 「改名」同一路径。挂根节点兜底（面板不可聚焦，选中态靠点击
+            // 留存）；监听器只在无绑定命中时可达——终端焦点下 F2 由
+            // terminal_key 先吞（发 PTY），不会到这里；模态/弹层/行内编辑
+            // 守卫在 tree_f2_rename 内
+            .on_key_down(cx.listener(|this, ev: &gpui::KeyDownEvent, _window, cx| {
+                let k = &ev.keystroke;
+                if k.key == "f2"
+                    && !k.modifiers.modified()
+                    && this.tree_f2_rename(cx)
+                {
+                    cx.stop_propagation();
+                }
+            }))
             .child(body);
 
         if let Some(panel) = self.dlg.settings.clone() {

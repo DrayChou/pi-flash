@@ -315,6 +315,10 @@ pub(crate) struct WsUi {
     /// 021 拖拽悬停待自动展开的折叠目录（Zed hover_expand 同款）：
     /// 同目标去重定时器，离开即清（file_tree::tree_drag_wiring 维护）。
     pub(crate) tree_drag_expand: Option<PathBuf>,
+    /// 082 文件树选中条目（点击/右键留存，行高亮 + F2 改名的对象；纯内存
+    /// 态不持久化）。行存在性在使用点对 tree_rows 复核（外部删除/切项目
+    /// 后残留 → F2 静默忽略）。
+    pub(crate) tree_selected: Option<PathBuf>,
     // fs watch（services::watcher）：tx 永驻（每次挂 watch clone 一份），
     // rx 被 startup 的泵取走；watcher 句柄 drop 即解除监听。
     pub(crate) fs_watch_tx: std::sync::mpsc::Sender<()>,
@@ -438,6 +442,7 @@ impl Chat {
                 expanded_dirs: HashSet::new(),
                 tree_rows: std::sync::Arc::new(Vec::new()),
                 tree_drag_expand: None,
+                tree_selected: None,
                 fs_watch: None,
                 file_watches: std::collections::HashMap::new(),
                 changes_only: ui.tree_changes_only,

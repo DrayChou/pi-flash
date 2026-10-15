@@ -91,6 +91,8 @@ pub(crate) fn files_view(
     let files_min = chat.layout.files_min;
     let rows = chat.ws.tree_rows.clone();
     let changes_only = chat.ws.changes_only;
+    // 082 选中条目（点击/右键留存，行高亮 + F2 改名对象）
+    let selected = chat.ws.tree_selected.clone();
     let weak = weak.clone();
     let t = theme::theme();
     // 021 操作栏：项目目录行固定在树顶，名字居左、操作钮右对齐（切换显示
@@ -201,7 +203,12 @@ pub(crate) fn files_view(
                     tr("file_tree.no_changes"),
                     None,
                     move |ix, _window, _cx| match rows.get(ix) {
-                        Some(row) => changes_row(row.clone(), editing.clone(), weak_c.clone()),
+                        Some(row) => changes_row(
+                            row.clone(),
+                            editing.clone(),
+                            selected.as_ref().is_some_and(|p| same_path(p, &row.path)),
+                            weak_c.clone(),
+                        ),
                         None => div().into_any_element(),
                     },
                 )),
@@ -315,6 +322,7 @@ pub(crate) fn files_view(
                             prev_depth,
                             next_depth,
                             edit.clone(),
+                            selected.as_ref().is_some_and(|p| same_path(p, &row.path)),
                             weak.clone(),
                         )
                     },
@@ -330,10 +338,11 @@ const CHANGES_ROW_H: f32 = 28.;
 /// 「只看变更」的扁平行：文件名前置左对齐（恒可见，shrink 0）+
 /// 目录段后置 dim（过长收缩截断），点击开文件 tab，右键沿用文件菜单。
 /// 行处于行内改名时（Zed 同款）名字段整体换成紧凑输入框，点击开文件
-/// 让位给输入框。
+/// 让位给输入框。`selected` = 082 选中条目（常驻薄纱底，F2 改名对象）。
 fn changes_row(
     row: crate::services::file_tree::TreeRow,
     editing: Option<crate::function_panel::TreeEdit>,
+    selected: bool,
     weak: gpui::WeakEntity<Chat>,
 ) -> gpui::AnyElement {
     let t = theme::theme();
@@ -343,6 +352,10 @@ fn changes_row(
     let editing = editing.filter(|e| {
         matches!(&e.kind, crate::function_panel::TreeEditKind::Rename { path } if same_path(path, &row.path))
     });
+    // 082 选中态：10% 前景薄纱常驻（与 psp 会话行选中同色系）；编辑态
+    // 行让位给校验边框，不再叠选中底
+    let selected = selected && editing.is_none();
+    let sel_bg = gpui::rgba((t.text << 8) | 0x1a);
     // 021 三改：徽标与文件图标都去掉（信息冗余——变更态整表皆然，
     // 数量/增删在头行 numstat），行 = 纯路径
     let mut el = div()
@@ -358,7 +371,8 @@ fn changes_row(
         // 行框恒挂透明占位（同 tree_row：编辑态只换色不动布局，防 1px 抖动）
         .border_1()
         .border_color(gpui::transparent_black())
-        .hover(|s| s.bg(rgb(t.bg_hover)))
+        .when(selected, |d| d.bg(sel_bg).hover(move |s| s.bg(sel_bg)))
+        .when(!selected, |d| d.hover(|s| s.bg(rgb(t.bg_hover))))
         .text_size(crate::appearance::ui_size(11.5));
     if let Some(e) = editing {
         // 行内改名态：输入框吃满名字区（目录段一并隐去），边框与校验
@@ -394,9 +408,11 @@ fn changes_row(
         el = el.child(div().flex_1());
         let fp = row.path.clone();
         let weak_click = weak.clone();
-        // on_click 与树行同款（mouse-up 触发，面板内点击语义统一）
+        // on_click 与树行同款（mouse-up 触发，面板内点击语义统一）；点击
+        // 即选中（082，F2 改名对象）
         el = el.on_click(move |_, _, cx| {
             let _ = weak_click.update(cx, |c, cx| {
+                c.ws.tree_selected = Some(fp.clone());
                 c.open_file_tab(fp.clone(), cx);
             });
         });
@@ -483,6 +499,7 @@ fn action_bar(
                     tr("file_tree.show_changes_only"),
                     t,
                     changes_only,
+                    None,
                     move |_, _, cx| {
                         let _ = w_toggle.update(cx, |c, cx| c.toggle_changes_only(cx));
                     },
@@ -493,6 +510,7 @@ fn action_bar(
                     tr("file_tree.search"),
                     t,
                     false,
+                    None,
                     move |_, _, cx| {
                         let _ = w_search.update(cx, |c, cx| c.open_file_search(cx));
                     },
@@ -503,6 +521,7 @@ fn action_bar(
                     tr("file_tree.reveal_in_explorer"),
                     t,
                     false,
+                    None,
                     move |_, _, _cx| {
                         crate::services::shell_open::open_in_explorer(&cwd_explorer);
                     },
@@ -513,6 +532,7 @@ fn action_bar(
                     tr("file_tree.open_in_terminal"),
                     t,
                     false,
+                    None,
                     move |_, window, cx| {
                         let _ = w_term.update(cx, |c, cx| {
                             c.open_terminal_in(cwd_term.clone(), window, cx)
@@ -522,9 +542,10 @@ fn action_bar(
                 .child(bar_btn(
                     "ft-panel-max",
                     "maximize",
-                    tr("psp.maximize"),
+                    tr("file_tree.maximize"),
                     t,
                     false,
+                    Some(&crate::MaximizeFileTree),
                     move |_, _, cx| {
                         let _ = w_max.update(cx, |c, cx| {
                             // 020-1 单最大化钮：本面板填满，会话列表收起到控制栏
@@ -540,16 +561,18 @@ fn action_bar(
 
 /// 操作栏图标钮：26px 命中槽 + 16px 图标（icon_hover 悬停变亮；激活态
 /// 用 accent 实色不参与 hover 变亮——开关点亮语义）。`tip` = hover
-/// tooltip（ui::tooltip 统一入口 §5.10，显示期过 tr 随语言切换）。
+/// tooltip（ui::tooltip 统一入口 §5.10，显示期过 tr 随语言切换）；
+/// `action` 非空时 tooltip 附键位 chip（键位反查 keymap，082 最大化钮）。
 fn bar_btn(
     id: &'static str,
     icon_name: &'static str,
     tip: &'static str,
     t: &'static crate::appearance::theme::Theme,
     active: bool,
+    action: Option<&'static dyn gpui::Action>,
     on_click: impl Fn(&gpui::MouseDownEvent, &mut gpui::Window, &mut gpui::App) + 'static,
 ) -> gpui::AnyElement {
-    div()
+    let btn = div()
         .id(id)
         .w(px(26.))
         .h(px(26.))
@@ -558,9 +581,12 @@ fn bar_btn(
         .justify_center()
         .rounded(px(6.))
         .cursor_pointer()
-        .hover(|s| s.bg(rgb(t.bg_hover)))
-        .with_tip(tip)
-        .on_mouse_down(gpui::MouseButton::Left, on_click)
+        .hover(|s| s.bg(rgb(t.bg_hover)));
+    let btn = match action {
+        Some(a) => btn.with_tip_action(tip, a),
+        None => btn.with_tip(tip),
+    };
+    btn.on_mouse_down(gpui::MouseButton::Left, on_click)
         .child(if active {
             crate::ui::icon(icon_name, 16., t.accent).into_any_element()
         } else {
@@ -570,11 +596,13 @@ fn bar_btn(
 }
 
 /// One flattened row: indent guides + chevron + type icon + name + git badge.
+/// `selected` = 082 选中条目（常驻薄纱底，F2 改名对象；编辑态行不叠）。
 fn tree_row(
     row: TreeRow,
     prev_depth: Option<usize>,
     next_depth: Option<usize>,
     editing: Option<crate::function_panel::TreeEdit>,
+    selected: bool,
     weak: gpui::WeakEntity<Chat>,
 ) -> gpui::AnyElement {
     let t = theme::theme();
@@ -586,6 +614,10 @@ fn tree_row(
     let editing = editing.filter(|e| {
         matches!(&e.kind, crate::function_panel::TreeEditKind::Rename { path } if same_path(path, &row.path))
     });
+    // 082 选中态：10% 前景薄纱常驻（与 psp 会话行选中同色系）；编辑态
+    // 行让位给校验边框，不再叠选中底
+    let selected = selected && editing.is_none();
+    let sel_bg = gpui::rgba((t.text << 8) | 0x1a);
     let mut el = div()
         .id(SharedString::from(format!("tree-{}", row.path.display())))
         .relative()
@@ -607,7 +639,10 @@ fn tree_row(
         // 让整行内容抖 1px，改名框尤其明显；这里只换色不动布局
         .border_1()
         .border_color(gpui::transparent_black())
-        .hover(|s| s.bg(rgb(t.bg_hover)).border_color(rgb(t.bg_hover)));
+        .when(selected, |d| d.bg(sel_bg).hover(move |s| s.bg(sel_bg)))
+        .when(!selected, |d| {
+            d.hover(|s| s.bg(rgb(t.bg_hover)).border_color(rgb(t.bg_hover)))
+        });
 
     // 缩进引导线：Zed indent_guides 装饰层的行内画法（见 guide_lines）。
     for g in guide_lines(row.depth, prev_depth, next_depth, t.border) {
@@ -659,9 +694,11 @@ fn tree_row(
         let dir_path = row.path.clone();
         // 折叠/展开挂 on_click（mouse-up）而非 on_mouse_down：gpui 的 click
         // 与 drag 天然互斥（位移超阈值进 drag、未超阈值 mouse-up 才算
-        // click）——按下即触发的旧写法会在拖拽起手时先把目录翻个面
+        // click）——按下即触发的旧写法会在拖拽起手时先把目录翻个面；点击
+        // 即选中（082，F2 改名对象）
         el = el.on_click(move |_, _, cx| {
             let _ = weak.update(cx, |c, cx| {
+                c.ws.tree_selected = Some(dir_path.clone());
                 if !c.ws.expanded_dirs.remove(&dir_path) {
                     c.ws.expanded_dirs.insert(dir_path.clone());
                 }
@@ -687,9 +724,10 @@ fn tree_row(
         let fp = row.path.clone();
         // 023：文件点击一律进 fileView（编辑器区）。旧行为「带 git 变更
         // 徽标的文件点击弹 GitDiff」废弃——diff 入口收敛在 git 面板。
-        // on_click 同目录行：让位给拖拽起手（见上）
+        // on_click 同目录行：让位给拖拽起手（见上）；点击即选中（082）
         el = el.on_click(move |_, _, cx| {
             let _ = weak.update(cx, |c, cx| {
+                c.ws.tree_selected = Some(fp.clone());
                 c.open_file_tab(fp.clone(), cx);
             });
         });
@@ -1129,7 +1167,8 @@ fn sticky_dir_row(
 }
 
 /// 行右键：挂文件树右键菜单（目录/文件两套，锚点 = 事件坐标）。
-/// 挂为行尾子元素占位（无视觉），事件在行容器上接。
+/// 挂为行尾子元素占位（无视觉），事件在行容器上接。右键即选中该行
+/// （Zed project_panel 同语义，082：右键后 F2 可直接改名）。
 fn tree_right_click(weak: &gpui::WeakEntity<Chat>, row: &TreeRow) -> gpui::AnyElement {
     let weak = weak.clone();
     let path = row.path.clone();
@@ -1143,6 +1182,7 @@ fn tree_right_click(weak: &gpui::WeakEntity<Chat>, row: &TreeRow) -> gpui::AnyEl
             cx.stop_propagation();
             let path = path.clone();
             let _ = weak.update(cx, |c, cx| {
+                c.ws.tree_selected = Some(path.clone());
                 c.dlg.tree_menu = Some(if is_dir {
                     crate::function_panel::TreeMenu::Dir {
                         path,

@@ -227,6 +227,55 @@ impl Chat {
         cx.notify();
     }
 
+    /// 082 文件树 F2 改名：条目选中（点击/右键留存）时 F2 = 右键菜单
+    /// 「改名」同一路径。`reveal` = 祖先展开 + 滚动到行（选中后滚出视口
+    /// 也能改）。文件树不可见（面板隐藏/最小化/git 视图）或有模态弹层时
+    /// 不接管。返回是否接管了这次按键（接管方 stop_propagation）。
+    pub(crate) fn tree_f2_rename(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.tree_keys_blocked()
+            || self.layout.panes_hidden
+            || self.layout.files_min
+            || self.layout.dock_panel == DockPanel::Git
+        {
+            return false;
+        }
+        let Some(sel) = self.ws.tree_selected.clone() else {
+            return false;
+        };
+        // 行已不在树里（外部删除/切项目残留）→ 静默忽略
+        let Some(row) = self.ws.tree_rows.iter().find(|r| same_path(&r.path, &sel)) else {
+            return false;
+        };
+        self.open_file_rename(row.path.clone(), row.is_dir, true, cx);
+        true
+    }
+
+    /// 模态与弹层集中守卫：任一打开时文件树键语义（F2 改名）不接管——
+    /// 此时焦点级联都不归树，接管会把改名藏到弹层背后。
+    fn tree_keys_blocked(&self) -> bool {
+        self.dlg.dialog.is_some()
+            || self.dlg.settings.is_some()
+            || self.dlg.pill_menu.is_some()
+            || self.dlg.plugin_picker.is_some()
+            || self.dlg.mcp_picker.is_some()
+            || self.dlg.model_picker.is_some()
+            || self.dlg.hover_card.is_some()
+            || self.dlg.renaming.is_some()
+            || self.dlg.confirm_delete.is_some()
+            || self.dlg.confirm_prj_del.is_some()
+            || self.dlg.tree_menu.is_some()
+            || self.dlg.tree_edit.is_some()
+            || self.dlg.editor_menu.is_some()
+            || self.dlg.term_menu.is_some()
+            || self.dlg.input_menu.is_some()
+            || self.dlg.msg_menu.is_some()
+            || self.dlg.tab_menu.is_some()
+            || self.dlg.tree_confirm_del.is_some()
+            || self.dlg.tree_del_error.is_some()
+            || self.aux.ask.as_ref().is_some_and(|a| a.open)
+            || self.aux.ext_dialog.is_some()
+    }
+
     /// 行内编辑提交（Zed `confirm_edit` 移植）。`via` 区分两条收场路：
     /// - Enter：空名/重名/非法名 → 留在编辑态（校验消息在行上显示）；
     /// - 点别处/失焦：一律收场——空名 = 丢弃，重名 = 静默丢弃（Zed
@@ -510,6 +559,10 @@ impl Chat {
                 .iter()
                 .map(remap)
                 .collect();
+        }
+        // 082 选中条目跟随（改名/移动后选中态不悬空，F2 仍指向新路径）
+        if let Some(sel) = self.ws.tree_selected.as_mut() {
+            *sel = remap(sel);
         }
     }
 

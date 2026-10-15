@@ -53,7 +53,9 @@ pub(crate) use session::menu::slash_menu_view;
 // psp 全局三动作（OpenProjectPicker/NewSession/OpenSessionSearch）：无上下
 // 文全局绑定 Ctrl+P / Ctrl+N / Ctrl+K；psp 头部三钮的 tooltip 键位 chip 也
 // 查这三个动作（键位单一事实源 = keymap，绑定改了 chip 自动跟随）。
-actions!(app, [ComposerUp, ComposerDown, ComposerTab, ComposerPaste, FileSave, OpenProjectPicker, NewSession, OpenSessionSearch, CopyMessageSelection]);
+// 082 全局两动作（MaximizeSessionList/MaximizeFileTree）：子面板最大化，
+// Alt+1 / Alt+2，与 psp/文件树头部最大化钮同一语义。
+actions!(app, [ComposerUp, ComposerDown, ComposerTab, ComposerPaste, FileSave, OpenProjectPicker, NewSession, OpenSessionSearch, CopyMessageSelection, MaximizeSessionList, MaximizeFileTree]);
 use i18n::tr;
 use models_config::EnabledState;
 use crate::appearance::theme::theme as T;
@@ -170,6 +172,10 @@ fn main() {
                 KeyBinding::new("ctrl-p", OpenProjectPicker, None),
                 KeyBinding::new("ctrl-n", NewSession, None),
                 KeyBinding::new("ctrl-k", OpenSessionSearch, None),
+                // 082 子面板最大化两键（无上下文 = 任意焦点可用，与上面三键
+                // 同款；tooltip 键位 chip 反查这里）
+                KeyBinding::new("alt-1", MaximizeSessionList, None),
+                KeyBinding::new("alt-2", MaximizeFileTree, None),
             ]);
             appearance::sync_gpui_tokens(cx);
             // startup restore (§4)：每次启动默认最大化（位置不持久化——
