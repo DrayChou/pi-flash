@@ -29,13 +29,15 @@
 //! 内边距差也是「垫片必须扣掉内边距」的由来：早期漏减它，锚点会停在
 //! `viewport.top − padding.bottom`，消息整条滚出屏顶）。
 //!
-//! **滚轮/拖动即退役锚点（pi-web 同款，勿当 bug 修）**：垫片是**真实列表条目**
-//! ——那片「回复下方的空白」就是它，不是 padding。退役即把它从内容里摘掉，
-//! 于是内容高度 < 视口高，gpui 贴底胶水（Bottom 对齐铁律）把末条底边拉回
-//! 屏底，整块内容随之下落；且落下后再没有滚动余量（内容比视口短 ⇒ 最大滚动
-//! 位就是尾部位），滑不回去——想重回钉顶只有再发一条消息（pi-web 的
-//! `promptAnchorActive` 同样只由发送置位）。长回复（内容高于视口）不受影响：
-//! 那时胶水本来就没接管，滚到哪停在哪儿。
+//! **滚轮 = free_scroll 软状态（有意偏离 pi-web）**：垫片是**真实列表条目**
+//! ——那片「回复下方的空白」就是它，不是 padding。早期滚轮即退役锚点、摘掉
+//! 垫片（pi-web `promptAnchorActive` 同款，滚轮即清锚），但摘垫片后内容高
+//! < 视口，Bottom 贴底胶水把整块内容拽回屏底、滚动余量归零（用户报障：等待
+//! 回复时稍一滚就跳底，且之后滚轮彻底失灵）。现为软状态：滚轮只置
+//! `free_scroll`，暂停 sync 第 6 步重钉与跟尾翻转拽底，**锚点与垫片保留**——
+//! 微滚就是平滑滑动，滚回贴底（几何上≡钉顶位）自动恢复钉顶，读历史不被流式
+//! 拽走；长回复照常由 settle_spacer 归零垫片、交还胶水跟尾。真正的退役
+//! （`release`）只留给发送失败 / fork / 整表重读等重置场景。
 //!
 //! 同步入口只有 [`ChatList::sync`]：增删走 splice（保逻辑滚动位），整体重排
 //! 才 reset。
@@ -91,8 +93,9 @@ struct Core {
     listed: Cell<Listed>,
     at_bottom: Cell<bool>,
     spacer_px: Cell<f32>,
-    /// 滚动回调请求过退役（垫片待卸）——回调里严禁 splice（见 handler）
-    pending_release: Cell<bool>,
+    /// 用户自由滚动中（滚轮离位）：暂停钉顶重钉与跟尾翻转拽底，锚点与垫片
+    /// 保留；滚回贴底（几何上≡钉顶位）自动复位
+    free_scroll: Cell<bool>,
     /// 垫片已按实测内容结算（之前是视口高过估，靠硬钉顶兜底）
     settled: Cell<bool>,
     /// 内容长过内容区：spacer 归零、交还贴底胶水跟随尾部
@@ -121,7 +124,7 @@ impl ChatList {
             listed: Cell::new(Listed::default()),
             at_bottom: Cell::new(true),
             spacer_px: Cell::new(0.),
-            pending_release: Cell::new(false),
+            free_scroll: Cell::new(false),
             settled: Cell::new(false),
             following: Cell::new(false),
             settle_attempts: Cell::new(0),
@@ -129,16 +132,15 @@ impl ChatList {
         });
         {
             let core = core.clone();
-            // 贴底判定（pi-web isNearBottom）：is_scrolled = 用户主动滚动，
-            // 锚点就地退役；翻转时 refresh 重绘悬浮按钮（滚动事件不触发
-            // 实体 notify）。
+            // 贴底判定（pi-web isNearBottom）：is_scrolled = 离开贴底/钉顶几何
+            // → free_scroll 软状态（暂停重钉，锚点与垫片保留）；滚回贴底自动
+            // 复位。翻转时 refresh 重绘悬浮按钮（滚动事件不触发实体 notify）。
             // 铁律：此处严禁触碰 ListState——gpui scroll() 持有 RefCell
             // 可变借用期间回调本闭包，再 splice/borrow 即 BorrowMutError
-            // 崩溃。退役只置标记，卸垫片由下一帧渲染补 sync（渲染层经
-            // take_frame_sync 驱动）。
+            // 崩溃。
             state.set_scroll_handler(move |ev, window, _| {
+                core.free_scroll.set(ev.is_scrolled);
                 if ev.is_scrolled {
-                    core.request_detach();
                     // 物理滚动交还位置推导（v63-7）：导航钉住的选中段失效
                     core.nav_pinned.set(None);
                 }
@@ -183,27 +185,25 @@ impl ChatList {
         self.state.logical_scroll_top().item_ix
     }
 
-    /// 渲染层每帧消费一次：要不要补一次 sync？三种触发：
+    /// 渲染层每帧消费一次：要不要补一次 sync？两种触发：
     ///
-    /// 1. 滚动回调请求过退役（垫片待卸）——回调里不可 splice
-    /// 2. 锚点未结算（还没拿到实测锚下高度，钉顶/跟尾没定），带 12 次上限防病态循环
-    /// 3. **钉顶/跟尾判定已过期**：内容跨过内容区高（流式增长长过一屏、轮末把
+    /// 1. 锚点未结算（还没拿到实测锚下高度，钉顶/跟尾没定），带 12 次上限防病态循环
+    /// 2. **钉顶/跟尾判定已过期**：内容跨过内容区高（流式增长长过一屏、轮末把
     ///    思考/工具折进「工作详情」又缩回来）——这类形状变化不经过 pi 事件，
     ///    没有补账就会一直停在旧判定上（该跟尾时不跟、该钉顶时压在屏底）。只在
     ///    判定**翻转**时请求，静止时完全不空转。
     ///
     /// 滚动回调与列表布局期都不可触碰 ListState（RefCell 冲突），这里是补账入口。
     pub(crate) fn take_frame_sync(&self) -> bool {
-        let release = self.core.pending_release.replace(false);
         let Some(ix) = self.core.anchor.get() else {
-            return release;
+            return false;
         };
         if !self.core.settled.get() {
             let n = self.core.settle_attempts.get();
             self.core.settle_attempts.set(n.saturating_add(1));
-            return release || n < 12;
+            return n < 12;
         }
-        release || self.follow_decision_stale(ix)
+        self.follow_decision_stale(ix)
     }
 
     /// 搜索命中 / 导航点击定位：reveal 条目
@@ -221,11 +221,15 @@ impl ChatList {
     /// 足填满视口，layout_items 向上补条目并改写 logical_scroll_top（贴底
     /// 钳制），视口顶不在目标轮——选中段若仍按位置推导会错选上一段
     ///（v63-7），钉住后由点击轮次直接决定，物理滚轮清除。
+    ///
+    /// 同时置 free_scroll：导航定位是程序化跳转，若不清，流式期间 sync 第
+    /// 6 步会把视口硬拽回钉顶锚点，定位立刻被覆盖。
     pub(crate) fn nav_goto(&self, turn: usize, ix: usize) {
         self.state
             .scroll_to(ListOffset { item_ix: ix, offset_in_item: px(0.) });
         self.core.nav_pinned.set(Some(turn));
         self.core.at_bottom.set(false);
+        self.core.free_scroll.set(true);
     }
 
     /// 导航点击钉住的轮次（无则按滚动位置推导选中段）
@@ -250,6 +254,7 @@ impl ChatList {
         self.state
             .scroll_to(ListOffset { item_ix: target, offset_in_item: px(0.) });
         self.core.at_bottom.set(true);
+        self.core.free_scroll.set(false);
     }
 
     // ---- 翻页与同步 ----
@@ -269,6 +274,7 @@ impl ChatList {
                 .set(if avail > 0. { avail } else { VIEWPORT_FALLBACK });
             self.core.settled.set(false);
             self.core.following.set(false);
+            self.core.free_scroll.set(false);
             self.core.settle_attempts.set(0);
         }
         // 先落账：条目进树后 scroll_to 才有得钉（越界会被钳到列表尾）
@@ -349,9 +355,12 @@ impl ChatList {
         //    钉顶期「垫片 = 一整屏内容区高」这个常数，gpui「锚下填不满视口就
         //    强制贴底」的覆盖条件恒不成立 ⇒ 逻辑位不会被夺走，锚点永远画在
         //    padding.top（与测量精度、条目缓存新鲜度无关）。内容长过内容区
-        //    （following）时不钉，交给胶水跟随尾部。
+        //    （following）时不钉，交给胶水跟随尾部。用户自由滚动中（free_scroll）
+        //    也不钉——流式 chunk 不得把读历史的视口硬拽回锚点；滚回贴底自动
+        //    恢复钉顶（free_scroll 由滚动回调复位）。
         if want_spacer
             && !self.core.following.get()
+            && !self.core.free_scroll.get()
             && let Some(ix) = self.core.anchor.get()
         {
             self.state
@@ -366,13 +375,15 @@ impl ChatList {
         self.core.spacer_px.set(0.);
         self.core.settled.set(false);
         self.core.following.set(false);
+        self.core.free_scroll.set(false);
         self.state.reset(msgs);
         self.core.listed.set(Listed { msgs, phase: false, spacer: false });
     }
 
-    /// 锚点退役（用户滚轮 / 快照重建 / 发送失败 / 外部整表重读）。就地卸载垫片，
+    /// 锚点退役（快照重建 / 发送失败 / fork / 外部整表重读）。就地卸载垫片，
     /// 切回普通贴底列表——注意 Bottom 对齐下内容短于视口会被拽到屏底，所以轮末
     /// （AgentEnd/AgentSettled）**不**走这里，否则刚钉到屏顶的消息立刻跳回屏底。
+    /// 普通滚轮走 free_scroll 软状态，不进这里。
     pub(crate) fn release(&self) {
         self.core.detach(&self.state);
     }
@@ -409,8 +420,9 @@ impl ChatList {
         self.core.settled.set(true);
         self.core.spacer_px.set(spacer_px);
         let was_following = self.core.following.replace(follow);
-        if follow && !was_following {
-            // scroll_to(count) ≡ Bottom 逻辑位 None（下一帧 layout 归一化）
+        if follow && !was_following && !self.core.free_scroll.get() {
+            // scroll_to(count) ≡ Bottom 逻辑位 None（下一帧 layout 归一化）。
+            // 自由滚动中不拽底：用户在读历史，垫片归零交几何即可，视口保持
             self.state.scroll_to(ListOffset {
                 item_ix: self.state.item_count(),
                 offset_in_item: px(0.),
@@ -458,15 +470,6 @@ impl ChatList {
 }
 
 impl Core {
-    /// 滚动回调路径的锚点退役：只清锚 + 置标记，严禁在此 splice ListState
-    /// （scroll() 持有 RefCell 可变借用）。实际卸垫片由下一次 sync 完成
-    /// （渲染层 take_frame_sync 驱动）。
-    fn request_detach(&self) {
-        if self.anchor.take().is_some() {
-            self.pending_release.set(true);
-        }
-    }
-
     /// 清锚 + 就地卸载垫片（release 专用，运行在实体事件上下文，可安全
     /// splice；记账同步回写，后续 sync 幂等）。
     fn detach(&self, state: &ListState) {
@@ -481,6 +484,7 @@ impl Core {
         self.listed.set(Listed { spacer: false, ..l });
         self.settled.set(false);
         self.following.set(false);
+        self.free_scroll.set(false);
     }
 }
 
@@ -564,20 +568,20 @@ mod tests {
         assert_eq!(p.state.item_count(), 7);
     }
 
-    /// 滚动回调退役只置标记：卸垫片延迟到下一次 sync（RefCell 约束——
-    /// scroll() 持有可变借用期间 splice 必崩）
+    /// 滚轮自由滚动（free_scroll）不退役锚点：垫片保留、sync 幂等不摘——
+    /// 旧实现滚轮即退役摘垫片，短内容被 Bottom 胶水拽到屏底且余量归零
+    /// （用户报障：等待回复时稍一滚就跳底，之后滚轮彻底失灵）。
     #[test]
-    fn scroll_detach_defers_spacer_unmount() {
+    fn free_scroll_keeps_spacer_instead_of_unmount() {
         let p = ChatList::new();
         p.sync(3, false);
         p.page_turn(2, 3, false);
         assert_eq!(p.state.item_count(), 4);
-        p.core.request_detach();
-        assert!(!p.anchor_active());
-        assert!(p.take_frame_sync());
-        assert_eq!(p.state.item_count(), 4); // 垫片还在（延迟卸载）
+        p.core.free_scroll.set(true);
         p.sync(3, false);
-        assert_eq!(p.state.item_count(), 3);
+        assert!(p.anchor_active());
+        assert_eq!(p.state.item_count(), 4); // 垫片保留（旧实现此处被摘掉）
+        assert_eq!(p.spacer_px(), VIEWPORT_FALLBACK);
     }
 
     /// 帧补账查询：无锚点 false；未结算锚点 true（带上限，12 次后放弃）
@@ -635,8 +639,9 @@ mod glue_geometry {
     use std::rc::Rc;
 
     use gpui::{
-        AppContext, Bounds, Context, Entity, IntoElement, ParentElement, Pixels, Render, Styled,
-        TestAppContext, VisualTestContext, Window, canvas, div, list, point, px, size,
+        AppContext, Bounds, Context, Entity, IntoElement, ListOffset, ParentElement, Pixels,
+        Render, Styled, TestAppContext, VisualTestContext, Window, canvas, div, list, point, px,
+        size,
     };
 
     use super::{ChatList, PAD_BOTTOM, PAD_TOP};
@@ -794,11 +799,76 @@ mod glue_geometry {
         assert_eq!(top(&items, 1), None);
         assert_eq!(bottom(&items, last), Some(px(VIEWPORT - PAD_BOTTOM)));
 
-        // 用户滚轮 → 锚点退役、垫片就地卸载（回到普通贴底列表）
-        pager.core.request_detach();
+        // 用户滚轮 → free_scroll 软状态：锚点与垫片保留，sync 不退役不重钉
+        pager.core.free_scroll.set(true);
         pager.sync(heights.len(), false);
-        assert!(!pager.anchor_active());
-        assert_eq!(pager.state().item_count(), heights.len());
+        assert!(pager.anchor_active());
+        assert_eq!(pager.state().item_count(), heights.len() + 1); // 垫片条目还在
+    }
+
+    /// 用户报障场景（滚轮跳底回归锁）：钉顶期内容短于内容区、等待回复时用户
+    /// 轻滚——旧实现滚轮退役锚点摘垫片，Bottom 胶水把整块内容拽到屏底且滚动
+    /// 余量归零。free_scroll 软状态下垫片保留，视口平滑滑动；滚回贴底（几何
+    /// 上≡钉顶位）sync 恢复钉顶。
+    #[gpui::test]
+    fn free_scroll_keeps_spacer_no_jump_to_bottom(cx: &mut TestAppContext) {
+        let window = cx.add_empty_window();
+        let seen: Rc<RefCell<Vec<(usize, Bounds<Pixels>)>>> = Default::default();
+        let pager = Rc::new(ChatList::new());
+
+        let heights = vec![500., 60.];
+        pager.reload(heights.len());
+        paint(window, &pager, &seen, &heights, false);
+        pager.page_turn(1, heights.len(), false);
+        paint(window, &pager, &seen, &heights, false);
+        let items = step(window, &pager, &seen, &heights, false);
+        assert_eq!(pager.spacer_px(), AVAIL);
+        assert_eq!(top(&items, 1), Some(px(PAD_TOP)));
+
+        // 用户轻滚：逻辑位下移 30px（滚轮后），free_scroll 置位
+        pager.core.free_scroll.set(true);
+        pager
+            .state()
+            .scroll_to(ListOffset { item_ix: 1, offset_in_item: px(30.) });
+        let items = step(window, &pager, &seen, &heights, false);
+        // 内容没有坠到屏底：垫片条目还在，锚点只是随滚动上移了 30px
+        assert!(pager.anchor_active());
+        assert_eq!(pager.state().item_count(), heights.len() + 1);
+        assert_eq!(top(&items, 1), Some(px(PAD_TOP - 30.)));
+
+        // 滚回贴底（≡钉顶位）→ free_scroll 复位 → sync 恢复钉顶
+        pager.core.free_scroll.set(false);
+        let items = step(window, &pager, &seen, &heights, false);
+        assert_eq!(top(&items, 1), Some(px(PAD_TOP)));
+    }
+
+    /// 自由滚动中回复长过内容区：垫片照常归零交还胶水，但**不拽底**——用户
+    /// 读历史的位置保持（旧实现 settle 翻转无条件 scroll_to(count)，读历史时
+    /// 被硬拽到屏底）。
+    #[gpui::test]
+    fn follow_flip_while_free_scroll_does_not_yank(cx: &mut TestAppContext) {
+        let window = cx.add_empty_window();
+        let seen: Rc<RefCell<Vec<(usize, Bounds<Pixels>)>>> = Default::default();
+        let pager = Rc::new(ChatList::new());
+
+        let mut heights = vec![500., 60.];
+        pager.reload(heights.len());
+        paint(window, &pager, &seen, &heights, false);
+        pager.page_turn(1, heights.len(), false);
+        paint(window, &pager, &seen, &heights, false);
+        step(window, &pager, &seen, &heights, false);
+
+        // 用户上滚进历史第一屏（free_scroll），随后回复长过内容区
+        pager.core.free_scroll.set(true);
+        pager
+            .state()
+            .scroll_to(ListOffset { item_ix: 0, offset_in_item: px(0.) });
+        heights.push(1200.);
+        step(window, &pager, &seen, &heights, false); // 新条目未测量：垫片沿用上一帧
+        let items = step(window, &pager, &seen, &heights, false); // 收敛：垫片归零
+        assert_eq!(pager.spacer_px(), 0.); // 垫片照常归零交几何
+        assert_eq!(pager.state().item_count(), heights.len() + 1);
+        assert_eq!(top(&items, 0), Some(px(PAD_TOP))); // 视口停在原地，没被拽走
     }
 
     /// 内容**形状**变化（轮末把思考/工具折进「工作详情」→ 锚下内容大幅变矮）

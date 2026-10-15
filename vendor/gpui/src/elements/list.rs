@@ -10,7 +10,7 @@
 use crate::{
     AnyElement, App, AvailableSpace, Bounds, ContentMask, DispatchPhase, Edges, Element, EntityId,
     FocusHandle, GlobalElementId, Hitbox, HitboxBehavior, InspectorElementId, IntoElement,
-    Overflow, Pixels, Point, ScrollDelta, ScrollWheelEvent, Size, Style, StyleRefinement, Styled,
+    Overflow, Pixels, Point, ScrollWheelEvent, Size, Style, StyleRefinement, Styled,
     Window, point, px, size,
 };
 use collections::VecDeque;
@@ -1095,11 +1095,14 @@ impl Element for List {
         let height = bounds.size.height;
         let scroll_top = prepaint.layout.scroll_top;
         let hitbox_id = prepaint.hitbox.id;
-        let mut accumulated_scroll_delta = ScrollDelta::default();
+        // PF patch：只应用本事件的 delta（对齐 div paint_scroll_listener）。
+        // 原实现跨事件累计再整包重放（同帧 N 个事件总位移 d1*N+d2*(N-1)+…），
+        // 宿主帧时间长（流式全窗重建）时滚轮事件积压，一次滚动跳一大截；
+        // 行高同步改用真实 line_height（原硬编码 20px）。升级 vendor 时需重套。
+        let line_height = window.line_height();
         window.on_mouse_event(move |event: &ScrollWheelEvent, phase, window, cx| {
             if phase == DispatchPhase::Bubble && hitbox_id.should_handle_scroll(window) {
-                accumulated_scroll_delta = accumulated_scroll_delta.coalesce(event.delta);
-                let pixel_delta = accumulated_scroll_delta.pixel_delta(px(20.));
+                let pixel_delta = event.delta.pixel_delta(line_height);
                 list_state.0.borrow_mut().scroll(
                     &scroll_top,
                     height,
