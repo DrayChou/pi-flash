@@ -695,6 +695,9 @@ pub(crate) fn render_editor_surface(
     };
     let weak_menu = weak.clone();
     let menu_path = path.to_path_buf();
+    // 族+字号都随「文档字体」槽位（zed buffer font 同语义，md 预览侧
+    // base_style 已同源）；此前族硬编码 JetBrains Mono，设置里选族不生效
+    let file_font = crate::appearance::file_font();
     div()
         .id("fv-editor")
         .relative()
@@ -704,8 +707,8 @@ pub(crate) fn render_editor_surface(
         .flex()
         .flex_col()
         .bg(rgb(t.bg))
-        .font_family(crate::editor::markdown::MONO_FAMILY)
-        .text_size(px(crate::appearance::file_font().size))
+        .font_family(file_font.family)
+        .text_size(px(file_font.size))
         .on_mouse_down(
             gpui::MouseButton::Right,
             move |ev: &gpui::MouseDownEvent, _, cx| {
