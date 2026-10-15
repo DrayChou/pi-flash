@@ -127,7 +127,8 @@ impl TextInput {
         self
     }
 
-    /// 紧凑单行档：22px 高 + XSmall 内距 + 11px 字号，文件树行内改名用。
+    /// 紧凑单行档：22px 高 + XSmall 内距 + ui(11) 字号（随面板字号缩放，
+    /// 与宿主行同号），文件树行内改名用。
     pub fn compact(mut self) -> Self {
         self.compact = true;
         self
@@ -407,9 +408,17 @@ impl Render for TextInput {
         div()
             .w_full()
             .when(!auto_h, |d| d.h(h))
-            // inherit into the inner widget's text shaping
-            .font_family(crate::editor::markdown::MONO_FAMILY)
-            .text_size(gpui::px(if self.compact { 11. } else { 12. }))
+            // 文字轨 = Zed create_style 同款（editor.rs：SingleLine/AutoHeight →
+            // ui_font + UI 字号，Full → buffer font）：单行走面板 UI 字体（文件树
+            // 行内改名与行标签同族同号，Zed project_panel 对编辑器零覆盖的同款
+            // 效果），多行走内置 mono（MCP 粘贴框等 buffer 轨）。字号 ui() 双轨
+            //（§5.5 ui(12)，compact 档随宿主行 ui(11)），销债表 #2 的裸 px。
+            .font_family(if self.multiline {
+                SharedString::from(crate::editor::markdown::MONO_FAMILY)
+            } else {
+                crate::appearance::panel_font().family.clone().into()
+            })
+            .text_size(crate::appearance::ui_size(if self.compact { 11. } else { 12. }))
             // escape bubbles up from the inner widget (it only unmarks IME
             // composition and propagates) — turn it into the app callback
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _window, cx| {
