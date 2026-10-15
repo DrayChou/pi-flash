@@ -396,6 +396,13 @@ impl Render for TextInput {
             } else {
                 input
             });
+        if self.flat {
+            // Zed 行内编辑零内距（project_panel 把 Editor 原样塞进 Label 位，
+            // 文字起点由宿主行给）：flat 档宿主行已对好起点，内件 XSmall 的
+            // input_px(4) 会让改名文字比行标签多缩进 4px（refine_style 在
+            // input_px 之后生效，可覆盖）
+            input = input.pl_0();
+        }
         if !self.flat {
             input = input
                 .bg(gpui::rgb(t.bg_panel))
