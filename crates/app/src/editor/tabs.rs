@@ -502,6 +502,12 @@ impl Chat {
         if let Some(tix) = self.shown_terminal_index() {
             self.ws.active_terminal = Some(tix);
         }
+        // 文件标签驱动树同步：同项目定位选中，跨项目切工作区（点标签/开
+        // 文件/键盘切 tab/关标签回退都经这里，语义 = 激活的文件标签就是
+        // 树的当前项目）
+        if let Some(crate::PanelTab::File(p)) = self.ws.panel_tabs.first().cloned() {
+            self.sync_tree_to_file(&p);
+        }
         cx.notify();
     }
 

@@ -30,6 +30,11 @@
 
 ## 里程碑索引（新 → 旧；一行一条，细节看对应提交）
 
+- 2026-10-16 **文件标签驱动树跨项目同步**：激活文件 tab 时树定位选中
+  （同项目 reveal_tree_row）；标签属已知其它项目则 remount_workspace 切
+  工作区（不动会话，PF 与 Zed 多 worktree 的分歧定案）；入口统一挂
+  activate_panel_tab，游离文件不同步。
+
 - 2026-10-15 **消息区右键菜单**：单项「复制」= 复制当前消息划选（无划选
   时空转），样式复用输入面板右键菜单 menu_card/menu_item 套件（挂
   psp_overlays 同层 msg_menu_layer，dlg.msg_menu 存锚点，snapshot 增

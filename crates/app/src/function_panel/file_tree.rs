@@ -81,6 +81,32 @@ impl Chat {
         let handle = crate::ui::vlist::scroll_handle(FILE_TREE_LIST_ID);
         handle.0.borrow().base_handle.set_offset(point(px(0.), px(y)));
     }
+
+    /// 文件标签激活时的树同步（PF 与 Zed 的分歧点：Zed 多 worktree 面板挂
+    /// 多根，PF 单根树跟随激活标签）：文件在当前项目内只定位选中；属于已知
+    /// 其它项目（psp.projects，含当前 cwd 的 0 会话组）则改写 cwd 走
+    /// remount_workspace 重挂——switch_pool_rt 跨项目先例同款，树根/branch/
+    /// git/fs watcher/侧栏当前项目全套跟过去，活跃会话不动（切会话仍是
+    /// 显式动作，也不写 last_workspace：启动落点只跟显式切项目）；两处都
+    /// 不沾（附件类游离文件）则树不动。定位复用 reveal_tree_row。
+    pub(crate) fn sync_tree_to_file(&mut self, path: &Path) {
+        if !services::workspace::is_under(path, &self.ws.cwd) {
+            let root = self
+                .psp
+                .projects
+                .iter()
+                .filter(|g| services::workspace::is_under(path, &g.path))
+                .max_by_key(|g| g.path.components().count())
+                .map(|g| g.path.clone());
+            let Some(root) = root else {
+                return;
+            };
+            self.ws.cwd = root;
+            self.remount_workspace();
+        }
+        self.ws.tree_selected = Some(path.to_path_buf());
+        self.reveal_tree_row(path);
+    }
 }
 
 pub(crate) fn files_view(
