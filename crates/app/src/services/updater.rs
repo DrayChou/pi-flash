@@ -811,8 +811,15 @@ fn cleanup_stale_staging(pkg: &Path) {
 /// rename 成 staging + 写标记。成功返回版本号。
 fn stage_update(rel: &ReleaseInfo) -> Result<String, String> {
     let pkg = pkg_dir().ok_or("无法定位安装目录")?;
-    std::fs::create_dir_all(&pkg).map_err(|e| format!("{e}"))?;
-    cleanup_stale_staging(&pkg);
+    stage_update_in(&pkg, rel)
+}
+
+/// 测试可注入版（update_pipeline_end_to_end / bad_hash 用例）：pkg 显式传入
+/// ——测试进程的 pkg_dir() 指向 target/，不隔离。下载源仍走 download_bases()
+/// （测试用 PI_FLASH_MIRROR 定向本地假源）。
+fn stage_update_in(pkg: &Path, rel: &ReleaseInfo) -> Result<String, String> {
+    std::fs::create_dir_all(pkg).map_err(|e| format!("{e}"))?;
+    cleanup_stale_staging(pkg);
     let ver = rel.version.clone();
     let tmp = pkg.join(format!("update.tmp-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);
@@ -859,7 +866,7 @@ fn stage_update(rel: &ReleaseInfo) -> Result<String, String> {
             .ok_or("载荷结构异常：找不到 pi-flash.exe")?;
 
         // rename 成 staging（同卷原子）；旧 staging 先清
-        let staging = staging_dir(&pkg, &ver);
+        let staging = staging_dir(pkg, &ver);
         let _ = std::fs::remove_dir_all(&staging);
         std::fs::rename(&root, &staging).map_err(|e| format!("staging 落位失败：{e}"))?;
         std::fs::write(staging.join(".payload-version"), format!("{ver}\n"))
@@ -876,7 +883,7 @@ fn stage_update(rel: &ReleaseInfo) -> Result<String, String> {
         }
 
         write_staged_in(
-            &pkg,
+            pkg,
             &StagedUpdate {
                 version: ver.clone(),
                 staged_at: std::time::SystemTime::now()
@@ -1470,6 +1477,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn extract_zip_parallel_tree_intact() {
+        let _guard = PROGRESS_LOCK.lock().unwrap();
         let dir = std::env::temp_dir().join(format!(
             "pf-extract-par-{}-{}",
             std::process::id(),
@@ -1641,6 +1649,7 @@ mod tests {
     /// ③ 无 content-length 成功但无百分比。
     #[test]
     fn download_speed_guard_and_failover() {
+        let _guard = PROGRESS_LOCK.lock().unwrap();
         use sha2::Digest as _;
         let probe = Duration::from_millis(300);
         let min_bps = 128.0 * 1024.0;
@@ -1710,6 +1719,247 @@ mod tests {
         eprintln!("v{} 命中源：{chosen}\nsha256={hash}\n文件：{}", rel.version, dest.display());
         assert_eq!(download_percent(), Some(100));
         assert!(dest.metadata().unwrap().len() > 0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // --- 更新管线端到端（假源 + 真 zip + 真 powershell 交换，无 GUI） ----------
+    // 进度全局量（DOWNLOAD_PCT/EXTRACT_PCT/UPDATE_PHASE）跨测试共享：凡断言
+    // 或触发它们的用例一律持锁，防 cargo 并行线程互扰。
+
+    static PROGRESS_LOCK: Mutex<()> = Mutex::new(());
+
+    /// 多请求静态文件站（serve() 只接一条连接；管线要 zip、sidecar、SUMS 多
+    /// 次请求）。URL 路径直接映射 root 下相对文件，缺失 404。
+    fn serve_dir(root: &Path) -> String {
+        use std::io::{Read as _, Write as _};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let root = root.to_path_buf();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut s) = stream else { return };
+                let mut req = [0u8; 4096];
+                if s.read(&mut req).is_err() {
+                    continue;
+                }
+                let req = String::from_utf8_lossy(&req);
+                let Some(path) = req.split_whitespace().nth(1) else {
+                    continue;
+                };
+                match std::fs::read(root.join(path.trim_start_matches('/'))) {
+                    Ok(data) => {
+                        let head = format!(
+                            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                            data.len()
+                        );
+                        let _ = s.write_all(head.as_bytes());
+                        let _ = s.write_all(&data);
+                    }
+                    Err(_) => {
+                        let _ = s.write_all(
+                            b"HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\nConnection: close\r\n\r\nnot found",
+                        );
+                    }
+                }
+            }
+        });
+        format!("http://{addr}")
+    }
+
+    /// 真 zip 夹具（复刻 release.sh：Compress-Archive 包装目录 pi-flash/），
+    /// 附 sidecar 与 SHA256SUMS，落 site/v<ver>/。
+    fn build_release_fixture(site: &Path, ver: &str, exe_bytes: &[u8], marker: &str) {
+        let fix_root = site.join(format!("fix-{ver}"));
+        let pkg = fix_root.join("pi-flash");
+        std::fs::create_dir_all(&pkg).unwrap();
+        std::fs::write(pkg.join("pi-flash.exe"), exe_bytes).unwrap();
+        std::fs::write(pkg.join("marker.txt"), marker).unwrap();
+
+        let ver_dir = site.join(format!("v{ver}"));
+        std::fs::create_dir_all(&ver_dir).unwrap();
+        let zip = ver_dir.join(format!("pi-flash-{ver}-win32-x64.zip"));
+        let ps = format!(
+            "Compress-Archive -LiteralPath '{}' -DestinationPath '{}' -Force",
+            pkg.display(),
+            zip.display()
+        );
+        let out = std::process::Command::new("powershell.exe")
+            .args(["-NoProfile", "-Command", &ps])
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "夹具压缩失败：{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        use sha2::Digest as _;
+        let mut h = sha2::Sha256::new();
+        h.update(std::fs::read(&zip).unwrap());
+        let hash = format!("{:x}", h.finalize());
+        let name = zip.file_name().unwrap().to_string_lossy().to_string();
+        std::fs::write(
+            ver_dir.join(format!("{name}.sha256")),
+            format!("{hash}  {name}\n"),
+        )
+        .unwrap();
+        std::fs::write(ver_dir.join("SHA256SUMS"), format!("{hash}  {name}\n")).unwrap();
+    }
+
+    /// 0.1.8→0.1.9 用户实录的全链路自动化（无 GUI 主防线）：假源 latest=9.9.9
+    /// → stage_update 落 staging+标记 → read_staged_in 可见（Ready 态数据源）
+    /// → 真 powershell swap → 载荷翻转、标记/staging/old 清、无残留。
+    /// 注：哈希钉定会先试一次真 github 的 sidecar（本机被墙约 20s 超时后落到
+    /// 假源）——偏慢是真实行为的代价，别当 flake 修。
+    #[cfg(windows)]
+    #[test]
+    fn update_pipeline_end_to_end() {
+        let _guard = PROGRESS_LOCK.lock().unwrap();
+        let dir = std::env::temp_dir().join(format!(
+            "pf-pipe-e2e-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .subsec_nanos()
+        ));
+        let pkg = dir.join("pkg");
+        let payload = pkg.join("payload");
+        std::fs::create_dir_all(&payload).unwrap();
+        std::fs::write(payload.join("pi-flash.exe"), b"old").unwrap();
+        std::fs::write(payload.join(".payload-version"), "0.1.8\n").unwrap();
+
+        let ver = "9.9.9";
+        let site = dir.join("site");
+        build_release_fixture(&site, ver, b"new", "payload-v9.9.9\n");
+        let base = serve_dir(&site);
+        // SAFETY：活跃测试里只有本测试与 bad_hash 用例读 PI_FLASH_MIRROR，
+        // 其余下载测试走 _cfg 显式注入，无并行读者
+        unsafe { std::env::set_var("PI_FLASH_MIRROR", &base) };
+
+        let rel = ReleaseInfo {
+            version: ver.to_string(),
+            body: String::new(),
+        };
+        let staged = stage_update_in(&pkg, &rel).unwrap();
+        assert_eq!(staged, ver);
+        assert_eq!(
+            std::fs::read_to_string(staging_dir(&pkg, ver).join(".payload-version")).unwrap(),
+            format!("{ver}\n")
+        );
+        let info = read_staged_in(&pkg).unwrap();
+        assert_eq!(
+            info.version, ver,
+            "staging+标记合法（Ready 态的数据源）"
+        );
+
+        // swap：真 powershell 翻转载荷（等退死 pid 秒过）
+        let mut dying = std::process::Command::new("cmd")
+            .args(["/C", "exit"])
+            .spawn()
+            .unwrap();
+        let pid = dying.id();
+        dying.wait().unwrap();
+        let script = swap_script(pid, &pkg, &staging_dir(&pkg, ver), &dir, "pi-flash.exe");
+        let out = std::process::Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-EncodedCommand",
+                &encode_ps(&script),
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "helper 应报成功：{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+
+        assert_eq!(
+            std::fs::read_to_string(payload.join(".payload-version")).unwrap(),
+            format!("{ver}\n"),
+            "载荷已翻转到新版本"
+        );
+        assert_eq!(
+            std::fs::read(payload.join("marker.txt")).unwrap(),
+            b"payload-v9.9.9\n",
+            "载荷内容确为新夹具"
+        );
+        assert!(read_staged_in(&pkg).is_none(), "标记应已清除");
+        let residue: Vec<_> = std::fs::read_dir(&pkg)
+            .unwrap()
+            .flatten()
+            .filter(|e| {
+                let n = e.file_name().to_string_lossy().to_string();
+                n.starts_with("payload.stage-")
+                    || n.starts_with("payload.old-")
+                    || n.starts_with("update.tmp-")
+            })
+            .collect();
+        assert!(residue.is_empty(), "无 staging/old/tmp 残留：{residue:?}");
+
+        unsafe { std::env::remove_var("PI_FLASH_MIRROR") };
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 哈希不符的失败路径（0.1.8 实录「静默回落」的可检出性）：stage 报
+    /// SHA-256 错；旧载荷原样，无 staging/标记/tmp 残留。
+    #[cfg(windows)]
+    #[test]
+    fn stage_update_bad_hash_leaves_no_trace() {
+        let _guard = PROGRESS_LOCK.lock().unwrap();
+        let dir = std::env::temp_dir().join(format!(
+            "pf-pipe-bad-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .subsec_nanos()
+        ));
+        let pkg = dir.join("pkg");
+        let payload = pkg.join("payload");
+        std::fs::create_dir_all(&payload).unwrap();
+        std::fs::write(payload.join("pi-flash.exe"), b"old").unwrap();
+        std::fs::write(payload.join(".payload-version"), "0.1.8\n").unwrap();
+
+        let ver = "9.9.9";
+        let site = dir.join("site");
+        build_release_fixture(&site, ver, b"new", "payload-v9.9.9\n");
+        // 篡改 sidecar 与 SUMS 为错哈希（64 位十六进制保证能被解析后比对）
+        let bad = format!("{}\n", "0".repeat(64));
+        std::fs::write(
+            site.join(format!("v{ver}/pi-flash-{ver}-win32-x64.zip.sha256")),
+            &bad,
+        )
+        .unwrap();
+        std::fs::write(site.join(format!("v{ver}/SHA256SUMS")), &bad).unwrap();
+        let base = serve_dir(&site);
+        // SAFETY：见 update_pipeline_end_to_end
+        unsafe { std::env::set_var("PI_FLASH_MIRROR", &base) };
+
+        let rel = ReleaseInfo {
+            version: ver.to_string(),
+            body: String::new(),
+        };
+        let err = stage_update_in(&pkg, &rel).unwrap_err();
+        assert!(err.contains("SHA-256"), "应报校验不符：{err}");
+
+        assert_eq!(
+            std::fs::read_to_string(payload.join(".payload-version")).unwrap(),
+            "0.1.8\n",
+            "旧载荷原样"
+        );
+        assert!(!marker_path(&pkg).exists(), "无标记");
+        assert!(!staging_dir(&pkg, ver).exists(), "无 staging");
+        let residue: Vec<_> = std::fs::read_dir(&pkg)
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().starts_with("update.tmp-"))
+            .collect();
+        assert!(residue.is_empty(), "tmp 已清：{residue:?}");
+
+        unsafe { std::env::remove_var("PI_FLASH_MIRROR") };
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
