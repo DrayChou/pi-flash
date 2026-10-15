@@ -8,8 +8,8 @@ use gpui::prelude::FluentBuilder;
 use gpui::{
     div, AnyElement, App, AppContext, Bounds, ClipboardItem, Context, Element, ElementId, Entity,
     EntityId, FocusHandle, GlobalElementId, InspectorElementId, InteractiveElement, IntoElement,
-    KeyBinding, LayoutId, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels,
-    Point, RenderOnce, SharedString, Size, Styled, Timer, Window,
+    KeyBinding, LayoutId, MouseDownEvent, MouseMoveEvent, MouseButton, MouseUpEvent,
+    ParentElement, Pixels, Point, RenderOnce, SharedString, Size, Styled, Timer, Window,
 };
 use smol::stream::StreamExt;
 
@@ -654,6 +654,11 @@ impl Element for TextView {
                     if !bounds.contains(&event.position) || !phase.bubble() {
                         return;
                     }
+                    // pi-flash patch: 仅左键起选区——右键留给宿主上下文
+                    // 菜单，且不得重置已有划选（浏览器同语义）
+                    if event.button != MouseButton::Left {
+                        return;
+                    }
 
                     state.update(cx, |state, _| {
                         state.start_selection(event.position);
@@ -691,14 +696,19 @@ impl Element for TextView {
                 // down outside to clear selection
                 window.on_mouse_event({
                     let state = self.state.clone();
-                    move |event: &MouseDownEvent, _, _, cx| {
-                        if bounds.contains(&event.position) {
-                            return;
-                        }
+                move |event: &MouseDownEvent, _, _, cx| {
+                    if bounds.contains(&event.position) {
+                        return;
+                    }
+                    // pi-flash patch: 仅左键清除选区——右键开上下文菜单
+                    // 不清划选（浏览器同语义）
+                    if event.button != MouseButton::Left {
+                        return;
+                    }
 
-                        state.update(cx, |state, _| {
-                            state.clear_selection();
-                        });
+                    state.update(cx, |state, _| {
+                        state.clear_selection();
+                    });
                         cx.notify(entity_id);
                     }
                 });

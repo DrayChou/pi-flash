@@ -317,6 +317,18 @@ fn session_list(
         // 两侧边距 15px（窄窗口下内容不贴边；920 列宽不动，宽窗居中）
         // 必须与 composer 悬浮层 padding 一致（input.rs），否则胶囊与消息列错位
         .px(px(15.))
+        // 内容区右键菜单（单项「复制」= 复制当前消息划选；渲染挂
+        // psp_overlays 同层 msg_menu_layer）。TextView 的 mouse-down 已
+        // vendor 补丁为仅左键起选/清除，右键不破坏既有划选
+        .on_mouse_down(gpui::MouseButton::Right, {
+            let weak_menu = weak_for_msg.clone();
+            move |ev: &gpui::MouseDownEvent, _, cx| {
+                let _ = weak_menu.update(cx, |c, cx| {
+                    c.dlg.msg_menu = Some((f32::from(ev.position.x), f32::from(ev.position.y)));
+                    cx.notify();
+                });
+            }
+        })
         .child(
             list(rt_list.clone(), move |ix, _window, cx| {
         let rt_view = rt_entity.read(cx);

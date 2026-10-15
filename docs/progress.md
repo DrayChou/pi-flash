@@ -30,6 +30,12 @@
 
 ## 里程碑索引（新 → 旧；一行一条，细节看对应提交）
 
+- 2026-10-15 **消息区右键菜单**：单项「复制」= 复制当前消息划选（无划选
+  时空转），样式复用输入面板右键菜单 menu_card/menu_item 套件（挂
+  psp_overlays 同层 msg_menu_layer，dlg.msg_menu 存锚点，snapshot 增
+  msg_menu 键供 pif-ui 断言）。vendor 补丁：TextView mouse-down 仅左键
+  起选/清除——右键开菜单不重置/不清划选（浏览器同语义）。
+
 - 2026-10-15 **消息划选一期回归修复**（用户实机反馈 4 项）：①Ctrl+C 无效
   = gpui 键盘派发**绑定先于监听器**（window.rs:3843；composer 空选区
   `ctrl-c→input::Copy` 吞键早退）→ main.rs 注册同 "Input" 深度后注册的

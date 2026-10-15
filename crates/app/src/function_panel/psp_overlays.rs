@@ -43,6 +43,10 @@ pub(crate) fn psp_overlays(
     if chat.dlg.input_menu.is_some() {
         el = el.child(input_menu_layer(chat, vp, t, cx));
     }
+    // 消息内容区右键菜单（单项「复制」= 复制当前消息划选）
+    if chat.dlg.msg_menu.is_some() {
+        el = el.child(msg_menu_layer(chat, vp, t, cx));
+    }
     // 终端右键菜单（复制/粘贴/全选）；tab 已关则不再挂（防挂到空气里）
     if let Some((tab_id, x, y)) = chat.dlg.term_menu
         && chat.ws.terminals.iter().any(|t| t.id == tab_id)
@@ -953,6 +957,47 @@ fn input_menu_layer(
             tr("action.delete"),
             || Box::new(gpui_component::input::Delete),
         ));
+    layer.child(card).into_any_element()
+}
+
+/// 消息内容区右键菜单：单项「复制」= 复制当前消息划选（样式同输入面板
+/// 右键菜单 menu_card/menu_item 套件）。文案取打开菜单当帧的划选快照——
+/// 菜单开着时没有会清选区的路径（TextView 已 vendor 补丁为仅左键起选/
+/// 清除，点菜单项本身有 stop_propagation），快照即点击时的真实选区；
+/// 无划选时快照为空，点击自然空转。
+fn msg_menu_layer(
+    chat: &mut Chat,
+    vp: (f32, f32),
+    t: &'static Theme,
+    cx: &mut gpui::Context<Chat>,
+) -> gpui::AnyElement {
+    let weak = cx.entity().downgrade();
+    let (x, y) = chat.dlg.msg_menu.expect("checked by caller");
+    let copied = gpui_component::text::take_last_selected_text(cx);
+    let edges = PopupEdges::around((x, y), vp, 0., 12.);
+    let weak_layer = weak.clone();
+    let layer = crate::ui::overlay::layer(false, Some(&chat.dlg.dialog_focus), move |_w, cx| {
+        let _ = weak_layer.update(cx, |c, cx| {
+            c.dlg.msg_menu = None;
+            cx.notify();
+        });
+    });
+    let copied_click = copied.clone();
+    let card = menu_card(edges, t).child(
+        menu_item("msg-copy", "copy", tr("action.copy"), false, false).on_mouse_down(
+            MouseButton::Left,
+            move |_, _, cx| {
+                cx.stop_propagation();
+                if let Some(text) = copied_click.clone() {
+                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
+                }
+                let _ = weak.update(cx, |c, cx| {
+                    c.dlg.msg_menu = None;
+                    cx.notify();
+                });
+            },
+        ),
+    );
     layer.child(card).into_any_element()
 }
 
