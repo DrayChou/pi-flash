@@ -611,15 +611,19 @@ impl Paragraph {
                         });
                     }
                     if style.code {
-                        // pi-flash patch: accent 原色实底过艳，降为中性淡底
-                        highlight.background_color = Some(cx.theme().secondary);
                         // pi-flash patch: host path detector——形似本地文件
                         // 路径的 code span 标成链接（点击走 dispatch_link，
-                        // 宿主拦截开应用内编辑器），仅当不是真链接时
-                        if style.link.is_none() {
-                            if let Some(url) =
-                                super::detect_path_link(&text[inner_range.clone()], cx)
-                            {
+                        // 宿主拦截开应用内编辑器），仅当不是真链接时；可点
+                        // 路径**不加 code 背景填充**，改链接色+下划线，与
+                        // 普通 code 字符区分（浏览器样式惯例）；其余 code
+                        // span 保持中性淡底（原 accent 实底过艳，降级）
+                        let path_link = if style.link.is_none() {
+                            super::detect_path_link(&text[inner_range.clone()], cx)
+                        } else {
+                            None
+                        };
+                        match path_link {
+                            Some(url) => {
                                 links.push((
                                     inner_range.clone(),
                                     LinkMark {
@@ -628,7 +632,16 @@ impl Paragraph {
                                         title: None,
                                     },
                                 ));
+                                highlight.color = Some(cx.theme().link);
+                                highlight.underline = Some(gpui::UnderlineStyle {
+                                    thickness: gpui::px(1.),
+                                    ..Default::default()
+                                });
                             }
+                            None if style.link.is_none() => {
+                                highlight.background_color = Some(cx.theme().secondary);
+                            }
+                            None => {}
                         }
                     }
 
