@@ -127,8 +127,8 @@ impl TextInput {
         self
     }
 
-    /// 紧凑单行档：22px 高 + XSmall 内距 + ui(11) 字号（随面板字号缩放，
-    /// 与宿主行同号），文件树行内改名用。
+    /// 紧凑单行档：20px 高（与 XSmall 内件同高零富余）+ XSmall 内距 +
+    /// ui(11) 字号（随面板字号缩放，与宿主行同号），文件树行内改名用。
     pub fn compact(mut self) -> Self {
         self.compact = true;
         self
@@ -375,15 +375,16 @@ impl Render for TextInput {
         let t = T();
         let focused = state.read(cx).focus_handle(cx).is_focused(window);
         // 多行：容器给足高度，内件 h_full 撑满（单行保持固定 30px；紧凑
-        // 档 22px 塞进文件树 24px 行）；lines(n) = auto_grow，内件自算高
-        //（min = n × 行高），容器不设高、内件不撑满
+        // 档 20px = vendor XSmall 内件同高，**零富余**——任何一侧都不留
+        // 白隙，行内垂直居中交给宿主行 items_center 链）；lines(n) =
+        // auto_grow，内件自算高（min = n × 行高），容器不设高、内件不撑满
         let auto_h = self.multiline && self.lines.is_some();
         let (h, fill) = if auto_h {
             (gpui::px(0.), false)
         } else if self.multiline {
             (gpui::px(170.), true)
         } else if self.compact {
-            (gpui::px(22.), false)
+            (gpui::px(20.), false)
         } else {
             (gpui::px(30.), false)
         };
@@ -415,10 +416,9 @@ impl Render for TextInput {
         div()
             .w_full()
             .when(!auto_h, |d| d.h(h))
-            // compact：XSmall 内件自高 20px（vendor input_h），在 22px 槽内
-            // 必须**居中**——taffy 的 stretch 对定高子件退化为 top-align，
-            // 2px 富余全落底部，输入基线比宿主行标签高 1px（改名行文字上跳
-            // 的根因；Zed 行内编辑与标签基线重合、零跳动）
+            // compact：槽高与 XSmall 内件（vendor input_h 20px）同高、零富余
+            //（曾 22px，stretch 对定高子件退化为 top-align，2px 全落底部把
+            // 输入基线顶高 1px——改名行文字上跳根因）；items_center 兜底
             .when(self.compact, |d| d.items_center())
             // 文字轨 = Zed create_style 同款（editor.rs：SingleLine/AutoHeight →
             // ui_font + UI 字号，Full → buffer font）：单行走面板 UI 字体（文件树
