@@ -544,7 +544,7 @@ pub(crate) fn render_ask_card(chat: &mut Chat, weak: &gpui::WeakEntity<Chat>) ->
 
     // ---- 题面（qcol + 可选预览栏） ----
     let with_pv = q.has_preview();
-    let mut qcol = div().flex().flex_col().gap(px(11.)).map(|d| if with_pv { d.w(px(294.)) } else { d.w_full() });
+    let mut qcol = div().flex().flex_col().gap(px(11.)).map(|d| if with_pv { d.w(px(400.)) } else { d.w_full() });
     qcol = qcol.child(
         div()
             .text_size(crate::appearance::ui_size(15.))
@@ -806,7 +806,8 @@ pub(crate) fn render_ask_card(chat: &mut Chat, weak: &gpui::WeakEntity<Chat>) ->
 
     // ---- 装配 ----
     let card_el = div()
-        .w(px(640.))
+        // 与 inputpanel 同宽对齐（session/mod.rs 消息列 max_w 920）
+        .w(px(920.))
         .bg(rgb(t.bg))
         .border_1()
         .border_color(rgb(t.border))
