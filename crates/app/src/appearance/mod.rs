@@ -150,30 +150,40 @@ pub fn persist_theme(id: &str) -> bool {
     true
 }
 
+/// 字号统一钳制（2026-10-15 用户定夺 10–30）：三槽位读取口共用，防历史
+/// 存档/手改存档离谱值；上下限一次放宽到位，以后加档位不再动钳制。
+pub const FONT_SIZE_MIN: f32 = 10.0;
+pub const FONT_SIZE_MAX: f32 = 30.0;
+
+fn clamped(mut spec: FontSpec) -> FontSpec {
+    spec.size = spec.size.clamp(FONT_SIZE_MIN, FONT_SIZE_MAX);
+    spec
+}
+
 /// The session (chat) font: app setting or the default.
 /// 族直连聊天区容器；字号是会话区所有文字的基准（`sess_size`）。
 pub fn session_font() -> FontSpec {
-    app_settings().session_font.unwrap_or(FontSpec {
+    clamped(app_settings().session_font.unwrap_or(FontSpec {
         family: default_font_family(),
         size: 15.,
-    })
+    }))
 }
 
 pub fn panel_font() -> FontSpec {
-    app_settings().panel_font.unwrap_or(FontSpec {
+    clamped(app_settings().panel_font.unwrap_or(FontSpec {
         family: default_font_family(),
         size: 15.,
-    })
+    }))
 }
 
 /// 文件字体（docs/UI设计/字体大小设置.md §3）：文件视图里能打开的文件
 /// （markdown/txt/json/py…）源码或预览的字号基准。存储键沿用历史的
 /// `markdown_font`，避免冲掉用户已存的设置。
 pub fn file_font() -> FontSpec {
-    app_settings().markdown_font.unwrap_or(FontSpec {
+    clamped(app_settings().markdown_font.unwrap_or(FontSpec {
         family: default_font_family(),
         size: 15.,
-    })
+    }))
 }
 
 /// Persist one font slot.
@@ -191,14 +201,14 @@ pub fn save_font(slot: FontSlot, spec: FontSpec) {
 /// 面板字号：界面 chrome 文字的基准。全界面文字经 `ui_size()` 取
 /// 「面板设置值 + (base - 12)」——base 是面板 12px 时代的设计稿值，偏移量
 /// 在任何设置档下不变（绝对像素差模型，字体大小设置.md §1）。默认设置值
-/// 15（与设置页三档 14/15/16/17 的「中」对齐），设置里改字号，整窗界面
+/// 15（= 设置页档位「小」，默认档可选），设置里改字号，整窗界面
 /// 文字（含设置页自身）立刻变化（所见即所得）。
 static PANEL_PX: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(15.0f32.to_bits());
 
-/// Startup + save_font 后重算缓存的面板字号（钳 10–20：防历史存档/手改
-/// 存档出现离谱值；2026-10-10 定夺放宽到 20，档位增减不再跟调这里）。
+/// Startup + save_font 后重算缓存的面板字号（钳制见 FONT_SIZE_MIN/MAX：
+/// 2026-10-10 定夺放宽到 20，2026-10-15 起三槽统一 10–30）。
 pub fn sync_ui_scale() {
-    let v = panel_font().size.clamp(10.0, 20.0);
+    let v = panel_font().size.clamp(FONT_SIZE_MIN, FONT_SIZE_MAX);
     std::sync::atomic::AtomicU32::store(&PANEL_PX, v.to_bits(), std::sync::atomic::Ordering::Relaxed);
 }
 

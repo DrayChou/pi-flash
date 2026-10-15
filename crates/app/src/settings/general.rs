@@ -289,10 +289,11 @@ fn font_row(
         .into_any_element()
 }
 
-/// 字号下拉：三槽共用同一组档位 小 15 / 中 16 / 大 17 / 特大 18（默认
-/// 15 = 小，默认档可选）。触发按钮 100px 显示当前档位；历史存档不在档位
-/// 内时按就近档位显示/高亮，点任意档即落位。选中只改字号，字体族沿用
-/// 当前值。
+/// 字号下拉：会话/面板共用 15/16/17/18；文档字体 16/18/20/22（2026-10-15
+/// 用户定夺：文件正文要大一号，档位整体上移）。默认 15 不在文档档位内，
+/// 由就近档位逻辑显示/高亮。触发按钮 100px 显示当前档位；历史存档不在
+/// 档位内时按就近档位显示/高亮，点任意档即落位。选中只改字号，字体族
+/// 沿用当前值。
 fn size_trigger(
     ix: usize,
     size: f32,
@@ -301,12 +302,21 @@ fn size_trigger(
     size_dd: &gpui::Entity<DropdownState>,
     t: &'static crate::appearance::theme::Theme,
 ) -> gpui::AnyElement {
-    let sizes: &[(f32, &'static str)] = &[
-        (15., tr("size.small")),
-        (16., tr("size.medium")),
-        (17., tr("size.large")),
-        (18., tr("size.extra_large")),
-    ];
+    let sizes: &[(f32, &'static str)] = if ix == 2 {
+        &[
+            (16., tr("size.small")),
+            (18., tr("size.medium")),
+            (20., tr("size.large")),
+            (22., tr("size.extra_large")),
+        ]
+    } else {
+        &[
+            (15., tr("size.small")),
+            (16., tr("size.medium")),
+            (17., tr("size.large")),
+            (18., tr("size.extra_large")),
+        ]
+    };
     let current_label = |v: f32| -> &'static str {
         let mut best = sizes[0];
         for s in sizes {
