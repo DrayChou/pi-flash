@@ -11,6 +11,7 @@
 - `uniform_list` 契约 = 容器 fixed/max 高（Fill 需 relative+flex_1 外包 + absolute 定死四角，否则画全部内容）；**UniformListScrollHandle 必须跨帧复用**（每帧 `new()` = 滚动全丢）→ `ui::vlist` thread_local 句柄表按 id 复用。
 - 滚轮派发给**所有**命中可滚动 hitbox 含祖先（嵌套 = 内外同时滚，非先内后外）。
 - 滚屏铁律：Bottom 对齐下内容填不满视口 → 强制 logical=None 贴底（钉顶必须靠 spacer 垫片，常数化最稳）；`ListState::reset()` 清滚动位（notify 前存、后恢复）；`scroll_to*` 不触发 notify（程序化滚动自补通知 + window.refresh）；滚动回调内**严禁**触碰 ListState（BorrowMutError → 置标记渲染帧补账）。
+- **会话区滚轮 = free_scroll 软状态（2026-10-15，session/chat_list）**：早期"滚轮即退役锚点摘垫片"（pi-web promptAnchorActive 同款）在短内容下是死局——垫片一摘内容高 < 视口，Bottom 胶水把整块内容拽到屏底且滚动余量归零（用户报障：等待回复稍一滚就跳底、之后滚轮失灵）。现滚轮只置 `free_scroll`：暂停 sync 第 6 步重钉与 settle 跟尾翻转拽底，**锚点与垫片保留**，滚回贴底（几何上≡钉顶位）自动恢复钉顶；`release`（真摘垫片）只留给发送失败/fork/整表重读。有意偏离 pi-web。
 - **编辑器滚动手感对照 Zed（2026-10-16 排查结论，pi-flash 滚屏优化）**：Zed 滚动帧 = 视口行排版（gpui 两帧 LineLayoutCache 命中，只有新进入行 shape）+ 从 sum-tree 缓存读高亮（**无每帧树逃逸查询**）+ f64 滚动位置设备像素吸附；PF 已有同款排版缓存，差距在三处，均已修：
   1. **每帧高亮查询**：视口字节窗内每帧重跑 tree-sitter query + `unique_styles` 平方扫 + 每捕获 String 分配 → 捕获名 intern（highlighter.rs）+ unique_styles 边界扫描线 O(N log N)（语义经 app 侧差分测试 `crates/app/tests/vendor_highlight_diff.rs` 钉死，2000 组随机输入与旧实现全等）；
   2. **每 tick 双帧**：Scrollbar::paint 检测到 offset 变化会再 `cx.notify` 一次（scrollbar.rs），宿主（InputState）对同一变化已 notify → 每个 wheel tick 渲染两个全窗帧 → 改为 paint 时就地调度 FADE_OUT_DELAY 定时器，不再立即 notify。注意 PF 主题是 `ScrollbarShow::Always`（composer 常显，用户定夺），渐隐链路本就不跑，此改动对 PF 零视觉影响；
@@ -71,6 +72,11 @@
   `input/text_wrapper.rs` 测试两处 SmallVec 类型推断），高亮单测跑不了。
   量法：隔离实例开文件后连打 `pif-ui exec app.info`，返回值 >1s 即此病复发。
 - svg 未登记进 `assets!()` 会**静默画空白**（有双向一致性测试守卫）。
+- **图标光学大小 = 笔迹占 viewBox 的比例，不是 size 参数**：`ui::icon` 的 size
+  只决定把 viewBox 画布整体缩进多大的方块，lucide 图标笔迹不满 24×24 画布时
+  （如 plug 本体仅占 50% 宽）等尺寸渲染就显小。新引入图标若目视偏小，收紧
+  viewBox 到笔迹包围盒即可（plug.svg 2026-10-15 已收成 `5 1 14 22`，含 stroke
+  外扩 1）；非方形 viewBox 走默认 xMidYMid meet 居中，resvg 处理无坑。
 - **超大单行（minified js，94 万字符）每帧假死**：`visible_range` 是**逻辑行**
   粒度，旧实现把整行字节范围送进高亮查询与 shaping——`match_styles` 对
   94 万字符行产出 ~20 万条 capture，再进 `unique_styles` 的 O(区间×样式)
@@ -142,3 +148,4 @@
 - **vendor 本地改动（升级必须重套）**：`text/`（消息划选一期回归修复，2026-10-15）：①`text/mod.rs` 新增 `set_path_link_detector` 钩子——code span 文本命中探测器（PF 传 `markdown::as_file_path`）即追加 LinkMark 走 `dispatch_link`（旧渲染器 inline_code_box 可点 chip 的 parity；裸文本路径新旧渲染器都不可点，无回归）；②`node.rs` code mark 背景 `accent` 实色 → `secondary` 淡底，且**探测器命中的可点路径不加背景填充**、改链接色+下划线（与真链接同款，普通 code 字符保持淡底区分；app 侧 `sync_gpui_tokens` 须映射 `c.link = t.accent`——组件 `link` token 默认值近白，浅色主题下路径不可见，此坑已踩）；③`node.rs` `render_table` 表头行（row_ix==0）`secondary` 底色 + 单元格容器 `SEMIBOLD`（gpui StyledText 字重取容器继承链）、去单元格 `.truncate()`（单行省略号截断 CJK 长列）→ 自然换行；④列宽 = 列最大文本长钳制 **[6,44] 后归一化成和为 1 的分数**、全表共用——原实现 `relative(字节长)` 是 >100% 的分数靠 flex 收缩碰巧均摊，去 truncate 后各行必然漂移（自研渲染器 render_table 同坑已废，注释「flex_1 按内容分配导致每行列位漂移」即此；flex 子项宽度做**全表网格必须归一化**）；列长度量须按**显示宽度**（>0x2E80 计 2）而非字节——CJK 一字 3 字节，按字节比较系统性低估纯 ASCII 列（"2026E" 列被压到折行，`Paragraph::text_len` 已改，自研 cell_weight 同款）；⑤格内折行须包 `w_full` 定宽容器——cell 是 flex，段落子项按内容测宽会把长行撑出格缘（文本 min-content 测量不可靠不收缩），StyledText 拿到约束宽度才折行；⑥TextView mouse-down（起选区 + 点外清除）**不区分鼠标键**，右键会重置/清掉划选——已补丁为仅左键（浏览器同语义：右键开上下文菜单保留划选，PF 消息区右键菜单依赖此）。
 - **vendor 本地改动（升级必须重套）**：`input/text_input.rs`（编辑器行距对齐 zed，2026-10-15）：原 `TextInput::render` 恒 `.line_height(1.25rem)` 把行高压死——code editor 模式改为吃容器继承的 `window.text_style().line_height`（gpui TextStyle 默认 phi=1.618 即 zed `BufferLineHeight::Comfortable` 默认档），单行/多行输入保持 1.25rem 紧凑不动。app 侧 `editor/view.rs` render_editor_surface 显式 `.line_height(relative(1.618))`。布局/绘制/popover 定位全走 `window.line_height()`/`last_layout.line_height`，无需另改。
 - **vendor 本地改动（升级必须重套）**：`text/text_view.rs`（**起选遮挡守卫**，2026-10-15，pi-flash-hlo5）：selectable TextView 在 `prepaint` 插自身 Normal hitbox（`type PrepaintState = Hitbox`，插先于子树），起选 mouse-down **裸监听**加 `hitbox.is_hovered(window)` 守卫。根因：裸 `window.on_mouse_event` 收全窗所有事件，`bounds.contains` 只答「点在文本区内」不答「文本区在该点是否可见」——composer 悬浮胶囊（后绘 BlockMouse）叠在消息列上，胶囊上划选穿透选中身后的隐藏文本；`occlude()` 只挡 div 层命中路由，挡不住裸监听。语义：hit_test 从后往前走、遇 BlockMouse break，被遮挡者进不了 `mouse_hit_test.ids` → 守卫精确到点击点（同帧可见区照常起选），附带堵住被 content mask 裁掉的滚出区起选。**宿主悬浮层必须自挂 occlude 才享受此守卫**（回底钮 scroll-to-bottom 同期补挂——它无 BlockMouse hitbox 时身后文本照旧穿透）。
+- **vendor 本地改动（升级必须重套）**：`elements/list.rs`（`list()` 虚拟列表滚轮，2026-10-15）：滚轮监听只应用**本事件**的 delta（原 `accumulated_scroll_delta` 跨事件累计再整包重放——同帧 N 个事件总位移 d₁·N+d₂·(N-1)+…，事件积压越多过量越狠；zed 上游同缺陷，平时一帧一事件掩盖，流式全窗重建拖长帧时滚轮一滚跳一大截）+ 行高硬编码 `px(20.)` 改真实 `window.line_height()`（div `paint_scroll_listener` 同款，随字号缩放）。app 侧配套 free_scroll 见「滚动」节。
