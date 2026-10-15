@@ -55,7 +55,9 @@ fn plugin_button(
                 .rounded(px(8.))
         .text_size(ui(BAR_FONT))
         .text_color(rgb(color))
-        .child(icon_hover("plug", 13., color))
+        // 2026-10-15 用户定夺：plug glyph 天然窄长（宽 fill 仅 50%），小档下
+        // 光学偏小，上大 icon 档（规范 ICON_LG）补视觉质量
+        .child(icon_hover("plug", 18., color))
         .child(SharedString::from(label));
     if active {
         el = el
