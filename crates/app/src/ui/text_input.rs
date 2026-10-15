@@ -415,6 +415,11 @@ impl Render for TextInput {
         div()
             .w_full()
             .when(!auto_h, |d| d.h(h))
+            // compact：XSmall 内件自高 20px（vendor input_h），在 22px 槽内
+            // 必须**居中**——taffy 的 stretch 对定高子件退化为 top-align，
+            // 2px 富余全落底部，输入基线比宿主行标签高 1px（改名行文字上跳
+            // 的根因；Zed 行内编辑与标签基线重合、零跳动）
+            .when(self.compact, |d| d.items_center())
             // 文字轨 = Zed create_style 同款（editor.rs：SingleLine/AutoHeight →
             // ui_font + UI 字号，Full → buffer font）：单行走面板 UI 字体（文件树
             // 行内改名与行标签同族同号，Zed project_panel 对编辑器零覆盖的同款
