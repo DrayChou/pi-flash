@@ -1500,18 +1500,6 @@ fn pin_menu_layer(
             .text_color(rgb(t.text_dim))
             .child(tr("file_tree.pin_favorites")),
     );
-    if rows.is_empty() {
-        return layer
-            .child(card.child(
-                div()
-                    .px(px(8.))
-                    .pb(px(8.))
-                    .text_size(crate::appearance::ui_size(11.5))
-                    .text_color(rgb(t.text_faint))
-                    .child(tr("file_tree.pin_empty")),
-            ))
-            .into_any_element();
-    }
     for (ix, (path, is_dir, name, dir_part)) in rows.into_iter().enumerate() {
         let weak_unpin = weak.clone();
         let weak_open = weak.clone();

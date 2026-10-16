@@ -181,15 +181,21 @@ impl Chat {
     }
 
     /// 操作栏 Pin 钮：开/收收藏夹浮层（toggle，同搜索文件的再点即关）。
-    /// 开时顺手清掉已不存在的条目（外部删除残留）。
+    /// 开时顺手清掉已不存在的条目（外部删除残留）；清完没内容就**不开**
+    /// 浮层（2026-10-16 定夺：无空态提示）。
     pub(crate) fn toggle_pin_menu(&mut self, cx: &mut Context<Self>) {
-        self.dlg.pin_menu = !self.dlg.pin_menu;
         if self.dlg.pin_menu {
-            let before = self.ws.pinned.len();
-            self.ws.pinned.retain(|p| p.exists());
-            if self.ws.pinned.len() != before {
-                self.save_pins();
-            }
+            self.dlg.pin_menu = false;
+            cx.notify();
+            return;
+        }
+        let before = self.ws.pinned.len();
+        self.ws.pinned.retain(|p| p.exists());
+        if self.ws.pinned.len() != before {
+            self.save_pins();
+        }
+        if !self.ws.pinned.is_empty() {
+            self.dlg.pin_menu = true;
         }
         cx.notify();
     }

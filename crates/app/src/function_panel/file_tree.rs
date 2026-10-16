@@ -294,6 +294,10 @@ pub(crate) fn files_view(
                         .flex_1()
                         .min_h_0()
                         .w_full()
+                        // gpui div 默认 block：不显式 flex 列，内层 vlist 的
+                        // flex_1 失效、absolute 列表不撑高 → 高度塌 0 整树不可见
+                        .flex()
+                        .flex_col()
                         .on_hover(cx.listener(|this, hovered: &bool, _w, cx| {
                             this.ws.tree_sb_state.set_parent_hovered(*hovered);
                             cx.notify();
@@ -394,6 +398,9 @@ pub(crate) fn files_view(
                         .flex_1()
                         .min_h_0()
                         .w_full()
+                        // 同上：显式 flex 列，vlist 的 flex_1 才拿得到定高
+                        .flex()
+                        .flex_col()
                         .on_hover(cx.listener(|this, hovered: &bool, _w, cx| {
                             this.ws.tree_sb_state.set_parent_hovered(*hovered);
                             cx.notify();

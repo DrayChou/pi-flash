@@ -47,6 +47,10 @@
 - PF 案例（021 文件树拖拽移动）：file_tree_drag.rs（payload/幽灵/落点判定）+
   file_tree.rs `tree_drag_wiring` + file_actions.rs `tree_move_commit`。
 
+## 布局
+
+- gpui div 默认 **block**（Style::default 显式 Display::Block，taffy block 流）：子级 `flex_1` 失效、**absolute 定位子元素不撑高父级**——包一层「flex_1 子元素 + absolute 列表」的容器若忘了显式 `.flex().flex_col()`，内层高度塌 0、整块内容不可见（数据/状态都正常，纯渲染消失；文件树滚动条改造 c565c61 翻过车，标题行横排 1fc0fe3 同源）。排查口：`pif-ui snapshot` 数据完好但 `shot` 空白，先查新包的 wrapper 有没有显式 flex。
+
 ## overlay 与 hitbox
 
 - overlay 必须 `absolute().inset_0()` + `occlude()`（防 0 高容器裁掉子元素 / 鼠标穿透）；但 `occlude()` 会**截断祖先 hitbox**（hit_test 从后往前 break）→ 行级 hover 失效、滚轮困死——消息气泡禁止加 occlude。
