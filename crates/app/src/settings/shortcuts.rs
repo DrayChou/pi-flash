@@ -1,6 +1,8 @@
-//! 设置「快捷键」页（082）：居中索引版式——页标题 + accent 短横线，组标题
-//! 带编号与条数（细线延伸），行内 01..n 跨组连续编号 + 点线引导，键帽为
-//! 平面样式（细边框 + 底部厚边，修饰键浅一档灰）。键帽来源分两类：
+//! 设置「快捷键」页（082）：居中索引版式——无页标题（弹窗头已有页名），
+//! 组标题带条数（细线延伸），行内纯文字 + 点线引导，键帽为平面样式
+//! （细边框 + 底部厚边，修饰键浅一档灰）。组标题与行文案的左缘都落在
+//! 原数字列起点（行内 px(2) 内边距处），去掉编号后不额外缩进。键帽来源
+//! 分两类：
 //! - 有 action 的五项：keymap 反查（`highest_precedence_binding_for_action`
 //!   首键，单一事实源，与按钮 tooltip 键位 chip 同源，改绑定自动跟随）；
 //! - Ctrl+←/→ 与 F2：走渲染根按键兜底、**故意没有 action**（None-context
@@ -53,41 +55,23 @@ pub(crate) fn mc_shortcuts_view(window: &Window) -> gpui::AnyElement {
         Some(bare_key("f2")),
     )];
 
-    // 弹窗 body 是 block 容器（taffy block 不解析流内 auto margin），居中
+    // 弹窗 body 是 block 容器（taffy block 不解析流内auto margin），居中
     // 走 items_center + max_w
     let mut root = div().w_full().flex().flex_col().items_center();
     let mut col = div().w_full().max_w(px(COL_W)).flex().flex_col();
 
-    // 页标题 + accent 短横线
-    col = col
-        .child(
-            div()
-                .text_size(crate::appearance::ui_size(20.))
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(rgb(T().text_faint))
-                .child(SharedString::from(tr("shortcuts.title").to_string())),
-        )
-        .child(
-            div()
-                .w(px(34.))
-                .h(px(2.))
-                .mt(px(10.))
-                .rounded(px(2.))
-                .bg(rgb(T().accent)),
-        );
-
-    // 组：编号 + 组名 + 细线延伸 + 条数；行内 01..n 连续编号（跨组累计）
+    // 组：组名 + 细线延伸 + 条数；行内只有标题/说明 + 点线引导（无编号）
     let groups = vec![
         (tr("shortcuts.group_global"), global),
         (tr("shortcuts.group_file_tree"), file_tree),
     ];
-    let mut row_no = 0usize;
+    let mut row_ix = 0usize;
     for (gi, (name, entries)) in groups.into_iter().enumerate() {
-        col = col.child(group_title(gi + 1, name, entries.len(), gi == 0));
+        col = col.child(group_title(name, entries.len(), gi == 0));
         let last = entries.len().saturating_sub(1);
         for (ri, (title, desc, key)) in entries.into_iter().enumerate() {
-            row_no += 1;
-            col = col.child(index_row(row_no, title, desc, key.as_ref(), ri != last));
+            row_ix += 1;
+            col = col.child(index_row(row_ix, title, desc, key.as_ref(), ri != last));
         }
     }
 
@@ -107,23 +91,16 @@ fn bare_key(spec: &str) -> Keystroke {
     Keystroke::parse(spec).expect("static key spec parses")
 }
 
-/// 组标题行：`01 全局 ————— 7 条`。first 控制与页标题/上一组的间距。
-fn group_title(num: usize, name: &str, count: usize, first: bool) -> gpui::AnyElement {
+/// 组标题行：`全局 ————— 7 条`（无编号，组名即原数字列起点）。first 控制
+/// 与上一组的间距。
+fn group_title(name: &str, count: usize, first: bool) -> gpui::AnyElement {
     let t = T();
     div()
         .flex()
         .items_center()
         .gap(px(9.))
-        .mt(px(if first { 14. } else { 22. }))
+        .mt(px(if first { 2. } else { 22. }))
         .mb(px(4.))
-        .child(
-            div()
-                .font_family(crate::editor::markdown::MONO_FAMILY)
-                .text_size(crate::appearance::ui_size(11.))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(rgb(t.accent))
-                .child(SharedString::from(format!("{num:02}"))),
-        )
         .child(
             div()
                 .text_size(crate::appearance::ui_size(13.))
@@ -150,11 +127,12 @@ fn group_title(num: usize, name: &str, count: usize, first: bool) -> gpui::AnyEl
         .into_any_element()
 }
 
-/// 索引行：`01 打开项目 ················ [Ctrl][+][P]`。sep_below = 组内
-/// 行间细分隔线（组尾行与下一组标题之间不画）。悬停整行淡 accent 底、
-/// 编号转 accent（group/group_hover，见 docs/agents/gpui.md）。
+/// 索引行：`打开项目 ················ [Ctrl][+][P]`（无编号，文案左缘=
+/// 原数字列起点，即 px(2) 内边距处）。sep_below = 组内行间细分隔线（组尾行
+/// 与下一组标题之间不画）。悬停整行淡 accent 底（group/group_hover，见
+/// docs/agents/gpui.md）。
 fn index_row(
-    no: usize,
+    ix: usize,
     title: &str,
     desc: &str,
     key: Option<&Keystroke>,
@@ -182,7 +160,7 @@ fn index_row(
         );
     }
     div()
-        .id(SharedString::from(format!("sc-row-{no}")))
+        .id(SharedString::from(format!("sc-row-{ix}")))
         .group("sc-row")
         .flex()
         .items_center()
@@ -194,16 +172,6 @@ fn index_row(
                 .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x40)))
         })
         .hover(|s| s.bg(gpui::rgba(crate::appearance::theme::rgba_a(t.accent, 0.08))))
-        .child(
-            div()
-                .w(px(22.))
-                .flex_shrink_0()
-                .font_family(crate::editor::markdown::MONO_FAMILY)
-                .text_size(crate::appearance::ui_size(11.))
-                .text_color(rgb(t.text_faint))
-                .group_hover("sc-row", |s| s.text_color(rgb(t.accent)))
-                .child(SharedString::from(format!("{no:02}"))),
-        )
         .child(name_col)
         .child(
             // 点线引导符：1px 盒内画 dashed 底边
