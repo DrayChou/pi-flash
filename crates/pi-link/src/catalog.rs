@@ -17,7 +17,7 @@
 //!
 //! pi 内置斜杠命令：pi 的 RPC `get_commands` 只返回扩展命令 + skill 命令
 //! （1.0.0 实测 45 条 = 20 扩展 + 25 skill；1.1.0 复测 21 条 = 11 扩展 +
-//! 10 skill，均无内置），所以内置表是空常量；
+//! 10 skill；1.3.0 复测仍无内置），所以内置表是空常量；
 //! **vendor/pi 升级时复核这一行**（PROBE: `get_commands`）。
 
 use std::path::PathBuf;
@@ -27,7 +27,7 @@ use serde_json::Value;
 use crate::protocol::{ModelInfo, SlashCommand};
 use crate::skills::SkillEntry;
 
-/// pi 内置斜杠命令表 (name, description)。钉 1.0.0/1.1.0 实测均为空，见模块头注。
+/// pi 内置斜杠命令表 (name, description)。钉 1.0.0/1.1.0/1.3.0 实测均为空，见模块头注。
 pub const BUILTIN_COMMANDS: &[(&str, &str)] = &[];
 
 /// 内置表 → `SlashCommand`。
@@ -265,7 +265,7 @@ mod tests {
         assert_eq!(cs[1].name, "skill:jev");
     }
 
-    /// pi 无内置斜杠命令（1.0.0/1.1.0 实测）；升级 vendor 时这条会提醒复核。
+    /// pi 无内置斜杠命令（1.0.0/1.1.0/1.3.0 实测）；升级 vendor 时这条会提醒复核。
     #[test]
     fn builtin_table_is_empty() {
         assert!(builtin_commands().is_empty());
