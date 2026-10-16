@@ -1333,6 +1333,8 @@ mod tests {
         format!("http://{addr}")
     }
 
+    /// 单源下载的落盘目标（每次开头清一次；**测试结束必须自己删**——
+    /// 之前只在开头清，每次 `cargo test` 都在 %TEMP% 漏三份最多 256KB 的残渣）。
     fn test_dest(name: &str) -> std::path::PathBuf {
         let p = std::env::temp_dir().join(format!("pf-upd-test-{name}-{}", std::process::id()));
         let _ = std::fs::remove_file(&p);
@@ -1348,16 +1350,12 @@ mod tests {
         use sha2::Digest as _;
         let probe = Duration::from_millis(300);
         let min_bps = 128.0 * 1024.0;
+        let (d_slow, d_fo, d_nl) = (test_dest("slow"), test_dest("fo"), test_dest("nl"));
 
         // ① 20KB/s 慢源 → 快速中止，错误信息含"测速不过"
         let slow = serve(vec![0xAB; 64 * 1024], Some(50), true);
         let t0 = std::time::Instant::now();
-        let r = download_and_hash_cfg(
-            &format!("{slow}/v0.0.1/x.zip"),
-            &test_dest("slow"),
-            probe,
-            min_bps,
-        );
+        let r = download_and_hash_cfg(&format!("{slow}/v0.0.1/x.zip"), &d_slow, probe, min_bps);
         assert!(r.is_err(), "慢源应被测速守卫拒绝");
         assert!(r.unwrap_err().contains("测速不过"));
         assert!(
@@ -1371,7 +1369,7 @@ mod tests {
         let bases = vec![dead_base(), good.clone()];
         let (hash, chosen) = download_mirrored_cfg(
             "x.zip",
-            &test_dest("fo"),
+            &d_fo,
             "0.0.1",
             &bases,
             probe,
@@ -1388,7 +1386,7 @@ mod tests {
         let stream = serve(b"no-length-body".to_vec(), None, false);
         let (_h3, chosen3) = download_mirrored_cfg(
             "x.zip",
-            &test_dest("nl"),
+            &d_nl,
             "0.0.1",
             &[stream.clone()],
             probe,
@@ -1397,6 +1395,10 @@ mod tests {
         .unwrap();
         assert_eq!(chosen3, stream);
         assert_eq!(download_percent(), None, "无 content-length 无百分比");
+
+        for d in [&d_slow, &d_fo, &d_nl] {
+            let _ = std::fs::remove_file(d);
+        }
     }
 
     /// 真实网络端到端（发版前手动跑一次）：
