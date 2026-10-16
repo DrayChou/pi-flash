@@ -322,7 +322,8 @@ pub const NORD_DARK: Theme = Theme {
 /// Pine Forest Green (Dark) — ported from VS Code 扩展 felix-tjernberg.
 /// pine-forest-green（MIT，源 JSON 归档 assets/themes/pine-forest-green/）。
 /// 单色系墨绿：底色 08190a 近黑松林绿，正文/灰阶全是白色/绿色半透明层
-/// 按底色合成的实色（ffffffa1→a4aaa4 等）；唯一强调色 = 松针绿 2ecc40。
+/// 按底色合成的实色（ffffffa1→a4aaa4 等）；唯一强调色 = 松针绿，原版
+/// 2ecc40 微调降亮度/饱和到 29a83c（近黑底上防刺眼，用户实测反馈）。
 /// 语义校准：原主题 frameless 无实体描边 → border 取 focusBorder 合成色
 /// 124718；danger 系单色主题里没有 → 新增珊瑚红（语义必需）；accent_hover
 /// 按深色系惯例提亮。
@@ -338,8 +339,8 @@ pub const PINE_FOREST: Theme = Theme {
     text_dim: 0x878888,     // foreground #bebebeb3 合成
     text_soft: 0x5c675d,    // statusBar.foreground #ffffff58 合成
     text_faint: 0x465247,   // 校准: ~25% 白合成
-    accent: 0x2ecc40,       // 松针绿（全主题唯一强调色）
-    accent_hover: 0x55e463, // 深色系 hover 提亮（校准）
+    accent: 0x29a83c,       // 松针绿（原 2ecc40，微调防刺眼）
+    accent_hover: 0x3ec251, // 同步微调后的 hover 提亮
     accent_contrast: 0x08190a,
     user_bg: 0x103d15,      // 校准: 20% 松针绿合成（用户消息块）
     assistant_bg: 0x08190a,
