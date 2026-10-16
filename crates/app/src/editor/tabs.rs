@@ -1,6 +1,6 @@
 //! 文件 tab 生命周期：打开路由（二进制/超限拒绝、已开复用）、
 //! 保存/自动保存（023，Zed after-timeout 同构）、外部改动检测与冲突 banner、
-//! tab 激活（MRU 置顶）/关闭/无条件丢弃。
+//! tab 激活（顺序稳定不重排，082 二期定夺）/关闭/无条件丢弃。
 //! （P2 归并：actions_panels 的 tab 侧。）
 
 use crate::*;
@@ -485,18 +485,16 @@ impl Chat {
             })
     }
 
-    /// 激活内容区 tab 并挪到标签流首位（023 小功能：选中标签永远在最左，
-    /// zed 没有）。Term/File 都是轻量句柄（终端实体在 terminals 按 id 索引），
-    /// 移动无副作用。
+    /// 激活内容区 tab。023 的「选中标签挪到标签流首位」MRU 行为已按 082
+    /// 二期用户定夺移除：tab 条 = 稳定打开顺序（浏览器/zed 同款），新开
+    /// tab 追加到最右、激活只换高亮位——Ctrl+←/→ 逐格切换依赖下标稳定，
+    /// 激活即重排会让邻位关系每次漂移。Term/File 都是轻量句柄（终端实体
+    /// 在 terminals 按 id 索引）。
     pub(crate) fn activate_panel_tab(&mut self, ix: usize, cx: &mut Context<Self>) {
         if ix >= self.ws.panel_tabs.len() {
             return;
         }
-        if ix != 0 {
-            let tab = self.ws.panel_tabs.remove(ix);
-            self.ws.panel_tabs.insert(0, tab);
-        }
-        self.ws.active_panel_tab = Some(0);
+        self.ws.active_panel_tab = Some(ix);
         // 切到终端 tab：同步 active_terminal（按键/自动化都读它；否则双终端
         // 切 tab 后输入会送进后台那个终端）
         if let Some(tix) = self.shown_terminal_index() {
@@ -505,18 +503,18 @@ impl Chat {
         // 文件标签驱动树同步：同项目定位选中，跨项目切工作区（点标签/开
         // 文件/键盘切 tab/关标签回退都经这里，语义 = 激活的文件标签就是
         // 树的当前项目）
-        if let Some(crate::PanelTab::File(p)) = self.ws.panel_tabs.first().cloned() {
+        if let Some(crate::PanelTab::File(p)) = self.ws.panel_tabs.get(ix).cloned() {
             self.sync_tree_to_file(&p);
         }
         cx.notify();
     }
 
     /// 082 视图切换：Ctrl+←/→ 切到当前标签左/右邻视图。tab 条 = 置顶会话
-    /// tab + 自由标签区，激活 tab 恒被挪到自由区首位（activate_panel_tab），
-    /// 故序列 [会话, p0..pn] 上的「左/右邻」= 会话↔自由区边界走 -1/+1。
-    /// 最左再往左、最右再往右 = no-op（不环绕，浏览器同语义）。焦点交接
-    /// 与 content_tab 的 switch 监听同款：终端直接给焦点句柄，文件走
-    /// pending_focus_file（编辑器实体渲染帧懒建）。返回是否发生切换。
+    /// tab + 自由标签区，顺序稳定（激活不重排，见 activate_panel_tab），
+    /// 序列 [会话, p0..pn] 上的「左/右邻」= 下标 -1/+1。最左再往左、最右
+    /// 再往右 = no-op（不环绕，浏览器同语义）。焦点交接与 content_tab 的
+    /// switch 监听同款：终端直接给焦点句柄，文件走 pending_focus_file
+    /// （编辑器实体渲染帧懒建）。返回是否发生切换。
     pub(crate) fn cycle_content_tab(
         &mut self,
         offset: isize,
@@ -610,6 +608,8 @@ impl Chat {
             }
         }
         self.ws.active_panel_tab = match self.ws.active_panel_tab {
+            // 关的是激活 tab：右邻补位（空表置 None）；关的在激活位左侧：
+            // 激活下标随删左移一格（tab 条顺序稳定后激活位可以是任意下标）
             Some(a) if a >= self.ws.panel_tabs.len() => {
                 if self.ws.panel_tabs.is_empty() {
                     None
@@ -617,6 +617,7 @@ impl Chat {
                     Some(a.saturating_sub(1))
                 }
             }
+            Some(a) if a > ix => Some(a - 1),
             other => other,
         };
         // 关 tab 后激活的可能就是另一个终端 tab：对齐一次（与激活路径同源）
