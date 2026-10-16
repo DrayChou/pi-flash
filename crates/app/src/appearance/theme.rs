@@ -143,6 +143,34 @@ pub const MIST: Theme = Theme {
     danger_hover: 0xd8626a,
 };
 
+/// MiMo-V2.6-Pro 014「Kitchen Notebook」——奶油纸凸版食谱夹：纸底/栏线/
+/// 校对红直接取 014 页面的 CSS 变量（--paper/--rule/--red/--mute），
+/// 中间阶按 mist 的语义梯度插值（校准基准见文件头）。
+pub const KITCHEN: Theme = Theme {
+    dark: false,
+    bg: 0xfbf5e9,        // --paper 奶油纸底
+    bg_panel: 0xf4ead8,   // --paper2 次级纸面
+    bg_hover: 0xf0e4cc,
+    bg_selected: 0xe8dab9,
+    border: 0xd8cbb4,     // --rule 栏线
+    text: 0x241c14,       // --ink 墨黑棕
+    text_muted: 0x4f4232,
+    text_dim: 0x6b5c48,
+    text_soft: 0x7a6a57,  // --mute
+    text_faint: 0x9b8d78,
+    accent: 0xb8402d,     // --red 校对红（014 唯一强调色）
+    accent_hover: 0x9c3425,
+    accent_contrast: 0xffffff,
+    user_bg: 0xf4ead8,
+    assistant_bg: 0xfbf5e9,
+    tool_bg: 0xf2e7d3,
+    bg_subtle: 0x241c140a, // rgba(36,28,20,0.04)
+    chrome: 0xf0e5d0,
+    nav: 0xfdf8ef,
+    danger: 0xa5342a,
+    danger_hover: 0xc85a44,
+};
+
 /// `[data-theme="rose"]`
 pub const ROSE: Theme = Theme {
     dark: false,
@@ -172,6 +200,7 @@ pub const ROSE: Theme = Theme {
 pub const ALL: &[(&str, Theme)] = &[
     ("mist", MIST),
     ("rose", ROSE),
+    ("kitchen", KITCHEN),
     ("one-light", ONE_LIGHT),
     ("nord-light", NORD_LIGHT),
     ("nord-dark", NORD_DARK),
@@ -369,7 +398,7 @@ mod tests {
         assert_eq!(theme_name(), "mist");
         assert!(!set_by_name("nope"));
         assert_eq!(theme_name(), "mist");
-        // all seven built-in themes have complete palettes (v54 layers incl.)
+        // all built-in themes have complete palettes (v54 layers incl.)
         for (name, t) in ALL {
             assert!(t.accent != 0, "{name} missing accent");
             assert!(t.border != 0, "{name} missing border");

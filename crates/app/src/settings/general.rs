@@ -145,9 +145,10 @@ fn section_label(text: &str) -> gpui::AnyElement {
         .into_any_element()
 }
 
-/// 一排主题卡片。每排固定 5 个等宽槽位（淡色 5 满、深色 2 + 3 个空槽），
-/// 上下两排槽位同宽。卡片即配色横条本身（无外框壳）：主题底色 + accent /
-/// muted 圆点，主题名居中放进横条（文字用主题自身前景色保证可读）。
+/// 一个明暗档的主题卡片组。每排固定 5 个等宽槽位（跨排同宽），超过 5 个
+/// 自动折行（kitchen 加入后淡色 6 个 = 5 + 1；深色仍 2 + 3 个空槽）。
+/// 卡片即配色横条本身（无外框壳）：主题底色 + accent / muted 圆点，主题名
+/// 居中放进横条（文字用主题自身前景色保证可读）。
 fn theme_row(dark: bool, weak: &gpui::WeakEntity<Chat>) -> gpui::AnyElement {
     let current = theme::theme_name();
     let entries: Vec<&ThemeEntry> = crate::appearance::registry()
@@ -160,84 +161,91 @@ fn theme_row(dark: bool, weak: &gpui::WeakEntity<Chat>) -> gpui::AnyElement {
                 .unwrap_or(false)
         })
         .collect();
-    let cells: Vec<Option<&ThemeEntry>> = (0..5).map(|ix| entries.get(ix).copied()).collect();
+    // 折行：每 5 个一行，末行用空槽补齐 5 槽，保证所有行槽位等宽
+    let rows: Vec<Vec<Option<&ThemeEntry>>> = entries
+        .chunks(5)
+        .map(|chunk| (0..5).map(|ix| chunk.get(ix).copied()).collect())
+        .collect();
     div()
         .flex()
+        .flex_col()
         .gap(px(8.))
         .mt(px(8.))
-        .children(cells.into_iter().map(|cell| {
-            let Some(entry) = cell else {
-                // 空槽：只占位，保持与上一排等宽
-                return div().flex_1().min_w_0().into_any_element();
-            };
-            let th = theme::ALL
-                .iter()
-                .find(|(id, _)| *id == entry.id)
-                .map(|(_, t)| *t)
-                .expect("registry id missing from theme table");
-            let active = entry.id == current;
-            let weak_card = weak.clone();
-            let theme_id = entry.id.to_string();
-            // 卡片外包一层无 padding/边框的等宽槽位：卡片自带的 padding+边框
-            // 会计入 taffy 的假设主尺寸（flex-basis 0 压不掉），直接 flex_1 会
-            // 比空槽宽出一个 padding+border，导致上下两排不等宽。
-            div()
-                .flex_1()
-                .min_w_0()
-                .child(
-                    div()
-                        .id(SharedString::from(format!("theme-{}", entry.id)))
-                        .w_full()
-                        .h(px(36.))
-                        .rounded(px(5.))
-                        .border_1()
-                        // 选中描边加粗到 2px（后写覆盖 border_1 的四边宽度）
-                        .when(active, |d| d.border_2())
-                        .border_color(rgb(if active { th.accent } else { th.border }))
-                        .bg(rgb(th.bg))
-                        .overflow_hidden()
-                        .flex()
-                        .items_center()
-                        .gap(px(6.))
-                        .px(px(8.))
-                        .cursor_pointer()
-                        .hover(|s| s.border_color(rgb(th.text_muted)))
-                        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                            let _ = weak_card.update(cx, |_c, cx| {
-                                if crate::appearance::persist_theme(&theme_id) {
-                                    // 006: re-map tokens so widget-library surfaces
-                                    // (inputs/modals) follow the switch
-                                    crate::appearance::sync_gpui_tokens(cx);
-                                    cx.notify();
-                                }
-                            });
-                        })
-                        // 左圆点区 / 右空位等宽（各 flex_1），名字真正落在横条中央
-                        .child(
-                            div()
-                                .flex_1()
-                                .flex()
-                                .items_center()
-                                .gap(px(4.))
-                                .child(div().size(px(7.)).rounded_full().bg(rgb(th.accent)))
-                                .child(div().size(px(7.)).rounded_full().bg(rgb(th.text_muted))),
-                        )
-                        .child(
-                            div()
-                                .flex_shrink_0()
-                                .text_size(crate::appearance::ui_size(11.5))
-                                .font_weight(if active {
-                                    gpui::FontWeight::SEMIBOLD
-                                } else {
-                                    gpui::FontWeight::NORMAL
-                                })
-                                .text_color(rgb(if active { th.accent } else { th.text }))
-                                .whitespace_nowrap()
-                                .child(SharedString::from(entry.name)),
-                        )
-                        .child(div().flex_1()),
-                )
-                .into_any_element()
+        .children(rows.into_iter().map(|cells| {
+            div().flex().gap(px(8.)).children(cells.into_iter().map(|cell| {
+                let Some(entry) = cell else {
+                    // 空槽：只占位，保持与上一排等宽
+                    return div().flex_1().min_w_0().into_any_element();
+                };
+                let th = theme::ALL
+                    .iter()
+                    .find(|(id, _)| *id == entry.id)
+                    .map(|(_, t)| *t)
+                    .expect("registry id missing from theme table");
+                let active = entry.id == current;
+                let weak_card = weak.clone();
+                let theme_id = entry.id.to_string();
+                // 卡片外包一层无 padding/边框的等宽槽位：卡片自带的 padding+边框
+                // 会计入 taffy 的假设主尺寸（flex-basis 0 压不掉），直接 flex_1 会
+                // 比空槽宽出一个 padding+border，导致上下两排不等宽。
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .child(
+                        div()
+                            .id(SharedString::from(format!("theme-{}", entry.id)))
+                            .w_full()
+                            .h(px(36.))
+                            .rounded(px(5.))
+                            .border_1()
+                            // 选中描边加粗到 2px（后写覆盖 border_1 的四边宽度）
+                            .when(active, |d| d.border_2())
+                            .border_color(rgb(if active { th.accent } else { th.border }))
+                            .bg(rgb(th.bg))
+                            .overflow_hidden()
+                            .flex()
+                            .items_center()
+                            .gap(px(6.))
+                            .px(px(8.))
+                            .cursor_pointer()
+                            .hover(|s| s.border_color(rgb(th.text_muted)))
+                            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                                let _ = weak_card.update(cx, |_c, cx| {
+                                    if crate::appearance::persist_theme(&theme_id) {
+                                        // 006: re-map tokens so widget-library surfaces
+                                        // (inputs/modals) follow the switch
+                                        crate::appearance::sync_gpui_tokens(cx);
+                                        cx.notify();
+                                    }
+                                });
+                            })
+                            // 左圆点区 / 右空位等宽（各 flex_1），名字真正落在横条中央
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(4.))
+                                    .child(div().size(px(7.)).rounded_full().bg(rgb(th.accent)))
+                                    .child(div().size(px(7.)).rounded_full().bg(rgb(th.text_muted))),
+                            )
+                            .child(
+                                div()
+                                    .flex_shrink_0()
+                                    .text_size(crate::appearance::ui_size(11.5))
+                                    .font_weight(if active {
+                                        gpui::FontWeight::SEMIBOLD
+                                    } else {
+                                        gpui::FontWeight::NORMAL
+                                    })
+                                    .text_color(rgb(if active { th.accent } else { th.text }))
+                                    .whitespace_nowrap()
+                                    .child(SharedString::from(entry.name)),
+                            )
+                            .child(div().flex_1()),
+                    )
+                    .into_any_element()
+            }))
         }))
         .into_any_element()
 }

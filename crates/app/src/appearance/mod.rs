@@ -44,6 +44,7 @@ fn theme_display_name(id: &'static str) -> &'static str {
     match id {
         "mist" => "雾青",
         "rose" => "蔷薇",
+        "kitchen" => "厨房笔记",
         "one-light" => "One Light",
         "nord-light" => "Nord Light",
         "nord-dark" => "Nord Dark",
