@@ -30,6 +30,16 @@
 
 ## 里程碑索引（新 → 旧；一行一条，细节看对应提交）
 
+- 2026-10-16 **081 落位机制改版（bead `pi-flash-9hyu`）**：0.1.6~0.1.10 的
+  「点重启后版本没更新 / 下载→重启→旧版→重下」死循环，共同根因是在 Windows
+  上 rename 一个「里面有东西在用」的整目录必败（孤儿 node sidecar、Defender
+  实时扫描、Access denied），而旧方案把整目录 swap 当落位唯一手段。改版：
+  **更新 = 解压成新目录 `payload-<版本>/`，交接 = spawn 新载荷的 exe 并退出**
+  （开窗前 `handoff_if_newer`）；完整判据唯一（目录名 `-<版本>` + `.payload-version`
+  戳 + exe 在位），删掉 helper/标记文件/重试/预热/杀 sidecar/swap 日志，净删
+  -660 行；薄壳改为选版本最高的完整载荷跑。真机验：0.1.9 构建 → 真 0.1.10 资产
+  → ready → 重启落新目录、state 回 idle 不重下、changelog 自动开；旧 exe 直启
+  也交接（081 §7 有对照表与复现配方）。
 - 2026-10-16 **033 导航总结栏 icon 化**：「N条消息：用户X条…」文案改 icon+数字
   四组（message-square-text/user-round/bot/wrench 新增两枚 lucide），色
   text_dim、尺寸走规范令牌 icon MD16/SP4/SP5/ui(11)，删 i18n 键
@@ -125,10 +135,10 @@
   （psp 项目菜单「在终端中打开」留在会话列表面板）；② 同项目不再按 cwd
   复用终端——每次新开一个终端 tab，重名允许、不跳回已有终端；关 tab 同步
   校正 active_terminal 下标。
-- 2026-10-11 **081 应用内自动更新落地**：延迟加载阶段后台检查 GitHub
-  release（timeout 30s / 重试 2 次隔 10min / 不阻塞主进程），on=后台下载
-  zip→SHA-256→解压 `payload.stage-<ver>`+标记，薄壳启动器 swap（e2e 新增
-  ⑩⑪ 共 32 项绿）；off=新会话页版本号 `↑` 可点击开 release 页；新版本首启
+- 2026-10-11 **081 应用内自动更新落地**（**落位部分已被 2026-10-16 改版取代**）：
+  延迟加载阶段后台检查 GitHub release（timeout 30s / 重试 2 次隔 10min /
+  不阻塞主进程），on=后台下载 zip→SHA-256→解压 `payload.stage-<ver>`+标记，
+  薄壳启动器 swap（e2e 新增 ⑩⑪ 共 32 项绿）；off=新会话页版本号 `↑` 可点击开 release 页；新版本首启
   自动开 topbar「更新日志」tab（release notes 落 `~/.pi-flash/changelog-cache/`）。
 - 2026-10-10 **设置页减负**（用户定夺）：删「加载扩展」（v70.3 逃生口
   退役——默认档路径上无效，`client::spawn` 去第三参；扩展装载恒开，

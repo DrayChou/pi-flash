@@ -187,6 +187,17 @@ fn staged_newer(root: &Path, cur: &str) -> Option<(String, PathBuf)> {
         .max_by(|a, b| version_key(&a.0).cmp(&version_key(&b.0)))
 }
 
+/// 我所在载荷目录自证一致：目录名里的版本（若有）必须等于我自己的版本。
+/// 不一致 = 被复制/篡改的载荷（例如旧 exe 被塞进 `payload-9.9.9/`）——那种
+/// 情况下交接会 A 让位 B、B 又让位 A，变成进程 spawn 风暴，直接拒绝交接。
+/// 绿色包目录名不含版本 → None → 无从证伪，照常交接。
+fn self_version_matches(me: &Path) -> bool {
+    match payload_version_of(me) {
+        Some(v) => v == current_version(),
+        None => true,
+    }
+}
+
 /// 启动最前处（main 开窗之前）调用：更高版本的完整载荷已就位就 spawn 它的
 /// exe 并返回 true（调用方随即退出，用户只感觉这次启动慢半拍）。顺序：
 /// 先起后台清理线程（删旧版本目录，不阻塞开窗），再判断交接。
@@ -202,6 +213,10 @@ pub(crate) fn handoff_if_newer() -> bool {
         let me = me.clone();
         move || cleanup_older(root, me)
     });
+    if !self_version_matches(&me) {
+        eprintln!("[updater] {} 的版本戳与进程版本不符，跳过启动交接", me.display());
+        return false;
+    }
     let Some((ver, dir)) = staged_newer(&root, current_version()) else {
         return false;
     };
@@ -1071,13 +1086,26 @@ mod tests {
     }
 
     #[test]
-    fn base_name_strips_version_suffix() {
-        assert_eq!(base_name("payload-0.1.11"), "payload");
+    fn base_name_strips_version_suffix() {        assert_eq!(base_name("payload-0.1.11"), "payload");
         assert_eq!(base_name("pi-flash-0.1.11"), "pi-flash");
         assert_eq!(base_name("payload"), "payload");
         assert_eq!(base_name("pi-flash"), "pi-flash", "绿色包基名不能被吃掉");
         assert_eq!(base_name("my-app"), "my-app", "非数字尾巴不算版本");
         assert_eq!(base_name("pi-flash-0.1"), "pi-flash");
+    }
+
+    /// 交接自证：目录名版本必须等于进程版本，否则拒绝交接（防 spawn 风暴）。
+    #[test]
+    fn self_version_guard() {
+        let root = temp_dir("selfver");
+        let mine = root.join(format!("payload-{}", current_version()));
+        fake_payload(&mine, current_version());
+        assert!(self_version_matches(&mine), "版本一致应放行");
+        let faked = root.join("payload-9.9.9");
+        fake_payload(&faked, "9.9.9");
+        assert!(!self_version_matches(&faked), "戳与进程版本不符应拒交");
+        assert!(self_version_matches(&root.join("payload")), "无版本名照常交接");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// 布局核心：目录名带版本 + 戳吻合 + exe 在位 = 可交接的新载荷；半截目录、
