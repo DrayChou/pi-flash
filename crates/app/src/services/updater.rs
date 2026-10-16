@@ -214,16 +214,28 @@ pub(crate) fn startup_swap_pending() -> bool {
 /// powershell swap 脚本（swap 细节照抄启动器 applyStagedUpdate，npm/bin/lib.js）：
 /// ① 等目标进程退出（≤15s，超时全盘放弃）→ ①.5 杀命令行含 pkg 路径的孤儿
 /// node sidecar（宿主退出不跟死、句柄锁死目录 rename——0.1.8 实录自交换
-/// 死循环的占用源）→ ② rename payload→old（重试 ≤5s；耗尽 = 外部占用，
-/// 放弃并消费标记）→ ③ rename staging→payload（失败把 old 搬回并消费标记；
-/// payload 缺失 = 上次半途崩，搬回 old、标记留待下次）→ ④ 拉起载荷 exe
-/// （沿用原工作目录；swap 成败都拉——用户永远有窗口，只是版本新旧之别）→
-/// ⑤ 最后删 old。
+/// 死循环的占用源）→ ② rename payload→old（重试；耗尽 = 外部占用，放弃并
+/// 消费标记）→ ③ rename staging→payload（**同样重试**——0.1.10 实录：
+/// staging 是刚解压完的 1.5 万文件，Defender 实时扫描几十秒，旧版 ③ 无重试
+/// 一拍即死，用户「下载完立即点重启」每轮都撞进扫描窗口 = 无限重下；失败
+/// 把 old 搬回并消费标记；payload 缺失 = 上次半途崩，搬回 old、标记留待
+/// 下次）→ ④ 拉起载荷 exe（沿用原工作目录；swap 成败都拉——用户永远有
+/// 窗口，只是版本新旧之别）→ ⑤ 最后删 old。
+/// 全程写 `pkg\update-swap.log`：helper 是无窗口分离进程，落文件是唯一
+/// 可观测手段——0.1.10 死循环靠安装目录现场考古才定位，日志一锤定音。
 /// 占位符用唯一 token replace 而非 format!，避开 PS 花括号转义；单引号路径
-/// 内的单引号翻倍转义。exe_name 参数化供测试注入假 exe。
+/// 内的单引号翻倍转义。exe_name/retry 参数化供测试注入假 exe、短重试窗口。
 /// 占位 token 取真实路径不可能出现的形状：多轮 replace 时先前注入的路径
 /// 不会再被后续 token 命中。
-fn swap_script(target_pid: u32, pkg: &Path, stage: &Path, work: &Path, exe_name: &str) -> String {
+fn swap_script(
+    target_pid: u32,
+    pkg: &Path,
+    stage: &Path,
+    work: &Path,
+    exe_name: &str,
+    retry_n: u32,
+    retry_ms: u32,
+) -> String {
     let esc = |s: &Path| s.to_string_lossy().replace('\'', "''");
     let mut s = String::from(
         r#"$ErrorActionPreference = 'SilentlyContinue'
@@ -231,6 +243,14 @@ $target = __PF_PID__
 $pkg    = '__PF_PKG__'
 $stage  = '__PF_STAGE__'
 $work   = '__PF_WORK__'
+$log = Join-Path $pkg 'update-swap.log'
+function Log([string]$msg) {
+    try {
+        $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss.fff')
+        Add-Content -LiteralPath $log -Value ("[" + $ts + "] " + $msg) -Encoding UTF8 -ErrorAction Stop
+    } catch {}
+}
+Log ("---- swap start pid=" + $target + " stage=" + $stage)
 # ① 等旧进程退出（≤15s；超时放弃，什么都不动）
 $alive = $true
 for ($i = 0; $i -lt 150; $i++) {
@@ -238,16 +258,16 @@ for ($i = 0; $i -lt 150; $i++) {
     if (-not $alive) { break }
     Start-Sleep -Milliseconds 100
 }
-if ($alive) { exit 1 }
+if ($alive) { Log "① 目标进程 15s 未退出，放弃"; exit 1 }
 # ①.5 清理钉死 pkg 目录的孤儿 sidecar：node.exe 命令行含 pkg 路径 = 本应用
 # 的 pi RPC / 微信桥 sidecar（宿主退出不等它们，句柄锁死目录 rename——0.1.8
 # 实录自交换死循环的占用源）。只认 node.exe，别的进程不碰。
 Get-CimInstance Win32_Process -Filter "Name='node.exe'" |
     Where-Object { $_.CommandLine -like ('*' + $pkg + '*') } |
-    ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+    ForEach-Object { Log ("①.5 杀 sidecar node pid=" + $_.ProcessId); Stop-Process -Id $_.ProcessId -Force }
 Start-Sleep -Milliseconds 300
-# ② swap 上半场：payload → old。在则 rename（重试 ≤5s：杀完 sidecar 后仍被
-# 挡 = 杀软扫描类外部占用）；重试耗尽 = 被占死，本次放弃且消费标记
+# ② swap 上半场：payload → old。在则 rename（重试：杀完 sidecar 后仍被挡 =
+# 杀软扫描类外部占用）；重试耗尽 = 被占死，本次放弃且消费标记
 $payload = Join-Path $pkg 'payload'
 $oldName = 'payload.old-' + (Get-Date -Format 'yyyyMMddHHmmssfff')
 $old = Join-Path $pkg $oldName
@@ -255,25 +275,49 @@ $moved = $false
 $blocked = $false
 $failClear = $false
 if (Test-Path -LiteralPath $payload) {
-    for ($i = 0; $i -lt 10; $i++) {
-        if (Rename-Item -LiteralPath $payload -NewName $oldName -PassThru) { $moved = $true; break }
-        Start-Sleep -Milliseconds 500
+    for ($i = 0; $i -lt __PF_RETRY_N__; $i++) {
+        try {
+            Rename-Item -LiteralPath $payload -NewName $oldName -ErrorAction Stop
+            $moved = $true; break
+        } catch {
+            Log ("② payload→old 第" + ($i + 1) + "次: " + $_.Exception.Message)
+            Start-Sleep -Milliseconds __PF_RETRY_MS__
+        }
     }
-    if (-not $moved) { $blocked = $true; $failClear = $true }
+    if (-not $moved) { $blocked = $true; $failClear = $true; Log "② 重试耗尽，blocked" }
+} else {
+    Log "② payload 不在（半途崩?）"
 }
-# ③ swap 下半场：staging → payload；失败把 old 搬回并消费标记；payload 缺失
-# （上次半途崩）把 old 搬回、标记留着——下次启动接着换
+# ③ swap 下半场：staging → payload，**带重试**——staging 刚解压完正被杀软
+# 实时扫描（0.1.10 实录：扫描几十秒，一拍即死 = 无限重下死循环）。失败把
+# old 搬回并消费标记；payload 缺失（上次半途崩）把 old 搬回、标记留着
 $swapped = $false
 if ($moved) {
-    if (Rename-Item -LiteralPath $stage -NewName 'payload' -PassThru) {
-        $swapped = $true
-    } else {
-        Rename-Item -LiteralPath $old -NewName 'payload'
+    for ($i = 0; $i -lt __PF_RETRY_N__; $i++) {
+        try {
+            Rename-Item -LiteralPath $stage -NewName 'payload' -ErrorAction Stop
+            $swapped = $true; break
+        } catch {
+            Log ("③ staging→payload 第" + ($i + 1) + "次: " + $_.Exception.Message)
+            Start-Sleep -Milliseconds __PF_RETRY_MS__
+        }
+    }
+    if (-not $swapped) {
+        Log "③ 重试耗尽，回滚 old→payload"
+        try {
+            Rename-Item -LiteralPath $old -NewName 'payload' -ErrorAction Stop
+            Log "③ 回滚完成"
+        } catch {
+            Log ("③ 回滚失败: " + $_.Exception.Message)
+        }
         $failClear = $true
     }
 } elseif (-not $blocked) {
     $prev = Get-ChildItem -LiteralPath $pkg -Directory -Filter 'payload.old-*' | Select-Object -First 1
-    if ($prev) { Rename-Item -LiteralPath $prev.FullName -NewName 'payload' | Out-Null }
+    if ($prev) {
+        Log ("② 前次残留 old 回搬: " + $prev.Name)
+        Rename-Item -LiteralPath $prev.FullName -NewName 'payload' | Out-Null
+    }
 }
 # 标记生命周期：成功删除；rename 被占死/下半场失败也删除（0.1.8 实录死循环
 # 修复——标记残留时，④ 拉起的旧 exe 看到合法更新 staging 又开一轮，无限自旋）
@@ -288,10 +332,13 @@ if (Test-Path -LiteralPath $newExe) {
     } else {
         Start-Process -FilePath $newExe
     }
+    Log "④ 已拉起 exe"
+} else {
+    Log ("④ exe 缺失，未拉起: " + $newExe)
 }
 # ⑤ 最后删 old（此刻 payload 已就位，删失败无碍）
 if (Test-Path -LiteralPath $old) { Remove-Item -LiteralPath $old -Recurse -Force }
-if ($swapped) { exit 0 } else { exit 1 }
+if ($swapped) { Log "swap OK"; exit 0 } else { Log "swap FAIL"; exit 1 }
 "#,
     );
     let pid = target_pid.to_string();
@@ -301,6 +348,8 @@ if ($swapped) { exit 0 } else { exit 1 }
         ("__PF_STAGE__", &esc(stage)),
         ("__PF_WORK__", &esc(work)),
         ("__PF_EXE__", &exe_name.replace('\'', "''")),
+        ("__PF_RETRY_N__", &retry_n.to_string()),
+        ("__PF_RETRY_MS__", &retry_ms.to_string()),
     ] {
         s = s.replace(ph, val);
     }
@@ -337,7 +386,10 @@ pub(crate) fn spawn_swap_helper() -> bool {
         };
         let stage = staging_dir(&pkg, &staged.version);
         let work = std::env::current_dir().unwrap_or_else(|_| pkg.clone());
-        let script = swap_script(std::process::id(), &pkg, &stage, &work, "pi-flash.exe");
+        // ②③ 各重试 120×500ms = 60s：0.1.10 实录 Defender 扫刚解压的 1.5 万
+        // 文件要几十秒，5s 窗口每轮必撞；60s 熬过扫描期（熬不过 = 真占用，
+        // 回滚旧版 + 消费标记 + 落日志）
+        let script = swap_script(std::process::id(), &pkg, &stage, &work, "pi-flash.exe", 120, 500);
         std::process::Command::new("powershell.exe")
             .args([
                 "-NoProfile",
@@ -784,17 +836,32 @@ fn fetch_text(url: &str) -> Result<String, String> {
 
 /// 清残留（080 §3.3）：`update.tmp-<pid>` 超过 1 小时未更新即删——活跃下载
 /// 持续写盘 mtime 常新，停更 1 小时 = 进程已死；`payload.old-*` 为 swap 中断
-/// 遗留，无条件删。npm 薄壳侧另有按 pid 精确判断的清理，这里只做兜底。
+/// 遗留，无条件删；`payload.stage-*` 只保留标记指向的那一个，其余删——③
+/// 失败回滚后标记已消费，staging 留在原地成 82MB 孤儿（0.1.10 实录）。npm
+/// 薄壳侧另有按 pid 精确判断的清理，这里只做兜底。
 fn cleanup_stale_staging(pkg: &Path) {
     const STALE: Duration = Duration::from_secs(3600);
     let Ok(entries) = std::fs::read_dir(pkg) else {
         return;
     };
+    // 标记解析出版本 V → 只有 stage-V 是「换装排队中」，其余 stage-* 都是
+    // 历史垃圾。调用点在 stage_update_in 起点，与本进程下载无并发；他实例
+    // 刚 rename staging 还没写标记的毫秒窗口理论可误删，失败模式 = 安全重下。
+    let marker_version: Option<String> = std::fs::read_to_string(marker_path(pkg))
+        .ok()
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+        .and_then(|v| v.get("version").and_then(|x| x.as_str()).map(str::to_string));
     for entry in entries.flatten() {
         let file_name = entry.file_name();
         let Some(name) = file_name.to_str() else {
             continue;
         };
+        if let Some(ver) = name.strip_prefix("payload.stage-") {
+            if marker_version.as_deref() != Some(ver) {
+                let _ = std::fs::remove_dir_all(entry.path());
+            }
+            continue;
+        }
         let stale_tmp = name.starts_with("update.tmp-")
             && entry
                 .metadata()
@@ -803,6 +870,34 @@ fn cleanup_stale_staging(pkg: &Path) {
                 .unwrap_or(true);
         if stale_tmp || name.starts_with("payload.old-") {
             let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
+/// 预热 staging（2026-10-16 实录，所有者定夺「扫描就该在安装时完成」）：
+/// 逐文件 open+read 首字节——杀软实时扫描在文件首次打开时同步完成，把
+/// 扫描成本吃进「解压安装中…」阶段。否则扫描窗口留在标记写好之后：用户
+/// 解压完立即点重启，swap ③ rename staging 撞上目录树锁（0.1.10 实录 5 轮
+/// 全败 = 无限重下）。预热完 staging 是「冷」目录，swap 秒过；预热本身
+/// 失败不拦安装（无杀软时 open 无害，有杀软时这一步躲不掉只是换个时点）。
+fn warm_up_staging(dir: &Path) {
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&d) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else if entry.metadata().map(|m| m.len() > 0).unwrap_or(false) {
+                // open + 读首字节即触发杀软同步扫描；内容不校验（读取本身
+                // 就是目的）。0 字节文件跳过——没有可扫的页。
+                if let Ok(mut f) = std::fs::File::open(&p) {
+                    let mut b = [0u8; 1];
+                    let _ = std::io::Read::read_exact(&mut f, &mut b);
+                }
+            }
         }
     }
 }
@@ -871,6 +966,9 @@ fn stage_update_in(pkg: &Path, rel: &ReleaseInfo) -> Result<String, String> {
         std::fs::rename(&root, &staging).map_err(|e| format!("staging 落位失败：{e}"))?;
         std::fs::write(staging.join(".payload-version"), format!("{ver}\n"))
             .map_err(|e| format!("{e}"))?;
+        // 标记写好前预热（杀软扫描吃进安装时，2026-10-16 实录）：staging 冷了
+        // 才写标记——标记即「可以点重启了」的承诺
+        warm_up_staging(&staging);
 
         // 更新日志缓存（重启后的更新日志页直接读本地）
         if !rel.body.is_empty() {
@@ -1245,12 +1343,15 @@ mod tests {
             Path::new("C:\\app pi'flash\\payload.stage-0.2.0"),
             Path::new("C:\\my work"),
             "pi-flash.exe",
+            120,
+            500,
         );
         assert!(script.contains("$target = 4242"));
         assert!(script.contains("'C:\\app pi''flash'"), "路径内单引号翻倍转义");
         assert!(!script.contains("__PF_"), "占位符全部替换");
         assert!(script.contains("Win32_Process"), "①.5 孤儿 sidecar 清理在脚本里");
         assert!(script.contains("$failClear"), "失败消费标记（0.1.8 死循环修复）");
+        assert!(script.contains("update-swap.log"), "全程落日志（0.1.10 考古教训）");
     }
 
     /// 真 powershell 跑通 swap 全流程（假 exe）：等真退出的进程 → payload
@@ -1290,7 +1391,7 @@ mod tests {
         let pid = dying.id();
         dying.wait().unwrap();
 
-        let script = swap_script(pid, &pkg, &stage, &dir, "pi-flash.exe");
+        let script = swap_script(pid, &pkg, &stage, &dir, "pi-flash.exe", 10, 100);
         let out = std::process::Command::new("powershell.exe")
             .args([
                 "-NoProfile",
@@ -1364,7 +1465,7 @@ mod tests {
         let pid = dying.id();
         dying.wait().unwrap();
 
-        let script = swap_script(pid, &pkg, &stage, &dir, "pi-flash.exe");
+        let script = swap_script(pid, &pkg, &stage, &dir, "pi-flash.exe", 10, 100);
         let out = std::process::Command::new("powershell.exe")
             .args([
                 "-NoProfile",
@@ -1443,7 +1544,7 @@ mod tests {
         let pid = dying.id();
         dying.wait().unwrap();
 
-        let script = swap_script(pid, &pkg, &stage, &dir, "pi-flash.exe");
+        let script = swap_script(pid, &pkg, &stage, &dir, "pi-flash.exe", 10, 100);
         let out = std::process::Command::new("powershell.exe")
             .args([
                 "-NoProfile",
@@ -1468,6 +1569,94 @@ mod tests {
             "payload 应原样保留"
         );
         assert!(stage.exists(), "staging 不应被动（留作下次安装的原料）");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// ③ staging→payload 被短暂占用 → 重试窗口内释放 → swap 必须成功
+    /// （0.1.10 实录死循环的钉子用例：旧版 ③ 无重试，Defender 扫刚解压的
+    /// staging（目录树锁）一拍即死 → 回滚 + 消费标记 + 重新下载，用户每轮
+    /// 「解压完立即点重启」每轮都撞扫描窗口。修复 = ③ 带重试 + 安装期预热
+    /// （预热无法在 CI 断言杀软行为，这里钉的是重试兜底本身）。占用者持
+    /// staging 内文件 600ms 后自放，注入重试窗口 10×100ms=1s > 600ms。
+    #[cfg(windows)]
+    #[test]
+    fn swap_helper_stage_blocked_retry_succeeds() {
+        let dir = std::env::temp_dir().join(format!(
+            "pf-swap-rty-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .subsec_nanos()
+        ));
+        let pkg = dir.join("pkg");
+        let payload = pkg.join("payload");
+        std::fs::create_dir_all(payload.join("vendor")).unwrap();
+        std::fs::write(payload.join("pi-flash.exe"), b"old").unwrap();
+        std::fs::write(payload.join(".payload-version"), "0.1.9\n").unwrap();
+        let stage = staging_dir(&pkg, "0.1.10");
+        std::fs::create_dir_all(&stage).unwrap();
+        std::fs::write(stage.join("pi-flash.exe"), b"new").unwrap();
+        std::fs::write(stage.join(".payload-version"), "0.1.10\n").unwrap();
+        write_staged_in(
+            &pkg,
+            &StagedUpdate {
+                version: "0.1.10".into(),
+                staged_at: 1,
+            },
+        )
+        .unwrap();
+
+        // 占用者模拟杀软扫描：share-none 持有 staging 内文件 2.5s 后释放
+        //（0.1.10 实录里 Defender 对 1.5 万文件扫几十秒，这里等比缩小）。
+        // 2.5s 必须盖过 helper 的启动+①.5 CIM 查询延迟（实测 ~1.2s），保证
+        // ③ 首击落在占用期内——重试路径被真正踩到，而非擦边绕过。
+        let holder_path = stage.join("pi-flash.exe");
+        let mut holder = std::process::Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-Command",
+                &format!(
+                    "$f=[System.IO.File]::Open('{}','Open','Read','None'); Start-Sleep -Milliseconds 2500; $f.Close()",
+                    holder_path.display()
+                ),
+            ])
+            .spawn()
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(200));
+
+        let mut dying = std::process::Command::new("cmd").args(["/C", "exit"]).spawn().unwrap();
+        let pid = dying.id();
+        dying.wait().unwrap();
+
+        let script = swap_script(pid, &pkg, &stage, &dir, "pi-flash.exe", 40, 100);
+        let out = std::process::Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-EncodedCommand",
+                &encode_ps(&script),
+            ])
+            .output()
+            .unwrap();
+        holder.kill();
+        let _ = holder.wait();
+
+        assert!(out.status.success(), "重试窗口内释放就必须换上（旧版一拍即死）");
+        assert_eq!(
+            std::fs::read_to_string(payload.join(".payload-version")).unwrap(),
+            "0.1.10\n",
+            "payload 应翻转到新版"
+        );
+        assert!(!stage.exists(), "staging 应已换装成 payload");
+        assert!(read_staged_in(&pkg).is_none(), "成功后标记应消费");
+        let log = std::fs::read_to_string(pkg.join("update-swap.log")).unwrap_or_default();
+        assert!(
+            log.contains("③ staging→payload 第1次"),
+            "③ 必须真的重试过（占用盖过 helper 启动延迟），实际：{log}"
+        );
+        assert!(log.contains("swap OK"), "重试成功后应有 OK 记录，实际：{log}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1859,7 +2048,7 @@ mod tests {
             .unwrap();
         let pid = dying.id();
         dying.wait().unwrap();
-        let script = swap_script(pid, &pkg, &staging_dir(&pkg, ver), &dir, "pi-flash.exe");
+        let script = swap_script(pid, &pkg, &staging_dir(&pkg, ver), &dir, "pi-flash.exe", 10, 100);
         let out = std::process::Command::new("powershell.exe")
             .args([
                 "-NoProfile",

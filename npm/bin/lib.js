@@ -258,7 +258,10 @@ function applyStagedUpdate() {
     throw err;
   }
   try {
-    fs.renameSync(stageDir, PAYLOAD_DIR);
+    // staging→payload 带重试：staging 是刚解压完的上万文件，杀软实时扫描
+    // 几十秒（0.1.10 实录：无重试一拍即死 = 应用内更新无限重下死循环）。
+    // 20×500ms = 10s：launcher 启动路径用户在终端等着，不能太拖。
+    renameWithRetry(stageDir, PAYLOAD_DIR, 20, 500);
     fs.rmSync(STAGE_MARKER, { force: true });
   } catch (err) {
     // swap 半途失败：payload 可能已不在——把 old 搬回来兜底
@@ -271,6 +274,21 @@ function applyStagedUpdate() {
     fs.rmSync(oldDir, { recursive: true, force: true });
   } catch {}
   return { from: stamp || "(缺失)", to: staged.version };
+}
+
+// 带重试的 rename（杀软扫描类短暂占用：熬过扫描窗口即可成）。间隔 sleepMs
+// 重试 n 次，仍失败抛最后一个错。Atomics.wait = 同步 sleep（launcher 全同步
+// 代码，没有 async 可借）。
+function renameWithRetry(from, to, n, sleepMs) {
+  for (let i = 0; ; i++) {
+    try {
+      fs.renameSync(from, to);
+      return;
+    } catch (err) {
+      if (i >= n - 1 || !isBusyError(err)) throw err;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, sleepMs);
+    }
+  }
 }
 
 // --- 网络 -------------------------------------------------------------------
