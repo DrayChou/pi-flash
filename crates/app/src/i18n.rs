@@ -525,9 +525,11 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("settings.restore_hint", "启动时恢复上次激活的项目与会话", "", ""),
     ("settings.restore_title", "启动恢复", "", ""),
     // 082 设置「快捷键」页
+    ("shortcuts.count", "{n} 条", "{n} 條", "{n} keys"),
     ("shortcuts.group_file_tree", "文件树", "檔案樹", "File tree"),
     ("shortcuts.group_global", "全局", "全域", "Global"),
     ("shortcuts.rename_hint", "选中文件或目录时", "選中檔案或目錄時", "When a file or folder is selected"),
+    ("shortcuts.title", "键盘快捷键", "鍵盤快捷鍵", "Keyboard Shortcuts"),
     ("shortcuts.view_left", "向左切换视图", "向左切換視圖", "Switch view left"),
     ("shortcuts.view_left_hint", "切换到当前标签左侧视图", "切換到當前標籤左側視圖", "Switch to the view left of the current tab"),
     ("shortcuts.view_right", "向右切换视图", "向右切換視圖", "Switch view right"),
