@@ -635,7 +635,10 @@ fn nav_gutter(
         // 总结栏（v63-4）：30px 固定高，滚动区之外。口径「按我们自己设
         // 计」：N = 用户 + 助手 + 工具调用（ToolCall 块数），非 pi-web
         // totalMessages。样式「icon 数字」四组：消息总数：用户/助手/工具，
-        // 全 icon+数字无文案，不走过 i18n；组间 gap 10、icon↔数字 gap 4
+        // 全 icon+数字无文案，不走过 i18n。尺寸全取 UI组件规范令牌：图标
+        // ICON_MD(16)、图标↔数字 gap SP4(8)、组间 gap SP5(10)、数字
+        // ui(11) secondary
+        use crate::ui::tokens::{icon as tok_icon, space};
         let dim = t.text_dim;
         let num_style = move |d: gpui::Div| {
             d.text_size(crate::appearance::ui_size(11.))
@@ -659,7 +662,7 @@ fn nav_gutter(
             .items_center()
             // 左缘 14 = 面板 pl 6 + 卡片 px 8，与卡片文字对齐
             .px(px(14.))
-            .gap(px(10.))
+            .gap(px(space::SP5))
             .border_b_1()
             // 分隔线与面板左边框同档（0x40 太淡看不出）
             .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x80)))
@@ -668,8 +671,8 @@ fn nav_gutter(
             let mut group = div()
                 .flex()
                 .items_center()
-                .gap(px(4.))
-                .child(crate::ui::icon(icon_name, 14., dim));
+                .gap(px(space::SP4))
+                .child(crate::ui::icon(icon_name, tok_icon::MD, dim));
             if colon {
                 group = group.child(num_style(div()).child(SharedString::from(format!(
                     "{count}："
