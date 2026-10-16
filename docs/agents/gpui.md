@@ -9,6 +9,7 @@
 - `overflow_y_scroll`/`track_scroll` 只在 `Stateful<Div>`（先 `.id()`）；`visible_on_hover` 不存在 → `.group()` + `group_hover`。
 - `list()` 虚拟列表条目**只认上下 padding**，左右无效 → 外层容器包 `.px()`；item 宽度语义不可靠（psp 弃用改全量 div）。
 - `uniform_list` 契约 = 容器 fixed/max 高（Fill 需 relative+flex_1 外包 + absolute 定死四角，否则画全部内容）；**UniformListScrollHandle 必须跨帧复用**（每帧 `new()` = 滚动全丢）→ `ui::vlist` thread_local 句柄表按 id 复用。
+- **滚动偏移向下滚为负**：`base_handle.set_offset` 写的是内容平移量（paint 侧 `scroll_top = -offset.y`），向下滚 = 负 y、写正 y 被 0 夹死（`ui::psp_scrollbar` 的 `-new_off` 即此约定）。定位列表行**禁手写偏移**，走 `scroll_to_item*` 家族——它只挂 `deferred_scroll_to_item`，下一帧 paint 才按真实视口高/行数夹紧执行；非 strict 变体目标已可见不动视口，strict 变体恒定位到策略位。`offset` 参数 = 自顶收缩视口的行数（Zed project_panel 的 sticky 链语义：reveal/选中跟随 `autoscroll` = `scroll_to_item_with_offset(ix, Center, sticky_count)`；sticky 链点击 = `scroll_to_item_strict_with_offset(ix, Top, sticky_index)` 再 +1px 脱钉）。实例：文件树 `reveal_tree_row` 手写正 y `set_offset` → 长树永不跳转（2026-10-16 修为 autoscroll 同款）。
 - 滚轮派发给**所有**命中可滚动 hitbox 含祖先（嵌套 = 内外同时滚，非先内后外）。
 - 滚屏铁律：Bottom 对齐下内容填不满视口 → 强制 logical=None 贴底（钉顶必须靠 spacer 垫片，常数化最稳）；`ListState::reset()` 清滚动位（notify 前存、后恢复）；`scroll_to*` 不触发 notify（程序化滚动自补通知 + window.refresh）；滚动回调内**严禁**触碰 ListState（BorrowMutError → 置标记渲染帧补账）。
 - **会话区滚轮 = free_scroll 软状态（2026-10-15，session/chat_list）**：早期"滚轮即退役锚点摘垫片"（pi-web promptAnchorActive 同款）在短内容下是死局——垫片一摘内容高 < 视口，Bottom 胶水把整块内容拽到屏底且滚动余量归零（用户报障：等待回复稍一滚就跳底、之后滚轮失灵）。现滚轮只置 `free_scroll`：暂停 sync 第 6 步重钉与 settle 跟尾翻转拽底，**锚点与垫片保留**，滚回贴底（几何上≡钉顶位）自动恢复钉顶；`release`（真摘垫片）只留给发送失败/fork/整表重读。有意偏离 pi-web。

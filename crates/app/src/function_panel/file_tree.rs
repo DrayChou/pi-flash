@@ -65,21 +65,22 @@ impl Chat {
             self.rebuild_tree();
             self.persist_ui();
         }
-        let Some(row) = self.ws.tree_rows.iter().find(|r| same_path(&r.path, path)) else {
-            return;
-        };
-        // 滚动落点给 sticky 祖先链留位：行顶对齐到「链高 = 深度×行高」
-        // 之下（对齐 Zed scroll_to_item_strict_with_offset 的 sticky_index
-        // 语义），祖先全可见后钉住链自然不触发；变更列表 depth 恒 0 恒顶
-        let ix = self
+        // 滚动对齐 Zed project_panel 的 autoscroll（reveal 链的真实落点）：
+        // scroll_to_item_with_offset 非 strict——目标已可见不动视口，出界才
+        // 最小滚动；offset = 深度（sticky 祖先链行数，视口自顶收缩，目标居中
+        // 于钉住链之下）。deferred 到下一帧 paint 按真实视口高夹紧执行——
+        // gpui 偏移向下滚为负，此前手写正 y 的 set_offset 被夹回 0，长树
+        // 永不跳转。
+        let Some(ix) = self
             .ws.tree_rows
             .iter()
             .position(|r| same_path(&r.path, path))
-            .unwrap_or(0);
-        let y = ix.saturating_sub(row.depth) as f32
-            * if self.ws.changes_only { CHANGES_ROW_H } else { ROW_H };
+        else {
+            return;
+        };
+        let depth = self.ws.tree_rows[ix].depth;
         let handle = crate::ui::vlist::scroll_handle(FILE_TREE_LIST_ID);
-        handle.0.borrow().base_handle.set_offset(point(px(0.), px(y)));
+        handle.scroll_to_item_with_offset(ix, gpui::ScrollStrategy::Center, depth);
     }
 
     /// 文件标签激活时的树同步（PF 与 Zed 的分歧点：Zed 多 worktree 面板挂

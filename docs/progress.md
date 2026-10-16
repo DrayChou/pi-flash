@@ -30,6 +30,11 @@
 
 ## 里程碑索引（新 → 旧；一行一条，细节看对应提交）
 
+- 2026-10-16 **树定位滚动修复**：reveal_tree_row 手写正 y set_offset 违背
+  gpui「向下滚为负」约定被夹回 0——长树定位永不跳转；改 Zed project_panel
+  autoscroll 同款 scroll_to_item_with_offset(ix, Center, depth)，deferred
+  到 paint 夹紧（陷阱沉淀 gpui.md 滚动节）。
+
 - 2026-10-16 **文件标签驱动树跨项目同步**：激活文件 tab 时树定位选中
   （同项目 reveal_tree_row）；标签属已知其它项目则 remount_workspace 切
   工作区（不动会话，PF 与 Zed 多 worktree 的分歧定案）；入口统一挂
