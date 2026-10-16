@@ -632,11 +632,10 @@ fn action_bar(
                 .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
                     let _ = w_proj.update(cx, |c, cx| c.toggle_tree_proj_menu(cx));
                 })
-                // 名字单独吃剩余宽做 ellipsis（flex 里截断样式要落在文本项
-                // 自己的收缩盒上），chevron 恒贴名字后
+                // 名字自适应内容宽（flex-grow 0：chevron 紧贴名字，不吃剩
+                // 余宽）；长名走 flex-shrink + min_w_0 收缩 ellipsis
                 .child(
                     div()
-                        .flex_1()
                         .min_w_0()
                         .overflow_hidden()
                         .whitespace_nowrap()
