@@ -378,6 +378,11 @@ impl Render for ComposerInput {
                     .min_w_0()
                     // 与解锁态的同一条首行行框对齐（否则锁开/关提示会跳一行）
                     .pt(px(PLACEHOLDER_TOP))
+                    // 同理补左对齐：解锁态 placeholder 以 PLACEHOLDER_LEFT
+                    // 缩进对齐编辑器 input_px(Medium)=12，锁态编辑器不挂载、
+                    // 提示直接落在容器左缘，少了这 12px 会比其他 placeholder
+                    // 靠左一截（锁开/关切换时文案水平跳动）
+                    .pl(px(PLACEHOLDER_LEFT))
                     .line_height(ph_lh)
                     .text_size(crate::appearance::ui_size(12.))
                     .text_color(rgb(t.text_faint))
