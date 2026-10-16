@@ -498,6 +498,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("psp.search", "搜索", "搜尋", "Search"),
     ("psp.search_sessions", "搜索会话", "搜尋會話", "Search sessions"),
     ("psp.session_label", "会话", "", ""),
+    ("psp.sessions_count", "{n} 个会话", "{n} 個會話", "{n} sessions"),
     ("psp.sort", "排序", "排序", "Sort"),
     ("psp.sort_by_time", "按更新时间排序", "", ""),
     ("psp.sort_manual", "手动排序", "", ""),

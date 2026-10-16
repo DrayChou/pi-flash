@@ -632,6 +632,7 @@ pub(super) fn dispatch(
         method::UI_SCREENSHOT => super::screenshot::shot(window, params),
         // 调试专用：直置 psp 项目行 hover/收起态（绕过鼠标合成）。project
         // 缺省 = 清除 hover；collapse = 强制该项目收起(true)/展开(false)。
+        // project_card = 项目行右键详情卡直开（confirm=true 直进删除确认态）。
         method::UI_DEBUG_HOVER => {
             // 会话详情卡直开（自动化复现右键详情卡路径；rename=true 直进
             // 改名态——与标题点击同一 Chat::hover_card_begin_rename 槽）。
@@ -662,6 +663,33 @@ pub(super) fn dispatch(
                         .dlg.hover_card
                         .as_ref()
                         .is_some_and(|c| c.renaming),
+                }));
+            }
+            // 项目行右键详情卡直开（自动化复现右键路径；confirm=true 直进
+            // 删除确认态）。锚点取固定调试坐标（真路径 = 右键点视口坐标）。
+            if let Some(sp) = params.get("project_card").and_then(Value::as_str) {
+                let path = std::path::PathBuf::from(sp);
+                let found = chat
+                    .psp
+                    .projects
+                    .iter()
+                    .any(|g| crate::services::workspace::same_path(&g.path, &path));
+                if !found {
+                    return Err(not_found(format!("psp 列表没有该项目: {sp}")));
+                }
+                chat.dlg.proj_card = Some(crate::function_panel::ProjCard {
+                    path: path.clone(),
+                    x: 300.,
+                    y: 200.,
+                    confirming: params.get("confirm").and_then(Value::as_bool) == Some(true),
+                });
+                cx.notify();
+                return Ok(json!({
+                    "project_card": sp,
+                    "confirming": chat
+                        .dlg.proj_card
+                        .as_ref()
+                        .is_some_and(|c| c.confirming),
                 }));
             }
             match params.get("project") {

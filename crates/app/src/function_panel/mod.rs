@@ -324,10 +324,12 @@ pub(crate) fn psp_view(
                     // 只会错位（用户定稿：滚动 = 菜单立即消失）
                     .on_scroll_wheel(cx.listener(|this, _: &gpui::ScrollWheelEvent, _w, cx| {
                         if this.dlg.hover_card.is_some()
+                            || this.dlg.proj_card.is_some()
                             || this.dlg.proj_tip.is_some()
                             || this.dlg.confirm_prj_del.is_some()
                         {
                             this.dlg.hover_card = None;
+                            this.dlg.proj_card = None;
                             this.dlg.proj_tip = None;
                             this.dlg.confirm_prj_del = None;
                             cx.notify();
@@ -526,11 +528,13 @@ fn project_row(
     let path = g.path.clone();
     let path_toggle = path.clone();
     let path_menu = path.clone();
+    let path_card = path.clone();
     let name: SharedString = g.name.clone().into();
     let w_toggle = weak.clone();
     let w_menu = weak.clone();
     let w_new = weak.clone();
     let w_tip_on = weak.clone();
+    let w_card = weak.clone();
 
     div()
         .id(SharedString::from(format!("prj-{pi}")))
@@ -555,6 +559,21 @@ fn project_row(
                     c.psp.collapsed_keys.insert(key);
                 }
                 c.persist_ui();
+                cx.notify();
+            });
+        })
+        .on_mouse_down(MouseButton::Right, move |ev: &gpui::MouseDownEvent, _, cx| {
+            // 项目行右键详情卡（020）：样式对齐会话详情卡，锚点 = 鼠标
+            // 视口坐标。与会话卡互斥：右键别行 = 收旧开新
+            let (x, y) = (f32::from(ev.position.x), f32::from(ev.position.y));
+            let _ = w_card.update(cx, |c, cx| {
+                c.dlg.hover_card = None;
+                c.dlg.proj_card = Some(crate::function_panel::ProjCard {
+                    path: path_card.clone(),
+                    x,
+                    y,
+                    confirming: false,
+                });
                 cx.notify();
             });
         })
@@ -825,6 +844,7 @@ fn session_row_view(
             // 12px 弹出、点外即收）。锚点 = 鼠标视口坐标
             let (x, y) = (f32::from(ev.position.x), f32::from(ev.position.y));
             let _ = w_card.update(cx, |c, cx| {
+                c.dlg.proj_card = None;
                 c.dlg.hover_card = Some(crate::function_panel::HoverCard {
                     path: path_card.clone(),
                     x,
@@ -1110,6 +1130,18 @@ pub(crate) struct HoverCard {
     /// 标题点击后原地改名（卡内变输入框，Enter 提交 / Esc 取消）
     pub renaming: bool,
     pub rename_input: Option<gpui::Entity<crate::ui::TextInput>>,
+}
+
+/// 项目行右键详情卡（020：样式对齐会话详情卡）：标题加粗 + 路径/会话数
+/// 信息行 + 分隔线下 标签栏项目行同款双图标动作栏（删除带卡内确认态）。
+#[derive(Debug, Clone)]
+pub(crate) struct ProjCard {
+    pub path: PathBuf,
+    /// 右键点视口坐标：卡左缘对齐 x、上/下方 12px 弹出（PopupEdges 四象限）
+    pub x: f32,
+    pub y: f32,
+    /// 点「删除」后动作栏换 取消/确认 两键
+    pub confirming: bool,
 }
 
 #[derive(Debug, Clone)]
