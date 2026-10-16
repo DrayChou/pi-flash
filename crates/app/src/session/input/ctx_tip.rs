@@ -544,6 +544,13 @@ fn ctx_compact_button(
             _ => raw.to_string(),
         }
     };
+    let fg = if compacting {
+        t.text_muted
+    } else if can_compact {
+        t.accent
+    } else {
+        t.text_faint
+    };
     div()
         .id("ctx-compact")
         .flex_1()
@@ -554,15 +561,10 @@ fn ctx_compact_button(
         .flex()
         .items_center()
         .justify_center()
+        .gap(px(6.))
         .text_size(crate::appearance::ui_size(12.))
         .when(can_compact, |s| s.cursor_pointer())
-        .text_color(rgb(if compacting {
-            t.text_muted
-        } else if can_compact {
-            t.accent
-        } else {
-            t.text_faint
-        }))
+        .text_color(rgb(fg))
         .hover(move |s| if can_compact { s.bg(rgb(t.bg_hover)) } else { s })
         .on_mouse_down(MouseButton::Left, cx.listener(
             |this, _: &gpui::MouseDownEvent, _w, cx| {
@@ -573,5 +575,6 @@ fn ctx_compact_button(
                 }
             },
         ))
+        .child(crate::ui::icon("icon-compress", 13., fg))
         .child(SharedString::from(compact_label))
 }

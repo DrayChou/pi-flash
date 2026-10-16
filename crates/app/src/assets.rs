@@ -153,6 +153,8 @@ assets! {
     "icons/icon-clock-solid.svg",
     "icons/icon-hand.svg",
     "icons/icon-viewdiff.svg",
+    // ctx 用量面板压缩钮：上下双箭头向内收拢（iconfont，用户供图 2026-10-16）
+    "icons/icon-compress.svg",
     // 020-1 整合面板：项目=briefcase（icon-project 内容已换）、列表切换
     // 分组态=folder-list（原 icon-project 形）、子面板最大化=lucide maximize
     "icons/icon-folder-list.svg",
