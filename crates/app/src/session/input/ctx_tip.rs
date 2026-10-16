@@ -68,6 +68,9 @@ pub(super) fn ctx_tip_element(
         (r.stats.clone(), r.sys.clone(), r.compacting, r.can_compact())
     };
     let closing = chat.dlg.ctx_tip_closing.is_some();
+    // 入口行点亮态（2026-10-16 自会话功能栏迁入）：对应弹窗开着亮 accent
+    let sys_open = chat.session_info_open(crate::TopPanel::System);
+    let tools_open = chat.session_info_open(crate::TopPanel::Tools);
     let wrap = div()
         .id("ctx-tip")
         .absolute()
@@ -89,7 +92,16 @@ pub(super) fn ctx_tip_element(
             div()
                 .w(px(420.))
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                .child(ctx_usage_panel(stats, sys.as_ref(), compacting, can_compact, t, cx)),
+                .child(ctx_usage_panel(
+                    stats,
+                    sys.as_ref(),
+                    compacting,
+                    can_compact,
+                    sys_open,
+                    tools_open,
+                    t,
+                    cx,
+                )),
         );
     let el = if closing {
         wrap.with_animation(
@@ -108,7 +120,8 @@ pub(super) fn ctx_tip_element(
 }
 
 /// 用量详情面板（ZCode「上下文容量」弹层风格）组装：标题行（已用/窗口 ·
-/// 百分比）+ 进度条 + 分类占比行 + Token 分项网格 + 费用 + 压缩按钮。
+/// 百分比）+ 进度条 + 分类占比行 + 入口行（系统提示词 / 会话工具集，
+/// 2026-10-16 自会话功能栏迁入）+ Token 分项网格 + 费用 + 压缩按钮。
 /// 分类占比为**估算**：系统侧 7 大类走 `pi_link::transcript::breakdown`
 /// （与系统提示词面板分析块同源），「消息」= 官方上下文总量 − 系统侧估算
 /// （反推）——各行加总恒等于 pi 报告的官方总量，估算误差全部收进「消息」行。
@@ -117,6 +130,8 @@ fn ctx_usage_panel(
     sys: Option<&pi_link::transcript::TranscriptSystem>,
     compacting: bool,
     can_compact: bool,
+    sys_open: bool,
+    tools_open: bool,
     t: &'static crate::appearance::theme::Theme,
     cx: &mut Context<Chat>,
 ) -> gpui::Div {
@@ -127,9 +142,13 @@ fn ctx_usage_panel(
                 .text_color(rgb(t.text_muted))
                 .child(tr("stats.no_usage"))
                 .into_any_element(),
+            // 无 stats 也保留入口：新会话还没用量数据时仍要能开这两块
+            ctx_actions_row(sys_open, tools_open, t, cx).into_any_element(),
         ],
         Some(s) => {
             let mut parts = vec![ctx_capacity_block(&s, sys, t).into_any_element()];
+            // 入口行插在容量块与 Token 分项之间（红框位）
+            parts.push(ctx_actions_row(sys_open, tools_open, t, cx).into_any_element());
             parts.extend(ctx_tokens_cost_parts(&s, t));
             parts
         }
@@ -149,6 +168,80 @@ fn ctx_usage_panel(
         .gap(px(12.))
         .children(body)
         .child(ctx_compact_button(compacting, can_compact, t, cx))
+}
+
+/// 用量面板入口行（2026-10-16 自会话功能栏迁入，原栏只留「打开终端」）：
+/// 系统提示词 / 会话工具集两钮 + 淡色 `|` 区隔，交互同原功能栏——对应
+/// 弹窗开着点亮 accent，点击切换开/收。
+fn ctx_actions_row(
+    sys_open: bool,
+    tools_open: bool,
+    t: &'static crate::appearance::theme::Theme,
+    cx: &mut Context<Chat>,
+) -> gpui::Div {
+    fn entry_btn(
+        id: &'static str,
+        icon_name: &'static str,
+        label: &'static str,
+        on: bool,
+        kind: crate::TopPanel,
+        t: &'static crate::appearance::theme::Theme,
+        cx: &mut Context<Chat>,
+    ) -> gpui::AnyElement {
+        let hover_fg = if on { t.accent } else { t.text };
+        div()
+            .id(id)
+            .flex()
+            .items_center()
+            .gap(px(6.))
+            .px(px(8.))
+            .py(px(4.))
+            .rounded(px(6.))
+            .text_size(crate::appearance::ui_size(12.))
+            .text_color(rgb(if on { t.accent } else { t.text_muted }))
+            .cursor_pointer()
+            .hover(move |s| s.bg(rgb(t.bg_hover)).text_color(rgb(hover_fg)))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, _: &gpui::MouseDownEvent, _w, cx| {
+                    this.open_session_info(kind, cx);
+                }),
+            )
+            .child(crate::ui::icon(
+                icon_name,
+                13.,
+                if on { t.accent } else { t.text_muted },
+            ))
+            .child(SharedString::from(label))
+            .into_any_element()
+    }
+    div()
+        .flex()
+        .items_center()
+        .child(entry_btn(
+            "ctx-sys-prompt",
+            "file-sliders",
+            tr("session.system_prompt"),
+            sys_open,
+            crate::TopPanel::System,
+            t,
+            cx,
+        ))
+        .child(
+            div()
+                .text_size(crate::appearance::ui_size(11.))
+                .text_color(rgb(t.text_faint))
+                .child(SharedString::from("|")),
+        )
+        .child(entry_btn(
+            "ctx-session-tools",
+            "wrench",
+            tr("session.session_tools"),
+            tools_open,
+            crate::TopPanel::Tools,
+            t,
+            cx,
+        ))
 }
 
 /// 行：label 左、value 右（mono）。上下文用量弹窗的全部文字 = 面板设置

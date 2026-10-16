@@ -147,9 +147,9 @@ pub(crate) fn main_column(
 
 /// 会话功能栏（2026-10-11：topbar ⋯ 菜单撤下拉改常驻条）：会话 tab 下方
 /// 32px 操作条，版式对齐文件标签下方的 file_nav_bar（同高、同下边框、同
-/// pl12/pr8）。三钮自动左对齐：系统提示词 / 会话工具集 / 打开终端，icon
-/// 在前，钮间用淡色 `|` 区隔；每段对称 padding（内容段内居中）。对应
-/// 面板/视图开着时该钮点亮 accent（原 ⋯ 菜单打勾语义的条上形态）。
+/// pl12/pr8）。2026-10-16 系统提示词 / 会话工具集两钮迁入上下文用量面板
+/// （session/input/ctx_tip.rs），栏上只剩「打开终端」一钮，自动左对齐。
+/// 终端视图开着时该钮点亮 accent。
 fn session_fn_bar(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyElement {
     let t = T();
     // 栏首项目名（2026-10-14）：当前工作区基名（ws.cwd），粗体亮色，后随
@@ -193,26 +193,6 @@ fn session_fn_bar(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyEle
                 .child(crate::ui::icon("chevron-right", 10., t.text_faint))
         }))
         .child(fn_bar_btn(
-            "sfbar-prompt",
-            "file-sliders",
-            tr("session.system_prompt"),
-            chat.session_info_open(crate::TopPanel::System),
-            cx.listener(|this, _: &gpui::MouseDownEvent, _w, cx| {
-                this.open_session_info(crate::TopPanel::System, cx);
-            }),
-        ))
-        .child(fn_bar_sep(t))
-        .child(fn_bar_btn(
-            "sfbar-tools",
-            "wrench",
-            tr("session.session_tools"),
-            chat.session_info_open(crate::TopPanel::Tools),
-            cx.listener(|this, _: &gpui::MouseDownEvent, _w, cx| {
-                this.open_session_info(crate::TopPanel::Tools, cx);
-            }),
-        ))
-        .child(fn_bar_sep(t))
-        .child(fn_bar_btn(
             "sfbar-term",
             "icon-terminal-solid",
             tr("session.open_terminal"),
@@ -251,15 +231,6 @@ fn fn_bar_btn(
         .on_mouse_down(MouseButton::Left, handler)
         .child(crate::ui::icon(icon_name, 13., if on { t.accent } else { t.text_muted }))
         .child(SharedString::from(label))
-        .into_any_element()
-}
-
-/// 功能栏钮间淡化分隔（文字竖线，text_faint 档）。
-fn fn_bar_sep(t: &'static crate::appearance::theme::Theme) -> gpui::AnyElement {
-    div()
-        .text_size(crate::appearance::ui_size(11.))
-        .text_color(rgb(t.text_faint))
-        .child(SharedString::from("|"))
         .into_any_element()
 }
 
