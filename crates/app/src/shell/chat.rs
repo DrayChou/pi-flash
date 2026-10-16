@@ -183,6 +183,8 @@ pub(crate) struct DlgUi {
     /// 文件树标题项目下拉（树根跨项目快切）：Some = 开着，sel = 键盘高亮
     /// 行（psp.projects 下标，默认落当前项目）。渲染挂 psp_overlays。
     pub(crate) tree_proj_menu: Option<crate::function_panel::TreeProjMenu>,
+    /// 021 Pin 收藏夹浮层（操作栏 Pin 钮 toggle；渲染挂 psp_overlays）
+    pub(crate) pin_menu: bool,
     /// 021 行内新建/改名（Zed EditState 移植）：非空 = 树里有一行编辑器
     /// （渲染挂 file_tree；焦点走主 render 焦点保持链）
     pub(crate) tree_edit: Option<TreeEdit>,
@@ -299,6 +301,10 @@ pub(crate) struct LayoutUi {
     /// （贴标题下缘左对齐；dock_bounds 同款 canvas 捕获）
     pub(crate) ft_title_bounds:
         std::rc::Rc<std::cell::RefCell<Option<gpui::Bounds<gpui::Pixels>>>>,
+    /// 021 操作栏 Pin 钮 paint 期 bounds：Pin 收藏夹浮层的锚点（同 ft_title_bounds
+    /// 的 canvas 捕获机制）
+    pub(crate) ft_pin_bounds:
+        std::rc::Rc<std::cell::RefCell<Option<gpui::Bounds<gpui::Pixels>>>>,
     pub(crate) content_view: ContentView,
     /// 浏览操作区的最后视图（Term/File）：文件树标签点击时恢复
     pub(crate) browse_last: ContentView,
@@ -345,6 +351,10 @@ pub(crate) struct WsUi {
     pub(crate) file_watches: std::collections::HashMap<PathBuf, services::watcher::FsWatcher>,
     /// 021 操作栏「切换显示变更」：只列 git 变更文件（flatten changes_only）
     pub(crate) changes_only: bool,
+    /// 021 Pin 收藏夹：当前项目的收藏条目（绝对路径，存储序；展示时按
+    /// 名称字母排）。装载点 = 启动 / remount_workspace（切项目换清单），
+    /// 落盘走 services::workspace::save_pins_for。
+    pub(crate) pinned: Vec<PathBuf>,
     /// 021 文件搜索（Dialog::FileSearch）：命中（相对路径清单切片）、
     /// 查询词镜像与扫描状态（防抖代际同 search_gen）
     pub(crate) file_search_hits: Vec<String>,
@@ -461,6 +471,10 @@ impl Chat {
                 fs_watch: None,
                 file_watches: std::collections::HashMap::new(),
                 changes_only: ui.tree_changes_only,
+                pinned: services::workspace::pins_for(&cwd.to_string_lossy())
+                    .into_iter()
+                    .map(PathBuf::from)
+                    .collect(),
                 file_search_hits: Vec::new(),
                 file_search_needle: String::new(),
                 file_search_gen: 0,
@@ -509,6 +523,7 @@ impl Chat {
                 split_drag: false,
                 dock_bounds: std::rc::Rc::new(std::cell::RefCell::new(None)),
                 ft_title_bounds: std::rc::Rc::new(std::cell::RefCell::new(None)),
+                ft_pin_bounds: std::rc::Rc::new(std::cell::RefCell::new(None)),
                 content_view: ContentView::Chat,
                 browse_last: ContentView::Term,
                 nav_open: false,
@@ -569,6 +584,7 @@ impl Chat {
                 confirm_prj_del: None,
                 tree_menu: None,
                 tree_proj_menu: None,
+                pin_menu: false,
                 tree_edit: None,
                 editor_menu: None,
                 term_menu: None,

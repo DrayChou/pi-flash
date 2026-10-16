@@ -147,6 +147,68 @@ impl Chat {
     }
 
     // -------------------------------------------------------------------
+    // Pin 收藏夹（021：收藏目录/文件到 Pin收藏夹，per-project 持久化）
+    // -------------------------------------------------------------------
+
+    /// 菜单「Pin/取消固定」：收藏夹 toggle（无需确认）。
+    pub(crate) fn tree_pin_toggle(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        match self.ws.pinned.iter().position(|p| same_path(p, &path)) {
+            Some(ix) => {
+                self.ws.pinned.remove(ix);
+            }
+            None => self.ws.pinned.push(path),
+        }
+        self.save_pins();
+        cx.notify();
+    }
+
+    /// 收藏夹行首 pin 钮：移除该条目（tooltip「移除」，无需确认）。
+    pub(crate) fn tree_unpin(&mut self, path: &Path, cx: &mut Context<Self>) {
+        self.ws.pinned.retain(|p| !same_path(p, path));
+        self.save_pins();
+        cx.notify();
+    }
+
+    /// pin 面内存态落盘（pin/unpin/改名跟随/删除清理共用）。
+    fn save_pins(&mut self) {
+        let pins: Vec<String> = self
+            .ws
+            .pinned
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect();
+        crate::services::workspace::save_pins_for(&self.ws.cwd.to_string_lossy(), &pins);
+    }
+
+    /// 操作栏 Pin 钮：开/收收藏夹浮层（toggle，同搜索文件的再点即关）。
+    /// 开时顺手清掉已不存在的条目（外部删除残留）。
+    pub(crate) fn toggle_pin_menu(&mut self, cx: &mut Context<Self>) {
+        self.dlg.pin_menu = !self.dlg.pin_menu;
+        if self.dlg.pin_menu {
+            let before = self.ws.pinned.len();
+            self.ws.pinned.retain(|p| p.exists());
+            if self.ws.pinned.len() != before {
+                self.save_pins();
+            }
+        }
+        cx.notify();
+    }
+
+    /// 收藏夹条目点击：树中定位（目录展开、文件选中并滚到位）+ 文件再开
+    /// tab；然后收浮层。
+    pub(crate) fn open_pinned_entry(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        self.dlg.pin_menu = false;
+        if crate::services::workspace::is_under(&path, &self.ws.cwd) {
+            self.sync_tree_to_file(&path);
+        }
+        if path.is_file() {
+            self.open_file_tab(path, cx);
+        } else {
+            cx.notify();
+        }
+    }
+
+    // -------------------------------------------------------------------
     // 右键菜单：新建 / 改名 / 删除 / 复制路径 / @ 插入
     // -------------------------------------------------------------------
 
@@ -267,6 +329,7 @@ impl Chat {
             || self.dlg.confirm_prj_del.is_some()
             || self.dlg.tree_menu.is_some()
             || self.dlg.tree_edit.is_some()
+            || self.dlg.pin_menu
             || self.dlg.editor_menu.is_some()
             || self.dlg.term_menu.is_some()
             || self.dlg.input_menu.is_some()
@@ -567,6 +630,12 @@ impl Chat {
         if let Some(sel) = self.ws.tree_selected.as_mut() {
             *sel = remap(sel);
         }
+        // 021 Pin 收藏跟随（文件 = 单条，目录 = 整棵前缀）
+        let pins_before = self.ws.pinned.clone();
+        self.ws.pinned = self.ws.pinned.iter().map(remap).collect();
+        if self.ws.pinned != pins_before {
+            self.save_pins();
+        }
     }
 
     /// 拖拽移动提交（Zed drag_onto → move_worktree_entry 语义）：src 移入
@@ -669,6 +738,13 @@ impl Chat {
                 self.ws.file_cache
                     .retain(|k, _| !(same_path(k, path) || k.starts_with(path)));
                 self.ws.expanded_dirs.retain(|d| !(same_path(d, path) || d.starts_with(path)));
+                // 021 Pin 收藏清理：被删条目（目录连子树）出收藏夹
+                let pins_before = self.ws.pinned.len();
+                self.ws.pinned
+                    .retain(|p| !(same_path(p, path) || p.starts_with(path)));
+                if self.ws.pinned.len() != pins_before {
+                    self.save_pins();
+                }
                 self.refresh_git();
                 // 删除成功静默（同创建：成功不提示，失败才弹）
                 cx.notify();
@@ -727,6 +803,39 @@ pub(crate) enum TreeEditVia {
 /// 同义，走三语）。
 fn existing_msg(name: &str) -> String {
     crate::i18n::tf("tree.exists_named", &[("name", name.to_string())])
+}
+
+/// Pin 收藏夹展示行（021：按字母排序，文件夹和文件一律名称在前、路径
+/// 淡化在后）：(路径, 是否目录, 名称, 目录段)。渲染与自动化快照共用，
+/// 排序口径只有这一份。
+pub(crate) fn pinned_rows(
+    cwd: &Path,
+    pins: &[PathBuf],
+) -> Vec<(PathBuf, bool, String, String)> {
+    let mut rows: Vec<(PathBuf, bool, String, String)> = pins
+        .iter()
+        .map(|p| {
+            let rel = p
+                .strip_prefix(cwd)
+                .unwrap_or(p)
+                .to_string_lossy()
+                .replace('\\', "/");
+            let name = p
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| rel.clone());
+            // 目录段 = rel 去掉尾部名称（pin 项目根本身时 rel 短于名称，置空）
+            let dir_part =
+                if rel.len() > name.len() { rel[..rel.len() - name.len()].to_string() } else { String::new() };
+            (p.clone(), p.is_dir(), name, dir_part)
+        })
+        .collect();
+    rows.sort_by(|a, b| {
+        a.2.to_lowercase()
+            .cmp(&b.2.to_lowercase())
+            .then_with(|| a.3.cmp(&b.3))
+    });
+    rows
 }
 
 /// 行内编辑回调统一接线：Enter 提交 / Esc 取消 / 失焦与点别处提交、键入
@@ -810,7 +919,7 @@ fn filter_file_names(files: &[String], needle: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::filter_file_names;
+    use super::{filter_file_names, pinned_rows};
 
     #[test]
     fn file_name_filter_ranks_and_caps() {
@@ -836,5 +945,45 @@ mod tests {
         // 大小写不敏感
         let hits = filter_file_names(&files, "LIB");
         assert_eq!(hits, vec!["src/lib.rs".to_string()]);
+    }
+
+    #[test]
+    fn pinned_rows_sort_by_name_then_dir_and_split_parts() {
+        // is_dir 现查磁盘（pin 时不存在也能挂清单），夹具建真目录/文件
+        let base = std::env::temp_dir().join(format!(
+            "pf-pin-rows-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .subsec_nanos()
+        ));
+        std::fs::create_dir_all(base.join("docs")).unwrap();
+        std::fs::create_dir_all(base.join("src")).unwrap();
+        std::fs::write(base.join("src/lib.rs"), b"").unwrap();
+        std::fs::write(base.join("README.md"), b"").unwrap();
+        std::fs::write(base.join("docs/api.md"), b"").unwrap();
+
+        let rows = pinned_rows(&base, &[
+            base.join("src/lib.rs"),
+            base.join("docs"),
+            base.join("README.md"),
+            base.join("docs/api.md"),
+        ]);
+        // 名称字母序（大小写不敏感），文件夹和文件混排
+        let names: Vec<&str> = rows.iter().map(|(_, _, n, _)| n.as_str()).collect();
+        assert_eq!(names, vec!["api.md", "docs", "lib.rs", "README.md"]);
+        // 名称前置 + 目录段后置（目录段含尾分隔符，淡化展示用）
+        assert_eq!(rows[0].3, "docs/");
+        assert_eq!(rows[1].3, "");
+        assert_eq!(rows[2].3, "src/");
+        assert_eq!(rows[3].3, "");
+        assert!(rows[1].1, "docs 是目录");
+        assert!(!rows[0].1, "api.md 是文件");
+        // pin 项目根本身：目录段不越界（rel 短于名称时置空）
+        let root = pinned_rows(&base, &[base.clone()]);
+        assert_eq!(root[0].2, base.file_name().unwrap().to_string_lossy());
+        assert_eq!(root[0].3, "");
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

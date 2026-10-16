@@ -585,9 +585,11 @@ fn action_bar(
         .into();
     let changes_only = chat.ws.changes_only;
     let proj_open = chat.dlg.tree_proj_menu.is_some();
+    let pin_open = chat.dlg.pin_menu;
     let title_bounds = chat.layout.ft_title_bounds.clone();
     let w_proj = weak.clone();
     let w_toggle = weak.clone();
+    let w_pin = weak.clone();
     let w_search = weak.clone();
     let w_term = weak.clone();
     let w_menu = weak.clone();
@@ -685,6 +687,18 @@ fn action_bar(
                 // 两排右缘图标逐列对齐（最大化列/次列同 x）
                 .gap(px(2.))
                 .child(bar_btn(
+                    "ft-pins",
+                    "pin",
+                    tr("file_tree.pin_favorites"),
+                    t,
+                    pin_open,
+                    None,
+                    move |_, _, cx| {
+                        let _ = w_pin.update(cx, |c, cx| c.toggle_pin_menu(cx));
+                    },
+                    Some(chat.layout.ft_pin_bounds.clone()),
+                ))
+                .child(bar_btn(
                     "ft-toggle-changes",
                     "git-commit-horizontal",
                     tr("file_tree.show_changes_only"),
@@ -694,6 +708,7 @@ fn action_bar(
                     move |_, _, cx| {
                         let _ = w_toggle.update(cx, |c, cx| c.toggle_changes_only(cx));
                     },
+                    None,
                 ))
                 .child(bar_btn(
                     "ft-search",
@@ -705,6 +720,7 @@ fn action_bar(
                     move |_, _, cx| {
                         let _ = w_search.update(cx, |c, cx| c.open_file_search(cx));
                     },
+                    None,
                 ))
                 .child(bar_btn(
                     "ft-explorer",
@@ -716,6 +732,7 @@ fn action_bar(
                     move |_, _, _cx| {
                         crate::services::shell_open::open_in_explorer(&cwd_explorer);
                     },
+                    None,
                 ))
                 .child(bar_btn(
                     "ft-term",
@@ -729,6 +746,7 @@ fn action_bar(
                             c.open_terminal_in(cwd_term.clone(), window, cx)
                         });
                     },
+                    None,
                 ))
                 .child(bar_btn(
                     "ft-panel-max",
@@ -745,6 +763,7 @@ fn action_bar(
                             cx.notify();
                         });
                     },
+                    None,
                 )),
         )
         .into_any_element()
@@ -754,6 +773,9 @@ fn action_bar(
 /// 用 accent 实色不参与 hover 变亮——开关点亮语义）。`tip` = hover
 /// tooltip（ui::tooltip 统一入口 §5.10，显示期过 tr 随语言切换）；
 /// `action` 非空时 tooltip 附键位 chip（键位反查 keymap，082 最大化钮）。
+/// `bounds` = 可选 paint 期 bounds 捕获槽（canvas，dock_bounds 同款）——
+/// 021 Pin 收藏夹浮层的锚点用，其余钮传 None。
+#[allow(clippy::too_many_arguments)]
 fn bar_btn(
     id: &'static str,
     icon_name: &'static str,
@@ -762,8 +784,9 @@ fn bar_btn(
     active: bool,
     action: Option<&'static dyn gpui::Action>,
     on_click: impl Fn(&gpui::MouseDownEvent, &mut gpui::Window, &mut gpui::App) + 'static,
+    bounds: Option<std::rc::Rc<std::cell::RefCell<Option<gpui::Bounds<gpui::Pixels>>>>>,
 ) -> gpui::AnyElement {
-    let btn = div()
+    let mut btn = div()
         .id(id)
         .w(px(26.))
         .h(px(26.))
@@ -773,6 +796,18 @@ fn bar_btn(
         .rounded(px(6.))
         .cursor_pointer()
         .hover(|s| s.bg(rgb(t.bg_hover)));
+    if let Some(slot) = bounds {
+        btn = btn
+            .relative()
+            .child(
+                gpui::canvas(
+                    move |b, _, _| *slot.borrow_mut() = Some(b),
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .inset_0(),
+            );
+    }
     let btn = match action {
         Some(a) => btn.with_tip_action(tip, a),
         None => btn.with_tip(tip),

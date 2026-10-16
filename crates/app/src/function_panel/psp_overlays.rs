@@ -15,6 +15,7 @@ use crate::services::workspace::{same_path, same_ws};
 use crate::appearance::theme::{Theme, danger_wash, theme as T};
 use crate::ui::icon;
 use crate::ui::popup::PopupEdges;
+use crate::ui::WithTip;
 
 /// 根渲染挂载的 psp 悬浮层合集（tooltip / 详情卡 / 菜单 / 确认）。
 pub(crate) fn psp_overlays(
@@ -59,6 +60,10 @@ pub(crate) fn psp_overlays(
     }
     if chat.dlg.tree_menu.is_some() {
         el = el.child(tree_menu_layer(chat, vp, t, cx));
+    }
+    // 021 Pin 收藏夹浮层（操作栏 Pin 钮 toggle）
+    if chat.dlg.pin_menu {
+        el = el.child(pin_menu_layer(chat, vp, t, cx));
     }
     // 文件树标题项目下拉（树根跨项目快切）：标题左键 / files.project_menu
     if chat.dlg.tree_proj_menu.is_some() {
@@ -552,6 +557,7 @@ fn tree_menu_layer(
                         move |c, cx| c.open_file_new(path.clone(), true, cx)
                     },
                 ))
+                .child(tree_pin_item(&weak, "ftm-dir-pin", &path, chat))
                 .child(menu_sep())
                 .child(tree_item(
                     &weak,
@@ -655,6 +661,7 @@ fn tree_menu_layer(
                         }
                     },
                 ))
+                .child(tree_pin_item(&weak, "ftm-file-pin", &path, chat))
                 .child(menu_sep())
                 .child(tree_item(
                     &weak,
@@ -1395,6 +1402,197 @@ fn tree_terminal_item(
             cx.notify();
         });
     })
+}
+
+/// 021 右键菜单「Pin/取消固定」项：已在收藏夹 = 取消固定，反之加入
+/// （toggle 一条写路 tree_pin_toggle）。
+fn tree_pin_item(
+    weak: &gpui::WeakEntity<Chat>,
+    id: &str,
+    path: &std::path::PathBuf,
+    chat: &Chat,
+) -> gpui::Stateful<gpui::Div> {
+    let pinned = chat.ws.pinned.iter().any(|p| same_path(p, path));
+    tree_item(
+        weak,
+        id,
+        "pin",
+        if pinned {
+            tr("file_tree.unpin")
+        } else {
+            tr("file_tree.pin")
+        },
+        false,
+        {
+            let path = path.clone();
+            move |c, cx| c.tree_pin_toggle(path.clone(), cx)
+        },
+    )
+}
+
+/// 021 Pin 收藏夹浮层：锚定操作栏 Pin 钮下缘右对齐（下方放不下贴上缘
+/// 向上弹，tree_proj_menu 同款估高算法）。条目 = 按名称字母序（pinned_rows
+/// 唯一口径），行首 pin 钮 = 移除（tooltip「移除」，无需确认，不收浮层）；
+/// 点击行 = 树中定位 + 文件开 tab，收浮层。
+fn pin_menu_layer(
+    chat: &mut Chat,
+    vp: (f32, f32),
+    t: &'static Theme,
+    cx: &mut gpui::Context<Chat>,
+) -> gpui::AnyElement {
+    let weak = cx.entity().downgrade();
+    // Pin 钮 bounds 未量到（首帧/面板收起）→ 收槽位不挂（tree_proj_menu
+    // 同款守卫，防挂到空气里）
+    let Some(bb) = chat.layout.ft_pin_bounds.borrow().as_ref().map(|b| {
+        (
+            f32::from(b.origin.x),
+            f32::from(b.origin.y),
+            f32::from(b.size.width),
+            f32::from(b.size.height),
+        )
+    }) else {
+        chat.dlg.pin_menu = false;
+        return div().into_any_element();
+    };
+    let rows = crate::function_panel::file_actions::pinned_rows(&chat.ws.cwd, &chat.ws.pinned);
+    let weak_layer = weak.clone();
+    let layer = crate::ui::overlay::layer(false, Some(&chat.dlg.dialog_focus), move |_w, cx| {
+        let _ = weak_layer.update(cx, |c, cx| {
+            c.dlg.pin_menu = false;
+            cx.notify();
+        });
+    });
+    let card_w = 280.;
+    // 右对齐 Pin 钮右缘（列表盖在树体上）；左缘出窗改贴左边
+    let left = (bb.0 + bb.2 - card_w).max(8.);
+    let est_h = 26. + rows.len() as f32 * 28. + 8.;
+    let below = bb.1 + bb.3 + 4.;
+    let mut card = div()
+        .id("pin-card")
+        .absolute()
+        .left(px(left))
+        .w(px(card_w))
+        .max_h(px(360.))
+        .overflow_y_scroll()
+        .p(px(4.))
+        .bg(rgb(t.bg))
+        .border_1()
+        .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x8c)))
+        .rounded(px(8.))
+        .shadow_lg()
+        .flex()
+        .flex_col()
+        .on_mouse_down(MouseButton::Left, |_, _, cx| {
+            cx.stop_propagation();
+        });
+    card = if below + est_h <= vp.1 - 8. {
+        card.top(px(below))
+    } else {
+        card.bottom(px(vp.1 - bb.1 + 4.))
+    };
+    // 标题行
+    card = card.child(
+        div()
+            .px(px(8.))
+            .py(px(6.))
+            .text_size(crate::appearance::ui_size(11.))
+            .font_weight(gpui::FontWeight::SEMIBOLD)
+            .text_color(rgb(t.text_dim))
+            .child(tr("file_tree.pin_favorites")),
+    );
+    if rows.is_empty() {
+        return layer
+            .child(card.child(
+                div()
+                    .px(px(8.))
+                    .pb(px(8.))
+                    .text_size(crate::appearance::ui_size(11.5))
+                    .text_color(rgb(t.text_faint))
+                    .child(tr("file_tree.pin_empty")),
+            ))
+            .into_any_element();
+    }
+    for (ix, (path, is_dir, name, dir_part)) in rows.into_iter().enumerate() {
+        let weak_unpin = weak.clone();
+        let weak_open = weak.clone();
+        let unpin_path = path.clone();
+        let open_path = path.clone();
+        let type_icon = if is_dir {
+            crate::services::file_icons::get_generic_folder_icon(false)
+        } else {
+            crate::services::file_icons::get_icon(&path)
+        };
+        card = card.child(
+            div()
+                .id(SharedString::from(format!("pin-row-{ix}")))
+                .h(px(28.))
+                .flex()
+                .items_center()
+                .gap(px(6.))
+                .px(px(6.))
+                .rounded(px(6.))
+                .overflow_hidden()
+                .text_size(crate::appearance::ui_size(11.5))
+                .cursor_pointer()
+                .hover(|s| s.bg(rgb(t.bg_hover)))
+                // 行首 pin 钮 = 移除（tooltip「移除」，无需确认；不收浮层，
+                // 连续清理多条不打断）
+                .child(
+                    div()
+                        .id(SharedString::from(format!("pin-unpin-{ix}")))
+                        .flex_shrink_0()
+                        .size(px(18.))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(px(4.))
+                        .cursor_pointer()
+                        .hover(|s| s.bg(rgb(t.bg_hover)))
+                        .with_tip(tr("file_tree.pin_remove"))
+                        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                            cx.stop_propagation();
+                            let _ = weak_unpin.update(cx, |c, cx| {
+                                c.tree_unpin(&unpin_path, cx);
+                            });
+                        })
+                        .child(crate::ui::icon("pin", 13., t.text_dim)),
+                )
+                // 类型图标（目录/文件，与树行同源）
+                .child(
+                    div()
+                        .flex_shrink_0()
+                        .child(crate::ui::icon_path(type_icon, 14., t.text_dim)),
+                )
+                // 名称前置恒可见，路径段后置淡化、过长收缩截断
+                .child(
+                    div()
+                        .flex_shrink_0()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_ellipsis()
+                        .text_color(rgb(t.text))
+                        .child(SharedString::from(name)),
+                )
+                .child(
+                    div()
+                        .flex_shrink()
+                        .min_w_0()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_ellipsis()
+                        .text_color(rgb(t.text_faint))
+                        .child(SharedString::from(dir_part)),
+                )
+                .child(div().flex_1())
+                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                    cx.stop_propagation();
+                    let _ = weak_open.update(cx, |c, cx| {
+                        c.open_pinned_entry(open_path.clone(), cx);
+                    });
+                }),
+        );
+    }
+    layer.child(card).into_any_element()
 }
 
 /// 菜单分组分隔线（§5.6：1px t.border）。

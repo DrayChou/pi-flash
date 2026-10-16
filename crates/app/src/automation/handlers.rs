@@ -556,6 +556,21 @@ pub(super) fn dispatch(
             chat.toggle_tree_proj_menu(cx);
             ok()
         }
+        method::FILES_PIN_MENU => {
+            // 021 Pin 收藏夹浮层的无坐标入口：toggle 开/收；开合与清单读
+            // files 面 pin_menu/pins
+            chat.toggle_pin_menu(cx);
+            ok()
+        }
+        method::FILES_PIN => {
+            // 与右键菜单「Pin/取消固定」同一方法（toggle）；清单读 files 面 pins
+            let path = params_path(params, "path")?;
+            if !path.exists() {
+                return Err(not_found(format!("条目不存在: {}", path.display())));
+            }
+            chat.tree_pin_toggle(path, cx);
+            ok()
+        }
         method::SESSION_TOOLS_PRESET => {
             let preset = params
                 .get("preset")

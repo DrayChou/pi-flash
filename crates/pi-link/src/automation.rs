@@ -75,6 +75,11 @@ pub mod method {
     /// 文件树标题项目下拉（树根跨项目快切）：toggle 开/收；列表内容与键盘
     /// 高亮读 files 面快照的 proj_menu 字段，↑/↓/Enter 走 input.keys
     pub const FILES_PROJECT_MENU: &str = "files.project_menu";
+    /// 021 Pin 收藏夹：files.pin_menu toggle 收藏夹浮层（开合与展示清单读
+    /// files 面快照的 pin_menu/pins 字段）；files.pin 直调右键菜单
+    /// 「Pin/取消固定」toggle（与菜单项同一方法 tree_pin_toggle）
+    pub const FILES_PIN_MENU: &str = "files.pin_menu";
+    pub const FILES_PIN: &str = "files.pin";
     pub const GIT_STAGE: &str = "git.stage";
     pub const GIT_UNSTAGE: &str = "git.unstage";
     pub const GIT_COMMIT: &str = "git.commit";

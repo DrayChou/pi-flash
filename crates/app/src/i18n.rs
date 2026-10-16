@@ -336,6 +336,12 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("tree.delete_root_denied", "不能删除项目根目录", "不能刪除專案根目錄", "Cannot delete the project root"),
     ("file_tree.rename_failed", "重命名失败: {e}", "重新命名失敗: {e}", "Rename failed: {e}"),
     ("file_tree.move_failed", "移动失败: {e}", "移動失敗: {e}", "Move failed: {e}"),
+    // 021 Pin 收藏夹
+    ("file_tree.pin", "Pin", "Pin", "Pin"),
+    ("file_tree.unpin", "取消固定", "取消釘選", "Unpin"),
+    ("file_tree.pin_favorites", "Pin 收藏夹", "Pin 收藏夾", "Pin favorites"),
+    ("file_tree.pin_remove", "移除", "移除", "Remove"),
+    ("file_tree.pin_empty", "暂无收藏：在文件树右键菜单选 Pin", "暫無收藏：在檔案樹右鍵選單選 Pin", "No pins yet — right-click a file or folder and choose Pin"),
     // 会话功能栏（session::session_fn_bar，原 topbar ⋯ 菜单三入口）
     ("session.open_terminal", "打开终端", "開啟終端機", "Open terminal"),
     ("session.system_prompt", "系统提示词", "系統提示詞", "System prompt"),

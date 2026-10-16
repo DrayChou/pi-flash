@@ -370,6 +370,48 @@ pub fn save_ui_state(s: &UiState) {
     set_memory(&map);
 }
 
+/// 021 Pin 收藏夹（`__pins`：{ ws_key: [绝对路径…] }）——文件树目录/文件
+/// 收藏，per-project 各一份，跨重启保留。
+const WS_PINS_KEY: &str = "__pins";
+
+/// 当前项目的 Pin 收藏清单（存储序；展示序由 UI 按名称字母排）。
+pub fn pins_for(cwd: &str) -> Vec<String> {
+    memory()
+        .get(WS_PINS_KEY)
+        .and_then(|v| v.get(&ws_key(cwd)))
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// 整体改写当前项目的 Pin 收藏（pin/unpin/改名跟随/删除清理共用一条写路）；
+/// 空清单 = 移除该项目的槽位。
+pub fn save_pins_for(cwd: &str, pins: &[String]) {
+    let mut map = memory();
+    let key = ws_key(cwd);
+    let entry = map
+        .entry(WS_PINS_KEY.to_string())
+        .or_insert_with(|| Value::Object(serde_json::Map::new()));
+    if !entry.is_object() {
+        *entry = Value::Object(serde_json::Map::new());
+    }
+    if let Some(obj) = entry.as_object_mut() {
+        if pins.is_empty() {
+            obj.remove(&key);
+        } else {
+            obj.insert(
+                key,
+                Value::Array(pins.iter().map(|p| Value::String(p.clone())).collect()),
+            );
+        }
+    }
+    set_memory(&map);
+}
+
 pub fn get_window_state() -> Option<WindowState> {
     let map = memory();
     let v = map.get(WS_WINDOW_KEY)?;

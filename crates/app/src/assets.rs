@@ -125,6 +125,8 @@ assets! {
     // 资源管理器打开（lucide folder-input，2026-10-11 用户定稿替换
     // iconfont 的 icon-filebrowser——后者除名）
     "icons/folder-input.svg",
+    // 021 Pin 收藏夹：操作栏钮 + 收藏夹行首移除钮 + 右键菜单项（lucide pin）
+    "icons/pin.svg",
     "icons/clock.svg",
     "icons/arrow-up.svg",
     "icons/arrow-down.svg",

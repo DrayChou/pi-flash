@@ -334,6 +334,11 @@ impl Chat {
         self.ws.expanded_dirs.clear();
         // 文件树：根项目行默认展开
         self.ws.expanded_dirs.insert(self.ws.cwd.clone());
+        // 021 Pin 收藏夹跟随项目（换 cwd 换清单）
+        self.ws.pinned = crate::services::workspace::pins_for(&self.ws.cwd.to_string_lossy())
+            .into_iter()
+            .map(PathBuf::from)
+            .collect();
         self.refresh_sessions();
         self.load_project_files();
         // 换工作区：git 状态/树缓存/fs watcher 全部跟着 cwd 重挂
