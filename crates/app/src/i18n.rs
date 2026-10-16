@@ -332,6 +332,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("file_tree.no_changes", "暂无变更", "暫無變更", "No changes"),
     ("file_tree.show_changes_only", "只看变更", "只看變更", "Show changes only"),
     ("file_tree.maximize", "最大化文件树", "最大化文件樹", "Maximize file tree"),
+    ("file_tree.switch_project", "切换项目", "切換專案", "Switch project"),
     ("tree.delete_root_denied", "不能删除项目根目录", "不能刪除專案根目錄", "Cannot delete the project root"),
     ("file_tree.rename_failed", "重命名失败: {e}", "重新命名失敗: {e}", "Rename failed: {e}"),
     ("file_tree.move_failed", "移动失败: {e}", "移動失敗: {e}", "Move failed: {e}"),

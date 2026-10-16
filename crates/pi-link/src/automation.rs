@@ -72,6 +72,9 @@ pub mod method {
     /// files 面快照的 tree_edit 字段
     pub const FILES_RENAME: &str = "files.rename";
     pub const FILES_NEW_ENTRY: &str = "files.new_entry";
+    /// 文件树标题项目下拉（树根跨项目快切）：toggle 开/收；列表内容与键盘
+    /// 高亮读 files 面快照的 proj_menu 字段，↑/↓/Enter 走 input.keys
+    pub const FILES_PROJECT_MENU: &str = "files.project_menu";
     pub const GIT_STAGE: &str = "git.stage";
     pub const GIT_UNSTAGE: &str = "git.unstage";
     pub const GIT_COMMIT: &str = "git.commit";

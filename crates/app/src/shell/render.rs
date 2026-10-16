@@ -131,6 +131,9 @@ impl Render for Chat {
             || self.dlg.tree_confirm_del.is_some()
             || self.dlg.confirm_prj_del.is_some()
             || self.dlg.tree_del_error.is_some()
+            // 文件树标题项目下拉：↑/↓/Enter 键盘导航的前提是 dialog_focus
+            // 持焦（overlay::confirm 同款键盘路径），打开即接管焦点
+            || self.dlg.tree_proj_menu.is_some()
         {
             if !self.dlg.dialog_focus.is_focused(window) {
                 window.focus(&self.dlg.dialog_focus);

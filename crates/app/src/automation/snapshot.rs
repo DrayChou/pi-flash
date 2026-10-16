@@ -538,6 +538,15 @@ fn files_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
             crate::PanelTab::File(p) => json!({"file": p.display().to_string()}),
             crate::PanelTab::Changelog => json!({"changelog": true}),
         }).collect::<Vec<_>>(),
+        // 文件树标题项目下拉（树根跨项目快切）：开合/键盘高亮/项目清单，
+        // files.project_menu + input.keys 的事务断言靠这条
+        "proj_menu": chat.dlg.tree_proj_menu.as_ref().map(|m| json!({
+            "sel": m.sel,
+            "items": chat.psp.projects.iter().map(|g| json!({
+                "name": g.name,
+                "path": g.path.display().to_string(),
+            })).collect::<Vec<_>>(),
+        })),
     })
 }
 

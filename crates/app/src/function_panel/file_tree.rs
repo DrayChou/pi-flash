@@ -108,6 +108,69 @@ impl Chat {
         self.ws.tree_selected = Some(path.to_path_buf());
         self.reveal_tree_row(path);
     }
+
+    // -----------------------------------------------------------------------
+    // 标题项目下拉（树根跨项目快切）
+    // -----------------------------------------------------------------------
+
+    /// 标题左键 / 自动化 files.project_menu：开/收项目下拉。打开时键盘
+    /// 高亮默认落当前项目（Enter 空转、↓ 即下一个）。
+    pub(crate) fn toggle_tree_proj_menu(&mut self, cx: &mut gpui::Context<Self>) {
+        if self.dlg.tree_proj_menu.take().is_some() {
+            cx.notify();
+            return;
+        }
+        let sel = self
+            .psp
+            .projects
+            .iter()
+            .position(|g| same_ws(&g.path.to_string_lossy(), &self.ws.cwd.to_string_lossy()))
+            .unwrap_or(0);
+        self.dlg.tree_proj_menu = Some(crate::function_panel::TreeProjMenu { sel });
+        cx.notify();
+    }
+
+    /// ↑/↓ 移动键盘高亮（钳位不回绕，model picker 同款）。
+    pub(crate) fn tree_proj_menu_move(&mut self, delta: i32, cx: &mut gpui::Context<Self>) {
+        let Some(m) = self.dlg.tree_proj_menu.as_mut() else {
+            return;
+        };
+        let n = self.psp.projects.len();
+        if n == 0 {
+            return;
+        }
+        m.sel = ((m.sel as i32) + delta).clamp(0, n as i32 - 1) as usize;
+        cx.notify();
+    }
+
+    /// Enter：应用当前高亮行。
+    pub(crate) fn tree_proj_menu_apply(&mut self, cx: &mut gpui::Context<Self>) {
+        let sel = match self.dlg.tree_proj_menu.as_ref() {
+            Some(m) => m.sel,
+            None => return,
+        };
+        self.tree_proj_menu_pick(sel, cx);
+    }
+
+    /// 点击行 / Enter 共用：切树的项目并收下拉。切换 = sync_tree_to_file
+    /// 跨项目同款（只改写 cwd 走 remount_workspace：树根/branch/git/fs
+    /// watcher/侧栏当前项目全套跟过去；活跃会话不动——切会话仍是显式
+    /// 动作，也不写 last_workspace：启动落点只跟显式切项目）。
+    pub(crate) fn tree_proj_menu_pick(&mut self, ix: usize, cx: &mut gpui::Context<Self>) {
+        self.dlg.tree_proj_menu = None;
+        let Some(g) = self.psp.projects.get(ix) else {
+            return;
+        };
+        let path = g.path.clone();
+        if !same_ws(&path.to_string_lossy(), &self.ws.cwd.to_string_lossy()) {
+            self.ws.cwd = path;
+            // 旧项目的选中条目不再成立（F2/高亮都按行存在性复核，残留无害，
+            // 这里清掉是为了下拉切走再切回来不闪旧高亮）
+            self.ws.tree_selected = None;
+            self.remount_workspace();
+        }
+        cx.notify();
+    }
 }
 
 pub(crate) fn files_view(
@@ -449,9 +512,10 @@ fn changes_row(
 }
 
 /// 021 操作栏（020-1 起 38px、无下 border，与 psp 控制栏同规）：左侧
-/// 项目目录名（选中项目 = 主题色粗体）+ 右侧 5 颗图标钮——切换显示变更
-/// （开 = accent 高亮）/ 搜索文件 / 在资源管理器中打开 / 在终端中打开 /
-/// 最大化。按钮命中区 26px（§5.2 槽位），图标统一小档 MD16。
+/// 项目目录名（选中项目 = 主题色粗体；左键 = 项目下拉、右键 = 根目录
+/// 菜单）+ 右侧 5 颗图标钮——切换显示变更（开 = accent 高亮）/ 搜索文件 /
+/// 在资源管理器中打开 / 在终端中打开 / 最大化。按钮命中区 26px（§5.2
+/// 槽位），图标统一小档 MD16。
 fn action_bar(
     chat: &Chat,
     weak: &gpui::WeakEntity<Chat>,
@@ -464,6 +528,9 @@ fn action_bar(
         .unwrap_or_else(|| chat.ws.cwd.to_string_lossy().to_string())
         .into();
     let changes_only = chat.ws.changes_only;
+    let proj_open = chat.dlg.tree_proj_menu.is_some();
+    let title_bounds = chat.layout.ft_title_bounds.clone();
+    let w_proj = weak.clone();
     let w_toggle = weak.clone();
     let w_search = weak.clone();
     let w_term = weak.clone();
@@ -488,6 +555,7 @@ fn action_bar(
         .child(
             div()
                 .id("ft-project")
+                .relative()
                 .flex_1()
                 .min_w_0()
                 .overflow_hidden()
@@ -497,7 +565,35 @@ fn action_bar(
                 // 020-1：当前项目名 = 主题色 + 粗体（与项目列表选中行一致）
                 .font_weight(gpui::FontWeight::BOLD)
                 .text_color(rgb(t.accent))
+                .cursor_pointer()
+                .with_tip(tr("file_tree.switch_project"))
+                // 项目下拉（树根跨项目快切）：左键开/收，浮层贴标题下缘
+                // （锚点 = 下方 canvas 捕获的 paint 期 bounds）
+                .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
+                    let _ = w_proj.update(cx, |c, cx| c.toggle_tree_proj_menu(cx));
+                })
                 .child(project)
+                // 开合指示：下拉开着时翻向上
+                .child(
+                    div()
+                        .flex_shrink_0()
+                        .ml(px(4.))
+                        .child(crate::ui::icon(
+                            if proj_open { "chevron-up" } else { "chevron-down" },
+                            12.,
+                            t.accent,
+                        )),
+                )
+                // 标题 paint 期 bounds 捕获（dock_bounds 同款 canvas，无交互
+                // 不挡命中）：项目下拉的锚点
+                .child(
+                    gpui::canvas(
+                        move |bounds, _, _| *title_bounds.borrow_mut() = Some(bounds),
+                        |_, _, _, _| {},
+                    )
+                    .absolute()
+                    .inset_0(),
+                )
                 .on_mouse_down(gpui::MouseButton::Right,
                     move |ev: &gpui::MouseDownEvent, _, cx| {
                         cx.stop_propagation();

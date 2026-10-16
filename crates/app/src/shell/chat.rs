@@ -180,6 +180,9 @@ pub(crate) struct DlgUi {
     pub(crate) confirm_prj_del: Option<(PathBuf, f32, f32)>,
     /// 021 文件树右键菜单状态槽（渲染挂 psp_overlays 同层）
     pub(crate) tree_menu: Option<TreeMenu>,
+    /// 文件树标题项目下拉（树根跨项目快切）：Some = 开着，sel = 键盘高亮
+    /// 行（psp.projects 下标，默认落当前项目）。渲染挂 psp_overlays。
+    pub(crate) tree_proj_menu: Option<crate::function_panel::TreeProjMenu>,
     /// 021 行内新建/改名（Zed EditState 移植）：非空 = 树里有一行编辑器
     /// （渲染挂 file_tree；焦点走主 render 焦点保持链）
     pub(crate) tree_edit: Option<TreeEdit>,
@@ -291,6 +294,10 @@ pub(crate) struct LayoutUi {
     /// dock 容器 bounds（canvas 每帧捕获，分隔线拖拽换算占比用；PillBtns
     /// 同款 Rc<RefCell> 绕 paint 期实体借用限制）
     pub(crate) dock_bounds:
+        std::rc::Rc<std::cell::RefCell<Option<gpui::Bounds<gpui::Pixels>>>>,
+    /// 文件树操作栏项目名（ft-project）paint 期 bounds：项目下拉的锚点
+    /// （贴标题下缘左对齐；dock_bounds 同款 canvas 捕获）
+    pub(crate) ft_title_bounds:
         std::rc::Rc<std::cell::RefCell<Option<gpui::Bounds<gpui::Pixels>>>>,
     pub(crate) content_view: ContentView,
     /// 浏览操作区的最后视图（Term/File）：文件树标签点击时恢复
@@ -496,6 +503,7 @@ impl Chat {
                 files_min: false,
                 split_drag: false,
                 dock_bounds: std::rc::Rc::new(std::cell::RefCell::new(None)),
+                ft_title_bounds: std::rc::Rc::new(std::cell::RefCell::new(None)),
                 content_view: ContentView::Chat,
                 browse_last: ContentView::Term,
                 nav_open: false,
@@ -555,6 +563,7 @@ impl Chat {
                 hover_card: None,
                 confirm_prj_del: None,
                 tree_menu: None,
+                tree_proj_menu: None,
                 tree_edit: None,
                 editor_menu: None,
                 term_menu: None,

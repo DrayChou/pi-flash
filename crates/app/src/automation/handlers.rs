@@ -550,6 +550,12 @@ pub(super) fn dispatch(
             chat.open_model_picker(cx);
             ok()
         }
+        method::FILES_PROJECT_MENU => {
+            // 文件树标题项目下拉的无坐标入口（model.picker_open 同款）：
+            // toggle 开/收；↑/↓/Enter 走 input.keys，状态读 files 面 proj_menu
+            chat.toggle_tree_proj_menu(cx);
+            ok()
+        }
         method::SESSION_TOOLS_PRESET => {
             let preset = params
                 .get("preset")

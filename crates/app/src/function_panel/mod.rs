@@ -1118,6 +1118,16 @@ pub(crate) enum TreeMenu {
     File { path: PathBuf, x: f32, y: f32 },
 }
 
+/// 文件树标题项目下拉（树根跨项目快切）：一览 psp.projects（会话列表里
+/// 的全部项目），↑/↓ 高亮 + Enter 切换、点击直切。`sel` = 键盘高亮行
+/// （psp.projects 下标，打开时默认落当前项目）。切换语义与激活文件标签
+/// 的跨项目同步（file_tree::sync_tree_to_file）一致：只重挂工作区（树根/
+/// git/fs watcher/侧栏当前项目），活跃会话不动、不写 last_workspace。
+#[derive(Debug, Clone)]
+pub(crate) struct TreeProjMenu {
+    pub(crate) sel: usize,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct TreeEdit {
     pub(crate) kind: TreeEditKind,

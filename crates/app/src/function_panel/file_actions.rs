@@ -274,6 +274,7 @@ impl Chat {
             || self.dlg.tab_menu.is_some()
             || self.dlg.tree_confirm_del.is_some()
             || self.dlg.tree_del_error.is_some()
+            || self.dlg.tree_proj_menu.is_some()
             || self.aux.ask.as_ref().is_some_and(|a| a.open)
             || self.aux.ext_dialog.is_some()
     }
