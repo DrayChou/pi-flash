@@ -154,7 +154,7 @@ fn proj_tip(
         )
 }
 
-/// 会话右键详情卡：258px 浅色浮层，标题（点击=打开并改名）、项目/
+/// 会话右键详情卡：338px 浅色浮层（020：与会话卡同步加宽 80），标题（点击=打开并改名）、项目/
 /// 最后活动/消息数信息行、删除确认流。2026-10-15 定夺：悬停自动弹窗撤销，
 /// 改右键召唤——锚点 = 右键点，统一算法四象限（左缘对齐鼠标 x、上/下方
 /// 12px 让出光标防误点）；点卡外即收（右键别行 = 换卡）。
@@ -193,7 +193,7 @@ fn hover_card(
     let mut el = div()
         .id("psp-hcard")
         .absolute()
-        .w(px(258.))
+        .w(px(338.))
         .bg(rgb(t.bg))
         .border_1()
         .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x8c)))
@@ -337,7 +337,8 @@ fn info_row(icon_name: &'static str, text: SharedString, t: &'static Theme) -> i
         .child(text)
 }
 
-/// 项目行右键详情卡（020）：样式对齐会话右键详情卡（同 258px 卡座）——
+/// 项目行右键详情卡（020）：样式对齐会话右键详情卡（同 338px 卡座，2026-10-16
+/// 定夺两卡同步加宽 80）——
 /// 标题加粗、信息行两行（文件夹 icon + 绝对路径全量折行 mono / 会话
 /// icon + N 个会话）、分隔线下动作栏 = 标签栏项目行同款图标大档三钮
 /// （垃圾桶=删除及其所有会话；folder-input=资源管理器打开**项目会话
@@ -379,7 +380,7 @@ fn project_card(
     let mut el = div()
         .id("psp-pcard")
         .absolute()
-        .w(px(258.))
+        .w(px(338.))
         .bg(rgb(t.bg))
         .border_1()
         .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x8c)))
