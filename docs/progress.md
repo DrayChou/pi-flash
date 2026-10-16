@@ -30,11 +30,12 @@
 
 ## 里程碑索引（新 → 旧；一行一条，细节看对应提交）
 
-- 2026-10-16 **拖拽小手光标两修**（用户实机反馈）：① 样式怪——lucide 描边
-  手空心透底 + 黑边顶满视框被裁平，现洪泛填充成实心白身、视框加 3 单位内边
-  边距、热点按位图实测；② hover/拖拽同显小手、放下才显握住——Windows 平台
-  层 `handle_cursor_changed` 只在句柄 Some/None 翻转时 `SetCursor`，而拖拽期
-  系统不派发 `WM_SETCURSOR`，改句柄变了即设（陷阱沉淀 gpui.md）。
+- 2026-10-16 **拖拽小手光标两修**（用户实机反馈）：① 样式——图形两轮定稿：
+  lucide 描边图双层描边/洪泛填充均被否，最终用用户供图 v2「白色版」实心路径
+  单层白填充（教训：自绘光标选天生实心的源）；② hover/拖拽同显小手、放下才
+  显握住——Windows 平台层 `handle_cursor_changed` 只在句柄 Some/None 翻转时
+  `SetCursor`，而拖拽期系统不派发 `WM_SETCURSOR`，改句柄变了即设（陷阱沉淀
+  gpui.md）。
 
 - 2026-10-16 **树定位滚动修复**：reveal_tree_row 手写正 y set_offset 违背
   gpui「向下滚为负」约定被夹回 0——长树定位永不跳转；改 Zed project_panel
