@@ -146,6 +146,16 @@ pub(crate) struct PspUi {
     /// 「agent 结束时窗口没焦点就给点」的判定依据（2026-10-10 定夺）
     pub(crate) window_active: bool,
     pub(crate) hovered_project: Option<usize>,
+    /// 020 项目用户排序（拖拽产物的 ws_key 有序表）：Some = 用户拖过，
+    /// 启动与运行期重建都按这份排；None = 无记录，首建按活动序排一次、
+    /// 此后运行期重建保序（切换会话不再自动置顶）。
+    pub(crate) proj_order: Option<Vec<String>>,
+    /// 020 项目拖拽进行中（key + 最近 drag_move 时刻）：组收起为标签与
+    /// 插入指示线的依据。列表外松手取消不派发事件，staleness 由看门狗
+    /// 兜底清理（psp_drag::spawn_watchdog）。
+    pub(crate) proj_drag: Option<crate::function_panel::psp_drag::ProjDragState>,
+    /// 020 拖拽落点插入位（projects 下标 0..=len；None = 无有效落点/原地）
+    pub(crate) proj_drop_ix: Option<usize>,
 }
 
 /// 弹窗/悬浮层簇（4ea 字段重组）：模态槽、pill 弹层三件套、各域右键
@@ -618,6 +628,9 @@ impl Chat {
                 pending_tabs: Vec::new(),
                 window_active: true,
                 hovered_project: None,
+                proj_order: (!ui.proj_order.is_empty()).then(|| ui.proj_order.clone()),
+                proj_drag: None,
+                proj_drop_ix: None,
             },
             cfg: CfgUi {
                 mc_patterns: None,

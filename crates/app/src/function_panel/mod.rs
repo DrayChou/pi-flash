@@ -7,6 +7,7 @@ pub(crate) mod file_tree;
 pub(crate) mod file_tree_drag;
 pub(crate) mod file_actions;
 pub(crate) mod psp_actions;
+pub(crate) mod psp_drag;
 pub(crate) mod git_panel;
 pub(crate) mod psp_overlays;
 pub(crate) mod tab_menu;
@@ -68,7 +69,14 @@ pub(crate) fn psp_rows(chat: &Chat) -> Vec<PspRow> {
                 {
                     rows.push(PspRow::Pending { key: e.key.clone() });
                 }
-                if chat.psp.collapsed_keys.contains(&key) {
+                // 拖拽中的项目收起为标签（020）：渲染期折叠——只显示组标题
+                // 行，落位重排后状态清零自动还原，不碰 collapsed_keys
+                let drag_collapsed = chat
+                    .psp
+                    .proj_drag
+                    .as_ref()
+                    .is_some_and(|d| d.key == key);
+                if drag_collapsed || chat.psp.collapsed_keys.contains(&key) {
                     continue;
                 }
                 if g.sessions.is_empty() {
@@ -127,8 +135,9 @@ pub(crate) fn psp_rows(chat: &Chat) -> Vec<PspRow> {
 
 impl Chat {
 
-    /// Group the cross-project session scan into ≤N project groups (current
-    /// project pinned first, then by newest session mtime desc).
+    /// Group the cross-project session scan into project groups (020 拖拽
+    /// 版排序：用户排序 > 首建默认序（当前项目钉顶 + 活动倒序，仅一次）>
+    /// 运行期保序；组内会话恒按活动倒序——详见下方实现注释）。
     pub(crate) fn rebuild_projects(&mut self, all: Vec<pi_link::sessions::SessionInfo>) {
         let mut groups: Vec<crate::ProjectGroup> = Vec::new();
         for s in all {
@@ -160,16 +169,58 @@ impl Chat {
                 sessions: Vec::new(),
             });
         }
-        // current pinned first, the rest by newest session mtime desc
-        groups.sort_by(|a, b| {
-            let ka = same_ws(&a.path.to_string_lossy(), &cwd.to_string_lossy());
-            let kb = same_ws(&b.path.to_string_lossy(), &cwd.to_string_lossy());
-            match (ka, kb) {
-                (true, false) => std::cmp::Ordering::Less,
-                (false, true) => std::cmp::Ordering::Greater,
-                _ => newest(b).cmp(&newest(a)),
+        // 组内会话恒按活动倒序（020）：项目排序走哪条路都不影响组内
+        for g in &mut groups {
+            g.sessions.sort_by(|a, b| b.modified.cmp(&a.modified));
+        }
+        // —— 项目排序（020 拖拽版）——
+        // 1) 用户排序（拖拽产物）一旦存在永远生效：按保存序；未收录的
+        //    新项目按活动倒序垫底；
+        // 2) 无用户排序且是首建（projects 还为空）：默认序只排这一次——
+        //    当前项目钉顶 + 活动倒序；此后运行期重建不再自动置顶；
+        // 3) 其余运行期重建：保序，新出现的组按活动倒序追加尾部。
+        if let Some(order) = &self.psp.proj_order {
+            groups.sort_by(|a, b| {
+                let ka = order
+                    .iter()
+                    .position(|k| *k == same_ws_key(&a.path.to_string_lossy()));
+                let kb = order
+                    .iter()
+                    .position(|k| *k == same_ws_key(&b.path.to_string_lossy()));
+                match (ka, kb) {
+                    (Some(x), Some(y)) => x.cmp(&y),
+                    (Some(_), None) => std::cmp::Ordering::Less,
+                    (None, Some(_)) => std::cmp::Ordering::Greater,
+                    (None, None) => newest(b).cmp(&newest(a)),
+                }
+            });
+        } else if self.psp.projects.is_empty() {
+            // current pinned first, the rest by newest session mtime desc
+            groups.sort_by(|a, b| {
+                let ka = same_ws(&a.path.to_string_lossy(), &cwd.to_string_lossy());
+                let kb = same_ws(&b.path.to_string_lossy(), &cwd.to_string_lossy());
+                match (ka, kb) {
+                    (true, false) => std::cmp::Ordering::Less,
+                    (false, true) => std::cmp::Ordering::Greater,
+                    _ => newest(b).cmp(&newest(a)),
+                }
+            });
+        } else {
+            let mut ordered: Vec<crate::ProjectGroup> = Vec::with_capacity(groups.len());
+            let mut pool = groups;
+            for old in &self.psp.projects {
+                let k_old = same_ws_key(&old.path.to_string_lossy());
+                if let Some(pos) = pool
+                    .iter()
+                    .position(|g| same_ws_key(&g.path.to_string_lossy()) == k_old)
+                {
+                    ordered.push(pool.remove(pos));
+                }
             }
-        });
+            pool.sort_by(|a, b| newest(b).cmp(&newest(a)));
+            ordered.extend(pool);
+            groups = ordered;
+        }
         // v60: 加载单位是会话（设置.默认加载会话数）——组由这批会话的
         // cwd 自然形成，不再按项目数截断
         self.psp.projects = groups;
@@ -333,6 +384,29 @@ pub(crate) fn psp_view(
                             cx.notify();
                         }
                     }))
+                    // 项目拖拽（020）：容器级 drag_move = 状态同步漏斗——
+                    // 列表区内续期、拖出列表区立即清态（指示线消失、收起
+                    // 的组复原）；on_drop 兜底整片列表的落点提交（行内半行
+                    // 判定已在 project_row 做，这里只消费 proj_drop_ix）
+                    .on_drag_move::<psp_drag::ProjDragTab>({
+                        let w_sync = weak.clone();
+                        move |ev, _, cx| {
+                            let inside = ev.bounds.contains(&ev.event.position);
+                            let key = ev.drag(cx).key.clone();
+                            let _ = w_sync.update(cx, |c, cx| {
+                                psp_drag::sync_drag(c, key, inside, cx);
+                            });
+                        }
+                    })
+                    .on_drop::<psp_drag::ProjDragTab>({
+                        let w_drop = weak.clone();
+                        move |_, _, cx| {
+                            let _ = w_drop.update(cx, |c, cx| {
+                                let target = c.psp.proj_drop_ix;
+                                psp_drag::commit_drop(c, target, cx);
+                            });
+                        }
+                    })
                     // 水平留白由 col 外层统一（10px），此处不再叠加
                     .flex()
                     .flex_col()
@@ -510,7 +584,10 @@ fn psp_ctrl_bar(
         .into_any_element()
 }
 
-/// 项目行：folder 开合图标 + 名字；点击 = 组收起/展开；hover 显 垃圾桶/新会话。
+/// 项目行：folder 开合图标 + 名字；点击 = 组收起/展开；hover 显新会话。
+/// 拖拽排序三件套挂本行（020）：`on_drag` 发起（幽灵 = folder+名字小签，
+/// 「收起为标签」的可见形态；组体折叠在 [`psp_rows`] 渲染期做）、
+/// `on_drag_move` 按鼠标在行的上/下半判定插入位、提交与取消清理走容器。
 fn project_row(
     chat: &Chat,
     pi: usize,
@@ -527,13 +604,29 @@ fn project_row(
     let path_toggle = path.clone();
     let path_card = path.clone();
     let name: SharedString = g.name.clone().into();
+    let drag_key = same_ws_key(&g.path.to_string_lossy());
     let w_toggle = weak.clone();
     let w_new = weak.clone();
     let w_tip_on = weak.clone();
     let w_card = weak.clone();
+    let w_drag_ix = weak.clone();
+    let ghost_name = g.name.clone();
+    // 插入指示线（渲染期读拖拽态）：落点 = 本行上缘（drop_ix == pi）或
+    // 末行下缘（drop_ix == len）。拖的是自己时不显示（原地/相邻已由行侧
+    // handler 归一为 None，这里再挡一道幽灵跟随自己行的情况）
+    let dragging_other = chat
+        .psp
+        .proj_drag
+        .as_ref()
+        .is_some_and(|d| d.key != drag_key);
+    let show_top = dragging_other && chat.psp.proj_drop_ix == Some(pi);
+    let show_bottom = dragging_other
+        && pi + 1 == chat.psp.projects.len()
+        && chat.psp.proj_drop_ix == Some(chat.psp.projects.len());
 
     div()
         .id(SharedString::from(format!("prj-{pi}")))
+        .relative()
         // §5.8 主列表档真行高 32（原 33=32+mb2 补偿，mb 写法废除）
         .h(px(crate::ui::tokens::row::MAIN))
         // 滚动容器 overflow 压缩行时 flex-shrink 会把行压到内容高
@@ -546,9 +639,12 @@ fn project_row(
         .pl(px(align::ROW_PL))
         .pr(px(align::LIST_PX))
         .rounded(px(8.))
+        // 系统手型指针（cursor_pointer → IDC_HAND）
         .cursor_pointer()
-        // v55：项目行悬停不给背景色（避免与会话行选中态混淆）
-        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+        // 折叠切换走 on_click（按下+抬起无位移才触发）：on_mouse_down 会
+        // 在拖拽起手时就翻转折叠态，与拖拽语义打架（gpui 拖拽激活会吞掉
+        // click，两者天然互斥）
+        .on_click(move |_, _, cx| {
             let _ = w_toggle.update(cx, |c, cx| {
                 let key = crate::services::workspace::same_ws_key(&path_toggle.to_string_lossy());
                 if !c.psp.collapsed_keys.remove(&key) {
@@ -571,6 +667,36 @@ fn project_row(
                     confirming: false,
                 });
                 cx.notify();
+            });
+        })
+        .on_drag(
+            psp_drag::ProjDragTab { key: drag_key.clone() },
+            move |_, _, _, cx| cx.new(|_| psp_drag::ProjDragGhost { name: ghost_name.clone() }),
+        )
+        .on_drag_move::<psp_drag::ProjDragTab>(move |ev, _, cx| {
+            // 每次 mouse move 全体在册行都会收到（capture 相、无悬停过
+            // 滤），contains 自筛：只有鼠标所在的行往下走
+            if !ev.bounds.contains(&ev.event.position) {
+                return;
+            }
+            let key = ev.drag(cx).key.clone();
+            // 半行判定：上/下半 = 插到本行前/后；拖回自己或相邻 = no-op
+            // → 无指示线、drop 也不动（no-op 对比的是**被拖项目**的当前位
+            // 置，不是本行——本行位置和 target 同源，比了等于全判原地）
+            let target = if ev.event.position.y < ev.bounds.center().y { pi } else { pi + 1 };
+            let _ = w_drag_ix.update(cx, |c, cx| {
+                psp_drag::sync_drag(c, key.clone(), true, cx);
+                let no_op = c
+                    .psp
+                    .projects
+                    .iter()
+                    .position(|g| psp_drag::group_key(g) == key)
+                    .is_some_and(|cur| target == cur || target == cur + 1);
+                let next = (!no_op).then_some(target);
+                if c.psp.proj_drop_ix != next {
+                    c.psp.proj_drop_ix = next;
+                    cx.notify();
+                }
             });
         })
         .on_hover(move |h, _, cx| {
@@ -658,6 +784,31 @@ fn project_row(
                                     .into_any_element(),
                             ),
                     ),
+            )
+        })
+        // 插入指示线：行内绝对定位（top/bottom 缘 2px accent），不动布局
+        .when(show_top, |d| {
+            d.child(
+                div()
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .right_0()
+                    .h(px(2.))
+                    .rounded(px(1.))
+                    .bg(rgb(t.accent)),
+            )
+        })
+        .when(show_bottom, |d| {
+            d.child(
+                div()
+                    .absolute()
+                    .bottom_0()
+                    .left_0()
+                    .right_0()
+                    .h(px(2.))
+                    .rounded(px(1.))
+                    .bg(rgb(t.accent)),
             )
         })
         .into_any_element()

@@ -284,6 +284,9 @@ pub struct UiState {
     pub tree_changes_only: bool,
     /// 020-1 整合面板：会话子面板高度占比（0..1）；None = 默认 50/50
     pub dock_split: Option<f32>,
+    /// 020 项目用户排序（psp 项目组 ws_key 有序表，拖拽落位产物）；空 =
+    /// 无记录（列表用首建活动序）
+    pub proj_order: Vec<String>,
 }
 
 impl Default for UiState {
@@ -297,6 +300,7 @@ impl Default for UiState {
             collapsed: Vec::new(),
             tree_changes_only: false,
             dock_split: None,
+            proj_order: Vec::new(),
         }
     }
 }
@@ -353,6 +357,15 @@ pub fn ui_state() -> UiState {
             .get("dock_split")
             .and_then(|r| r.as_f64())
             .map(|r| (r as f32).clamp(0.1, 0.9)),
+        proj_order: v
+            .get("proj_order")
+            .and_then(|c| c.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default(),
     }
 }
 
@@ -365,6 +378,7 @@ pub fn save_ui_state(s: &UiState) {
             "list_mode": s.list_mode, "sort_mode": s.sort_mode, "collapsed": s.collapsed,
             "tree_changes_only": s.tree_changes_only,
             "dock_split": s.dock_split,
+            "proj_order": s.proj_order,
         }),
     );
     set_memory(&map);

@@ -113,6 +113,8 @@ impl Chat {
         };
         st.collapsed = self.psp.collapsed_keys.iter().cloned().collect();
         st.tree_changes_only = self.ws.changes_only;
+        // 020 项目用户排序：拖过才有序列，没拖过存空表（读回 = None）
+        st.proj_order = self.psp.proj_order.clone().unwrap_or_default();
         save_ui_state(&st);
     }
 
