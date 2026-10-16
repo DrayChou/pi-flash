@@ -891,7 +891,9 @@ fn render_image_preview(
 /// 【打开文件夹】行（走 psp 目录选择器），下面是最近 30 天活动项目列表
 /// （字母序、行高 40、吃满剩余高度超出滚动）。当前项目行尾打勾（004：从某项目
 /// 新建会话打开时默认选中）。列表数据 `project_hits` 由打开器后台扫描
-/// 回填，本函数只做搜索词过滤。
+/// 回填，本函数只做搜索词过滤。键盘：↑/↓ 在【打开文件夹】+项目行上移动
+/// （0 = 打开文件夹，默认选中当前项目行、无则回退打开文件夹行），Enter
+/// 激活（模型菜单同款卡片拦截——单行输入的 Enter 会向上冒泡）。
 fn render_project_picker(
     chat: &Chat,
     weak: &gpui::WeakEntity<Chat>,
@@ -904,28 +906,30 @@ fn render_project_picker(
     // 004 v3：列表吃满弹窗剩余高度（面板固定 500，容纳几条就显示几条），
     // 超出出滚动条——不再按固定行数限高
     const ROW_H: f32 = 40.;
-    let needle = chat.psp.project_filter.trim().to_lowercase();
-    let rows: Vec<&crate::ProjectEntry> = chat
-        .psp.project_hits
-        .iter()
-        .filter(|p| needle.is_empty() || p.name.to_lowercase().contains(&needle))
-        .collect();
-    let mut list = div().flex().flex_col();
-    if rows.is_empty() {
+    // 键盘选中行号：0 = 【打开文件夹】，1..=N = 过滤后的项目行。回填/过滤
+    // 与按键存在竞态，渲染期钳制兜底
+    let visible = project_visible(chat);
+    let sel = chat.psp.project_sel.min(visible.len());
+    // 行直接挂滚动容器（composer 菜单同款）：scroll_to_item 按**直接子行**
+    // 定位，中间隔一层包装就够不着——不再包 list 外壳
+    let mut rows: Vec<gpui::AnyElement> = Vec::new();
+    if visible.is_empty() {
         let empty = if chat.psp.project_hits.is_empty() {
             tr("project.idle_30d")
         } else {
             tr("project.no_match")
         };
-        list = list.child(
+        rows.push(
             div()
                 .py_4()
                 .text_size(crate::appearance::ui_size(12.))
                 .text_color(rgb(t.text_dim))
-                .child(empty),
+                .child(empty)
+                .into_any_element(),
         );
     }
-    for (ix, p) in rows.iter().enumerate() {
+    for (row_ix, hit_ix) in visible.iter().enumerate() {
+        let p = &chat.psp.project_hits[*hit_ix];
         let path = p.path.clone();
         let weak_row = weak.clone();
         let name: SharedString = p.name.clone().into();
@@ -933,9 +937,9 @@ fn render_project_picker(
             &p.path.to_string_lossy(),
             &chat.ws.cwd.to_string_lossy(),
         );
-        list = list.child(
+        rows.push(
             div()
-                .id(SharedString::from(format!("proj-{ix}")))
+                .id(SharedString::from(format!("proj-{row_ix}")))
                 .h(px(ROW_H))
                 .px_2()
                 .flex()
@@ -943,6 +947,8 @@ fn render_project_picker(
                 .gap_2()
                 .rounded(px(8.))
                 .cursor_pointer()
+                // 键盘选中高亮（bg_selected 递进于 hover，共存无歧义）
+                .when(sel == row_ix + 1, |d| d.bg(rgb(t.bg_selected)))
                 .hover(|s| s.bg(rgb(t.bg_hover)))
                 // fresh（新会话页来源）= 落全新草稿，不恢复 last_open——004
                 // 选项目是为了在这个项目里开新会话；psp 来源保持切项目
@@ -966,7 +972,8 @@ fn render_project_picker(
                         .text_color(rgb(t.text))
                         .child(name),
                 )
-                .when(selected, |d| d.child(icon("check", 14., t.accent))),
+                .when(selected, |d| d.child(icon("check", 14., t.accent)))
+                .into_any_element(),
         );
     }
     // 打开文件夹 = 目录选择器（psp 同款；无 30 天活动项目时的主入口）；
@@ -983,12 +990,17 @@ fn render_project_picker(
         .cursor_pointer()
         .text_size(crate::appearance::ui_size(13.))
         .text_color(rgb(t.text))
+        // 键盘行号 0：默认选中（无当前项目时）与 ↑ 回绕终点
+        .when(sel == 0, |d| d.bg(rgb(t.bg_selected)))
         .hover(|s| s.bg(rgb(t.bg_hover)))
         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
             let _ = weak_open.update(cx, |c, cx| c.pick_project_folder(fresh, cx));
         })
         .child(icon("folder-plus", 16., t.text_muted))
         .child(tr("action.open_folder"));
+    let weak_enter = weak.clone();
+    let weak_up = weak.clone();
+    let weak_down = weak.clone();
     let panel = div()
         .w(px(500.))
         .h(px(500.))
@@ -1001,6 +1013,27 @@ fn render_project_picker(
         .flex_col()
         .gap_2()
         .shadow_lg()
+        // Enter：与模型菜单同路——过滤输入单行模式的 Enter 会向上冒泡，
+        // 在卡片上拦下；激活会丢弃派发中的弹窗/输入实体，defer 出派发周期
+        .on_key_down(move |ev: &gpui::KeyDownEvent, _w, cx| {
+            if ev.keystroke.key != "enter" {
+                return;
+            }
+            cx.stop_propagation();
+            let weak = weak_enter.clone();
+            cx.defer(move |cx| {
+                let _ = weak.update(cx, |c, cx| c.project_activate(fresh, cx));
+            });
+        })
+        // ↑/↓：搜索框焦点下的组件词移动已被 Input 上下文绑定的
+        // ComposerUp/Down 抢占（main.rs），沿 bubble 到卡片即菜单导航；
+        // 走到根节点的兜底重派发在弹窗场景轮不到（这里更近）
+        .on_action(move |_: &crate::ComposerUp, _w, cx| {
+            let _ = weak_up.update(cx, |c, cx| c.project_move_sel(-1, cx));
+        })
+        .on_action(move |_: &crate::ComposerDown, _w, cx| {
+            let _ = weak_down.update(cx, |c, cx| c.project_move_sel(1, cx));
+        })
         .child(input.clone())
         .child(open_folder)
         // 打开文件夹与项目列表之间的分隔线（用户 2026-10-07 定稿）
@@ -1025,7 +1058,7 @@ fn render_project_picker(
                         .flex()
                         .flex_col()
                         .pr(px(6.))
-                        .child(list),
+                        .children(rows),
                 )
                 .child(
                     div()
@@ -1202,7 +1235,9 @@ impl Chat {
     /// 扫描回填（进程级持久 Scanner，索引命中不重读盘）；「从某项目新建会话
     /// 打开」的默认选中在渲染期对 same_ws 打勾，见 render_project_picker。
     /// `fresh`（新会话页来源）决定选项目后的落点：全新草稿 vs 恢复上次
-    /// 会话（见 Dialog::ProjectPicker 注释）。
+    /// 会话（见 Dialog::ProjectPicker 注释）。键盘 ↑/↓/Enter 见
+    /// project_move_sel / project_activate；打开/回填即落默认选中
+    /// （当前项目行，不在列则【打开文件夹】行）。
     pub(crate) fn open_project_picker(&mut self, fresh: bool, cx: &mut Context<Self>) {
         let weak = cx.weak_entity();
         let weak_esc = weak.clone();
@@ -1212,6 +1247,9 @@ impl Chat {
                 .on_change(Box::new(move |q: &str, cx: &mut App| {
                     let _ = weak.update(cx, |c, cx| {
                         c.psp.project_filter = q.to_string();
+                        // 过滤词变了行集就变：当前项目仍匹配则保持选中，
+                        // 否则跳默认（首个项目行 / 打开文件夹）
+                        c.psp.project_sel = c.project_sel_default();
                         cx.notify();
                     });
                 }))
@@ -1224,6 +1262,8 @@ impl Chat {
         });
         self.psp.project_hits.clear();
         self.psp.project_filter.clear();
+        // 回填前列表为空，先落【打开文件夹】行；扫描回来再跳当前项目
+        self.psp.project_sel = 0;
         self.dlg.dialog = Some(Dialog::ProjectPicker {
             input,
             fresh,
@@ -1260,10 +1300,68 @@ impl Chat {
                     entries.sort_by(|a, b| project_sort_key(a).cmp(&project_sort_key(b)));
                 }
                 c.psp.project_hits = entries;
+                // 回填即落默认选中（当前项目行；被过滤词挡住则原默认）
+                c.psp.project_sel = c.project_sel_default();
                 cx.notify();
             });
         })
         .detach();
+    }
+
+    /// ↑/↓（open_project_picker 的卡片 on_action）：键盘选中行在【打开
+    /// 文件夹】+ 过滤后项目行的连续行号上移动。0 = 打开文件夹行（常驻
+    /// 可视区顶部，无需滚动）；1.. = 项目行，scroll_to_item 按滚动容器
+    /// **直接子行**跟随（行挂法见 render_project_picker）。
+    pub(crate) fn project_move_sel(&mut self, delta: i32, cx: &mut Context<Self>) {
+        let max = project_visible(self).len();
+        let next =
+            ((self.psp.project_sel.min(max) as i32) + delta).clamp(0, max as i32) as usize;
+        if next == self.psp.project_sel {
+            return;
+        }
+        self.psp.project_sel = next;
+        if next >= 1 {
+            if let Some(Dialog::ProjectPicker { scroll, .. }) = self.dlg.dialog.as_ref() {
+                scroll.scroll_to_item(next - 1);
+            }
+        }
+        cx.notify();
+    }
+
+    /// 键盘激活（Enter）当前选中行：行号 0 = 打开目录选择器；项目行走
+    /// 行点击同款落点（fresh = 新会话页来源落全新草稿，否则切项目恢复
+    /// 上次会话）。
+    pub(crate) fn project_activate(&mut self, fresh: bool, cx: &mut Context<Self>) {
+        let visible = project_visible(self);
+        let sel = self.psp.project_sel.min(visible.len());
+        if sel == 0 {
+            self.pick_project_folder(fresh, cx);
+            return;
+        }
+        let path = self.psp.project_hits[visible[sel - 1]].path.clone();
+        if fresh {
+            self.new_session_in(path, cx);
+        } else {
+            self.switch_project(path, cx);
+        }
+    }
+
+    /// 打开项目菜单的默认选中：当前项目（同 ws）在过滤结果里的行号 +1；
+    /// 不在列（列表未回填 / 被搜索词滤掉）但有项目行时取首个项目行，连
+    /// 项目行都没有才落【打开文件夹】。打开、列表回填、改过滤词三处共用。
+    pub(crate) fn project_sel_default(&self) -> usize {
+        let visible = project_visible(self);
+        let cur = visible.iter().position(|&ix| {
+            crate::services::workspace::same_ws(
+                &self.psp.project_hits[ix].path.to_string_lossy(),
+                &self.ws.cwd.to_string_lossy(),
+            )
+        });
+        match cur {
+            Some(row) => row + 1,
+            None if !visible.is_empty() => 1,
+            None => 0,
+        }
     }
 
     /// Open the session content search (013): query input + grouped results.
@@ -1376,6 +1474,19 @@ impl Chat {
     pub(crate) fn session_info_open(&self, kind: crate::TopPanel) -> bool {
         matches!(self.dlg.dialog, Some(Dialog::SessionInfo { kind: k }) if k == kind)
     }
+}
+
+/// 004 打开项目菜单的可见项目行（`project_hits` 下标；搜索词过滤）。渲染
+/// 与键盘导航（move/activate/默认选中）共用这一口径，防两处过滤漂移。
+fn project_visible(chat: &Chat) -> Vec<usize> {
+    let needle = chat.psp.project_filter.trim().to_lowercase();
+    chat.psp
+        .project_hits
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| needle.is_empty() || p.name.to_lowercase().contains(&needle))
+        .map(|(ix, _)| ix)
+        .collect()
 }
 
 /// 004 打开项目菜单的列表聚合：30 天窗口内有会话活动的项目（一个 cwd 一行，

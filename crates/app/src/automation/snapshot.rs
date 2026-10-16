@@ -636,6 +636,9 @@ fn dialogs_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
         },
         "project_hits": project_hits,
         "project_filter": chat.psp.project_filter,
+        // 键盘选中行（0 = 打开文件夹，1.. = 项目行；默认选中断言 + ↑/↓
+        // 按键导航断言的数据化出口）
+        "project_sel": chat.psp.project_sel,
         "confirm_delete": opt_path(chat.dlg.confirm_delete.as_ref()),
         // 021 文件树删除确认浮层（Some=开着，值为待删路径；file.delete /
         // file.delete_confirm 两段式 op 断言开合用）+ trash 失败持久弹层

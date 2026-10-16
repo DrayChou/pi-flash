@@ -111,6 +111,9 @@ pub(crate) struct PspUi {
     pub(crate) project_hits: Vec<ProjectEntry>,
     /// 004 打开项目菜单的搜索词（输入框 on_change 镜像）
     pub(crate) project_filter: String,
+    /// 打开项目菜单的键盘选中行：0 = 【打开文件夹】，1..=N = 过滤后的项目行。
+    /// 打开/列表回填/改过滤词时落默认（当前项目行，不在列则回退），↑/↓ 移动。
+    pub(crate) project_sel: usize,
     /// 当前活跃会话文件（psp 选中态；switch_to 时更新）
     pub(crate) active_file: Option<PathBuf>,
     pub(crate) list_mode: ListMode,
@@ -567,6 +570,7 @@ impl Chat {
                 projects: Vec::new(),
                 project_hits: Vec::new(),
                 project_filter: String::new(),
+                project_sel: 0,
                 active_file: last_open.clone(),
                 list_mode: if ui.list_mode == "flat" { ListMode::Flat } else { ListMode::Grouped },
                 sort_mode: if ui.sort_mode == "manual" { SortMode::Manual } else { SortMode::Time },
