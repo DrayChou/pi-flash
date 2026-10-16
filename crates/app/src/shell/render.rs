@@ -533,6 +533,11 @@ impl Render for Chat {
             .on_action(cx.listener(|this, _: &OpenSessionSearch, _window, cx| {
                 let _ = this.open_session_search(cx);
             }))
+            // 全局文件搜索（Ctrl+L，绑定见 main.rs）：与文件树工具栏
+            // 「搜索文件」钮同一方法（toggle 语义，再按一次 = 关）
+            .on_action(cx.listener(|this, _: &OpenFileSearch, _window, cx| {
+                this.open_file_search(cx);
+            }))
             // 082 全局最大化两键（Alt+1 / Alt+2，绑定见 main.rs bind_keys）：
             // 与 psp/文件树头部最大化钮同一语义（点谁谁填满、对面收起到控制栏）
             .on_action(cx.listener(|this, _: &MaximizeSessionList, _window, cx| {

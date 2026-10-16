@@ -59,7 +59,7 @@ pub(crate) use session::menu::slash_menu_view;
 // 邻视图。注册为 "Input" 上下文同深度后注册抢占组件词移动（焦点级联末级
 // 把焦点停在 composer/编辑器等输入框——纯根监听器永远收不到这两个键），
 // 分流在渲染根 on_action；非输入焦点（无绑定命中）走根 on_key_down 兜底。
-actions!(app, [ComposerUp, ComposerDown, ComposerTab, ComposerPaste, FileSave, OpenProjectPicker, NewSession, OpenSessionSearch, CopyMessageSelection, MaximizeSessionList, MaximizeFileTree, ViewLeft, ViewRight]);
+actions!(app, [ComposerUp, ComposerDown, ComposerTab, ComposerPaste, FileSave, OpenProjectPicker, NewSession, OpenSessionSearch, CopyMessageSelection, MaximizeSessionList, MaximizeFileTree, ViewLeft, ViewRight, OpenFileSearch]);
 use i18n::tr;
 use models_config::EnabledState;
 use crate::appearance::theme::theme as T;
@@ -184,6 +184,9 @@ fn main() {
                 KeyBinding::new("ctrl-p", OpenProjectPicker, None),
                 KeyBinding::new("ctrl-n", NewSession, None),
                 KeyBinding::new("ctrl-k", OpenSessionSearch, None),
+                // 全局文件搜索（Ctrl+L，None 上下文任意焦点可用；与文件树
+                // 工具栏「搜索文件」钮同一方法，再按一次 = 关）
+                KeyBinding::new("ctrl-l", OpenFileSearch, None),
                 // 082 子面板最大化两键（无上下文 = 任意焦点可用，与上面三键
                 // 同款；tooltip 键位 chip 反查这里）
                 KeyBinding::new("alt-1", MaximizeSessionList, None),

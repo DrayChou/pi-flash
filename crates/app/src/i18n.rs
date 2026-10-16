@@ -529,6 +529,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("shortcuts.group_file_tree", "文件树", "檔案樹", "File tree"),
     ("shortcuts.group_global", "全局", "全域", "Global"),
     ("shortcuts.rename_hint", "选中文件或目录时", "選中檔案或目錄時", "When a file or folder is selected"),
+    ("shortcuts.search_files", "搜索文件", "搜尋檔案", "Search files"),
     ("shortcuts.title", "键盘快捷键", "鍵盤快捷鍵", "Keyboard Shortcuts"),
     ("shortcuts.view_left", "向左切换视图", "向左切換視圖", "Switch view left"),
     ("shortcuts.view_left_hint", "切换到当前标签左侧视图", "切換到當前標籤左側視圖", "Switch to the view left of the current tab"),

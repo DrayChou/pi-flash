@@ -1,5 +1,6 @@
-//! 设置「快捷键」页（082）：居中索引版式——无页标题（弹窗头已有页名），
-//! 组标题带条数（细线延伸），行内纯文字 + 点线引导，键帽为平面样式
+//! 设置「快捷键」页（082）：内容整体水平+垂直居中的索引版式——无页标题
+//! （弹窗头已有页名），组标题带条数（细线延伸），行内纯文字 + 点线引导，
+//! 键帽为平面样式
 //! （细边框 + 底部厚边，修饰键浅一档灰）。组标题与行文案的左缘都落在
 //! 原数字列起点（行内 px(2) 内边距处），去掉编号后不额外缩进。键帽来源
 //! 分两类：
@@ -29,6 +30,11 @@ pub(crate) fn mc_shortcuts_view(window: &Window) -> gpui::AnyElement {
             action_key(&crate::OpenSessionSearch, window),
         ),
         (
+            tr("shortcuts.search_files"),
+            "",
+            action_key(&crate::OpenFileSearch, window),
+        ),
+        (
             tr("psp.maximize_session_list"),
             "",
             action_key(&crate::MaximizeSessionList, window),
@@ -55,9 +61,16 @@ pub(crate) fn mc_shortcuts_view(window: &Window) -> gpui::AnyElement {
         Some(bare_key("f2")),
     )];
 
-    // 弹窗 body 是 block 容器（taffy block 不解析流内auto margin），居中
-    // 走 items_center + max_w
-    let mut root = div().w_full().flex().flex_col().items_center();
+    // 弹窗 body 是 block 容器（taffy block 不解析流内auto margin），水平
+    // 居中走 items_center + max_w；垂直居中用 min_h_full（内容超 body 高
+    // 时仍从顶部长出、滚动可用，比 h_full 抗小窗）+ justify_center
+    let mut root = div()
+        .w_full()
+        .min_h_full()
+        .flex()
+        .flex_col()
+        .items_center()
+        .justify_center();
     let mut col = div().w_full().max_w(px(COL_W)).flex().flex_col();
 
     // 组：组名 + 细线延伸 + 条数；行内只有标题/说明 + 点线引导（无编号）
