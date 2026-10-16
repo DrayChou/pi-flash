@@ -808,6 +808,22 @@ impl Chat {
         // focus_handle，漏判会被下方仲裁抢回 composer，面板打不了字
         (handle.is_focused(window) || st.search_panel_focused(window, cx)).then_some(handle)
     }
+
+    /// 082：编辑器搜索面板（Ctrl+F）输入框持焦判定——ViewLeft/ViewRight
+    /// 在此退回组件词移动（查词打字时 Ctrl+←/→ 仍是跳词，不能切走 tab
+    /// 把面板焦点弄丢）。编辑器本体持焦不算（那里切 tab 正是需求）。
+    pub(crate) fn editor_search_panel_focused(&self, window: &gpui::Window, cx: &App) -> bool {
+        if self.layout.content_view != ContentView::File {
+            return false;
+        }
+        let Some(path) = self.active_file_path() else {
+            return false;
+        };
+        let Some(ed) = self.ws.file_cache.get(&path).and_then(|f| f.editor.clone()) else {
+            return false;
+        };
+        ed.read(cx).search_panel_focused(window, cx)
+    }
 }
 
 

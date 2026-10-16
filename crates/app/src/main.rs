@@ -55,7 +55,11 @@ pub(crate) use session::menu::slash_menu_view;
 // 查这三个动作（键位单一事实源 = keymap，绑定改了 chip 自动跟随）。
 // 082 全局两动作（MaximizeSessionList/MaximizeFileTree）：子面板最大化，
 // Alt+1 / Alt+2，与 psp/文件树头部最大化钮同一语义。
-actions!(app, [ComposerUp, ComposerDown, ComposerTab, ComposerPaste, FileSave, OpenProjectPicker, NewSession, OpenSessionSearch, CopyMessageSelection, MaximizeSessionList, MaximizeFileTree]);
+// 082 视图切换两动作（ViewLeft/ViewRight）：Ctrl+←/→ 切到当前标签左/右
+// 邻视图。注册为 "Input" 上下文同深度后注册抢占组件词移动（焦点级联末级
+// 把焦点停在 composer/编辑器等输入框——纯根监听器永远收不到这两个键），
+// 分流在渲染根 on_action；非输入焦点（无绑定命中）走根 on_key_down 兜底。
+actions!(app, [ComposerUp, ComposerDown, ComposerTab, ComposerPaste, FileSave, OpenProjectPicker, NewSession, OpenSessionSearch, CopyMessageSelection, MaximizeSessionList, MaximizeFileTree, ViewLeft, ViewRight]);
 use i18n::tr;
 use models_config::EnabledState;
 use crate::appearance::theme::theme as T;
@@ -166,6 +170,14 @@ fn main() {
                 // 023 fileView：编辑器里 Ctrl+S 保存（composer 等其他 Input
                 // 上下文内无人监听该 action，自然空转）
                 KeyBinding::new("ctrl-s", FileSave, Some("Input")),
+                // 082 视图切换：同深度后注册抢占组件 ctrl-left/right 词移动
+                // （MoveTo{Previous,Next}Word）——composer/编辑器/对话框等
+                // 一切输入焦点下也能切 tab。分流在渲染根 on_action：模态/
+                // 弹层与编辑器搜索面板里退回组件词移动，其余切 tab（切不动
+                // 即在边界，同样退回词移动）。终端焦点无 Input 上下文，
+                // terminal_key 照旧把键发 PTY
+                KeyBinding::new("ctrl-left", ViewLeft, Some("Input")),
+                KeyBinding::new("ctrl-right", ViewRight, Some("Input")),
                 // psp 全局三键（无上下文 = 任意焦点可用；组件输入框未占这三个键）
                 // 禁注册 cmd-*：gpui 的 cmd 是 platform 修饰键（≠ctrl 别名），
                 // 后注册会赢得 tooltip 键位反查，Windows 上显示成 Win+P

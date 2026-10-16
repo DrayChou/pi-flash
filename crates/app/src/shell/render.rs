@@ -543,6 +543,27 @@ impl Render for Chat {
                 this.layout.files_min = false;
                 cx.notify();
             }))
+            // 082 视图切换 Ctrl+←/→ 分流（绑定见 main.rs：Input 上下文同
+            // 深度后注册抢占组件词移动，composer/编辑器等一切输入焦点下
+            // 都会走到这里）：模态/弹层与编辑器搜索面板里退回组件词移动
+            //（ComposerPaste 兜底同款重派发），其余切 tab；切不动（已在
+            // 最左/最右边界）同样退回词移动，键不留死位
+            .on_action(cx.listener(|this, _: &ViewLeft, window, cx| {
+                if this.modal_layer_open()
+                    || this.editor_search_panel_focused(window, cx)
+                    || !this.cycle_content_tab(-1, window, cx)
+                {
+                    window.dispatch_action(Box::new(gpui_component::input::MoveToPreviousWord), cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &ViewRight, window, cx| {
+                if this.modal_layer_open()
+                    || this.editor_search_panel_focused(window, cx)
+                    || !this.cycle_content_tab(1, window, cx)
+                {
+                    window.dispatch_action(Box::new(gpui_component::input::MoveToNextWord), cx);
+                }
+            }))
             // 消息划选 Ctrl+C 分流（绑定在 main.rs："Input" 深度后注册抢占
             // 组件 ctrl-c→input::Copy——gpui 键盘派发绑定先于 on_key_down
             // 监听器，纯监听器够不到 composer 焦点场景）：有消息选区复制
@@ -587,12 +608,10 @@ impl Render for Chat {
                     cx.stop_propagation();
                 }
             }))
-            // 082 视图切换：Ctrl+←/→ 切到当前标签左/右邻视图。挂根节点
-            // 兜底（不能注册 None-context 绑定——那会连输入框的词移动一起
-            // 抢掉）：输入框焦点下 ctrl-left/right 由组件 Input 绑定先吞
-            // （MoveTo{Previous,Next}Word），终端焦点下 terminal_key 先吞
-            // （发 PTY），都到不了这里；模态/弹层打开不接管
-            //（modal_layer_open）。守卫过但边界不切换（最左/最右）时放行
+            // 082 视图切换 Ctrl+←/→ 兜底（输入焦点下的绑定路径见上方
+            // ViewLeft/ViewRight on_action）：这里只接「无绑定命中」的焦点
+            // 态（layout.focus 裸句柄等非 Input 场景）。终端焦点下
+            // terminal_key 先吞（发 PTY），不会到这里
             .on_key_down(cx.listener(|this, ev: &gpui::KeyDownEvent, window, cx| {
                 let k = &ev.keystroke;
                 let step = match k.key.as_str() {
