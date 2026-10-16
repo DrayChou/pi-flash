@@ -416,9 +416,17 @@ pub(crate) fn psp_view(
                     // 判定已在 project_row 做，这里只消费 proj_drop_ix）
                     .on_drag_move::<psp_drag::ProjDragTab>({
                         let w_sync = weak.clone();
-                        move |ev, _, cx| {
+                        move |ev, window, cx| {
                             let inside = ev.bounds.contains(&ev.event.position);
                             let key = ev.drag(cx).key.clone();
+                            // 拖拽全程全窗口握紧小手：AnyDrag.cursor_style
+                            // 是窗口级光标（优先于一切行光标），拖拽激活时
+                            // 从源行样式取值（OpenHand），这里覆写成
+                            // ClosedHand；refresh 与拖拽期逐 move 刷新合并
+                            let _ = cx.set_active_drag_cursor_style(
+                                gpui::CursorStyle::ClosedHand,
+                                window,
+                            );
                             let _ = w_sync.update(cx, |c, cx| {
                                 psp_drag::sync_drag(c, key, inside, cx);
                             });
@@ -664,8 +672,10 @@ fn project_row(
         .pl(px(align::ROW_PL))
         .pr(px(align::LIST_PX))
         .rounded(px(8.))
-        // 系统手型指针（cursor_pointer → IDC_HAND）
-        .cursor_pointer()
+        // 抓取手型（020）：Windows 系统没有掌形光标，OpenHand/ClosedHand
+        // 由 vendored gpui 自绘 SVG 光标实现（platform/windows/cursor.rs，
+        // 用户供图 lucide hand/hand-grab）；拖拽开始后全窗口切握紧手
+        .cursor(gpui::CursorStyle::OpenHand)
         .when(is_dragged, |d| d.opacity(0.))
         // 折叠切换走 on_click（按下+抬起无位移才触发）：on_mouse_down 会
         // 在拖拽起手时就翻转折叠态，与拖拽语义打架（gpui 拖拽激活会吞掉

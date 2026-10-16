@@ -118,6 +118,10 @@ pub(crate) fn load_cursor(style: CursorStyle) -> Option<HCURSOR> {
     static SIZEWE: OnceLock<SafeCursor> = OnceLock::new();
     static SIZENS: OnceLock<SafeCursor> = OnceLock::new();
     static NO: OnceLock<SafeCursor> = OnceLock::new();
+    // grab 手型（PF patch）：Windows 系统光标集没有掌形，自绘 SVG 光标
+    // （cursor.rs，进程级缓存）；创建失败回退箭头
+    static OPEN_HAND: OnceLock<Option<SafeCursor>> = OnceLock::new();
+    static CLOSED_HAND: OnceLock<Option<SafeCursor>> = OnceLock::new();
     let (lock, name) = match style {
         CursorStyle::IBeam | CursorStyle::IBeamCursorForVerticalLayout => (&IBEAM, IDC_IBEAM),
         CursorStyle::Crosshair => (&CROSS, IDC_CROSS),
@@ -132,6 +136,16 @@ pub(crate) fn load_cursor(style: CursorStyle) -> Option<HCURSOR> {
         | CursorStyle::ResizeRow => (&SIZENS, IDC_SIZENS),
         CursorStyle::OperationNotAllowed => (&NO, IDC_NO),
         CursorStyle::None => return None,
+        CursorStyle::OpenHand | CursorStyle::ClosedHand => {
+            let closed = style == CursorStyle::ClosedHand;
+            let cache = if closed { &CLOSED_HAND } else { &OPEN_HAND };
+            if let Some(cursor) =
+                cache.get_or_init(|| super::cursor::load_hand_cursor(closed).map(Into::into))
+            {
+                return Some(**cursor);
+            }
+            (&ARROW, IDC_ARROW)
+        }
         _ => (&ARROW, IDC_ARROW),
     };
     Some(
