@@ -116,6 +116,10 @@ assets! {
     "icons/message-square.svg",
     "icons/smartphone.svg",
     "icons/messages-square.svg",
+    // 033 导航面板总结栏「icon 数字」统计行（lucide message-square-text /
+    // user-round；bot、wrench 复用既有资产）
+    "icons/message-square-text.svg",
+    "icons/user-round.svg",
     "icons/folder-tree.svg",
     // 021 文件树操作栏/右键菜单（lucide，路径照官方 24x24 stroke-2）
     "icons/git-commit-horizontal.svg",

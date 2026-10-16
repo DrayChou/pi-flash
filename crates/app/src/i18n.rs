@@ -223,8 +223,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("settings.show_more", "显示更多", "顯示更多", "Show more"),
     // session list / relative time templates
     ("session.messages", "{} 条消息", "{} 條消息", "{} messages"),
-    // 033 导航面板总结栏
-    ("nav.turn_summary", "{n}条消息：用户{u}条 助手{a}条 工具调用{t}次", "{n}條訊息：用户 {u} 條 助理{a}條 工具呼叫{t}次", "{n}messages:{u}user {a} assistant,{t}tool calls"),
+    // 033 导航面板总结栏：改「icon 数字」四组（v7x），无文案不走过 i18n
     ("time.s_ago", "{secs}秒前", "{secs}秒前", "{secs}s ago"),
     ("time.m_ago", "{n}分钟前", "{n}分鐘前", "{n}m ago"),
     ("time.h_ago", "{n}小时前", "{n}小時前", "{n}h ago"),
