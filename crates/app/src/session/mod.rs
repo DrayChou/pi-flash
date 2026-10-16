@@ -669,7 +669,7 @@ fn nav_gutter(
                 .flex()
                 .items_center()
                 .gap(px(4.))
-                .child(crate::ui::icon(icon_name, 12., dim));
+                .child(crate::ui::icon(icon_name, 14., dim));
             if colon {
                 group = group.child(num_style(div()).child(SharedString::from(format!(
                     "{count}："
