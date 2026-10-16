@@ -14,13 +14,10 @@
 //! 每次 paint 按当前可见范围/滚动位重算，滚进深层目录时把锚点行的祖先链
 //! 钉在列表顶部，点击钉住行滚回对应目录。
 
-use std::ops::Range;
 use std::path::Path;
+use std::sync::Arc;
 
-use gpui::{
-    Bounds, MouseButton, Pixels, Point, SharedString, UniformListDecoration, div, hsla,
-    linear_color_stop, linear_gradient, point, prelude::*, px, rgb,
-};
+use gpui::{MouseButton, SharedString, UniformListDecoration, div, prelude::*, px, rgb};
 
 use crate::{Chat, i18n::tr, same_path};
 use crate::services::file_icons;
@@ -30,17 +27,20 @@ use crate::appearance::theme;
 use crate::ui::{VListHeight, WithTip, icon_path, vlist};
 use crate::*;
 
+use super::file_tree_edit::{edit_chrome, edit_input_slot, tree_edit_row, validation_note};
+use super::file_tree_sticky::StickyAncestors;
+
 /// 行高（pi-web FileExplorer 24px 行）。
-const ROW_H: f32 = 24.;
+pub(crate) const ROW_H: f32 = 24.;
 /// 每级缩进（Zed project_panel `indent_size` 默认 20px）。
-const INDENT: f32 = 20.;
+pub(crate) const INDENT: f32 = 20.;
 /// 内容列左右内边距（Zed ListItem `px(DynamicSpacing::Base06)` = 6px）。
-const CONTENT_PAD: f32 = 6.;
+pub(crate) const CONTENT_PAD: f32 = 6.;
 /// 引导线水平偏移：落在父级行图标列中央（图标 14px @ [6,20)，中心 13；
 /// Zed 常量 15 是按其 16px 图标列取的）。
 const GUIDE_X: f32 = 13.;
 /// 文件树 vlist 的元素 id——sticky 点击「滚到目录」按同一 id 取句柄。
-const FILE_TREE_LIST_ID: &str = "file-tree";
+pub(crate) const FILE_TREE_LIST_ID: &str = "file-tree";
 /// Pin 收藏夹视图 vlist 的元素 id（独立句柄，滚动位不与主树共享）。
 const PIN_LIST_ID: &str = "file-pins";
 
@@ -189,8 +189,7 @@ pub(crate) fn files_view(
     let changes_only = chat.ws.changes_only;
     // 021 Pin 收藏夹视图（与变更视图互斥，toggle_pin_view 维护）
     let pin_view = chat.ws.pin_view;
-    // 082 选中条目（点击/右键留存，行高亮 + F2 改名对象）
-    let selected = chat.ws.tree_selected.clone();
+    // 082 选中条目（点击/右键留存，行高亮 + F2 改名对象）在分支函数内取
     let weak = weak.clone();
     let t = theme::theme();
     // 021 操作栏：项目目录行固定在树顶，名字居左、操作钮右对齐（切换显示
@@ -228,107 +227,7 @@ pub(crate) fn files_view(
     // 020-1：文件树最小态 = 只剩操作栏，列表体不渲染（vlist 句柄在
     // thread_local 表里，恢复时滚动位不丢）
     if !files_min && pin_view {
-        // Pin 收藏夹视图（021 三改：与「只看变更」同级的独立面板，本质是
-        // 文件树过滤器）——收藏条目按名称字母序为根行（名称前置、路径淡化
-        // 后置），展开的目录下钻完整子树，行操作与文件树一致。几何与树分支
-        // 同款（pt4/px6/pb6 + scroll-wrap + 贴边滚动条），vlist 换独立 id
-        // 不与树共享滚动位；无 sticky 祖先链（收藏根 depth 0 无祖先）。
-        let weak_c = weak.clone();
-        let weak_bg = weak.clone();
-        let cwd_bg = chat.ws.cwd.clone();
-        let cwd_rows = chat.ws.cwd.clone();
-        let editing = chat.dlg.tree_edit.clone();
-        col = col.child(
-            div()
-                .flex_1()
-                .min_h_0()
-                .flex()
-                .flex_col()
-                .overflow_hidden()
-                .pt(px(4.))
-                .px(px(6.))
-                .pb(px(6.))
-                // 空白处右键 = 根目录菜单（同树/变更分支兜底）
-                .on_mouse_down(gpui::MouseButton::Right,
-                    move |ev: &gpui::MouseDownEvent, _, cx| {
-                        cx.stop_propagation();
-                        let _ = weak_bg.update(cx, |c, cx| {
-                            c.dlg.tree_menu = Some(crate::function_panel::TreeMenu::Dir {
-                                path: cwd_bg.clone(),
-                                x: f32::from(ev.position.x),
-                                y: f32::from(ev.position.y),
-                            });
-                            cx.notify();
-                        });
-                    },
-                )
-                .child(
-                    div()
-                        .id("pins-scroll-wrap")
-                        .relative()
-                        .flex_1()
-                        .min_h_0()
-                        .w_full()
-                        // gpui div 默认 block：不显式 flex 列，内层 vlist 的
-                        // flex_1 失效、absolute 列表不撑高 → 高度塌 0 整树不可见
-                        .flex()
-                        .flex_col()
-                        .on_hover(cx.listener(|this, hovered: &bool, _w, cx| {
-                            this.ws.tree_sb_state.set_parent_hovered(*hovered);
-                            cx.notify();
-                        }))
-                        .child(vlist(
-                            PIN_LIST_ID,
-                            rows.len(),
-                            ROW_H,
-                            VListHeight::Fill,
-                            false,
-                            false,
-                            tr("file_tree.no_pins_view"),
-                            None,
-                            move |ix, _window, _cx| {
-                                let Some(row) = rows.get(ix) else {
-                                    return div().into_any_element();
-                                };
-                                let prev_depth = if ix == 0 { None } else { rows.get(ix - 1).map(|r| r.depth) };
-                                let next_depth = rows.get(ix + 1).map(|r| r.depth);
-                                if row.depth == 0 {
-                                    // 收藏根行：rel 去掉尾部名称 = 淡化路径段
-                                    //（pin 项目根本身时 rel 短于名称，置空）
-                                    let rel = row
-                                        .path
-                                        .strip_prefix(&cwd_rows)
-                                        .unwrap_or(&row.path)
-                                        .to_string_lossy()
-                                        .replace('\\', "/");
-                                    let name_len = row.name.len();
-                                    let dim_dir = if rel.len() > name_len {
-                                        rel[..rel.len() - name_len].to_string()
-                                    } else {
-                                        String::new()
-                                    };
-                                    pin_root_row(
-                                        row.clone(),
-                                        dim_dir,
-                                        editing.clone(),
-                                        selected.as_ref().is_some_and(|p| same_path(p, &row.path)),
-                                        weak_c.clone(),
-                                    )
-                                } else {
-                                    tree_row(
-                                        row.clone(),
-                                        prev_depth,
-                                        next_depth,
-                                        editing.clone(),
-                                        selected.as_ref().is_some_and(|p| same_path(p, &row.path)),
-                                        weak_c.clone(),
-                                    )
-                                }
-                            },
-                        ))
-                        .child(tree_scrollbar(chat, PIN_LIST_ID, 6.)),
-                ),
-        );
+        col = col.child(pin_list_view(chat, rows, &weak, cx));
     } else if !files_min && changes_only {
         // 「只看变更」= 扁平列表（021 二改定稿：不要树状）。头行 =
         // N 个文件 + numstat（+绿 -红，色同 git 徽标盘）；行 = 文件名
@@ -365,211 +264,342 @@ pub(crate) fn files_view(
             }
             col = col.child(head);
         }
-        let weak_c = weak.clone();
-        let weak_bg = weak.clone();
-        let cwd_bg = chat.ws.cwd.clone();
-        let editing = chat.dlg.tree_edit.clone();
-        col = col.child(
-            div()
-                .flex_1()
-                .min_h_0()
-                .flex()
-                .flex_col()
-                .overflow_hidden()
-                .py(px(6.))
-                // 空白处右键 = 根目录菜单（021 四改：根行已移除，根下的
-                // 新建/改名等入口由这里兜底；行内右键自己 stop_propagation
-                // 不会漏到这层）
-                .on_mouse_down(gpui::MouseButton::Right,
-                    move |ev: &gpui::MouseDownEvent, _, cx| {
-                        cx.stop_propagation();
-                        let _ = weak_bg.update(cx, |c, cx| {
-                            c.dlg.tree_menu = Some(crate::function_panel::TreeMenu::Dir {
-                                path: cwd_bg.clone(),
-                                x: f32::from(ev.position.x),
-                                y: f32::from(ev.position.y),
-                            });
-                            cx.notify();
-                        });
-                    },
-                )
-                .child(
-                    // 会话列表同款滚动条挂法（psp-scroll-wrap 镜像）：vlist
-                    // 自带的 menu_scrollbar 关掉，改 relative 包裹 + 右缘
-                    // absolute 条；变更容器无水平内边距，条 right(0) 已贴
-                    // dock 右缘
-                    div()
-                        .id("changes-scroll-wrap")
-                        .relative()
-                        .flex_1()
-                        .min_h_0()
-                        .w_full()
-                        // gpui div 默认 block：不显式 flex 列，内层 vlist 的
-                        // flex_1 失效、absolute 列表不撑高 → 高度塌 0 整树不可见
-                        .flex()
-                        .flex_col()
-                        .on_hover(cx.listener(|this, hovered: &bool, _w, cx| {
-                            this.ws.tree_sb_state.set_parent_hovered(*hovered);
-                            cx.notify();
-                        }))
-                        .child(vlist(
-                            FILE_TREE_LIST_ID,
-                            rows.len(),
-                            CHANGES_ROW_H,
-                            VListHeight::Fill,
-                            false,
-                            false,
-                            tr("file_tree.no_changes"),
-                            None,
-                            move |ix, _window, _cx| match rows.get(ix) {
-                                Some(row) => changes_row(
-                                    row.clone(),
-                                    editing.clone(),
-                                    selected.as_ref().is_some_and(|p| same_path(p, &row.path)),
-                                    weak_c.clone(),
-                                ),
-                                None => div().into_any_element(),
-                            },
-                        ))
-                        .child(tree_scrollbar(chat, FILE_TREE_LIST_ID, 0.)),
-                ),
-        );
+        col = col.child(changes_list_view(chat, rows, &weak, cx));
     } else if !files_min {
-        let weak_bg = weak.clone();
-        let weak_root_drop = weak.clone();
-        let cwd_bg = chat.ws.cwd.clone();
-        let edit = chat.dlg.tree_edit.clone();
-        // 新建行的落点（Zed new_entry：虚拟行插在目录行下方、子项之前；
-        // 目标 = 项目根时插列表顶）。改名行不注入（原地替换该行）。
-        let edit_slot: Option<(usize, usize)> = edit.as_ref().and_then(|e| match &e.kind {
-            crate::function_panel::TreeEditKind::New { dir } => {
-                if same_path(dir, &chat.ws.cwd) {
-                    Some((0, 0))
-                } else {
-                    Some(
-                        rows.iter()
-                            .position(|r| r.is_dir && same_path(&r.path, dir))
-                            .map_or((rows.len(), 1), |ix| (ix + 1, rows[ix].depth + 1)),
-                    )
-                }
-            }
-            crate::function_panel::TreeEditKind::Rename { .. } => None,
-        });
-        let edit_ix = edit_slot.map(|(ix, _)| ix);
-        let total = rows.len() + edit_slot.map_or(0, |_| 1);
-        // 键入中的文件名（Zed：新建文件行的类型图标跟名字实时换）
-        let live_name = edit
-            .as_ref()
-            .map(|e| e.input.read(cx).value().to_string())
-            .unwrap_or_default();
-        let sticky = Box::new(StickyAncestors { weak: weak.clone(), edit_ix }) as Box<dyn UniformListDecoration>;
-        col = col.child(
-            div()
-                .flex_1()
-                .min_h_0()
-                .flex()
-                .flex_col()
-                .overflow_hidden()
-                // 设计稿 .ft-list（020-1）：上 4 左右 6 下 6；根行图标随
-                // 容器 pl6 + 行内 CONTENT_PAD 6 落到 ICON_LINE 12
-                .pt(px(4.))
-                .px(px(6.))
-                .pb(px(6.))
-                // 空白处右键 = 根目录菜单（同变更分支，根行入口兜底）
-                .on_mouse_down(gpui::MouseButton::Right,
-                    move |ev: &gpui::MouseDownEvent, _, cx| {
-                        cx.stop_propagation();
-                        let _ = weak_bg.update(cx, |c, cx| {
-                            c.dlg.tree_menu = Some(crate::function_panel::TreeMenu::Dir {
-                                path: cwd_bg.clone(),
-                                x: f32::from(ev.position.x),
-                                y: f32::from(ev.position.y),
-                            });
-                            cx.notify();
-                        });
-                    },
-                )
-                // 列表空白处 drop = 移到项目根（Zed 背景落点语义）。行先于
-                // 容器拿走 drop（后代监听冒泡相先派发），这里只兜行与钉住
-                // 行之外的空隙；原地 drop 由 tree_move_commit 静默 no-op
-                .on_drop::<TreeDrag>(move |drag, _, cx| {
-                    let _ = weak_root_drop.update(cx, |c, cx| {
-                        let cwd = c.ws.cwd.clone();
-                        c.tree_move_commit(&drag.path, drag.is_dir, &cwd, cx);
-                    });
-                })
-                .child(
-                    // 会话列表同款滚动条挂法：vlist 自带的 menu_scrollbar
-                    // 关掉，改 relative 包裹 + 右缘 absolute 条；容器 px(6)
-                    // → 条外扩 6 抵消，右缘齐 dock 右缘（同会话列表贴边）
-                    div()
-                        .id("tree-scroll-wrap")
-                        .relative()
-                        .flex_1()
-                        .min_h_0()
-                        .w_full()
-                        // 同上：显式 flex 列，vlist 的 flex_1 才拿得到定高
-                        .flex()
-                        .flex_col()
-                        .on_hover(cx.listener(|this, hovered: &bool, _w, cx| {
-                            this.ws.tree_sb_state.set_parent_hovered(*hovered);
-                            cx.notify();
-                        }))
-                        .child(vlist(
-                            FILE_TREE_LIST_ID,
-                            total,
-                            ROW_H,
-                            VListHeight::Fill,
-                            false,
-                            false,
-                            "暂无文件",
-                            Some(sticky),
-                            move |ix, _window, _cx| {
-                                // 行内新建：该输出位渲染编辑行，其余行做索引平移
-                                if edit_slot.is_some_and(|(eix, _)| ix == eix) {
-                                    let Some((_, depth)) = edit_slot else { return div().into_any_element() };
-                                    return tree_edit_row(
-                                        edit.clone().expect("slot checked"),
-                                        depth,
-                                        &live_name,
-                                    );
-                                }
-                                let row_ix = match edit_ix {
-                                    Some(eix) if ix > eix => ix - 1,
-                                    _ => ix,
-                                };
-                                let Some(row) = rows.get(row_ix) else { return div().into_any_element() };
-                                // 邻行深度决定各段引导线的首尾裁剪（整段只在首行留上
-                                // 4px、尾行留下 4px，段中连续成一条线）；编辑行占位时
-                                // 邻行深度取编辑行的深度
-                                let depth_at = |out_ix: usize| -> Option<usize> {
-                                    if Some(out_ix) == edit_ix {
-                                        edit_slot.map(|(_, d)| d)
-                                    } else {
-                                        let rix = match edit_ix {
-                                            Some(eix) if out_ix > eix => out_ix - 1,
-                                            _ => out_ix,
-                                        };
-                                        rows.get(rix).map(|r| r.depth)
-                                    }
-                                };
-                                let prev_depth = if ix == 0 { None } else { depth_at(ix - 1) };
-                                let next_depth = depth_at(ix + 1);
-                                tree_row(
-                                    row.clone(),
-                                    prev_depth,
-                                    next_depth,
-                                    edit.clone(),
-                                    selected.as_ref().is_some_and(|p| same_path(p, &row.path)),
-                                    weak.clone(),
-                                )
-                            },
-                        ))
-                        .child(tree_scrollbar(chat, FILE_TREE_LIST_ID, 6.)),
-                ),
-        );
+        col = col.child(tree_list_view(chat, rows, &weak, cx));
     }
     col.into_any_element()
+}
+
+/// Pin 收藏夹列表体（021 三改：与「只看变更」同级的独立面板，本质是
+/// 文件树过滤器）——收藏条目按名称字母序为根行（名称前置、路径淡化
+/// 后置），展开的目录下钻完整子树，行操作与文件树一致。几何与树分支
+/// 同款（pt4/px6/pb6 + scroll-wrap + 贴边滚动条），vlist 换独立 id
+/// 不与树共享滚动位；无 sticky 祖先链（收藏根 depth 0 无祖先）。
+fn pin_list_view(
+    chat: &Chat,
+    rows: Arc<Vec<TreeRow>>,
+    weak: &gpui::WeakEntity<Chat>,
+    cx: &mut gpui::Context<Chat>,
+) -> gpui::AnyElement {
+    let weak = weak.clone();
+    let weak_c = weak.clone();
+    let weak_bg = weak.clone();
+    let cwd_bg = chat.ws.cwd.clone();
+    let cwd_rows = chat.ws.cwd.clone();
+    let editing = chat.dlg.tree_edit.clone();
+    let selected = chat.ws.tree_selected.clone();
+    div()
+        .flex_1()
+        .min_h_0()
+        .flex()
+        .flex_col()
+        .overflow_hidden()
+        .pt(px(4.))
+        .px(px(6.))
+        .pb(px(6.))
+        // 空白处右键 = 根目录菜单（同树/变更分支兜底）
+        .on_mouse_down(gpui::MouseButton::Right,
+            move |ev: &gpui::MouseDownEvent, _, cx| {
+                cx.stop_propagation();
+                let _ = weak_bg.update(cx, |c, cx| {
+                    c.dlg.tree_menu = Some(crate::function_panel::TreeMenu::Dir {
+                        path: cwd_bg.clone(),
+                        x: f32::from(ev.position.x),
+                        y: f32::from(ev.position.y),
+                    });
+                    cx.notify();
+                });
+            },
+        )
+        .child(
+            div()
+                .id("pins-scroll-wrap")
+                .relative()
+                .flex_1()
+                .min_h_0()
+                .w_full()
+                // gpui div 默认 block：不显式 flex 列，内层 vlist 的
+                // flex_1 失效、absolute 列表不撑高 → 高度塌 0 整树不可见
+                .flex()
+                .flex_col()
+                .on_hover(cx.listener(|this, hovered: &bool, _w, cx| {
+                    this.ws.tree_sb_state.set_parent_hovered(*hovered);
+                    cx.notify();
+                }))
+                .child(vlist(
+                    PIN_LIST_ID,
+                    rows.len(),
+                    ROW_H,
+                    VListHeight::Fill,
+                    false,
+                    false,
+                    tr("file_tree.no_pins_view"),
+                    None,
+                    move |ix, _window, _cx| {
+                        let Some(row) = rows.get(ix) else {
+                            return div().into_any_element();
+                        };
+                        let prev_depth = if ix == 0 { None } else { rows.get(ix - 1).map(|r| r.depth) };
+                        let next_depth = rows.get(ix + 1).map(|r| r.depth);
+                        if row.depth == 0 {
+                            // 收藏根行：rel 去掉尾部名称 = 淡化路径段
+                            //（pin 项目根本身时 rel 短于名称，置空）
+                            let rel = row
+                                .path
+                                .strip_prefix(&cwd_rows)
+                                .unwrap_or(&row.path)
+                                .to_string_lossy()
+                                .replace('\\', "/");
+                            let name_len = row.name.len();
+                            let dim_dir = if rel.len() > name_len {
+                                rel[..rel.len() - name_len].to_string()
+                            } else {
+                                String::new()
+                            };
+                            pin_root_row(
+                                row.clone(),
+                                dim_dir,
+                                editing.clone(),
+                                selected.as_ref().is_some_and(|p| same_path(p, &row.path)),
+                                weak_c.clone(),
+                            )
+                        } else {
+                            tree_row(
+                                row.clone(),
+                                prev_depth,
+                                next_depth,
+                                editing.clone(),
+                                selected.as_ref().is_some_and(|p| same_path(p, &row.path)),
+                                weak_c.clone(),
+                            )
+                        }
+                    },
+                ))
+                .child(tree_scrollbar(chat, PIN_LIST_ID, 6.)),
+        )
+        .into_any_element()
+}
+
+/// 「只看变更」列表体：容器 + vlist（行头由 files_view 构建，这里只管
+/// 滚动列表）。会话列表同款滚动条挂法（psp-scroll-wrap 镜像）：vlist
+/// 自带的 menu_scrollbar 关掉，改 relative 包裹 + 右缘 absolute 条；变更
+/// 容器无水平内边距，条 right(0) 已贴 dock 右缘。
+fn changes_list_view(
+    chat: &Chat,
+    rows: Arc<Vec<TreeRow>>,
+    weak: &gpui::WeakEntity<Chat>,
+    cx: &mut gpui::Context<Chat>,
+) -> gpui::AnyElement {
+    let weak = weak.clone();
+    let weak_c = weak.clone();
+    let weak_bg = weak.clone();
+    let cwd_bg = chat.ws.cwd.clone();
+    let editing = chat.dlg.tree_edit.clone();
+    let selected = chat.ws.tree_selected.clone();
+    div()
+        .flex_1()
+        .min_h_0()
+        .flex()
+        .flex_col()
+        .overflow_hidden()
+        .py(px(6.))
+        // 空白处右键 = 根目录菜单（021 四改：根行已移除，根下的
+        // 新建/改名等入口由这里兜底；行内右键自己 stop_propagation
+        // 不会漏到这层）
+        .on_mouse_down(gpui::MouseButton::Right,
+            move |ev: &gpui::MouseDownEvent, _, cx| {
+                cx.stop_propagation();
+                let _ = weak_bg.update(cx, |c, cx| {
+                    c.dlg.tree_menu = Some(crate::function_panel::TreeMenu::Dir {
+                        path: cwd_bg.clone(),
+                        x: f32::from(ev.position.x),
+                        y: f32::from(ev.position.y),
+                    });
+                    cx.notify();
+                });
+            },
+        )
+        .child(
+            div()
+                .id("changes-scroll-wrap")
+                .relative()
+                .flex_1()
+                .min_h_0()
+                .w_full()
+                // gpui div 默认 block：不显式 flex 列，内层 vlist 的
+                // flex_1 失效、absolute 列表不撑高 → 高度塌 0 整树不可见
+                .flex()
+                .flex_col()
+                .on_hover(cx.listener(|this, hovered: &bool, _w, cx| {
+                    this.ws.tree_sb_state.set_parent_hovered(*hovered);
+                    cx.notify();
+                }))
+                .child(vlist(
+                    FILE_TREE_LIST_ID,
+                    rows.len(),
+                    CHANGES_ROW_H,
+                    VListHeight::Fill,
+                    false,
+                    false,
+                    tr("file_tree.no_changes"),
+                    None,
+                    move |ix, _window, _cx| match rows.get(ix) {
+                        Some(row) => changes_row(
+                            row.clone(),
+                            editing.clone(),
+                            selected.as_ref().is_some_and(|p| same_path(p, &row.path)),
+                            weak_c.clone(),
+                        ),
+                        None => div().into_any_element(),
+                    },
+                ))
+                .child(tree_scrollbar(chat, FILE_TREE_LIST_ID, 0.)),
+        )
+        .into_any_element()
+}
+
+/// 主树列表体：行内新建虚拟行的落点计算 + sticky 祖先链装饰 + vlist。
+/// 会话列表同款滚动条挂法：vlist 自带的 menu_scrollbar 关掉，改 relative
+/// 包裹 + 右缘 absolute 条；容器 px(6) → 条外扩 6 抵消，右缘齐 dock 右缘
+/// （同会话列表贴边）。
+fn tree_list_view(
+    chat: &Chat,
+    rows: Arc<Vec<TreeRow>>,
+    weak: &gpui::WeakEntity<Chat>,
+    cx: &mut gpui::Context<Chat>,
+) -> gpui::AnyElement {
+    let weak = weak.clone();
+    let weak_bg = weak.clone();
+    let weak_root_drop = weak.clone();
+    let cwd_bg = chat.ws.cwd.clone();
+    let edit = chat.dlg.tree_edit.clone();
+    let selected = chat.ws.tree_selected.clone();
+    // 新建行的落点（Zed new_entry：虚拟行插在目录行下方、子项之前；
+    // 目标 = 项目根时插列表顶）。改名行不注入（原地替换该行）。
+    let edit_slot: Option<(usize, usize)> = edit.as_ref().and_then(|e| match &e.kind {
+        crate::function_panel::TreeEditKind::New { dir } => {
+            if same_path(dir, &chat.ws.cwd) {
+                Some((0, 0))
+            } else {
+                Some(
+                    rows.iter()
+                        .position(|r| r.is_dir && same_path(&r.path, dir))
+                        .map_or((rows.len(), 1), |ix| (ix + 1, rows[ix].depth + 1)),
+                )
+            }
+        }
+        crate::function_panel::TreeEditKind::Rename { .. } => None,
+    });
+    let edit_ix = edit_slot.map(|(ix, _)| ix);
+    let total = rows.len() + edit_slot.map_or(0, |_| 1);
+    // 键入中的文件名（Zed：新建文件行的类型图标跟名字实时换）
+    let live_name = edit
+        .as_ref()
+        .map(|e| e.input.read(cx).value().to_string())
+        .unwrap_or_default();
+    let sticky = Box::new(StickyAncestors { weak: weak.clone(), edit_ix }) as Box<dyn UniformListDecoration>;
+    div()
+        .flex_1()
+        .min_h_0()
+        .flex()
+        .flex_col()
+        .overflow_hidden()
+        // 设计稿 .ft-list（020-1）：上 4 左右 6 下 6；根行图标随
+        // 容器 pl6 + 行内 CONTENT_PAD 6 落到 ICON_LINE 12
+        .pt(px(4.))
+        .px(px(6.))
+        .pb(px(6.))
+        // 空白处右键 = 根目录菜单（同变更分支，根行入口兜底）
+        .on_mouse_down(gpui::MouseButton::Right,
+            move |ev: &gpui::MouseDownEvent, _, cx| {
+                cx.stop_propagation();
+                let _ = weak_bg.update(cx, |c, cx| {
+                    c.dlg.tree_menu = Some(crate::function_panel::TreeMenu::Dir {
+                        path: cwd_bg.clone(),
+                        x: f32::from(ev.position.x),
+                        y: f32::from(ev.position.y),
+                    });
+                    cx.notify();
+                });
+            },
+        )
+        // 列表空白处 drop = 移到项目根（Zed 背景落点语义）。行先于
+        // 容器拿走 drop（后代监听冒泡相先派发），这里只兜行与钉住
+        // 行之外的空隙；原地 drop 由 tree_move_commit 静默 no-op
+        .on_drop::<TreeDrag>(move |drag, _, cx| {
+            let _ = weak_root_drop.update(cx, |c, cx| {
+                let cwd = c.ws.cwd.clone();
+                c.tree_move_commit(&drag.path, drag.is_dir, &cwd, cx);
+            });
+        })
+        .child(
+            div()
+                .id("tree-scroll-wrap")
+                .relative()
+                .flex_1()
+                .min_h_0()
+                .w_full()
+                // 同上：显式 flex 列，vlist 的 flex_1 才拿得到定高
+                .flex()
+                .flex_col()
+                .on_hover(cx.listener(|this, hovered: &bool, _w, cx| {
+                    this.ws.tree_sb_state.set_parent_hovered(*hovered);
+                    cx.notify();
+                }))
+                .child(vlist(
+                    FILE_TREE_LIST_ID,
+                    total,
+                    ROW_H,
+                    VListHeight::Fill,
+                    false,
+                    false,
+                    "暂无文件",
+                    Some(sticky),
+                    move |ix, _window, _cx| {
+                        // 行内新建：该输出位渲染编辑行，其余行做索引平移
+                        if edit_slot.is_some_and(|(eix, _)| ix == eix) {
+                            let Some((_, depth)) = edit_slot else { return div().into_any_element() };
+                            return tree_edit_row(
+                                edit.clone().expect("slot checked"),
+                                depth,
+                                &live_name,
+                            );
+                        }
+                        let row_ix = match edit_ix {
+                            Some(eix) if ix > eix => ix - 1,
+                            _ => ix,
+                        };
+                        let Some(row) = rows.get(row_ix) else { return div().into_any_element() };
+                        // 邻行深度决定各段引导线的首尾裁剪（整段只在首行留上
+                        // 4px、尾行留下 4px，段中连续成一条线）；编辑行占位时
+                        // 邻行深度取编辑行的深度
+                        let depth_at = |out_ix: usize| -> Option<usize> {
+                            if Some(out_ix) == edit_ix {
+                                edit_slot.map(|(_, d)| d)
+                            } else {
+                                let rix = match edit_ix {
+                                    Some(eix) if out_ix > eix => out_ix - 1,
+                                    _ => out_ix,
+                                };
+                                rows.get(rix).map(|r| r.depth)
+                            }
+                        };
+                        let prev_depth = if ix == 0 { None } else { depth_at(ix - 1) };
+                        let next_depth = depth_at(ix + 1);
+                        tree_row(
+                            row.clone(),
+                            prev_depth,
+                            next_depth,
+                            edit.clone(),
+                            selected.as_ref().is_some_and(|p| same_path(p, &row.path)),
+                            weak.clone(),
+                        )
+                    },
+                ))
+                .child(tree_scrollbar(chat, FILE_TREE_LIST_ID, 6.)),
+        )
+        .into_any_element()
 }
 
 /// 树/变更列表共用的滚动条条带（会话列表 psp-scroll 同款挂法）：absolute
@@ -1304,7 +1334,7 @@ where
     el
 }
 
-fn name_label(name: &str) -> gpui::AnyElement {
+pub(crate) fn name_label(name: &str) -> gpui::AnyElement {
     div()
         .flex_1()
         .min_w_0()
@@ -1317,98 +1347,11 @@ fn name_label(name: &str) -> gpui::AnyElement {
         .into_any_element()
 }
 
-/// 编辑态 chrome：边框色（校验错误红 / 警告黄 / 常态 accent）+ 校验消息。
-fn edit_chrome(e: &crate::function_panel::TreeEdit, t: &'static crate::appearance::theme::Theme) -> (u32, Option<SharedString>) {
-    match &e.validation {
-        crate::function_panel::TreeValidation::Error(m) => (t.danger, Some(SharedString::from(m.clone()))),
-        crate::function_panel::TreeValidation::Warning(m) => (theme::WARN, Some(SharedString::from(m.clone()))),
-        crate::function_panel::TreeValidation::None => (t.accent, None),
-    }
-}
-
-/// 校验消息浮条（Zed render 的 validation_color_and_message 同位：行下缘
-/// 绝对定位、描边小卡）。
-fn validation_note(message: SharedString, color: u32) -> gpui::AnyElement {
-    div()
-        .absolute()
-        .top_full()
-        .left(px(-1.))
-        .right(px(-1.))
-        .py(px(4.))
-        .px(px(8.))
-        .border_1()
-        .border_color(rgb(color))
-        .bg(rgb(theme::theme().bg))
-        .text_size(crate::appearance::ui_size(10.5))
-        .text_color(rgb(color))
-        .whitespace_nowrap()
-        .overflow_hidden()
-        .text_ellipsis()
-        .child(message)
-        .into_any_element()
-}
-
-/// 行内编辑输入槽：输入框吃满名字区，内部左键 stop_propagation——点击
-/// 输入框本身不得触发面板级「点别处提交」。
-fn edit_input_slot(input: gpui::Entity<crate::ui::TextInput>) -> gpui::AnyElement {
-    div()
-        .flex_1()
-        .min_w_0()
-        .ml(px(6.))
-        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-        .child(input)
-        .into_any_element()
-}
-
-/// 行内新建行（Zed NEW_ENTRY_ID 虚拟行）：目录行下方、子项之前，缩进 =
-/// 目录深度 + 1；文件图标随键入名实时变化；行带编辑边框 + 校验消息。
-/// 无点击动作（行体点击 = 点别处，冒泡到面板收场，同 Zed blur）。
-fn tree_edit_row(edit: crate::function_panel::TreeEdit, depth: usize, live_name: &str) -> gpui::AnyElement {
-    let t = theme::theme();
-    let (border, message) = edit_chrome(&edit, t);
-    let icon = if edit.is_dir {
-        file_icons::get_generic_folder_icon(false)
-    } else if live_name.chars().count() > 2 {
-        file_icons::get_icon(Path::new(live_name))
-    } else {
-        file_icons::get_icon(Path::new(""))
-    };
-    let mut el = div()
-        .relative()
-        .w_full()
-        .h(px(ROW_H))
-        .flex()
-        .items_center()
-        .overflow_hidden()
-        .pr(px(8.))
-        .rounded(px(4.))
-        .text_size(crate::appearance::ui_size(11.))
-        .text_color(rgb(t.text))
-        .border_1()
-        .border_color(rgb(border));
-    for g in guide_lines(depth, Some(depth), Some(depth), t.border) {
-        el = el.child(g);
-    }
-    let inner = div()
-        .flex_1()
-        .min_w_0()
-        .flex()
-        .items_center()
-        .overflow_hidden()
-        .ml(px(depth as f32 * INDENT))
-        .px(px(CONTENT_PAD))
-        .child(div().flex_shrink_0().child(icon_path(icon, 14., t.text_dim)))
-        .child(edit_input_slot(edit.input.clone()));
-    el.child(inner)
-        .children(message.map(|m| validation_note(m, border)))
-        .into_any_element()
-}
-
 /// 缩进引导线（Zed indent_guides 装饰层的行内画法）：第 L 级竖线在
 /// L×INDENT+GUIDE_X（父级行图标列中央）；整段只在首行缩顶部 4px、尾行缩
 /// 底部 4px（Zed PADDING_Y），段中行互相续上成一条线。`prev`/`next` 是
 /// 渲染语境里上/下邻行的深度（普通行 = 展平表邻居，钉住行 = 链上邻居）。
-fn guide_lines(
+pub(crate) fn guide_lines(
     depth: usize,
     prev: Option<usize>,
     next: Option<usize>,
@@ -1429,7 +1372,7 @@ fn guide_lines(
 }
 
 /// 目录圆点：子树有变更（amber，pi-web 同色）。
-fn changed_dot() -> gpui::AnyElement {
+pub(crate) fn changed_dot() -> gpui::AnyElement {
     div()
         .size(px(6.))
         .rounded_full()
@@ -1438,204 +1381,10 @@ fn changed_dot() -> gpui::AnyElement {
         .into_any_element()
 }
 
-// ---------------------------------------------------------------------------
-// sticky 祖先链 —— Zed project_panel sticky_scroll（crates/ui/src/components/
-// sticky_items.rs + project_panel.rs render_sticky_entries 同构）
-// ---------------------------------------------------------------------------
-
-/// 钉住祖先链的装饰层：可见行里找锚点（祖先已滚出视口的行），把它的祖先
-/// 目录链钉在列表顶部。挂在 vlist 的 `UniformListDecoration` 上，每次
-/// paint 按当前可见范围与滚动位重算——滚动中实时跟手（行闭包只在视口内
-/// 重建，装饰层同样只在 paint 期取数，render 不多跑）。`edit_ix` = 行内
-/// 新建的虚拟行位置（不在 tree_rows 里，可见范围做一次索引平移）。
-struct StickyAncestors {
-    weak: gpui::WeakEntity<Chat>,
-    edit_ix: Option<usize>,
-}
-
-impl UniformListDecoration for StickyAncestors {
-    fn compute(
-        &self,
-        visible_range: Range<usize>,
-        _bounds: Bounds<Pixels>,
-        scroll_offset: Point<Pixels>,
-        _item_height: Pixels,
-        _item_count: usize,
-        _window: &mut gpui::Window,
-        cx: &mut gpui::App,
-    ) -> gpui::AnyElement {
-        // paint 期 Chat 的 render 借用已结束，update 合法（Zed sticky_items
-        // 同款）；weak 失联（理论上不发生）就整层不画
-        if self.weak.upgrade().is_none() {
-            return div().into_any_element();
-        }
-        self.weak
-            .update(cx, |chat, _| self.render_stack(chat, visible_range, scroll_offset))
-            .unwrap_or_else(|_| div().into_any_element())
-    }
-}
-
-impl StickyAncestors {
-    fn render_stack(
-        &self,
-        chat: &Chat,
-        visible_range: Range<usize>,
-        scroll_offset: Point<Pixels>,
-    ) -> gpui::AnyElement {
-        let rows = &chat.ws.tree_rows;
-        // Zed show_sticky_entries 门控：未滚动时不钉（否则「深度 < 视口
-        // 序号」规则会在兄弟较多的树上于 scroll 0 误触发，把根行钉成重影）
-        if scroll_offset.y >= px(0.) {
-            return div().into_any_element();
-        }
-        let Some((anchor_ix, drifting)) = find_sticky_anchor(rows, visible_range, self.edit_ix)
-        else {
-            return div().into_any_element();
-        };
-        let chain = ancestor_chain(rows, anchor_ix);
-        if chain.is_empty() {
-            return div().into_any_element();
-        }
-
-        // 装饰层坐标系随内容滚动（prepaint 原点已含 scroll_offset），钉在
-        // 屏幕上 = 每行 top 补偿 -scroll_offset.y（全按 f32 算，px() 只在
-        // 落样式处取）
-        let scroll_y = f32::from(scroll_offset.y);
-        let compensation = -scroll_y;
-        let stack_h = chain.len() as f32 * ROW_H;
-        // Zed 漂移态：锚点行滚进钉住区时，链末行（锚点父目录）贴着锚点行
-        // 底缘一起上滑，直到被钉住区吞没
-        let drift = if drifting {
-            let anchor_bottom = (anchor_ix as f32 + 1.) * ROW_H + scroll_y;
-            (anchor_bottom - stack_h).min(0.)
-        } else {
-            0.
-        };
-
-        let last = chain.len() - 1;
-        let mut stack = div().relative().w_full();
-        for (k, &row_ix) in chain.iter().enumerate() {
-            let y = px(k as f32 * ROW_H + if k == last { drift } else { 0. } + compensation);
-            let prev_depth = if k == 0 { None } else { Some(rows[chain[k - 1]].depth) };
-            // 末行引导线向锚点行续（不封底），与列表里的行无缝相接
-            let next_depth =
-                if k == last { Some(rows[anchor_ix].depth) } else { Some(rows[chain[k + 1]].depth) };
-            stack = stack.child(sticky_dir_row(
-                &rows[row_ix],
-                prev_depth,
-                next_depth,
-                y,
-                row_ix,
-                k,
-                self.weak.clone(),
-            ));
-        }
-        // Zed 同款：钉住区底缘 1.5px 渐隐阴影（黑 0.12 → 0）
-        stack = stack.child(
-            div()
-                .absolute()
-                .left_0()
-                .w_full()
-                .top(px(stack_h + drift + compensation - 1.5))
-                .h(px(1.5))
-                .bg(linear_gradient(
-                    0.,
-                    linear_color_stop(hsla(0., 0., 0., 0.12), 1.),
-                    linear_color_stop(hsla(0., 0., 0., 0.), 0.),
-                )),
-        );
-        stack.into_any_element()
-    }
-}
-
-/// 钉住的目录行：普通目录行的视觉（引导线按链上邻居接续）+ 点击滚回
-/// 对应目录（Zed sticky 点击语义），并拦截冒泡——底下压着的列表行不得
-/// 收到这次点击（否则会触发折叠）。
-#[allow(clippy::too_many_arguments)]
-fn sticky_dir_row(
-    row: &TreeRow,
-    prev_depth: Option<usize>,
-    next_depth: Option<usize>,
-    top: Pixels,
-    row_ix: usize,
-    slot: usize,
-    weak: gpui::WeakEntity<Chat>,
-) -> gpui::AnyElement {
-    let t = theme::theme();
-    let mut el = div()
-        .absolute()
-        .left_0()
-        .w_full()
-        .top(top)
-        .h(px(ROW_H))
-        .flex()
-        .items_center()
-        .overflow_hidden()
-        .pr(px(8.))
-        .rounded(px(4.))
-        .bg(rgb(t.nav))
-        .text_size(crate::appearance::ui_size(11.))
-        .text_color(rgb(t.text))
-        .cursor_pointer()
-        .hover(|s| s.bg(rgb(t.bg_hover)));
-    for g in guide_lines(row.depth, prev_depth, next_depth, t.border) {
-        el = el.child(g);
-    }
-    let folder = file_icons::get_generic_folder_icon(row.expanded);
-    let inner = div()
-        .flex_1()
-        .min_w_0()
-        .flex()
-        .items_center()
-        .overflow_hidden()
-        .ml(px(row.depth as f32 * INDENT))
-        .px(px(CONTENT_PAD))
-        .child(div().flex_shrink_0().child(icon_path(folder, 14., t.text_dim)))
-        .child(name_label(&row.name));
-    el = el.child(inner);
-    if row.changed_dot && crate::services::workspace::git_markers() {
-        el = el.child(changed_dot());
-    }
-    // 点击滚到该目录：让目录行落在钉住区里它自己的槽位（Zed
-    // scroll_to_item_strict_with_offset(index, Top, sticky_index)），再
-    // +1px 防「刚好落在钉住位上重新参与锚点判定」的抖动
-    let target_y = px((slot as f32 - row_ix as f32) * ROW_H + 1.);
-    let weak_menu = weak.clone();
-    // 拖拽落点：钉住的祖先目录同样可作目标（Zed 折叠目录条
-    // FoldedDirectoryDragTarget 同语义）。钉住行画在列表之上，冒泡相
-    // 先于底下压着的列表行拿走 drop（与上面右键拦截同一机制）
-    let drag_row_path = row.path.clone();
-    let drop_row_path = row.path.clone();
-    let weak_drop = weak.clone();
-    el.on_mouse_down(MouseButton::Left, move |_, _, cx| {
-        let handle = crate::ui::vlist::scroll_handle(FILE_TREE_LIST_ID);
-        handle.0.borrow().base_handle.set_offset(point(px(0.), target_y));
-        let _ = weak.update(cx, |_, cx| cx.notify());
-        cx.stop_propagation();
-    })
-    .child(tree_right_click(&weak_menu, row))
-    .drag_over::<TreeDrag>(move |style, drag, _, _| {
-        if drag_move_target(&drag.path, drag.is_dir, &drag_row_path, true).is_some() {
-            style.bg(rgb(theme::theme().bg_hover))
-        } else {
-            style
-        }
-    })
-    .on_drop::<TreeDrag>(move |drag, _, cx| {
-        let Some(dst) = drag_move_target(&drag.path, drag.is_dir, &drop_row_path, true) else {
-            return;
-        };
-        let _ = weak_drop.update(cx, |c, cx| {
-            c.tree_move_commit(&drag.path, drag.is_dir, &dst, cx);
-        });
-    })
-    .into_any_element()
-}
-
 /// 行右键：挂文件树右键菜单（目录/文件两套，锚点 = 事件坐标）。
 /// 挂为行尾子元素占位（无视觉），事件在行容器上接。右键即选中该行
 /// （Zed project_panel 同语义，082：右键后 F2 可直接改名）。
-fn tree_right_click(weak: &gpui::WeakEntity<Chat>, row: &TreeRow) -> gpui::AnyElement {
+pub(crate) fn tree_right_click(weak: &gpui::WeakEntity<Chat>, row: &TreeRow) -> gpui::AnyElement {
     let weak = weak.clone();
     let path = row.path.clone();
     let is_dir = row.is_dir;
@@ -1666,184 +1415,6 @@ fn tree_right_click(weak: &gpui::WeakEntity<Chat>, row: &TreeRow) -> gpui::AnyEl
             });
         })
         .into_any_element()
-}
-
-/// Zed `ui::sticky_items::find_sticky_anchor` 同构：在可见行里找锚点行，
-/// 返回（绝对行号，是否漂移）。
-///
-/// - ① `depth < 视口序号`：该行的祖先已滚出视口（序号 0..ix 里放不下
-///   depth 个祖先）；
-/// - ② `depth == 序号(+1)` 且下一行退出本子树（`next.depth + 1 == depth`）：
-///   该行是子树内最后可见的行，其父链即将全部滚出；+1 的情况（深度刚好
-///   比序号大 1）父链只差一行滚出，标记 drifting（链末行跟着锚点滑）。
-fn find_sticky_anchor(
-    rows: &[TreeRow],
-    visible: Range<usize>,
-    edit_ix: Option<usize>,
-) -> Option<(usize, bool)> {
-    // 行内新建的虚拟行夹在列表中间：输出序号 → tree_rows 序号平移一位
-    // （虚拟行自身不参与锚点判定）
-    let to_row = |abs: usize| -> Option<usize> {
-        match edit_ix {
-            Some(eix) if abs == eix => None,
-            Some(eix) if abs > eix => Some(abs - 1),
-            _ => Some(abs),
-        }
-    };
-    for abs in visible.start..visible.end {
-        let ix = abs - visible.start;
-        let Some(row_ix) = to_row(abs) else { continue };
-        let Some(row) = rows.get(row_ix) else { break };
-        let depth = row.depth;
-        if depth < ix {
-            return Some((row_ix, false));
-        }
-        // 下一「输出行」的深度：虚拟行夹在中间时取虚拟行前一行（近似——
-        // 虚拟行深度与被编辑目录子项同级，规则只做引导线裁剪，误差可忽略）
-        let next_row_ix = row_ix + 1;
-        if Some(abs + 1) == edit_ix {
-            continue;
-        }
-        if let Some(next) = rows.get(next_row_ix)
-            && next.depth + 1 == depth
-            && (depth == ix || depth == ix + 1)
-        {
-            return Some((row_ix, depth == ix + 1));
-        }
-    }
-    None
-}
-
-/// 锚点行的祖先行号（根在前）。DFS 展平里「前面最近的 depth-k 行」必是
-/// depth-k 祖先（锚点行与各祖先之间只可能夹更深的行），折叠链行
-/// （a/b/c 一行）不破坏该性质。
-fn ancestor_chain(rows: &[TreeRow], anchor_ix: usize) -> Vec<usize> {
-    let mut chain = Vec::new();
-    let mut cur = anchor_ix;
-    while rows[cur].depth > 0 {
-        let target = rows[cur].depth - 1;
-        let mut found = None;
-        let mut j = cur;
-        while j > 0 {
-            j -= 1;
-            if rows[j].depth == target {
-                found = Some(j);
-                break;
-            }
-        }
-        let Some(j) = found else {
-            // 理论不可达：根行（depth 0）恒在 index 0
-            return Vec::new();
-        };
-        chain.push(j);
-        cur = j;
-    }
-    chain.reverse();
-    chain
-}
-
-#[cfg(test)]
-mod sticky_tests {
-    use std::path::PathBuf;
-
-    use super::{ancestor_chain, find_sticky_anchor};
-    use crate::services::file_tree::TreeRow;
-
-    fn row(name: &str, depth: usize) -> TreeRow {
-        TreeRow {
-            path: PathBuf::from(name),
-            name: name.to_string(),
-            depth,
-            is_dir: true,
-            expanded: true,
-            git: None,
-            changed_dot: false,
-            ignored: false,
-        }
-    }
-
-    /// root(0) / A(1) / a1 a2(2) / B(1) / b1(2) / bk(3) / C(1) / c(2)
-    fn fixture() -> Vec<TreeRow> {
-        vec![
-            row("root", 0),
-            row("A", 1),
-            row("a1", 2),
-            row("a2", 2),
-            row("B", 1),
-            row("b1", 2),
-            row("bk", 3),
-            row("C", 1),
-            row("c", 2),
-        ]
-    }
-
-    #[test]
-    fn anchor_fires_on_first_row_shallower_than_viewport_index() {
-        // 未滚动（门控由渲染层负责，此处测纯函数）：a2 深度 2 < 视口序号 3
-        // → 首个命中行为锚点。滚动 1px 起即钉 [root, A]——钉住行恰好盖在
-        // 这两行的真实位置上，视觉无缝（Zed 同款行为）
-        let rows = fixture();
-        assert_eq!(find_sticky_anchor(&rows, 0..9, None), Some((3, false)));
-        assert_eq!(ancestor_chain(&rows, 3), vec![0, 1]);
-    }
-
-    #[test]
-    fn deep_subtree_pins_full_chain() {
-        // 滚到 a1（视口 2..9）：a2 是子树内最后可见行且下一行退出子树、
-        // 深度恰比视口序号大 1 → 锚点 a2、漂移态；链 = [root, A]（A 已滚出）
-        let rows = fixture();
-        assert_eq!(find_sticky_anchor(&rows, 2..9, None), Some((3, true)));
-        assert_eq!(ancestor_chain(&rows, 3), vec![0, 1]);
-        assert_eq!(ancestor_chain(&rows, 6), vec![0, 4, 5]);
-    }
-
-    #[test]
-    fn anchor_at_subtree_tail_with_visible_parent() {
-        // 视口 [A, a1, a2, B, ...]（滚 1 行）：a2 下一行退出子树、深度恰
-        // 等于视口序号 → 锚点 a2、不漂移，链 = [root, A]（A 在视口内，钉住
-        // 行覆盖其上，Zed 同款）
-        let rows = fixture();
-        assert_eq!(find_sticky_anchor(&rows, 1..9, None), Some((3, false)));
-        assert_eq!(ancestor_chain(&rows, 3), vec![0, 1]);
-    }
-
-    #[test]
-    fn drifting_when_anchor_one_row_past_its_slot() {
-        // 视口 [a1, a2, B, ...]（滚 2 行）：a2 深度 2 = 视口序号 1 + 1 且
-        // 下一行退出子树 → 漂移态
-        let rows = fixture();
-        assert_eq!(find_sticky_anchor(&rows, 2..9, None), Some((3, true)));
-    }
-
-    #[test]
-    fn anchor_walks_into_next_subtree_after_tail() {
-        // 继续滚 1 行（视口 [a2, B, b1, bk, C, ...]）：a2 不再满足任何规则，
-        // bk 深度 3 > 序号 1 也不满足，规则①在 C（深度 1 < 序号 2）命中。
-        // C 与 B 是兄弟，链只有根
-        let rows = fixture();
-        assert_eq!(find_sticky_anchor(&rows, 3..9, None), Some((7, false)));
-        assert_eq!(ancestor_chain(&rows, 7), vec![0]);
-        // bk 在 B 子树深处：它的链才是 [root, B, b1]（锚点判定另有规则，
-        // 这里只测链回溯）
-        assert_eq!(ancestor_chain(&rows, 6), vec![0, 4, 5]);
-    }
-
-    #[test]
-    fn chain_walk_skips_folded_and_sibling_rows() {
-        // B 的父链要跳过 A 的整棵子树；折叠链行（depth 不变的多级目录）
-        // 同样只按深度回溯。锚点：B 深度 1 < 视口序号 4（规则①）
-        let rows = vec![
-            row("root", 0),
-            row("A", 1),
-            row("a/deep/chain", 2),
-            row("a/deeper", 3),
-            row("B", 1),
-            row("b/x/y", 2),
-        ];
-        assert_eq!(find_sticky_anchor(&rows, 0..6, None), Some((4, false)));
-        assert_eq!(ancestor_chain(&rows, 5), vec![0, 4]);
-        assert_eq!(ancestor_chain(&rows, 3), vec![0, 1, 2]);
-    }
 }
 
 // ---------------------------------------------------------------------------

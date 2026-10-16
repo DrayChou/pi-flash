@@ -632,57 +632,8 @@ fn nav_gutter(
                 }
                 cx.notify();
             }));
-        // 总结栏（v63-4）：30px 固定高，滚动区之外。口径「按我们自己设
-        // 计」：N = 用户 + 助手 + 工具调用（ToolCall 块数），非 pi-web
-        // totalMessages。样式「icon 数字」四组：消息总数：用户/助手/工具，
-        // 全 icon+数字无文案，不走过 i18n。尺寸全取 UI组件规范令牌：图标
-        // ICON_MD(16)、图标↔数字 gap SP4(8)、组间 gap SP5(10)、数字
-        // ui(11) secondary
-        use crate::ui::tokens::{icon as tok_icon, space};
-        let dim = t.text_dim;
-        let num_style = move |d: gpui::Div| {
-            d.text_size(crate::appearance::ui_size(11.))
-                .text_color(rgb(dim))
-        };
-        // [(icon, 数量)]；总数组尾随全角冒号（紧贴数字，后续组隔 gap）
-        let stat_groups: [(&'static str, usize, bool); 4] = [
-            (
-                "message-square-text",
-                summary.users + summary.assistants + summary.tool_calls,
-                true,
-            ),
-            ("user-round", summary.users, false),
-            ("bot", summary.assistants, false),
-            ("wrench", summary.tool_calls, false),
-        ];
-        let mut header = div()
-            .h(px(32.))
-            .flex_shrink_0()
-            .flex()
-            .items_center()
-            // 左缘 14 = 面板 pl 6 + 卡片 px 8，与卡片文字对齐
-            .px(px(14.))
-            .gap(px(space::SP5))
-            .border_b_1()
-            // 分隔线与面板左边框同档（0x40 太淡看不出）
-            .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x80)))
-            .bg(rgb(t.bg));
-        for (icon_name, count, colon) in stat_groups {
-            let mut group = div()
-                .flex()
-                .items_center()
-                .gap(px(space::SP4))
-                .child(crate::ui::icon(icon_name, tok_icon::MD, dim));
-            if colon {
-                group = group.child(num_style(div()).child(SharedString::from(format!(
-                    "{count}："
-                ))));
-            } else {
-                group =
-                    group.child(num_style(div()).child(SharedString::from(count.to_string())));
-            }
-            header = header.child(group);
-        }
+        // 总结栏（v63-4）：「icon 数字」四组统计，装配在 nav_summary_header
+        let header = nav_summary_header(&summary, t);
         // 卡片列表虚拟化（v63-6）：ListState 只建可视卡片（~20）而非全
         // 量（千轮会话原先是 1.2 万+ div/帧）。轮次数仅在用户新增一轮时
         // 变化（面板开着时几乎不可能），reset 重算计数
@@ -852,6 +803,64 @@ fn nav_gutter(
         );
     }
     gutter.into_any_element()
+}
+
+/// 总结栏（v63-4 自 nav_gutter 内切抽出）：30px 固定高，滚动区之外。口径
+/// 「按我们自己设计」：N = 用户 + 助手 + 工具调用（ToolCall 块数），非 pi-web
+/// totalMessages。样式「icon 数字」四组：消息总数：用户/助手/工具，
+/// 全 icon+数字无文案，不走过 i18n。尺寸全取 UI组件规范令牌：图标
+/// ICON_MD(16)、图标↔数字 gap SP4(8)、组间 gap SP5(10)、数字
+/// ui(11) secondary
+fn nav_summary_header(
+    summary: &crate::session::runtime::TurnSummary,
+    t: &'static crate::appearance::theme::Theme,
+) -> gpui::AnyElement {
+    use crate::ui::tokens::{icon as tok_icon, space};
+    let dim = t.text_dim;
+    let num_style = move |d: gpui::Div| {
+        d.text_size(crate::appearance::ui_size(11.))
+            .text_color(rgb(dim))
+    };
+    // [(icon, 数量)]；总数组尾随全角冒号（紧贴数字，后续组隔 gap）
+    let stat_groups: [(&'static str, usize, bool); 4] = [
+        (
+            "message-square-text",
+            summary.users + summary.assistants + summary.tool_calls,
+            true,
+        ),
+        ("user-round", summary.users, false),
+        ("bot", summary.assistants, false),
+        ("wrench", summary.tool_calls, false),
+    ];
+    let mut header = div()
+        .h(px(32.))
+        .flex_shrink_0()
+        .flex()
+        .items_center()
+        // 左缘 14 = 面板 pl 6 + 卡片 px 8，与卡片文字对齐
+        .px(px(14.))
+        .gap(px(space::SP5))
+        .border_b_1()
+        // 分隔线与面板左边框同档（0x40 太淡看不出）
+        .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x80)))
+        .bg(rgb(t.bg));
+    for (icon_name, count, colon) in stat_groups {
+        let mut group = div()
+            .flex()
+            .items_center()
+            .gap(px(space::SP4))
+            .child(crate::ui::icon(icon_name, tok_icon::MD, dim));
+        if colon {
+            group = group.child(num_style(div()).child(SharedString::from(format!(
+                "{count}："
+            ))));
+        } else {
+            group =
+                group.child(num_style(div()).child(SharedString::from(count.to_string())));
+        }
+        header = header.child(group);
+    }
+    header.into_any_element()
 }
 
 /// 轮次摘要卡片（v63-6 从 nav_gutter 循环抽出供 list() 按需调用）：
