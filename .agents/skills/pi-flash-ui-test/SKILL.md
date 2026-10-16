@@ -98,8 +98,10 @@ pif-ui exec input.focus '{"target":"git_commit"}'   # 焦点类 bug 用元素级
 
 ## 加新 op / 深挖
 
-- 新 op 四步：`pi_link::automation::method` 加常量 → `handlers.rs` dispatch
+- 新 op 四步：`pi_link::automation::method` 加常量（带 params/断言面注释，
+  常量表即唯一 op 清单，无文档要同步）→ `handlers.rs` dispatch
   加分支（改状态必须 `cx.notify()` 收尾）→（可选）pif-ui 加糖命令 →
-  `docs/模块设计/000-自动化测试.md` §3 op 清单同步。
-- 服务端线程形制、四层 Result 解包、`input.keys` 的 defer 重入坑等实现细节：
-  读 `docs/模块设计/000-自动化测试.md` §2/§8，别凭直觉写。
+  服务端设计（线程形制/协议）如扩了新机制，回 `docs/模块设计/000-自动化测试.md` 补设计段。
+- 服务端线程形制等实现细节：读 `docs/模块设计/000-自动化测试.md`，别凭直觉
+  写；gpui 实体双重租借（defer 重入）、`window.update` 四层 Result 等陷阱：
+  读 `docs/agents/gpui.md`。
