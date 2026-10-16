@@ -223,8 +223,8 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("settings.show_more", "显示更多", "顯示更多", "Show more"),
     // session list / relative time templates
     ("session.messages", "{} 条消息", "{} 條消息", "{} messages"),
-    // 033 导航面板总结栏：改「icon 数字」四组（v7x），无文案不走过 i18n
-    ("time.s_ago", "{secs}秒前", "{secs}秒前", "{secs}s ago"),
+    // 033 导航面板总结栏：改「icon 数字」四组（v7x），无文案不走过 i18n。
+    // time.s_ago 已删（2026-11：弹窗时间不数秒，time_ago 最小粒度到分钟）
     ("time.m_ago", "{n}分钟前", "{n}分鐘前", "{n}m ago"),
     ("time.h_ago", "{n}小时前", "{n}小時前", "{n}h ago"),
     ("time.d_ago", "{n}天前", "{n}天前", "{n}d ago"),

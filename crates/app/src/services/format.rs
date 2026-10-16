@@ -57,11 +57,14 @@ pub fn time_ago(modified: std::time::SystemTime) -> String {
         })
         .unwrap_or(0)
         .max(0);
-    match secs {
-        0..=59 => crate::i18n::tf("time.s_ago", &[("secs", secs.to_string())]),
-        60..=3599 => crate::i18n::tf("time.m_ago", &[("n", (secs / 60).to_string())]),
-        3600..=86399 => crate::i18n::tf("time.h_ago", &[("n", (secs / 3600).to_string())]),
-        _ => crate::i18n::tf("time.d_ago", &[("n", (secs / 86400).to_string())]),
+    // 不显示秒（2026-11 用户定夺：详情卡/搜索弹窗时间不刷新不数秒），
+    // <1 分钟并入「刚刚」，最小粒度到分钟——秒级跳动从源头消失
+    let mins = secs / 60;
+    match mins {
+        0 => "刚刚".to_string(),
+        1..=59 => crate::i18n::tf("time.m_ago", &[("n", mins.to_string())]),
+        60..=1439 => crate::i18n::tf("time.h_ago", &[("n", (mins / 60).to_string())]),
+        _ => crate::i18n::tf("time.d_ago", &[("n", (mins / 1440).to_string())]),
     }
 }
 
