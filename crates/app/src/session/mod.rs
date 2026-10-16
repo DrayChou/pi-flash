@@ -937,8 +937,14 @@ fn nav_card(
                         .text_size(crate::appearance::ui_size(11.))
                         .line_height(relative(1.55))
                         .text_color(rgb(t.text))
-                        .max_h(px(58.))
-                        .overflow_hidden()
+                        // 用户发言最多三行：按行数钳制而非 max_h 写死像素。
+                        // 旧实现 max_h(58px) 是按默认 11px 字号估的常数，而字
+                        // 号随面板设置可调（ui_size），字号调大后行高变大，第
+                        // 三行被拦腰剪掉（用户报障截图）；line_clamp 高度跟随
+                        // 真实行高，任意字号自适配（会话悬浮卡标题同款）。
+                        // 硬换行已在 plain_text_prefix 拍平——line_clamp 只限
+                        // 软换行，硬 \n 会绕过钳制
+                        .line_clamp(3)
                         .child(SharedString::from(chars)),
                 ),
         );

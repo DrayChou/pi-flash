@@ -158,7 +158,9 @@ impl Msg {
 
     /// 文本前缀（导航面板摘要专用）：拼够 max_chars 个字符即停，避免为
     /// 截断摘要把整条长回复全量拼接一遍（nav 每帧都取，长程任务会话里
-    /// 全量 join 的成本随回复长度线性涨）
+    /// 全量 join 的成本随回复长度线性涨）。换行拍平成空格：摘要靠
+    /// line_clamp(3) 限三行，而 gpui line_clamp 只限软换行，硬 \n 会
+    /// 绕过钳制（slash 菜单 desc 同款处理）
     pub(crate) fn plain_text_prefix(&self, max_chars: usize) -> String {
         let mut out = String::new();
         let mut taken = 0usize;
@@ -168,7 +170,7 @@ impl Msg {
                     if taken >= max_chars {
                         return out;
                     }
-                    out.push(ch);
+                    out.push(if ch == '\n' || ch == '\r' { ' ' } else { ch });
                     taken += 1;
                 }
             }
