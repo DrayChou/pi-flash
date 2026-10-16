@@ -549,7 +549,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("stats.total_cost", "累计费用", "", ""),
     ("status.running_tool", "正在运行 {name}...", "", ""),
     ("status.running_tools", "正在运行 {names}...", "", ""),
-    ("status.queued", "已排队（本轮结束后发送）", "", ""),
+    ("status.queued", "已排队（本轮结束后发送）", "已排隊（本輪結束後發送）", "Queued (sends after the current turn)"),
     ("status.send_failed", "发送失败", "", ""),
     ("status.waiting_model", "正在等待模型...", "", ""),
     ("terminal.none", "暂无终端会话", "", ""),
