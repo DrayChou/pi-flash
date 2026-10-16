@@ -254,7 +254,11 @@ fn fn_bar_btn(
         .cursor_pointer()
         .hover(move |s| s.bg(rgb(t.bg_hover)).text_color(rgb(hover_fg)))
         .on_mouse_down(MouseButton::Left, handler)
-        .child(crate::ui::icon(icon_name, 13., if on { t.accent } else { t.text_muted }))
+        .child(crate::ui::icon(
+            icon_name,
+            crate::ui::tokens::icon::MD,
+            if on { t.accent } else { t.text_muted },
+        ))
         .child(SharedString::from(label))
         .into_any_element()
 }
