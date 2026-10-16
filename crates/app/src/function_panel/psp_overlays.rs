@@ -338,9 +338,10 @@ fn info_row(icon_name: &'static str, text: SharedString, t: &'static Theme) -> i
 }
 
 /// 项目行右键详情卡（020）：样式对齐会话右键详情卡（同 258px 卡座）——
-/// 标题加粗、信息行两行（文件夹 icon + 绝对路径小字 mono / 会话 icon +
-/// N 个会话）、分隔线下动作栏 = 标签栏项目行同款双图标大档（垃圾桶=删除
-/// 及其所有会话，新会话=在此项目新建）。锚点 = 右键点，统一算法四象限；
+/// 标题加粗、信息行两行（文件夹 icon + 绝对路径全量折行 mono / 会话
+/// icon + N 个会话）、分隔线下动作栏 = 标签栏项目行同款图标大档三钮
+/// （垃圾桶=删除及其所有会话；folder-input=资源管理器打开**项目会话
+/// 目录**；新会话=在此项目新建）。锚点 = 右键点，统一算法四象限；
 /// 点卡外即收（同 hover_card 语义，右键别行 = 收旧开新）；删除走卡内
 /// 取消/确认 两键（会话卡同款确认态），确认复用 delete_project。
 fn project_card(
@@ -361,6 +362,15 @@ fn project_card(
     let title: SharedString = g.name.clone().into();
     let full: SharedString = g.path.to_string_lossy().to_string().into();
     let count = tf("psp.sessions_count", &[("n", g.sessions.len().to_string())]);
+    // 项目会话目录 = pi sessions 根下按 cwd 编码的组目录（--d---…--）——
+    // 资源管理器入口进的是这里而非项目目录（2026-10-16 定夺）。组目录还没
+    // 建（该项目无落盘会话）时退回 sessions 根，保证点了总有出处
+    let sess_dir = pi_link::sessions::sessions_root().map(|root| {
+        let dir = root.join(pi_link::sessions::group_name_for_cwd(
+            &g.path.to_string_lossy(),
+        ));
+        if dir.is_dir() { dir } else { root }
+    });
     let path = card.path.clone();
     let confirming = card.confirming;
     let weak = cx.entity().downgrade();
@@ -413,24 +423,21 @@ fn project_card(
                 .text_ellipsis()
                 .child(title),
         )
-        // 路径行：会话卡信息行同构，唯路径走小字 mono（proj_tip 同族），
-        // 长路径尾部省略
+        // 路径行：会话卡信息行同构，唯路径走小字 mono（proj_tip 同族）。
+        // 全路径必须可见（2026-10-16 定夺）：折行展示，不截断不省略；
+        // 字号比首版再小一档（11 → 10），多行时图标顶对齐首行
         .child(
             div()
                 .flex()
-                .items_center()
+                .items_start()
                 .gap(px(8.))
                 .mt(px(7.5))
-                .overflow_hidden()
                 .child(icon("folder-closed", 15., t.text_muted))
                 .child(
                     div()
                         .flex_1()
                         .min_w_0()
-                        .overflow_hidden()
-                        .whitespace_nowrap()
-                        .text_ellipsis()
-                        .text_size(crate::appearance::ui_size(11.))
+                        .text_size(crate::appearance::ui_size(10.))
                         .font_family(crate::editor::markdown::MONO_FAMILY)
                         .text_color(rgb(t.text_muted))
                         .child(full),
@@ -453,7 +460,8 @@ fn project_card(
             div()
                 .flex()
                 .justify_end()
-                .gap(px(6.))
+                // 三钮并排：间距比首版放宽（6 → 10，2026-10-16 定夺）
+                .gap(px(10.))
                 .children(if confirming {
                     // 原地换 取消/确认（会话卡同款确认态）
                     vec![
@@ -488,6 +496,25 @@ fn project_card(
                                     card.confirming = true;
                                 }
                                 cx.notify();
+                            },
+                        )
+                        .into_any_element(),
+                        // 会话目录（非项目目录）在资源管理器中打开
+                        card_icon_btn(
+                            &weak,
+                            "pjc-explorer",
+                            "folder-input",
+                            tr("psp.open_session_dir"),
+                            t.text,
+                            {
+                                let sess_dir = sess_dir.clone();
+                                move |c, cx| {
+                                    if let Some(d) = &sess_dir {
+                                        crate::services::shell_open::reveal_in_explorer(d);
+                                    }
+                                    c.dlg.proj_card = None;
+                                    cx.notify();
+                                }
                             },
                         )
                         .into_any_element(),

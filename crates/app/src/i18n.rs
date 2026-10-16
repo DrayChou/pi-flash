@@ -492,6 +492,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("psp.no_sessions", "无会话", "", ""),
     ("psp.open_in_file_browser", "在文件浏览器中打开", "", ""),
     ("psp.open_project", "打开项目", "開啟專案", "Open project"),
+    ("psp.open_session_dir", "在资源管理器中打开会话目录", "在檔案總管中開啟會話目錄", "Open sessions folder in Explorer"),
     ("psp.project_deleted", "项目已删除（{n} 个会话）", "", ""),
     ("psp.project_groups", "项目分组列表", "", ""),
     ("psp.recent_sessions", "最近会话列表", "", ""),
