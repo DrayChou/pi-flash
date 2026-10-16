@@ -309,45 +309,71 @@ pub(crate) fn psp_view(
             .flex_col()
             .px(px(align::LIST_PX))
             .pt(px(6.));
-        let rows: Vec<gpui::AnyElement> = psp_rows(chat)
-            .into_iter()
-            .map(|row| match row {
-            PspRow::Project(pi) => project_row(chat, pi, &weak, t),
-            PspRow::Session { p, s } => session_row_view(chat, p, s, &weak, t, window, cx),
-            PspRow::Pending { key } => pending_row_view(chat, &key, &weak, t),
-            PspRow::Empty => div()
-                .id("psp-empty")
-                .pl(px(45.))
-                .py(px(5.5))
-                // 与「显示更多」行同款：placeholder 色 + 面板字号−1（2026-10-10 定夺）
-                .text_size(crate::appearance::ui_size(11.))
-                .text_color(rgb(t.text_faint))
-                .child(tr("psp.no_sessions"))
-                .into_any_element(),
-            PspRow::More { key } => {
-                let weak_more = weak.clone();
-                let key_more = key.clone();
-                div()
-                    .id(SharedString::from(format!("psp-more-{key}")))
-                    .pl(px(45.))
-                    .py(px(5.5))
-                    // placeholder 色 + 面板字号−1（2026-10-10 定夺）
-                    .text_size(crate::appearance::ui_size(11.))
-                    .text_color(rgb(t.text_faint))
-                    .cursor_pointer()
-                    .hover(|s| s.text_color(rgb(t.text)))
-                    .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                        let key = key_more.clone();
-                        let _ = weak_more.update(cx, |chat, cx| {
-                            *chat.psp.psp_shown.entry(key).or_insert_with(psp_page) += psp_page();
-                            cx.notify();
-                        });
-                    })
-                    .child(tr("settings.show_more"))
-                    .into_any_element()
+        let mut rows: Vec<gpui::AnyElement> = Vec::new();
+        // 避让位移（020 拖拽）的块归属：Project 行之后的一切行都属于该
+        // 项目块（Session 自带下标；Empty/More 跟随最近的 Project 行），
+        // 整组一起平移让位；首个 Project 之前的孤儿伪标签不参与平移。
+        let mut last_pi: Option<usize> = None;
+        for row in psp_rows(chat) {
+            let block = match &row {
+                PspRow::Project(pi) => {
+                    last_pi = Some(*pi);
+                    None
+                }
+                PspRow::Session { p, .. } => Some(*p),
+                _ => last_pi,
+            };
+            let shift = block.map(|b| psp_drag::row_shift(chat, b)).unwrap_or(0.);
+            match row {
+                PspRow::Project(pi) => rows.push(project_row(chat, pi, &weak, t)),
+                PspRow::Session { p, s } => {
+                    rows.push(session_row_view(chat, p, s, shift, &weak, t, window, cx))
+                }
+                PspRow::Pending { key } => {
+                    rows.push(pending_row_view(chat, &key, shift, &weak, t))
+                }
+                PspRow::Empty => rows.push(
+                    div()
+                        .id("psp-empty")
+                        .relative()
+                        .top(px(shift))
+                        .pl(px(45.))
+                        .py(px(5.5))
+                        // 与「显示更多」行同款：placeholder 色 + 面板字号−1（2026-10-10 定夺）
+                        .text_size(crate::appearance::ui_size(11.))
+                        .text_color(rgb(t.text_faint))
+                        .child(tr("psp.no_sessions"))
+                        .into_any_element(),
+                ),
+                PspRow::More { key } => {
+                    let weak_more = weak.clone();
+                    let key_more = key.clone();
+                    rows.push(
+                        div()
+                            .id(SharedString::from(format!("psp-more-{key}")))
+                            .relative()
+                            .top(px(shift))
+                            .pl(px(45.))
+                            .py(px(5.5))
+                            // placeholder 色 + 面板字号−1（2026-10-10 定夺）
+                            .text_size(crate::appearance::ui_size(11.))
+                            .text_color(rgb(t.text_faint))
+                            .cursor_pointer()
+                            .hover(|s| s.text_color(rgb(t.text)))
+                            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                                let key = key_more.clone();
+                                let _ = weak_more.update(cx, |chat, cx| {
+                                    *chat.psp.psp_shown.entry(key).or_insert_with(psp_page) +=
+                                        psp_page();
+                                    cx.notify();
+                                });
+                            })
+                            .child(tr("settings.show_more"))
+                            .into_any_element(),
+                    );
+                }
             }
-        })
-        .collect();
+        }
     // psp 会话列表滚动 + 右缘滚动条。Scrollbar 挂在与滚动容器平级的
     // relative 包裹上（贴 dock 右缘，不吃容器内 10px 留白）；ZED Regular
     // 视觉：只有 thumb 无 track（track 色已在 sync_gpui_tokens 透明化）。
@@ -585,9 +611,10 @@ fn psp_ctrl_bar(
 }
 
 /// 项目行：folder 开合图标 + 名字；点击 = 组收起/展开；hover 显新会话。
-/// 拖拽排序三件套挂本行（020）：`on_drag` 发起（幽灵 = folder+名字小签，
-/// 「收起为标签」的可见形态；组体折叠在 [`psp_rows`] 渲染期做）、
-/// `on_drag_move` 按鼠标在行的上/下半判定插入位、提交与取消清理走容器。
+/// 拖拽排序三件套挂本行（020）：`on_drag` 发起（幽灵 = 全行宽项目行小卡，
+/// 「收起为标签」的可见形态；源行 opacity 0、组体折叠在 [`psp_rows`] 做）、
+/// `on_drag_move` 按鼠标在行的上/下半判定插入位（提交与取消清理走容器）；
+/// 避让让位 = 本行按所属块的动画位移整体平移（`.top()`，空槽即落点）。
 fn project_row(
     chat: &Chat,
     pi: usize,
@@ -611,22 +638,20 @@ fn project_row(
     let w_card = weak.clone();
     let w_drag_ix = weak.clone();
     let ghost_name = g.name.clone();
-    // 插入指示线（渲染期读拖拽态）：落点 = 本行上缘（drop_ix == pi）或
-    // 末行下缘（drop_ix == len）。拖的是自己时不显示（原地/相邻已由行侧
-    // handler 归一为 None，这里再挡一道幽灵跟随自己行的情况）
-    let dragging_other = chat
+    let ghost_w = chat.layout.slp_w - 2. * align::LIST_PX;
+    // 拖拽中的源行：隐形但保留 32px 槽位——「被拎起」的空感，落点空槽
+    // 由其余块的避让平移让出（ZCode 源行 opacity 0 同款）
+    let is_dragged = chat
         .psp
         .proj_drag
         .as_ref()
-        .is_some_and(|d| d.key != drag_key);
-    let show_top = dragging_other && chat.psp.proj_drop_ix == Some(pi);
-    let show_bottom = dragging_other
-        && pi + 1 == chat.psp.projects.len()
-        && chat.psp.proj_drop_ix == Some(chat.psp.projects.len());
+        .is_some_and(|d| d.key == drag_key);
+    let shift = psp_drag::row_shift(chat, pi);
 
     div()
         .id(SharedString::from(format!("prj-{pi}")))
         .relative()
+        .top(px(shift))
         // §5.8 主列表档真行高 32（原 33=32+mb2 补偿，mb 写法废除）
         .h(px(crate::ui::tokens::row::MAIN))
         // 滚动容器 overflow 压缩行时 flex-shrink 会把行压到内容高
@@ -641,6 +666,7 @@ fn project_row(
         .rounded(px(8.))
         // 系统手型指针（cursor_pointer → IDC_HAND）
         .cursor_pointer()
+        .when(is_dragged, |d| d.opacity(0.))
         // 折叠切换走 on_click（按下+抬起无位移才触发）：on_mouse_down 会
         // 在拖拽起手时就翻转折叠态，与拖拽语义打架（gpui 拖拽激活会吞掉
         // click，两者天然互斥）
@@ -671,17 +697,29 @@ fn project_row(
         })
         .on_drag(
             psp_drag::ProjDragTab { key: drag_key.clone() },
-            move |_, _, _, cx| cx.new(|_| psp_drag::ProjDragGhost { name: ghost_name.clone() }),
+            {
+                // 幽灵定位由 gpui 按 mouse − cursor_offset 完成（天然保留
+                // 抓取点偏移），这里只捕获锁 x 补偿要用的起手鼠标位
+                move |_, _, window, cx| {
+                    let mouse = window.mouse_position();
+                    cx.new(|_| psp_drag::ProjDragGhost {
+                        name: ghost_name.clone(),
+                        width: ghost_w,
+                        start_mouse_x: f32::from(mouse.x),
+                    })
+                }
+            },
         )
         .on_drag_move::<psp_drag::ProjDragTab>(move |ev, _, cx| {
             // 每次 mouse move 全体在册行都会收到（capture 相、无悬停过
-            // 滤），contains 自筛：只有鼠标所在的行往下走
+            // 滤），contains 自筛：只有鼠标所在的行往下走。命中区随避让
+            // 平移走 =「所见即所拖」（dnd-kit 手感）
             if !ev.bounds.contains(&ev.event.position) {
                 return;
             }
             let key = ev.drag(cx).key.clone();
             // 半行判定：上/下半 = 插到本行前/后；拖回自己或相邻 = no-op
-            // → 无指示线、drop 也不动（no-op 对比的是**被拖项目**的当前位
+            // → 空槽闭合、drop 也不动（no-op 对比的是**被拖项目**的当前位
             // 置，不是本行——本行位置和 target 同源，比了等于全判原地）
             let target = if ev.event.position.y < ev.bounds.center().y { pi } else { pi + 1 };
             let _ = w_drag_ix.update(cx, |c, cx| {
@@ -692,11 +730,7 @@ fn project_row(
                     .iter()
                     .position(|g| psp_drag::group_key(g) == key)
                     .is_some_and(|cur| target == cur || target == cur + 1);
-                let next = (!no_op).then_some(target);
-                if c.psp.proj_drop_ix != next {
-                    c.psp.proj_drop_ix = next;
-                    cx.notify();
-                }
+                psp_drag::set_drop_target(c, (!no_op).then_some(target), cx);
             });
         })
         .on_hover(move |h, _, cx| {
@@ -786,39 +820,16 @@ fn project_row(
                     ),
             )
         })
-        // 插入指示线：行内绝对定位（top/bottom 缘 2px accent），不动布局
-        .when(show_top, |d| {
-            d.child(
-                div()
-                    .absolute()
-                    .top_0()
-                    .left_0()
-                    .right_0()
-                    .h(px(2.))
-                    .rounded(px(1.))
-                    .bg(rgb(t.accent)),
-            )
-        })
-        .when(show_bottom, |d| {
-            d.child(
-                div()
-                    .absolute()
-                    .bottom_0()
-                    .left_0()
-                    .right_0()
-                    .h(px(2.))
-                    .rounded(px(1.))
-                    .bg(rgb(t.accent)),
-            )
-        })
         .into_any_element()
 }
 
 /// 会话行：15px 状态槽（运行=旋转圈 / 未读=绿点 / 空）+ 标题；右键详情卡。
+/// `shift` = 所属项目块的避让位移（020 拖拽：整组随头行一起平移让位）。
 fn session_row_view(
     chat: &Chat,
     p: usize,
     s: usize,
+    shift: f32,
     weak: &gpui::WeakEntity<Chat>,
     t: &'static Theme,
     window: &gpui::Window,
@@ -924,6 +935,9 @@ fn session_row_view(
         // 与项目行同理：滚动容器 overflow 压缩时会连内部行一起压（内层
         // h(32) 被 wrapper 的收缩顶掉），列表行一律禁止收缩
         .flex_shrink_0()
+        // 所属项目块的避让平移（相对偏移，不动布局）
+        .relative()
+        .top(px(shift))
         .child(
     div()
         .id(SharedString::from(format!("ps-{}", info.id)))
@@ -1049,10 +1063,11 @@ fn session_row_view(
 /// spinner（此刻进程正在 boot/跑，与真标签的 running 态同视觉），标题 =
 /// 首条消息首行（真标签落地后的 preview 与它一致，衔接无跳变）。没有文
 /// 件就没有 hover 卡 / 改名 / 删除——点击只做 switch_to。FileBound 落地
-/// 后本行被真标签顶替。
+/// 后本行被真标签顶替。`shift` = 所属项目块的避让位移（020 拖拽）。
 fn pending_row_view(
     chat: &Chat,
     key: &str,
+    shift: f32,
     weak: &gpui::WeakEntity<Chat>,
     t: &'static Theme,
 ) -> gpui::AnyElement {
@@ -1072,6 +1087,9 @@ fn pending_row_view(
     div()
         // 与 session 行同理：滚动容器 overflow 压缩时行不许收缩
         .flex_shrink_0()
+        // 所属项目块的避让平移（相对偏移，不动布局）
+        .relative()
+        .top(px(shift))
         .child(
             div()
                 .id(SharedString::from(format!("ps-draft-{key}")))

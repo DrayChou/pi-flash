@@ -156,6 +156,9 @@ pub(crate) struct PspUi {
     pub(crate) proj_drag: Option<crate::function_panel::psp_drag::ProjDragState>,
     /// 020 拖拽落点插入位（projects 下标 0..=len；None = 无有效落点/原地）
     pub(crate) proj_drop_ix: Option<usize>,
+    /// 020 避让位移动画实例（from/to = 前后落点 + 起始时刻）：渲染期按
+    /// elapsed 插值各项目块的 ±32px 平移，到点由驱动清场落回静态位移。
+    pub(crate) proj_shift: Option<crate::function_panel::psp_drag::ProjShift>,
 }
 
 /// 弹窗/悬浮层簇（4ea 字段重组）：模态槽、pill 弹层三件套、各域右键
@@ -631,6 +634,7 @@ impl Chat {
                 proj_order: (!ui.proj_order.is_empty()).then(|| ui.proj_order.clone()),
                 proj_drag: None,
                 proj_drop_ix: None,
+                proj_shift: None,
             },
             cfg: CfgUi {
                 mc_patterns: None,

@@ -90,6 +90,11 @@ struct Layout {
     /// 命中区 = thumb 容器（含 padding，好拾取）
     hit_bounds: Bounds<Pixels>,
     parent_hitbox: Hitbox,
+    /// 命中条带的独立 hitbox：Arrow 光标只注册到这条右缘窄带上。曾经
+    /// 直接注册在 parent_hitbox（= 滚动条元素自身 bounds，absolute inset 0
+    /// 覆盖整个面板）上——注册序晚于所有行、gpui 光标逆序折叠后者胜，
+    /// 整个面板的光标被钉死成箭头，行的 cursor_pointer（手型）全部失效
+    strip_hitbox: Hitbox,
 }
 
 impl IntoElement for ScrollbarElement {
@@ -170,11 +175,13 @@ impl Element for ScrollbarElement {
             point(bounds.right(), bounds.top()),
             size(px(WIDTH + PADDING * 2.), bounds.size.height),
         );
+        let strip_hitbox = window.insert_hitbox(hit_bounds, HitboxBehavior::Normal);
 
         Some(Layout {
             thumb_bounds,
             hit_bounds,
             parent_hitbox,
+            strip_hitbox,
         })
     }
 
@@ -258,7 +265,9 @@ impl Element for ScrollbarElement {
                 gpui::BorderStyle::default(),
             ));
         }
-        window.set_cursor_style(gpui::CursorStyle::Arrow, &layout.parent_hitbox);
+        // Arrow 只钉在右缘命中窄带上（strip_hitbox 注册晚于行、窄带内
+        // 胜出行的手型；窄带外不再压制面板其余部分的光标）
+        window.set_cursor_style(gpui::CursorStyle::Arrow, &layout.strip_hitbox);
 
         // ---- 事件三件套（zed 同款：全部 stop_propagation）----
         let capture = if dragging {
