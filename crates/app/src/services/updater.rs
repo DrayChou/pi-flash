@@ -187,6 +187,18 @@ fn staged_newer(root: &Path, cur: &str) -> Option<(String, PathBuf)> {
         .max_by(|a, b| version_key(&a.0).cmp(&version_key(&b.0)))
 }
 
+/// 能切过去的更高版本载荷：排除**自己所在的载荷目录**——它已经是我们了，
+/// 纳入会把「点击重启」变成「拉起自己」，也会让交接自己踢自己。
+fn pick_next(root: &Path, cur: &str, me: &Path) -> Option<(String, PathBuf)> {
+    staged_newer(root, cur).filter(|(_, dir)| dir != me)
+}
+
+/// `pick_next` 的运行时入口（自己 = 当前 exe 所在目录）。
+pub(crate) fn next_payload() -> Option<(String, PathBuf)> {
+    let me = my_exe_dir()?;
+    pick_next(me.parent()?, current_version(), &me)
+}
+
 /// 我所在载荷目录自证一致：目录名里的版本（若有）必须等于我自己的版本。
 /// 不一致 = 被复制/篡改的载荷（例如旧 exe 被塞进 `payload-9.9.9/`）——那种
 /// 情况下交接会 A 让位 B、B 又让位 A，变成进程 spawn 风暴，直接拒绝交接。
@@ -217,7 +229,7 @@ pub(crate) fn handoff_if_newer() -> bool {
         eprintln!("[updater] {} 的版本戳与进程版本不符，跳过启动交接", me.display());
         return false;
     }
-    let Some((ver, dir)) = staged_newer(&root, current_version()) else {
+    let Some((ver, dir)) = pick_next(&root, current_version(), &me) else {
         return false;
     };
     let exe = dir.join(exe_rel());
@@ -234,13 +246,7 @@ pub(crate) fn handoff_if_newer() -> bool {
 /// 启动时初始状态：已有更高版本的完整载荷 = Ready（交接没能拉起来时的兜底，
 /// 提示可点击重试），否则 Idle。
 pub(crate) fn initial_state() -> UpdateState {
-    let Some(me) = my_exe_dir() else {
-        return UpdateState::Idle;
-    };
-    let Some(root) = me.parent() else {
-        return UpdateState::Idle;
-    };
-    match staged_newer(root, current_version()) {
+    match next_payload() {
         Some((version, _)) => UpdateState::Ready { version },
         None => UpdateState::Idle,
     }
@@ -929,10 +935,8 @@ impl crate::Chat {
     /// 提示留给下次启动的交接。
     pub(crate) fn restart_to_apply_update(&mut self, cx: &mut gpui::Context<Self>) {
         self.persist_ui();
-        let Some(me) = my_exe_dir() else { return };
-        let Some(root) = me.parent() else { return };
-        let Some((version, dir)) = staged_newer(root, current_version()) else {
-            // 目录已被清（异常）→ 回落 Idle，下次检查重下
+        let Some((version, dir)) = next_payload() else {
+            // 没有可切的更高版本（已被清/自己就是最新）→ 回落 Idle
             self.aux.update = UpdateState::Idle;
             cx.notify();
             return;
@@ -1132,8 +1136,7 @@ mod tests {
     /// 清理：只删比自己旧的完整载荷目录，且不碰基名无版本的安装目录 /
     /// 自己所在目录 / 更高的新载荷。
     #[test]
-    fn cleanup_removes_only_older_payloads() {
-        let root = temp_dir("cleanup");
+    fn cleanup_removes_only_older_payloads() {        let root = temp_dir("cleanup");
         std::fs::create_dir_all(root.join("payload")).unwrap();
         fake_payload(&root.join("payload-0.1.9"), "0.1.9");
         fake_payload(&root.join("payload-0.1.10"), "0.1.10");
@@ -1143,6 +1146,78 @@ mod tests {
         assert!(root.join("payload-0.1.10").exists(), "自己不动");
         assert!(root.join("payload-0.1.11").exists(), "更新的不动");
         assert!(root.join("payload").exists(), "安装目录（无版本）不动");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// 选择：排除自己所在目录（否则「点击重启」会拉起自己）。
+    #[test]
+    fn pick_next_excludes_self() {
+        let root = temp_dir("pick-next");
+        let me = root.join("payload-0.1.10");
+        let next = root.join("payload-0.1.11");
+        fake_payload(&me, "0.1.10");
+        fake_payload(&next, "0.1.11");
+        assert_eq!(pick_next(&root, "0.1.10", &me).unwrap().1, next);
+        assert!(
+            pick_next(&root, "0.1.10", &next).is_none(),
+            "自己就是最新的 → 没有可切的更高版本"
+        );
+        assert_eq!(
+            pick_next(&root, "0.1.10", &root.join("payload")).unwrap().1,
+            next,
+            "安装目录（无版本名）不是任何人"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// **清理绝不删活目录**（0.1.6~0.1.10 死循环的教训）：目录里有进程
+    /// share-none 持有文件时，`rename` 探针必败 → 跳过本次；占用释放后
+    /// 再跑一次即可删掉。若改用 `remove_dir_all` 硬删，就会把正在运行的
+    /// 旧载荷从磁盘上掏空。
+    #[cfg(windows)]
+    #[test]
+    fn cleanup_skips_live_payload_dir() {
+        let root = temp_dir("cleanup-live");
+        let live = root.join("payload-0.1.8");
+        let me = root.join("payload-0.1.10");
+        fake_payload(&live, "0.1.8");
+        fake_payload(&me, "0.1.10");
+
+        // 占用者：share-none 打开 live 内的文件，抓住后写哨兵文件（测试侧靠它
+        // 同步，不靠碰运气的 sleep）
+        let sentinel = root.join("holding.txt");
+        let mut holder = std::process::Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-Command",
+                &format!(
+                    "$f=[System.IO.File]::Open('{}','Open','Read','None'); \
+                     Set-Content -LiteralPath '{}' -Value ok; \
+                     Start-Sleep -Seconds 30",
+                    live.join(exe_rel()).display(),
+                    sentinel.display()
+                ),
+            ])
+            .spawn()
+            .unwrap();
+        for _ in 0..50 {
+            if sentinel.exists() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        assert!(sentinel.exists(), "占用者未就位（powershell 启动失败？）");
+
+        cleanup_older(root.clone(), me.clone());
+        assert!(live.exists(), "活目录（文件被占用）绝不能删");
+        assert!(me.exists(), "自己不动");
+
+        let _ = holder.kill();
+        let _ = holder.wait();
+        std::thread::sleep(Duration::from_millis(300));
+        cleanup_older(root.clone(), me.clone());
+        assert!(!live.exists(), "占用释放后应能删掉");
+        assert!(me.exists());
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -1477,6 +1552,50 @@ mod tests {
             .filter(|e| e.file_name().to_string_lossy().starts_with("update.tmp-"))
             .collect();
         assert!(residue.is_empty(), "tmp 已清：{residue:?}");
+
+        unsafe { std::env::remove_var("PI_FLASH_MIRROR") };
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// 半截残留目录（上次解压中断：有目录、无戳）必须落选，且下次落位要把它
+    /// 换成完整的（而不是因目录已存在而失败）。
+    #[cfg(windows)]
+    #[test]
+    fn stage_replaces_stale_incomplete_target() {
+        let _guard = PROGRESS_LOCK.lock().unwrap();
+        let root = temp_dir("stage-stale");
+        let me = root.join("payload");
+        fake_payload(&me, "0.1.9");
+
+        let ver = "9.9.9";
+        let stale = root.join(format!("payload-{ver}"));
+        std::fs::create_dir_all(&stale).unwrap();
+        std::fs::write(stale.join(exe_rel()), b"half-extracted").unwrap();
+        std::fs::write(stale.join("junk.txt"), b"leftover").unwrap();
+        assert!(
+            staged_newer(&root, "0.1.9").is_none(),
+            "无版本戳 = 半截 → 落选（绝不能拿来交接）"
+        );
+
+        let site = root.join("site");
+        build_release_fixture(&site, ver, b"new", "payload-v9.9.9\n");
+        let base = serve_dir(&site);
+        // SAFETY：见 update_pipeline_end_to_end
+        unsafe { std::env::set_var("PI_FLASH_MIRROR", &base) };
+
+        let rel = ReleaseInfo {
+            version: ver.to_string(),
+            body: String::new(),
+        };
+        stage_update_in(&me, &rel).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(stale.join(".payload-version")).unwrap(),
+            format!("{ver}\n")
+        );
+        assert_eq!(std::fs::read(stale.join("marker.txt")).unwrap(), b"payload-v9.9.9\n");
+        assert!(!stale.join("junk.txt").exists(), "旧半截内容被整目录替换掉");
+        assert_eq!(staged_newer(&root, "0.1.9").map(|(v, _)| v), Some(ver.to_string()));
 
         unsafe { std::env::remove_var("PI_FLASH_MIRROR") };
         let _ = std::fs::remove_dir_all(&root);
