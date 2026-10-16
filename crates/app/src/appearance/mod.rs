@@ -49,6 +49,7 @@ fn theme_display_name(id: &'static str) -> &'static str {
         "nord-light" => "Nord Light",
         "nord-dark" => "Nord Dark",
         "one-dark" => "One Dark",
+        "pine" => "松林",
         _ => id,
     }
 }

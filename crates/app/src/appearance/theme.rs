@@ -205,6 +205,7 @@ pub const ALL: &[(&str, Theme)] = &[
     ("nord-light", NORD_LIGHT),
     ("nord-dark", NORD_DARK),
     ("one-dark", ONE_DARK),
+    ("pine", PINE_FOREST),
 ];
 
 /// ZED "One Dark" — ported from `zed/crates/theme/src/fallback_themes.rs`
@@ -316,6 +317,38 @@ pub const NORD_DARK: Theme = Theme {
     nav: 0x343c4a,
     danger: 0xd06a75,
     danger_hover: 0xd97b85,
+};
+
+/// Pine Forest Green (Dark) — ported from VS Code 扩展 felix-tjernberg.
+/// pine-forest-green（MIT，源 JSON 归档 assets/themes/pine-forest-green/）。
+/// 单色系墨绿：底色 08190a 近黑松林绿，正文/灰阶全是白色/绿色半透明层
+/// 按底色合成的实色（ffffffa1→a4aaa4 等）；唯一强调色 = 松针绿 2ecc40。
+/// 语义校准：原主题 frameless 无实体描边 → border 取 focusBorder 合成色
+/// 124718；danger 系单色主题里没有 → 新增珊瑚红（语义必需）；accent_hover
+/// 按深色系惯例提亮。
+pub const PINE_FOREST: Theme = Theme {
+    dark: true,
+    bg: 0x08190a,           // editor.background 墨绿近黑
+    bg_panel: 0x0b1f0d,     // 校准: bg 微亮（原主题全平面）
+    bg_hover: 0x0b280e,     // list.hoverBackground #0e38137a 合成
+    bg_selected: 0x165c1e,  // list.activeSelection #2ecc4060 合成（标志绿块）
+    border: 0x124718,       // focusBorder #2ecc4042 合成（描边校准）
+    text: 0xa4aaa4,         // editor.foreground #ffffffa1 合成
+    text_muted: 0x929a93,   // sideBar.foreground #ffffff90 合成
+    text_dim: 0x878888,     // foreground #bebebeb3 合成
+    text_soft: 0x5c675d,    // statusBar.foreground #ffffff58 合成
+    text_faint: 0x465247,   // 校准: ~25% 白合成
+    accent: 0x2ecc40,       // 松针绿（全主题唯一强调色）
+    accent_hover: 0x55e463, // 深色系 hover 提亮（校准）
+    accent_contrast: 0x08190a,
+    user_bg: 0x103d15,      // 校准: 20% 松针绿合成（用户消息块）
+    assistant_bg: 0x08190a,
+    tool_bg: 0x0a1e0c,      // 校准: bg +~3% 亮
+    bg_subtle: 0xffffff14,
+    chrome: 0x061308,       // 校准: 比 bg 略深（原主题 status/title = bg）
+    nav: 0x0c220f,
+    danger: 0xcf6a5f,       // 校准新增: 单色主题无红，语义必需
+    danger_hover: 0xe08378,
 };
 
 /// Active theme index; the UI re-reads it every render so a switch repaints
