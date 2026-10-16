@@ -465,6 +465,7 @@ pub(crate) fn mc_models_view(
     mj_api: u8,
     mj_reasoning: bool,
     error: &Option<String>,
+    free_only: bool,
 ) -> gpui::AnyElement {
     let t = T();
     // models.json 不可读：错误条常挂详情区顶部（无页面级 footer 了）
@@ -491,7 +492,7 @@ pub(crate) fn mc_models_view(
     let detail = mc_models_detail(
         chat, &weak.clone(), &selected, key_input, key_visible, model_filter,
         model_filter_value, mj_name, mj_base, mj_key, mj_id, mj_mname, mj_ctx,
-        mj_api, mj_reasoning, &detail_error, &enabled_set, t,
+        mj_api, mj_reasoning, &detail_error, &enabled_set, free_only, t,
     );
     div()
         .flex()
@@ -797,6 +798,7 @@ fn mc_models_detail(
     mj_reasoning: bool,
     error: &Option<String>,
     enabled_set: &std::collections::HashSet<String>,
+    free_only: bool,
     t: &crate::appearance::theme::Theme,
 ) -> gpui::AnyElement {
     // custom provider / model editors
@@ -935,17 +937,20 @@ fn mc_models_detail(
 
     // 可用模型区 + 底部（detail_shell 收尾）
     mc_enabled_section(
-        chat, weak, &provider, &models, enabled_set, model_filter, model_filter_value, detail,
+        chat, weak, &provider, &models, enabled_set, model_filter, model_filter_value,
+        free_only, detail,
     )
         .into_any_element()
 }
 
-/// 可用模型区（EnabledModelsSection parity）：标题+计数+批量钮+筛选+行开关。
+/// 可用模型区（EnabledModelsSection parity）：标题+计数+只看free开关+批量钮
+/// +筛选+行开关。
 ///
 /// 列表用 uniform_list 虚拟化——只构建可见的 ~12 行。overflow div 全量
 /// 构建 400 行 × ~12 元素、每敲一字筛选全量重建，是设置页卡顿的来源。
 /// 行高固定 36px；启用查询走调用方一次构建的 HashSet（原来是每行线性扫
 /// enabled 全表，400×400 次字符串比较/帧）。
+#[allow(clippy::too_many_arguments)]
 fn mc_enabled_section(
     chat: &Chat,
     weak: &gpui::WeakEntity<Chat>,
@@ -954,6 +959,7 @@ fn mc_enabled_section(
     enabled_set: &std::collections::HashSet<String>,
     model_filter: &gpui::Entity<crate::TextInput>,
     model_filter_value: &str,
+    free_only: bool,
     detail: gpui::Stateful<gpui::Div>,
 ) -> gpui::Stateful<gpui::Div> {
     if models.is_empty() {
@@ -967,7 +973,8 @@ fn mc_enabled_section(
             enabled_set.contains(&r)
         })
         .count();
-    // 标题行：可用模型 N/总数（左） + rotate-ccw 图标钮（右，实拉该商目录）
+    // 标题行：可用模型 N/总数（左） + 只看free 开关 + rotate-ccw 图标钮（右，
+    // 实拉该商目录；开关紧贴刷新钮左侧）
     let running = matches!(chat.cfg.mc_probe.get(provider), Some(McProbe::Running));
     let fetch_provider = provider.to_string();
     let fetch_weak = weak.clone();
@@ -981,6 +988,36 @@ fn mc_enabled_section(
                 &[("enabled", enabled_count.to_string()), ("total", models.len().to_string())],
             )))
             .child(div().flex_1())
+            .child({
+                // 只看free：开 = 列表只显示 free 模型（筛选叠加隐藏的 free
+                // 关键字）；状态在 SettingsPanel，切换即整面板重渲染
+                let weak_free = weak.clone();
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .child(
+                        div()
+                            .text_size(crate::appearance::ui_size(11.))
+                            .text_color(rgb(t.text_dim))
+                            .child(tr("models.free_only")),
+                    )
+                    .child(config_switch(
+                        "mc-free-only",
+                        &weak_free,
+                        free_only,
+                        false,
+                        |c, cx| {
+                            if let Some(st) = c.dlg.settings.clone() {
+                                st.update(cx, |s, cx| {
+                                    s.model_free_only = !s.model_free_only;
+                                    cx.notify();
+                                });
+                            }
+                            cx.notify();
+                        },
+                    ))
+            })
             .child({
                 // 纯 icon 获取钮：与移除/保存同宽 84 同高 32（右缘对齐）
                 let el = crate::ui::button::button_base(
@@ -1008,14 +1045,19 @@ fn mc_enabled_section(
         ));
     }
 
-    // 筛选（>8 个模型时出现；值经快照传入）
+    // 筛选（>8 个模型时出现；值经快照传入）。「只看free」开着时在用户
+    // 关键字之外叠加隐藏的 free 关键字（AND 语义，不写进输入框）
     let q = model_filter_value.trim().to_lowercase();
     let shown: Vec<pi_link::protocol::ModelInfo> = models
         .iter()
         .filter(|m| {
-            q.is_empty()
+            let hit = q.is_empty()
                 || m.id.to_lowercase().contains(&q)
-                || m.name.to_lowercase().contains(&q)
+                || m.name.to_lowercase().contains(&q);
+            hit
+                && (!free_only
+                    || m.id.to_lowercase().contains("free")
+                    || m.name.to_lowercase().contains("free"))
         })
         .cloned()
         .collect();

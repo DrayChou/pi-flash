@@ -54,6 +54,9 @@ pub(crate) struct SettingsPanel {
     pub model_filter: gpui::Entity<TextInput>,
     /// 042：合并列表的模型筛选（启用总数 ≥ MODEL_FILTER_MIN 才显示）
     pub enabled_filter: gpui::Entity<TextInput>,
+    /// 可用模型区「只看free」开关（开 = 列表只显示 free 模型，
+    /// 筛选叠加隐藏的 free 关键字；纯面板内视图态，不落盘）
+    pub model_free_only: bool,
     pub mj_name: gpui::Entity<TextInput>,
     pub mj_base: gpui::Entity<TextInput>,
     pub mj_key: gpui::Entity<TextInput>,
@@ -139,6 +142,7 @@ impl SettingsPanel {
             key_visible: false,
             model_filter: panel_live_input("筛选模型…", cx),
             enabled_filter: panel_live_input("筛选启用的模型…", cx),
+            model_free_only: false,
             mj_name: panel_input("provider-name", cx),
             mj_base: panel_input("https://api.example.com/v1", cx),
             mj_key: cx.new(|cx| {
@@ -261,6 +265,7 @@ pub(crate) struct SettingsFormData {
     pub key_visible: bool,
     pub model_filter: gpui::Entity<TextInput>,
     pub enabled_filter: gpui::Entity<TextInput>,
+    pub model_free_only: bool,
     pub enabled_filter_value: String,
     pub model_filter_value: String,
     pub mj_name: gpui::Entity<TextInput>,
@@ -298,6 +303,7 @@ impl SettingsFormData {
             model_filter_value: p.model_filter.read(cx).value().to_string(),
             enabled_filter: p.enabled_filter.clone(),
             enabled_filter_value: p.enabled_filter.read(cx).value().to_string(),
+            model_free_only: p.model_free_only,
             mj_name: p.mj_name.clone(),
             mj_base: p.mj_base.clone(),
             mj_key: p.mj_key.clone(),
@@ -328,7 +334,7 @@ pub(crate) fn render_settings(
     window: &gpui::Window,
 ) -> gpui::AnyElement {
     let t = T();
-    let SettingsFormData { focus: _focus, tab, section, key_input, key_visible, model_filter, model_filter_value, enabled_filter, enabled_filter_value, mj_name, mj_base, mj_key, mj_id, mj_mname, mj_ctx, mj_api, mj_reasoning, install_input, mcp_add, mcp_add_value, mcp_name, error, font_popup, font_dd, font_filter, font_filter_value, size_popup, size_dd } =
+    let SettingsFormData { focus: _focus, tab, section, key_input, key_visible, model_filter, model_filter_value, enabled_filter, enabled_filter_value, model_free_only, mj_name, mj_base, mj_key, mj_id, mj_mname, mj_ctx, mj_api, mj_reasoning, install_input, mcp_add, mcp_add_value, mcp_name, error, font_popup, font_dd, font_filter, font_filter_value, size_popup, size_dd } =
         d.clone();
     let weak_close = weak.clone();
 
@@ -339,7 +345,7 @@ pub(crate) fn render_settings(
             chat, weak, &section, &key_input, key_visible, &model_filter, &model_filter_value,
             &enabled_filter, &enabled_filter_value,
             &mj_name, &mj_base, &mj_key, &mj_id, &mj_mname, &mj_ctx,
-            mj_api, mj_reasoning, &error,
+            mj_api, mj_reasoning, &error, model_free_only,
         ),
         TAB_SKILLS => {
             let (sidebar, detail) = crate::settings::skills::mc_skills_view(chat, weak, &section);
