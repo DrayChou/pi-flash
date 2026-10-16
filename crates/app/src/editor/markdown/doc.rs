@@ -330,7 +330,10 @@ pub(crate) fn render_preview_body(
     let base = abs.parent().map(|p| p.to_path_buf());
     let blocks_for_list = blocks.clone();
     let weak_preview = weak.clone();
+    let weak_click = weak.clone();
+    let click_path = path.to_path_buf();
     div()
+        .id("md-preview")
         .relative()
         .flex_1()
         .min_h_0()
@@ -338,6 +341,22 @@ pub(crate) fn render_preview_body(
         .flex()
         .flex_col()
         .bg(rgb(t.bg))
+        // 点预览区 = 进源码编辑（2026-10-16 用户拍板，Obsidian 同型）。流程
+        // 与 eye 按钮同款：只改 md_source + pending_focus_file（渲染帧消费
+        // 聚焦编辑器 + sync_live_decorations 对账）。挂 on_click（mouse-up）
+        // 而非 on_mouse_down：预览内链接在 mouse-up 才发，按下即切会把整棵
+        // 元素树换掉、链接点击丢失。链接与路径 code 块在自己 handler 里
+        // stop_propagation 不落此处（渲染器与聊天区共用，聊天无祖先点击
+        // 监听，行为不变）
+        .on_click(move |_, _, cx| {
+            let _ = weak_click.update(cx, |c, cx| {
+                if let Some(ft) = c.ws.file_cache.get_mut(&click_path) {
+                    ft.md_source = true;
+                }
+                c.ws.pending_focus_file = Some(click_path.clone());
+                cx.notify();
+            });
+        })
         .child(
             gpui::list(chat.ws.md_preview_list.clone(), move |ix, _window, _cx| {
                 // 预览内路径点击基准 = 预览文件所在目录（pi-web baseDir 同型）

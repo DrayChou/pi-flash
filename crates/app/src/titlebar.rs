@@ -419,8 +419,8 @@ fn tab_shell(
                 .text_color(rgb(t.text))
         })
         .when(!active, |d| {
-            // 023④ 未激活 tab 默认缩至 100px
-            d.max_w(px(100.))
+            // 023④ 未激活 tab 默认缩至 120px
+            d.max_w(px(120.))
                 .h(px(HEIGHT - 4.))
                 .mb(px(-1.))
                 .pl(px(12.))

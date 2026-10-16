@@ -244,6 +244,9 @@ fn runs_element(
     InteractiveText::new(id, text)
         .on_click(ranges, move |ix, _window, cx| {
             let Some(url) = urls.get(ix) else { return };
+            // 点击归链接自己消费（本地文件开 tab，其余开浏览器），冒泡到
+            // md 预览容器的「点击进编辑」不得再触发
+            cx.stop_propagation();
             // href 指向本地文件 → 内置文件标签页（pi-web 拦截 file 链接同型）
             if let Some(path) = as_file_path(url) {
                 open_path_with(target.clone(), path, cx);
@@ -806,6 +809,10 @@ fn inline_code_box(text: &str, t: &Theme) -> AnyElement {
             .cursor_pointer()
             .hover(move |s| s.text_color(rgb(accent)))
             .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
+                // 点击归 code 自己消费（开文件 tab），不冒泡给 md 预览容器的
+                // 「点击进编辑」（on_mouse_down 在容器 on_click 记录按下态
+                // 之前发，这里停了容器整条 click 链都不触发）
+                cx.stop_propagation();
                 open_path_with(target.clone(), path.clone(), cx);
             });
     }
