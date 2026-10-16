@@ -2,9 +2,9 @@ use std::time::Duration;
 
 use gpui::{px, Context, Pixels, Timer};
 
-static INTERVAL: Duration = Duration::from_millis(500); // 2026-10-16: 500ms 半周期（v57 曾定 1s，用户嫌慢回调 crate 原值）
+static INTERVAL: Duration = Duration::from_millis(500);
 static PAUSE_DELAY: Duration = Duration::from_millis(300);
-pub(super) const CURSOR_WIDTH: Pixels = px(2.5); // 2026-10-16: 用户定夺 +1px（crate 原值 1.5）
+pub(super) const CURSOR_WIDTH: Pixels = px(2.);
 
 /// To manage the Input cursor blinking.
 ///
