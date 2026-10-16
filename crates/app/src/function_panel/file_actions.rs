@@ -172,15 +172,7 @@ impl Chat {
             None => self.ws.pinned.push(path),
         }
         self.save_pins();
-        self.rebuild_tree();
-        cx.notify();
-    }
-
-    /// Pin 视图根行的行首 pin 钮：移除该条目（tooltip「移除」，无需确认）。
-    /// 清完空 → 自动退出 Pin 视图回文件树。
-    pub(crate) fn tree_unpin(&mut self, path: &Path, cx: &mut Context<Self>) {
-        self.ws.pinned.retain(|p| !same_path(p, path));
-        self.save_pins();
+        // Pin 视图开着时根行集随之变化；取消最后一个收藏 → 自动退回文件树
         if self.ws.pin_view && self.ws.pinned.is_empty() {
             self.ws.pin_view = false;
         }
