@@ -320,6 +320,11 @@ impl SessionRuntime {
                         // + shimmer）必须活到第一个 assistant 事件
                         if let Some(ix) = self.pending_echoes.iter().position(|p| *p == echo_text) {
                             self.pending_echoes.remove(ix);
+                            // 保障幅度：死信条目（拒绝误判 / 会话切换等）永不回显时只会占位，
+                            // 不能无限堆。轮终不清（见上），这里补上限。
+                            while self.pending_echoes.len() > 64 {
+                                self.pending_echoes.remove(0);
+                            }
                             if let Some(ix) = self
                                 .messages
                                 .iter()
@@ -616,7 +621,6 @@ impl SessionRuntime {
             Event::AgentSettled => {
                 self.agent_running = false;
                 self.phase_waiting = false;
-                self.pending_echoes.clear();
                 self.streaming_content = false;
                 // 一轮结束**不**退役锚点：pi-web 只是 promptAnchorActive=false
                 // 让垫片收敛，容器 scrollTop 保持——短回复留在屏顶、长回复由
@@ -653,13 +657,11 @@ impl SessionRuntime {
                     // 点停止仍走 abort_stream：pi abortRetry 取消退避，乐观复位
                     // 语义不变。
                     self.phase_waiting = false;
-                    self.pending_echoes.clear();
                     self.streaming_content = false;
                     cx.emit(SessionEvent::Changed);
                 } else {
                     self.agent_running = false;
                     self.phase_waiting = false;
-                    self.pending_echoes.clear();
                     self.streaming_content = false;
                     // 同上：轮末不退役锚点（短回复继续钉在屏顶）
                     self.settle_turn();
