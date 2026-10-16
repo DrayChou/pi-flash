@@ -372,7 +372,8 @@ impl Render for ComposerInput {
             .children(if self.read_only { None } else { chip_el })
             .child(if self.read_only {
                 // 锁态：整块换成 placeholder 样式的提示（草稿不丢，
-                // 只是暂时不显示，解锁后原样回来）
+                // 只是暂时不显示，解锁后原样回来）；提示前置转圈
+                // spinner，表明系统在动（复用 ui::spinner，同侧栏会话行）
                 div()
                     .flex_1()
                     .min_w_0()
@@ -383,10 +384,17 @@ impl Render for ComposerInput {
                     // 提示直接落在容器左缘，少了这 12px 会比其他 placeholder
                     // 靠左一截（锁开/关切换时文案水平跳动）
                     .pl(px(PLACEHOLDER_LEFT))
-                    .line_height(ph_lh)
-                    .text_size(crate::appearance::ui_size(12.))
-                    .text_color(rgb(t.text_faint))
-                    .child(ph)
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .child(crate::ui::spinner(12., t.text_faint))
+                    .child(
+                        div()
+                            .line_height(ph_lh)
+                            .text_size(crate::appearance::ui_size(12.))
+                            .text_color(rgb(t.text_faint))
+                            .child(ph),
+                    )
             } else {
                 div()
                     .flex_1()
