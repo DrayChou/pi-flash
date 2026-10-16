@@ -146,7 +146,7 @@ fn section_label(text: &str) -> gpui::AnyElement {
 }
 
 /// 一个明暗档的主题卡片组。每排固定 5 个等宽槽位（跨排同宽），超过 5 个
-/// 自动折行（kitchen 加入后淡色 6 个 = 5 + 1；深色仍 2 + 3 个空槽）。
+/// 自动折行兑底（当前淡色 5 = 1 排、深色 2 + 3 个空槽）。
 /// 卡片即配色横条本身（无外框壳）：主题底色 + accent / muted 圆点，主题名
 /// 居中放进横条（文字用主题自身前景色保证可读）。
 fn theme_row(dark: bool, weak: &gpui::WeakEntity<Chat>) -> gpui::AnyElement {

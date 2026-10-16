@@ -198,19 +198,18 @@ pub const ROSE: Theme = Theme {
 };
 
 pub const ALL: &[(&str, Theme)] = &[
+    ("kitchen", KITCHEN),
     ("mist", MIST),
     ("rose", ROSE),
-    ("kitchen", KITCHEN),
     ("one-light", ONE_LIGHT),
     ("nord-light", NORD_LIGHT),
     ("nord-dark", NORD_DARK),
-    ("ayu-light", AYU_LIGHT),
     ("one-dark", ONE_DARK),
 ];
 
 /// ZED "One Dark" — ported from `zed/crates/theme/src/fallback_themes.rs`
 /// `zed_default_dark()` (the compile-time fallback family), HSLA -> RGB8.
-/// One Light / nord / ayu port from the shipped JSONs in `assets/themes/`
+/// One Light / nord port from the shipped JSONs in `assets/themes/`
 /// (see gen_themes.py); translucent zed colors bake over the surface color.
 /// 语义校准：border 提亮到 bg 之上（pi-web 分隔线语义）、text 阶梯拉开。
 pub const ONE_DARK: Theme = Theme {
@@ -317,33 +316,6 @@ pub const NORD_DARK: Theme = Theme {
     nav: 0x343c4a,
     danger: 0xd06a75,
     danger_hover: 0xd97b85,
-};
-
-/// ZED 'Ayu Light' — ported from zed assets/themes/ayu/ayu.json.
-/// 语义校准：tool_bg 回到 bg+3%（原 = bg_selected）、accent_hover 加深。
-pub const AYU_LIGHT: Theme = Theme {
-    dark: false,
-    bg: 0xfcfcfc,
-    bg_panel: 0xf1f1f2,
-    bg_hover: 0xdfe0e1,
-    bg_selected: 0xd6d7d9,
-    border: 0xcfd1d2,
-    text: 0x5c6166,
-    text_muted: 0x85888c,
-    text_dim: 0x8f9296,
-    text_soft: 0x9b9ea3,
-    text_faint: 0xabb0b5,
-    accent: 0x3b9ee5,
-    accent_hover: 0x2f8ac0,
-    accent_contrast: 0xffffff,
-    user_bg: 0xf1f1f2,
-    assistant_bg: 0xfcfcfc,
-    tool_bg: 0xf1f1f2,
-    bg_subtle: 0x0000000a,
-    chrome: 0xe9e9eb,
-    nav: 0xf4f4f6,
-    danger: 0xc2545c,
-    danger_hover: 0xd86570,
 };
 
 /// Active theme index; the UI re-reads it every render so a switch repaints
