@@ -2,6 +2,13 @@
 
 覆盖全仓（crates/**、脚本、手工流程），不专属于某个模块。随踩随补。
 
+- **Windows PowerShell 5.1 读无 BOM 的 UTF-8 `.ps1` 会按 ANSI（本机 GBK）解**：脚本里的中文字符串会炸成
+  `TerminatorExpectedAtEndOfString`（解析期就挂）。`.ps1` 要么带 UTF-8 BOM，要么内部只用 ASCII（`-File` 跑时；
+  `-Command` 走另一条路，不受影响）。
+- **删除须进回收站**（仓库规则）：MSYS `rm` 不进回收站；用 PowerShell 的
+  `[Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile/DeleteDirectory($p,'OnlyErrorDialogs','SendToRecycleBin')`
+  （先 `Add-Type -AssemblyName Microsoft.VisualBasic`）。一批小文件先 `Move-Item` 打进一个临时目录再整包回收，
+  回收站里只留一条记录。
 - 大补丁用脚本文件，勿用 bash heredoc（会静默截断）；方法链中间插入语句后漏/多 `),` → 结构性编译错误。
 - `gen` 是 edition 2024 保留字。
 - python 脚本整文件重写会把 CRLF 翻成 LF：改前探 `\r`、写回保原行尾；子串替换锚点带行首 `\n` 防缩进误匹配。

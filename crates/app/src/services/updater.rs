@@ -272,6 +272,18 @@ fn cleanup_older(root: PathBuf, me: PathBuf) {
     };
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
+        // 老落位方案（0.1.6~0.1.10 的整目录 swap 时代）留下的垃圾：helper 日志、
+        // staged 标记、swap 中转目录。用户从那些版本升级过来时它们会永久占盘
+        // （`payload.old-*` 一份就是 300MB），且旧代码里没人清。
+        // 注意：`payload.stage-<版本>` **不在此列**——它本身就是一份完整载荷，
+        // 走上面的版本规则（更新的拿它交接、更旧的才删）。
+        if name == "update-swap.log"
+            || name == "update-staged.json"
+            || name.starts_with("payload.old-")
+        {
+            remove_path(&entry.path());
+            continue;
+        }
         if !name.starts_with("update.tmp-") {
             continue;
         }
@@ -283,6 +295,15 @@ fn cleanup_older(root: PathBuf, me: PathBuf) {
         if stale {
             let _ = std::fs::remove_dir_all(entry.path());
         }
+    }
+}
+
+/// 删一个残留时目录/文件都可能（老垃圾里两者都有）。
+fn remove_path(p: &Path) {
+    if p.is_dir() {
+        let _ = std::fs::remove_dir_all(p);
+    } else {
+        let _ = std::fs::remove_file(p);
     }
 }
 
@@ -1167,6 +1188,32 @@ mod tests {
             next,
             "安装目录（无版本名）不是任何人"
         );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// 老落位方案（0.1.6~0.1.10 整目录 swap 时代）的残留必须被启动清理带走：
+    /// helper 日志 / staged 标记 / `payload.old-*`（升级过来时一份就是 300MB）。
+    /// `payload.stage-<版本>` 是例外——那是完整载荷，走版本规则。
+    #[test]
+    fn cleanup_removes_legacy_swap_leftovers() {
+        let root = temp_dir("legacy");
+        let me = root.join("payload");
+        fake_payload(&me, "0.1.10");
+        let old = root.join("payload.old-20261014215500");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join(exe_rel()), b"x").unwrap();
+        std::fs::write(root.join("update-swap.log"), b"log").unwrap();
+        std::fs::write(root.join("update-staged.json"), b"{}").unwrap();
+        let old_stage = root.join("payload.stage-0.1.8");
+        fake_payload(&old_stage, "0.1.8");
+
+        cleanup_older(root.clone(), me.clone());
+
+        assert!(!old.exists(), "payload.old-* 应被清（升级过来的 300MB 孤儿）");
+        assert!(!root.join("update-swap.log").exists(), "老 helper 日志应被清");
+        assert!(!root.join("update-staged.json").exists(), "老标记应被清");
+        assert!(!old_stage.exists(), "更旧的 staging 走版本规则清掉");
+        assert!(me.exists(), "当前载荷不动");
         let _ = std::fs::remove_dir_all(&root);
     }
 
