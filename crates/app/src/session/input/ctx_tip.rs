@@ -120,8 +120,9 @@ pub(super) fn ctx_tip_element(
 }
 
 /// 用量详情面板（ZCode「上下文容量」弹层风格）组装：标题行（已用/窗口 ·
-/// 百分比）+ 进度条 + 分类占比行 + 入口行（系统提示词 / 会话工具集，
-/// 2026-10-16 自会话功能栏迁入）+ Token 分项网格 + 费用 + 压缩按钮。
+/// 百分比）+ 进度条 + 分类占比行 + Token 分项网格 + 费用 + 底部动作排
+/// （系统提示词 / 会话工具集 / 压缩三钮等宽，2026-10-16 入口自会话功能栏
+/// 迁入、二稿从中部行改到底排统一描边钮形制——用户定夺）。
 /// 分类占比为**估算**：系统侧 7 大类走 `pi_link::transcript::breakdown`
 /// （与系统提示词面板分析块同源），「消息」= 官方上下文总量 − 系统侧估算
 /// （反推）——各行加总恒等于 pi 报告的官方总量，估算误差全部收进「消息」行。
@@ -142,16 +143,11 @@ fn ctx_usage_panel(
                 .text_color(rgb(t.text_muted))
                 .child(tr("stats.no_usage"))
                 .into_any_element(),
-            // 无 stats 也保留入口：新会话还没用量数据时仍要能开这两块
-            ctx_actions_row(sys_open, tools_open, t, cx).into_any_element(),
         ],
-        Some(s) => {
-            let mut parts = vec![ctx_capacity_block(&s, sys, t).into_any_element()];
-            // 入口行插在容量块与 Token 分项之间（红框位）
-            parts.push(ctx_actions_row(sys_open, tools_open, t, cx).into_any_element());
-            parts.extend(ctx_tokens_cost_parts(&s, t));
-            parts
-        }
+        Some(s) => vec![ctx_capacity_block(&s, sys, t).into_any_element()]
+            .into_iter()
+            .chain(ctx_tokens_cost_parts(&s, t))
+            .collect(),
     };
 
     div()
@@ -167,58 +163,25 @@ fn ctx_usage_panel(
         .flex_col()
         .gap(px(12.))
         .children(body)
-        .child(ctx_compact_button(compacting, can_compact, t, cx))
+        .child(ctx_bottom_actions(sys_open, tools_open, compacting, can_compact, t, cx))
 }
 
-/// 用量面板入口行（2026-10-16 自会话功能栏迁入，原栏只留「打开终端」）：
-/// 系统提示词 / 会话工具集两钮 + 淡色 `|` 区隔，交互同原功能栏——对应
-/// 弹窗开着点亮 accent，点击切换开/收。
-fn ctx_actions_row(
+/// 底部动作排（2026-10-16 二稿，用户定夺）：系统提示词 / 会话工具集 /
+/// 压缩三钮等宽一排，统一压缩钮的描边形制——一稿插在中部的纯文字入口行
+/// 打断了数据区，收编到底排后视觉语言单一。无 stats 的空态也保留（新会话
+/// 仍要能开这两块）。
+fn ctx_bottom_actions(
     sys_open: bool,
     tools_open: bool,
+    compacting: bool,
+    can_compact: bool,
     t: &'static crate::appearance::theme::Theme,
     cx: &mut Context<Chat>,
 ) -> gpui::Div {
-    fn entry_btn(
-        id: &'static str,
-        icon_name: &'static str,
-        label: &'static str,
-        on: bool,
-        kind: crate::TopPanel,
-        t: &'static crate::appearance::theme::Theme,
-        cx: &mut Context<Chat>,
-    ) -> gpui::AnyElement {
-        let hover_fg = if on { t.accent } else { t.text };
-        div()
-            .id(id)
-            .flex()
-            .items_center()
-            .gap(px(6.))
-            .px(px(8.))
-            .py(px(4.))
-            .rounded(px(6.))
-            .text_size(crate::appearance::ui_size(12.))
-            .text_color(rgb(if on { t.accent } else { t.text_muted }))
-            .cursor_pointer()
-            .hover(move |s| s.bg(rgb(t.bg_hover)).text_color(rgb(hover_fg)))
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(move |this, _: &gpui::MouseDownEvent, _w, cx| {
-                    this.open_session_info(kind, cx);
-                }),
-            )
-            .child(crate::ui::icon(
-                icon_name,
-                13.,
-                if on { t.accent } else { t.text_muted },
-            ))
-            .child(SharedString::from(label))
-            .into_any_element()
-    }
     div()
         .flex()
-        .items_center()
-        .child(entry_btn(
+        .gap(px(8.))
+        .child(ctx_entry_button(
             "ctx-sys-prompt",
             "file-sliders",
             tr("session.system_prompt"),
@@ -227,13 +190,7 @@ fn ctx_actions_row(
             t,
             cx,
         ))
-        .child(
-            div()
-                .text_size(crate::appearance::ui_size(11.))
-                .text_color(rgb(t.text_faint))
-                .child(SharedString::from("|")),
-        )
-        .child(entry_btn(
+        .child(ctx_entry_button(
             "ctx-session-tools",
             "wrench",
             tr("session.session_tools"),
@@ -242,6 +199,48 @@ fn ctx_actions_row(
             t,
             cx,
         ))
+        .child(ctx_compact_button(compacting, can_compact, t, cx))
+}
+
+/// 描边入口钮（同压缩钮形制：高 34、圆角 6、细边框，icon + 文案居中）；
+/// 对应弹窗开着亮 accent，点击切换开/收。
+fn ctx_entry_button(
+    id: &'static str,
+    icon_name: &'static str,
+    label: &'static str,
+    on: bool,
+    kind: crate::TopPanel,
+    t: &'static crate::appearance::theme::Theme,
+    cx: &mut Context<Chat>,
+) -> gpui::Stateful<gpui::Div> {
+    let hover_fg = if on { t.accent } else { t.text };
+    div()
+        .id(id)
+        .flex_1()
+        .h(px(34.))
+        .rounded(px(6.))
+        .border_1()
+        .border_color(rgb(t.border))
+        .flex()
+        .items_center()
+        .justify_center()
+        .gap(px(6.))
+        .cursor_pointer()
+        .text_size(crate::appearance::ui_size(12.))
+        .text_color(rgb(if on { t.accent } else { t.text_muted }))
+        .hover(move |s| s.bg(rgb(t.bg_hover)).text_color(rgb(hover_fg)))
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(move |this, _: &gpui::MouseDownEvent, _w, cx| {
+                this.open_session_info(kind, cx);
+            }),
+        )
+        .child(crate::ui::icon(
+            icon_name,
+            13.,
+            if on { t.accent } else { t.text_muted },
+        ))
+        .child(SharedString::from(label))
 }
 
 /// 行：label 左、value 右（mono）。上下文用量弹窗的全部文字 = 面板设置
@@ -526,9 +525,9 @@ fn ctx_tokens_cost_parts(
     ]
 }
 
-/// 底部手动压缩按钮：无门槛（点不点由用户决定），描边按钮无常态底色
-/// （hover 才出 bg_hover）；固定高 34 + items_center 保证文字在框内垂直
-/// 居中。compacting 仅防连点。
+/// 压缩钮（底部动作排成员，2026-10-16 与两个入口钮同排等宽 flex_1）：
+/// 无门槛（点不点由用户决定），描边按钮无常态底色（hover 才出 bg_hover）；
+/// 固定高 34 + items_center 保证文字在框内垂直居中。compacting 仅防连点。
 fn ctx_compact_button(
     compacting: bool,
     can_compact: bool,
@@ -547,8 +546,8 @@ fn ctx_compact_button(
     };
     div()
         .id("ctx-compact")
+        .flex_1()
         .h(px(34.))
-        .w_full()
         .rounded(px(6.))
         .border_1()
         .border_color(rgb(t.border))
