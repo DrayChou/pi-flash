@@ -366,9 +366,12 @@ fn ctx_capacity_block(
         (Some(tk), Some(w)) if w > 0 => Some(tk as f64 / w as f64 * 100.),
         _ => None,
     });
+    // 右值：末字用 ASCII 半角字符（`%` 与 `)`），全角 `）` 自带半个字身的
+    // 右空白，会让首行墨迹比下面各行的右缘内缩 ~6px（2026-10-16 用户指出的
+    // 「最上面一行右侧没对齐」）；`/` 两侧同样不留空格。
     let head_right = match (s.context_tokens, s.context_window) {
         (Some(tk), Some(w)) => format!(
-            "{} / {}（{}）",
+            "{}/{} ({})",
             fmt_k(tk),
             fmt_k(w),
             bar_pct
@@ -382,27 +385,22 @@ fn ctx_capacity_block(
         .flex()
         .flex_col()
         .gap(px(8.))
-        .child(
+        // 标题行走与下面各行同款的两列网格（右值同半宽、右缘同一列线，
+        // 免得首行右缘与占比行差半格）
+        .child(ctx_grid2(vec![
+            div()
+                .text_size(crate::appearance::ui_size(12.))
+                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .text_color(rgb(t.text))
+                .child(tr("stats.context_capacity")),
             div()
                 .flex()
-                .items_center()
-                .justify_between()
-                .gap(px(8.))
-                .child(
-                    div()
-                        .text_size(crate::appearance::ui_size(12.))
-                        .font_weight(gpui::FontWeight::SEMIBOLD)
-                        .text_color(rgb(t.text))
-                        .child(tr("stats.context_capacity")),
-                )
-                .child(
-                    div()
-                        .text_size(crate::appearance::ui_size(12.))
-                        .font_family(crate::editor::markdown::MONO_FAMILY)
-                        .text_color(rgb(t.text_dim))
-                        .child(SharedString::from(head_right)),
-                ),
-        );
+                .justify_end()
+                .text_size(crate::appearance::ui_size(12.))
+                .font_family(crate::editor::markdown::MONO_FAMILY)
+                .text_color(rgb(t.text_dim))
+                .child(SharedString::from(head_right)),
+        ]));
     // 进度条：track = 边框色 ~1/3 透明度，fill = accent，宽 = 占窗口比
     if let Some(p) = bar_pct {
         ctx = ctx.child(
@@ -471,7 +469,7 @@ fn ctx_capacity_block(
                 ctx_row(
                     tr("stats.context_tokens"),
                     match (s.context_tokens, s.context_window) {
-                        (Some(tk), Some(w)) => format!("{} / {}", fmt_k(tk), fmt_k(w)),
+                        (Some(tk), Some(w)) => format!("{}/{}", fmt_k(tk), fmt_k(w)),
                         (Some(tk), None) => fmt_k(tk),
                         _ => "\u{2014}".into(),
                     },
