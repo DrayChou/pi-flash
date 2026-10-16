@@ -2,6 +2,18 @@
 
 All notable changes to released versions live here; see `docs/CHANGELOG规范.md` for the format.
 
+## [0.1.10] - 2026-10-16
+
+This release focuses on: the keyboard shortcuts system (082), file-tree Pin favorites and cross-project switching, drag-to-reorder project tabs, a consolidated usage panel; the npm shell now pre-fetches the real latest version before downloading the payload (registry mirror lag no longer ships old versions); built-in pi upgraded to 1.3.0. If you are still on ≤ 0.1.8, please reinstall via npm or the zip — the in-app update chain has been fixed since 0.1.9.
+
+- **Shortcuts (082)**: Alt+1 / Alt+2 maximize the left/right sub-panel; Ctrl+←/→ switch to the adjacent tab; F2 renames files in the file tree; a new "Shortcuts" settings page lists every binding in a centered index layout
+- **File tree**: Pin favorites — toolbar button + right-click pin/unpin, favorites as a standalone view, persisted per project; project dropdown in the title for cross-project switching (↑↓/Enter keyboard navigable); activating a file tab syncs the tree to that project
+- **Project drag & drop**: drag-to-reorder project tabs (order persisted; tabs collapse while dragging); hand-grab cursors drawn in-house (vendored gpui now implements Windows OpenHand/ClosedHand)
+- **Usage panel**: system prompt / session tools entries moved into the panel (equally spaced with compact on one row); the compact button gets a double-arrow icon with tri-state coloring
+- **Other features**: session summary bar now shows four icon+count stats (messages/user/assistant/tools); new "session directory" toolbar button (opens the project's session group in Explorer); Enter is the only send key and all sends go through the queue; "free only" filter for the model list; click Markdown preview to return to editing; bolder, faster-blinking editor caret
+- **Auto-update chain**: the npm shell now resolves the true latest version from the GitHub Releases API before building payload URLs — mirror lag behind the shell version no longer installs outdated payloads; end-to-end pipeline tests for the updater are now part of the regular gates (every 0.1.6/0.1.8 incident is pinned; no more relying on real users as the test bench)
+- **Built-in pi 1.2.0 → 1.3.0**: wire protocol verified byte-for-byte; behavior changes recorded in pi-rpc.md (model switch drops other-model thinking, resume keeps tools, two tool-arg parsing fixes, wider retry list)
+- **Fixes**: editor jumping to the bottom when clicking a visible line; file tabs keep a stable open order (MRU reordering removed); pending_echoes no longer accumulates (64-entry dead-letter cap); usage-panel cache hit rate display ×100 corrected (97.2% showed as 1.0%); shortcut page modifier keycap colors fixed (swapped mix_rgb args); project/session context cards widened to 338px with full path wrapping, delete consolidated into the detail card
 ## [0.1.9] - 2026-10-15
 
 The ask_user_question full-survey card lands; in-app updates get the swap dead-loop fix and faster extraction; the WeChat bridge no longer auto-starts (pre-pluginization).
