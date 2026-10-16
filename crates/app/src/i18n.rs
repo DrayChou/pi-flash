@@ -344,6 +344,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("file_tree.no_pins_view", "暂无收藏", "暫無收藏", "No pins"),
     // 会话功能栏（session::session_fn_bar，原 topbar ⋯ 菜单三入口）
     ("session.open_terminal", "打开终端", "開啟終端機", "Open terminal"),
+    ("session.open_dir", "会话目录", "會話目錄", "Sessions folder"),
     ("session.system_prompt", "系统提示词", "系統提示詞", "System prompt"),
     ("session.session_tools", "会话工具集", "會話工具集", "Session tools"),
     // top panel：系统提示词（pi-web system.*）

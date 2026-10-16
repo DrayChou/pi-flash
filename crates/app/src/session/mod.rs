@@ -148,8 +148,9 @@ pub(crate) fn main_column(
 /// 会话功能栏（2026-10-11：topbar ⋯ 菜单撤下拉改常驻条）：会话 tab 下方
 /// 32px 操作条，版式对齐文件标签下方的 file_nav_bar（同高、同下边框、同
 /// pl12/pr8）。2026-10-16 系统提示词 / 会话工具集两钮迁入上下文用量面板
-/// （session/input/ctx_tip.rs），栏上只剩「打开终端」一钮，自动左对齐。
-/// 终端视图开着时该钮点亮 accent。
+/// （session/input/ctx_tip.rs）；新增「会话目录」（资源管理器打开当前项目
+/// 的 pi 会话组目录，动作同 psp 项目详情卡 explorer 钮）+「打开终端」，
+/// 钮间淡色 `|` 区隔。终端视图开着时终端钮点亮 accent。
 fn session_fn_bar(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyElement {
     let t = T();
     // 栏首项目名（2026-10-14）：当前工作区基名（ws.cwd），粗体亮色，后随
@@ -166,6 +167,22 @@ fn session_fn_bar(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyEle
         )
     } else {
         None
+    };
+    // 会话组目录（sfbar-sessdir）：pi sessions 根下按 cwd 编码的组目录，
+    // 还没建（无落盘会话）退回 sessions 根——与 psp 项目详情卡同口径
+    let sess_dir_btn = {
+        let cwd = chat.ws.cwd.clone();
+        move |_: &gpui::MouseDownEvent, _w: &mut gpui::Window, _cx: &mut gpui::App| {
+            let dir = pi_link::sessions::sessions_root().map(|root| {
+                let d = root.join(pi_link::sessions::group_name_for_cwd(
+                    &cwd.to_string_lossy(),
+                ));
+                if d.is_dir() { d } else { root }
+            });
+            if let Some(d) = dir {
+                crate::services::shell_open::reveal_in_explorer(&d);
+            }
+        }
     };
     div()
         .id("session-fn-bar")
@@ -192,6 +209,14 @@ fn session_fn_bar(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyEle
                 )
                 .child(crate::ui::icon("chevron-right", 10., t.text_faint))
         }))
+        .child(fn_bar_btn(
+            "sfbar-sessdir",
+            "folder-input",
+            tr("session.open_dir"),
+            false,
+            sess_dir_btn,
+        ))
+        .child(fn_bar_sep(t))
         .child(fn_bar_btn(
             "sfbar-term",
             "icon-terminal-solid",
@@ -231,6 +256,15 @@ fn fn_bar_btn(
         .on_mouse_down(MouseButton::Left, handler)
         .child(crate::ui::icon(icon_name, 13., if on { t.accent } else { t.text_muted }))
         .child(SharedString::from(label))
+        .into_any_element()
+}
+
+/// 功能栏钮间淡化分隔（文字竖线，text_faint 档）。
+fn fn_bar_sep(t: &'static crate::appearance::theme::Theme) -> gpui::AnyElement {
+    div()
+        .text_size(crate::appearance::ui_size(11.))
+        .text_color(rgb(t.text_faint))
+        .child(SharedString::from("|"))
         .into_any_element()
 }
 
