@@ -326,12 +326,10 @@ pub(crate) fn psp_view(
                         if this.dlg.hover_card.is_some()
                             || this.dlg.proj_card.is_some()
                             || this.dlg.proj_tip.is_some()
-                            || this.dlg.confirm_prj_del.is_some()
                         {
                             this.dlg.hover_card = None;
                             this.dlg.proj_card = None;
                             this.dlg.proj_tip = None;
-                            this.dlg.confirm_prj_del = None;
                             cx.notify();
                         }
                     }))
@@ -527,11 +525,9 @@ fn project_row(
     let hovered = chat.psp.hovered_project == Some(pi);
     let path = g.path.clone();
     let path_toggle = path.clone();
-    let path_menu = path.clone();
     let path_card = path.clone();
     let name: SharedString = g.name.clone().into();
     let w_toggle = weak.clone();
-    let w_menu = weak.clone();
     let w_new = weak.clone();
     let w_tip_on = weak.clone();
     let w_card = weak.clone();
@@ -627,50 +623,11 @@ fn project_row(
                     .flex()
                     // 列对齐：行内容右缘 = 容器 px10 + 行 pr10 = 距面板 20，
                     // 而上下两条控制栏钮右缘距面板 10——负右距 10 把钮组拉回
-                    // 同线，垃圾桶↔列表切换、新会话↔最大化逐列同 x（仍落在
-                    // 行 bounds 右缘之内，行 hover 不会丢）
+                    // 同线，新会话↔最大化同 x（仍落在行 bounds 右缘之内，
+                    // 行 hover 不会丢）。垃圾桶钮已撤（2026-10-16）：删除
+                    // 走项目行右键详情卡
                     .mr(px(-10.))
                     .gap(px(2.))
-                    // 垃圾桶 = 删除项目及所有会话（⋯ 项目菜单已撤：浏览器/
-                    // 终端入口文件树操作栏已有，删除直接弹确认卡、锚定点击点）
-                    .child(
-                        div()
-                            .id(SharedString::from(format!("prj-del-{pi}")))
-                            .w(px(26.))
-                            .h(px(26.))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .rounded(px(6.))
-                            .cursor_pointer()
-                            .group("prj-act")
-                            .text_color(rgb(t.text_dim))
-                            .hover(|s| s.bg(rgb(t.bg_hover)))
-                            .with_tip("psp.delete_project")
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                move |ev: &gpui::MouseDownEvent, _, cx| {
-                                    cx.stop_propagation();
-                                    let _ = w_menu.update(cx, |c, cx| {
-                                        c.dlg.confirm_prj_del = Some((
-                                            path_menu.clone(),
-                                            f32::from(ev.position.x),
-                                            f32::from(ev.position.y),
-                                        ));
-                                        cx.notify();
-                                    });
-                                },
-                            )
-                            .child(
-                                gpui::svg()
-                                    .path(SharedString::from("icons/icon-trash-solid.svg"))
-                                    .text_color(rgb(t.text_dim))
-                                    // 危险语义：悬停变 danger 红（§6 danger 系）
-                                    .group_hover("prj-act", |s| s.text_color(rgb(t.danger)))
-                                    .size(px(crate::ui::tokens::icon::MD))
-                                    .into_any_element(),
-                            ),
-                    )
                     // ＋ → 小号新建会话 icon（与控制栏「会话」同图形，小档）
                     .child(
                         div()

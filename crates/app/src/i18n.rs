@@ -399,7 +399,6 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("models.free_only", "只看free", "只看free", "Free only"),
     ("models.json_read_failed", "无法读取 models.json，为避免覆盖已禁用保存：{e}", "", ""),
     ("skills.failed_to_toggle_count", "{total} 个技能中有 {count} 个未能更改", "", ""),
-    ("psp.delete_project_confirm", "删除项目 {name} 及其所有会话？", "", ""),
     ("status.running_tools_with_extra", "正在运行 {names}（另有 {count} 个）...", "", ""),
     ("messages.no_output", "（无输出）", "", ""),
     // 031 @ 文件检索 + ! shell 命令

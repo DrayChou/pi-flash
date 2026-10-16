@@ -125,11 +125,10 @@ impl Render for Chat {
                 }
             }
         } else if self.dlg.dialog.is_some()
-            // overlay::confirm 三槽（文件树删除/项目删除/删除失败）不占
-            // Dialog 枚举，但同样要一打开就持有焦点——Enter 确认 / ESC 取消
-            // 才能立即生效（zed window.prompt 同款，键盘可操作）
+            // overlay::confirm 两槽（文件树删除/删除失败）不占 Dialog 枚举，
+            // 但同样要一打开就持有焦点——Enter 确认 / ESC 取消才能立即生效
+            //（zed window.prompt 同款，键盘可操作）
             || self.dlg.tree_confirm_del.is_some()
-            || self.dlg.confirm_prj_del.is_some()
             || self.dlg.tree_del_error.is_some()
             // 文件树标题项目下拉：↑/↓/Enter 键盘导航的前提是 dialog_focus
             // 持焦（overlay::confirm 同款键盘路径），打开即接管焦点

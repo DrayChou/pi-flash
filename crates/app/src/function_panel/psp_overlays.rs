@@ -1,6 +1,7 @@
-//! psp 悬浮层 (v54): 项目路径 tooltip（深色，跟随鼠标）、会话右键详情卡
-//! （锚右键点、点外即收，改名/删除流）、⋯ 两级菜单（列表方式/排序方式带
-//! 子菜单勾选态）、项目菜单、删除项目确认。全部挂在根渲染，事件坐标定位。
+//! psp 悬浮层 (v54): 项目路径 tooltip（深色，跟随鼠标）、会话/项目右键
+//! 详情卡（锚右键点、点外即收；会话卡改名/删除流，项目卡删除确认/会话
+//! 目录/新建会话）、⋯ 两级菜单（列表方式/排序方式带子菜单勾选态）。
+//! 全部挂在根渲染，事件坐标定位。
 //!
 //! 定位统一走 `ui::popup::PopupEdges`（2026-10-11 用户算法：锚点在视口
 //! 上半 → 向下弹，反之向上；左半 → 向右弹，反之向左）——列表拉到底时
@@ -80,9 +81,6 @@ pub(crate) fn psp_overlays(
         } else {
             chat.dlg.tab_menu = None;
         }
-    }
-    if let Some((path, x, y)) = chat.dlg.confirm_prj_del.clone() {
-        el = el.child(confirm_project_del(&path, x, y, vp, t, &chat.dlg.dialog_focus, cx));
     }
     if let Some(path) = chat.dlg.tree_confirm_del.clone() {
         // zed build_removal_prompt 同款：删除打开中的文件时未保存修改并入
@@ -619,8 +617,8 @@ fn solid_danger_btn(
 }
 
 // ---------------------------------------------------------------------------
-// psp 菜单（⋯ 项目菜单已于 020-1 撤除：浏览器/终端入口在文件树操作栏，
-// 删除由项目行垃圾桶直弹确认卡）
+// psp 菜单（⋯ 项目菜单已于 020-1 撤除：浏览器/终端入口在文件树操作栏；
+// 项目删除确认原为垃圾桶直弹独立浮层，2026-10-16 并入项目行右键详情卡）
 // ---------------------------------------------------------------------------
 
 /// 统一菜单卡座：absolute 弹层基座，贴边由统一算法的 [`PopupEdges`] 决定。
@@ -674,78 +672,8 @@ fn menu_item<S: Into<SharedString>>(
         .children(checked.then(|| icon("check", 12., t.accent)))
 }
 
-/// 删除项目确认浮层（锚定菜单点击处，统一算法定向）。
-fn confirm_project_del(
-    path: &std::path::PathBuf,
-    x: f32,
-    y: f32,
-    vp: (f32, f32),
-    t: &'static Theme,
-    focus: &gpui::FocusHandle,
-    cx: &mut gpui::Context<Chat>,
-) -> gpui::AnyElement {
-    let name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_default();
-    let path = path.clone();
-    // 浮层公共基座（遮挡不穿透 + 点外关闭 + ESC 关闭）
-    let weak = cx.entity().downgrade();
-    crate::ui::overlay::layer(false, Some(focus), move |_w, cx| {
-        let _ = weak.update(cx, |c, cx| {
-            c.dlg.confirm_prj_del = None;
-            cx.notify();
-        });
-    })
-        .child(
-            PopupEdges::around((x, y), vp, 0., 0.).apply(
-                div()
-                    .absolute()
-                    .min_w(px(380.))
-                    .p(px(16.))
-                    .bg(rgb(t.bg))
-                    .border_1()
-                    .border_color(gpui::rgba(crate::appearance::theme::danger_alpha(t, 0x73)))
-                    .rounded(px(10.))
-                    .shadow_lg()
-                    .flex()
-                    .flex_col()
-                    .gap(px(8.))
-                    .on_mouse_down(MouseButton::Left, |_, _, cx| {
-                        cx.stop_propagation();
-                    }),
-            )
-                .child(
-                    div()
-                        .text_size(crate::appearance::ui_size(12.5))
-                        .text_color(rgb(t.text))
-                        .child(SharedString::from(tf(
-                            "psp.delete_project_confirm",
-                            &[("name", name)],
-                        ))),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .justify_end()
-                        .gap(px(8.))
-                        .child(ghost_btn("pd-cancel", tr("action.cancel"), false, cx.listener(
-                            |this, _: &gpui::MouseDownEvent, _w, cx| {
-                                this.dlg.confirm_prj_del = None;
-                                cx.notify();
-                            },
-                        )))
-                        .child(solid_danger_btn("pd-ok", tr("psp.confirm_delete"), {
-                            let path = path.clone();
-                            cx.listener(move |this, _: &gpui::MouseDownEvent, _w, cx| {
-                                this.dlg.confirm_prj_del = None;
-                                this.delete_project(path.clone(), cx);
-                            })
-                        })),
-                ),
-        )
-        .into_any_element()
-}
+/// 删除项目确认浮层已撤（2026-10-16）：项目行垃圾桶钮移除后无入口，
+/// 删除确认并入项目行右键详情卡的卡内 取消/确认 两键（会话卡同款）。
 
 // ---------------------------------------------------------------------------
 // 021 文件树右键菜单（目录/文件两套条目）+ 删除确认

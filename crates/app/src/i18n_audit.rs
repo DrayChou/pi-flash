@@ -139,7 +139,6 @@ mod audit {
 "models.registry_read_failed",
 "models.available_count",
 "skills.failed_to_toggle_count",
-"psp.delete_project_confirm",
 "status.running_tools_with_extra",
 "messages.no_output",
     ];

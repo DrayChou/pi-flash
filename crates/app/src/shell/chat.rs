@@ -179,7 +179,6 @@ pub(crate) struct DlgUi {
     pub(crate) hover_card: Option<HoverCard>,
     /// 项目行右键详情卡（020：样式对齐会话详情卡；渲染挂 psp_overlays）
     pub(crate) proj_card: Option<ProjCard>,
-    pub(crate) confirm_prj_del: Option<(PathBuf, f32, f32)>,
     /// 021 文件树右键菜单状态槽（渲染挂 psp_overlays 同层）
     pub(crate) tree_menu: Option<TreeMenu>,
     /// 文件树标题项目下拉（树根跨项目快切）：Some = 开着，sel = 键盘高亮
@@ -582,7 +581,6 @@ impl Chat {
                 proj_tip: None,
                 hover_card: None,
                 proj_card: None,
-                confirm_prj_del: None,
                 tree_menu: None,
                 tree_proj_menu: None,
                 tree_edit: None,

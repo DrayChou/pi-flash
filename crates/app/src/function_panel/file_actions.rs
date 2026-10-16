@@ -334,7 +334,6 @@ impl Chat {
             || self.dlg.hover_card.is_some()
             || self.dlg.renaming.is_some()
             || self.dlg.confirm_delete.is_some()
-            || self.dlg.confirm_prj_del.is_some()
             || self.dlg.tree_menu.is_some()
             || self.dlg.tree_edit.is_some()
             || self.dlg.editor_menu.is_some()
