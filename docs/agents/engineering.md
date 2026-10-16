@@ -37,5 +37,17 @@
 - 本机 `~/.npmrc` 里 `//registry.npmjs.org/:_authToken` **已失效**（`/-/whoami` 返401）→ `npm unpublish/publish` 这类写操作会静默 no-op：`npm unpublish` 竟 exit 0 并打印 `- pkg@version`，但 registry 的 `versions` 毫无变化（内部 PUT `/-rev/<rev>` 返 404）。**写操作后必须回 registry 核对 versions**，别信退出码。
 - 同一版本号不可重发：测试期手发过的版本，正式发版前必须先 unpublish（注意 72h 窗口），否则 `publish-npm` OIDC job 报 “cannot publish over the previously published versions”。
 - **npm 版本号一经使用永不可复用**（docs.npmjs.com/policies/unpublish：“Once `package@version` has been used, you can never use it again”，unpublish 不可撤销）。测试期手发过 x.y.z → 正式发版只能换新号，别指望 unpublish 后重发同一号（packument 的 `time` 墓碑会让 PUT 持续 400）。
-- **本机 github.com 不通 → 薄壳安装链路验不了**：`npm i -g pi-flash` 的 postinstall 要打 `github.com/.../releases/download`，必超时（30s×重试）并让 npm 回滚安装。验收走本地镜像：`PI_FLASH_MIRROR=http://127.0.0.1:8765`，先把 `dist/` 里的 zip + `.sha256` + `SHA256SUMS` 摆成 `<base>/v<版本>/` 布局，`python -m http.server` 挂上去即可跑通拉取 + SHA-256 校验 + 解压全链。
+- **本机 github.com 是「间歇不通」，不是永久不通**（2026-10-17 复测：真 0.1.9 通过 `api.github.com` 认到 0.1.10，且从 `github.com/.../releases/download` 直连下载成功跑到 95%）。所以薄壳安装链路可在通的时候真机验；不通时才走本地镜像（`PI_FLASH_MIRROR=http://127.0.0.1:8765`，把 `dist/` 里的 zip + `.sha256` + `SHA256SUMS` 摆成 `<base>/v<版本>/` 布局用 `python -m http.server` 挂上）。
+
+## 标准 debug home 与 0.1.9 升级测试台
+
+- **标准 debug home：`./pi-flash-dev`**（`PI_FLASH_DIR` 指向它，已进 `.gitignore`）。跑 dev 与任何测试都用它，别再临时造 home：
+  `PI_FLASH_DIR="$(pwd -W)/pi-flash-dev" cargo run -p app`。它跨轮保留（设置 / 更新状态 / 缓存），所以测试实例不用重新登录。
+- **测试实例与真实 pi 的边界**：`PI_FLASH_DIR` 只搬 app 自有文件；pi 侧车仍用真实 `~/.pi/agent`（凭据/会话/设置）——测试实例产生的会话会出现在正常会话列表里，这是故意的（免登录）。
+- **0.1.9 升级测试台**（人工复现升级/打断；2026-10-17 搭）：`D:\pf-test-019\`
+  - `payload\` = 真 0.1.9 载荷（`dist/pi-flash-0.1.9-win32-x64.zip` 解压）；`baseline\payload\` = 母本（硬链接克隆，还原用）
+  - `① 启动 0.1.9 测试实例.cmd`（`PI_FLASH_DIR` → `./pi-flash-dev`）/ `② 查看现状.cmd`（只读清单：残留条目名 + 载荷 exe 的 sha256 是否还等于干净 0.1.9）/ `③ 一键恢复干净的 0.1.9.cmd`（杀本目录进程 → 打印残留清单 → 清空 → 母本硬链接还原 + 校验）
+  - 真源可用，无需假源（见上一条）
+  - 打断实测（下载完成、待重启时杀进程）：留下 `payload.stage-0.1.10`（263MB）+ `update-staged.json`，`payload\` 本身没被碰（老方案 stage 阶段不动在用目录）
+  - `③` 的还原是**硬删**（工作副本可反复重建，不进回收站）；母本 `baseline\` 才是真副本，别手删
 - npm ≥11.5.1 的 `allowScripts` 门控会对薄壳 postinstall 报“not yet covered by allowScripts”警告（实测安装仍会跑脚本，失败则 npm 回滚）；命中拦截时的兜底是 `pi-flash.js` 启动时 `payloadOk()` 自愈补齐。
