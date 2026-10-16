@@ -786,7 +786,8 @@ impl Chat {
             r.default_model = services::workspace::default_model_pref();
             if let Some(path) = &last_open {
                 r.messages = msgs_from_tail(read_tail_messages(path, 256 * 1024, 100));
-                r.disk_msg_count = pi_link::sessions::count_message_entries(path) as usize;
+                // 秒开深度优化（pi-flash-2o92）：磁盘计数改后台（首个启动帧
+                // 不做 O(会话大小) 的全文件读）——回灌走 load_disk_msg_count
                 r.pager.reload(r.messages.len());
                 r.status = "resuming".into();
             }
@@ -796,6 +797,7 @@ impl Chat {
         chat.pool.runtimes.insert(rt_key.clone(), rt.clone());
         chat.pool.active_key = rt_key.clone();
         chat.subscribe_runtime(&rt, cx);
+        rt.update(cx, |r, cx| r.load_disk_msg_count(cx));
         // 010-启动.md §9：启动期的一切（首帧附着 / 120ms 泵 / 3s 外部追加观察 /
         // 60s 空闲回收 / 30s recents 对账 / 启动页闸门 / 会话清单与项目集装载）
         // 都由 startup 发起——启动阶段做了什么全在 startup.rs 里可见。

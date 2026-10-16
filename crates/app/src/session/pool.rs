@@ -398,8 +398,6 @@ impl Chat {
         let rt = cx.new(|_| {
             let mut r = session::runtime::SessionRuntime::new(key, cwd.clone(), Some(path.clone()));
             r.default_model = services::workspace::default_model_pref();
-            // leaf-chain integrity probe for the get_messages guard
-            r.disk_msg_count = pi_link::sessions::count_message_entries(&path) as usize;
             r.messages = tail;
             r.pager.reload(r.messages.len());
             r.status = "resuming".into();
@@ -408,6 +406,9 @@ impl Chat {
         });
         self.pool.runtimes.insert(rt.read(cx).key.clone(), rt.clone());
         self.subscribe_runtime(&rt, cx);
+        // 秒开深度优化（pi-flash-2o92）：磁盘计数改后台——主线程全文件读
+        // 是 O(会话大小) 的打开冻结源
+        rt.update(cx, |r, cx| r.load_disk_msg_count(cx));
         if !same_ws(&cwd.to_string_lossy(), &self.ws.cwd.to_string_lossy()) {
             self.ws.cwd = cwd;
             self.remount_workspace();

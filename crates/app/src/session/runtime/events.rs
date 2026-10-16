@@ -7,8 +7,7 @@ use pi_link::protocol::{
 };
 
 use crate::i18n::tr;
-use crate::session::messages::{Msg, Role, UsageLine, merge_tool_result, msgs_from_tail, result_payload};
-use pi_link::sessions::read_leaf_messages;
+use crate::session::messages::{Msg, Role, UsageLine, merge_tool_result, result_payload};
 
 use super::*;
 
@@ -167,58 +166,17 @@ impl SessionRuntime {
                         // (plan-mode-state 实测) strands whole turns off the
                         // chain and get_messages comes back short. Rebuild from
                         // the file anchored at the last message entry instead.
-                        let mut repaired = false;
-                        if rpc_msgs.len() < self.disk_msg_count {
-                            if let Some(path) = &self.file {
-                                let msgs =
-                                    msgs_from_tail(read_leaf_messages(path, LEAF_REPAIR_MAX));
-                                if msgs.len() > rpc_msgs.len() {
-                                    self.messages = msgs;
-                                    self.pending_echoes.clear();
-                                    // entry-id mapping stays the RPC/get_entries view
-                                    // (fork anchors best-effort on repaired chains)
-                                    let mut ids = self.active_user_entry_ids.iter();
-                                    for m in self.messages.iter_mut() {
-                                        if m.role == Role::User {
-                                            m.entry_id = ids.next().cloned();
-                                        }
-                                    }
-                                    self.apply_pending_locate(cx);
-                                    self.notify_list(cx);
-                                    self.status =
-                                        "resumed (leaf chain repaired from disk)".into();
-                                    repaired = true;
-                                }
-                            }
-                        }
-                        if repaired {
+                        // 秒开深度优化（pi-flash-2o92）：全文重读是 O(会话大小)
+                        // 的主线程冻结源（20MB 上限下 ~300ms+）——改后台线程
+                        // 执行，期间维持现有显示（tail 预渲染），落地后磁盘链
+                        // 赢则换入、落败则执行权威投影（同守卫下无陈旧回退）。
+                        self.last_rpc_msg_count = Some(rpc_msgs.len());
+                        if rpc_msgs.len() < self.disk_msg_count && self.file.is_some() {
+                            let rpc_len = rpc_msgs.len();
+                            self.spawn_leaf_repair(rpc_len, Some(rpc_msgs), cx);
                             return;
                         }
-                        // authoritative projection: replace any disk-direct /
-                        // cached pre-render instead of appending (fixes
-                        // doubled rows after the tail pre-render)
-                        self.messages.clear();
-                        self.pending_echoes.clear();
-                        for msg in &rpc_msgs {
-                            let blocks = content_blocks(&msg["content"]);
-                            let usage = Usage::parse(&msg["usage"]);
-                            self.ingest_message(msg, blocks, usage, None, cx);
-                        }
-                        // map user messages to active-path entry ids (fork anchors)
-                        let mut ids = self.active_user_entry_ids.iter();
-                        for m in self.messages.iter_mut() {
-                            if m.role == Role::User {
-                                m.entry_id = ids.next().cloned();
-                            }
-                        }
-                        // get_messages payloads carry generation-START stamps
-                        // only; completion stamps (回复用时) come from the
-                        // session file's entry write-times
-                        self.merge_tail_stamps();
-                        self.apply_pending_locate(cx);
-                        // 同一会话的重读保住钉顶（换工具预设/压缩后重拉都走这里）
-                        self.restore_anchor_after_reload();
-                        self.notify_list(cx);
+                        self.project_rpc_messages(rpc_msgs, cx);
                     }
                     self.status = status_line(true, "resumed");
                 } else if command == "compact" {
@@ -787,6 +745,39 @@ impl SessionRuntime {
             });
         })
         .detach();
+    }
+
+    /// get_messages 的权威投影（整表替换——fixes doubled rows after the tail
+    /// pre-render）：ingest 全表 + fork 锚点映射 + 尾部时间戳回填 + 定位/
+    /// 钉顶/重绘。同步路径与后台 leaf 修复的落败分支共用（秒开深度优化
+    /// pi-flash-2o92 把修复改后台后，落败分支在这里补投影）。
+    pub(crate) fn project_rpc_messages(
+        &mut self,
+        rpc_msgs: Vec<serde_json::Value>,
+        cx: &mut Context<Self>,
+    ) {
+        self.messages.clear();
+        self.pending_echoes.clear();
+        for msg in &rpc_msgs {
+            let blocks = content_blocks(&msg["content"]);
+            let usage = Usage::parse(&msg["usage"]);
+            self.ingest_message(msg, blocks, usage, None, cx);
+        }
+        // map user messages to active-path entry ids (fork anchors)
+        let mut ids = self.active_user_entry_ids.iter();
+        for m in self.messages.iter_mut() {
+            if m.role == Role::User {
+                m.entry_id = ids.next().cloned();
+            }
+        }
+        // get_messages payloads carry generation-START stamps only;
+        // completion stamps (回复用时) come from the session file's entry
+        // write-times
+        self.merge_tail_stamps();
+        self.apply_pending_locate(cx);
+        // 同一会话的重读保住钉顶（换工具预设/压缩后重拉都走这里）
+        self.restore_anchor_after_reload();
+        self.notify_list(cx);
     }
 
     // ---- 033 会话导航面板 ----

@@ -100,6 +100,12 @@ pub(crate) struct SessionRuntime {
     /// same session) grows the file behind our pi process's back, which
     /// never notices; the tick compares and re-reads from disk
     pub disk_file_len: u64,
+    /// 外部追加观察（3s tick）的 leaf 重读在飞标记：重读是后台任务（秒开
+    /// 深度优化 pi-flash-2o92），在飞期间不得重复调度
+    pub leaf_watch_in_flight: bool,
+    /// 最近一次 get_messages 快照的条数：磁盘计数（后台）晚到时用它补做
+    /// leaf 修复对账——计数 > 快照才值得重读（对抗失败无副作用）
+    pub last_rpc_msg_count: Option<usize>,
     /// pi process ownership (None while recycled/lazy)
     pub agent: AgentSession,
 
@@ -239,6 +245,8 @@ impl SessionRuntime {
             cwd,
             file: file.clone(),
             disk_msg_count: 0,
+            leaf_watch_in_flight: false,
+            last_rpc_msg_count: None,
             disk_file_len: file
                 .as_deref()
                 .and_then(|f| std::fs::metadata(f).ok())

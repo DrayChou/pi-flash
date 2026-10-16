@@ -109,3 +109,28 @@ settings 落点（v60-7）：设置-其他「加载时间窗口」档位 7/14/30
 - 枚举 + 截断 + 指纹服务收敛为一个带参数的入口：启动路径与 30 秒轮询共用，
   不各写一份。（v60-3 已落地：`Scanner::list_excluding`）
 - 真相源原则：磁盘为真相源，清单是加速缓存；漏会话是静默错误，多扫只是慢一点。
+
+## 秒开深度优化（2026-10-17，pi-flash-2o92）
+
+打开任何会话 ≤1s（用户口径：对话文件基本不超 20MB）的最后一公里：
+两处 O(会话大小) 的**主线程**磁盘操作全部后台化（`runtime/nav.rs`）。
+
+- **磁盘计数**（`count_message_entries`，主线程 `fs::read` 整个会话文件 +
+  扫描）：open 路径（`pool.rs` / `psp_actions.rs` 改名临时进程 /
+  `fork.rs` follow 换绑 / `chat.rs` 启动恢复）四处统一改
+  `SessionRuntime::load_disk_msg_count`——后台算完回灌
+  `disk_msg_count`。计数晚到的补偿：get_messages 到达时计数还是 0，
+  修复守卫空转过一轮；计数落地后若快照比磁盘短，补一次后台 leaf 修复。
+- **leaf 全文重读**（`read_leaf_messages`，逐行 JSON 解析，20MB 实测量级
+  300ms+）：get_messages 的 leaf 修复（`spawn_leaf_repair`，落败分支把
+  RPC 权威投影延后到读落地再执行，同守卫下无陈旧回退）与 3s 外部追加
+  观察（`check_external_append`，在飞标记防重复调度）都改后台线程；
+  回灌守卫 =（文件路径 + epoch + 空闲态）——重绑/重启/读的这段时间会话
+  动了都作废。
+- A/B（release，pif-ui 隔离实例，14.8MB 真实会话）：冷开主线程同步
+  37ms（旧 57ms，暖盘；冷盘差距大得多）；对话首屏 0ms 级（tail 预渲染
+  不受影响）；打开→完整（resumed）总时长与旧版同量级（受 node 冷启支配，
+  非主线程）。
+- **遗留的主线程卡顿（既有，候选后续）**：get_messages 权威投影
+  （`project_rpc_messages`，200+ 条消息 ingest ~400-500ms）与跨项目
+  remount（git status/numstat 子进程 + 项目树 ~450-550ms）。

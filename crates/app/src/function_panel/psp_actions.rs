@@ -208,13 +208,15 @@ impl Chat {
                         Some(path.clone()),
                     );
                     r.default_model = services::workspace::default_model_pref();
-                    r.disk_msg_count = pi_link::sessions::count_message_entries(&path) as usize;
+                    // 秒开深度优化（pi-flash-2o92）：磁盘计数改后台——主线程
+                    // 全文件读是 O(会话大小) 的冻结源，回灌走 load_disk_msg_count
                     r.messages = tail;
                     r.pager.reload(r.messages.len());
                     r
                 });
                 self.pool.runtimes.insert(key, rt.clone());
                 self.subscribe_runtime(&rt, cx);
+                rt.update(cx, |r, cx| r.load_disk_msg_count(cx));
                 let rt_spawn = rt.clone();
                 cx.spawn(async move |_this, cx| {
                     let _ = rt_spawn.update(cx, |r, cx| {

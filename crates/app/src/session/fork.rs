@@ -147,7 +147,11 @@ impl SessionRuntime {
         }
         self.file = Some(f.clone());
         self.disk_file_len = std::fs::metadata(&f).map(|m| m.len()).unwrap_or(0);
-        self.disk_msg_count = pi_link::sessions::count_message_entries(&f) as usize;
+        // 秒开深度优化（pi-flash-2o92）：磁盘计数改后台——分支文件可达
+        // 20MB，主线程全文件读就是 fork 落地时的冻结源
+        self.disk_msg_count = 0;
+        self.last_rpc_msg_count = None;
+        self.load_disk_msg_count(cx);
         // Chat 迁移 pool key（draft-N / 父路径 → 新分支路径）、刷新侧栏、
         // 记 recents 与 last-open
         cx.emit(SessionEvent::FileBound(f));

@@ -56,8 +56,18 @@ impl SessionRuntime {
     /// writer (pi-web on the same session file) appends behind our pi
     /// process's back, and pi's in-memory chain never notices. While idle,
     /// a size change triggers a disk leaf-chain re-read.
+    ///
+    /// 秒开深度优化（pi-flash-2o92）：全文重读是 O(会话大小) 的主线程冻结
+    /// 源（read_leaf_messages 逐行 JSON 解析，20MB 上限下 ~300ms+），改
+    /// 后台线程执行；回灌守卫 =（文件路径 + epoch + 空闲态），重绑/重启/
+    /// 读的这段时间会话动了都作废（外部快照过期，下轮 tick 重新发现）。
     pub(crate) fn check_external_append(&mut self, cx: &mut Context<Self>) {
         if self.agent_running || !self.pending_echoes.is_empty() {
+            return;
+        }
+        // 上一次重读还在飞：不重复调度（文件还在长就等它落地；落地后的
+        // 新增量由下一轮 tick 发现）
+        if self.leaf_watch_in_flight {
             return;
         }
         let Some(f) = self.file.clone() else { return };
@@ -66,23 +76,127 @@ impl SessionRuntime {
         if len == self.disk_file_len || len == 0 {
             return;
         }
-        let msgs = msgs_from_tail(read_leaf_messages(&f, LEAF_REPAIR_MAX));
+        // 长度先记账（防在飞期间每 3s tick 重复调度）；重读失败时长度已
+        // 前移，靠外部写入的下一次增长重新触发（与同步版同语义）
         self.disk_file_len = len;
-        if msgs.len() != self.messages.len() {
-            // 整表重读：锚点索引可能失效，重读后按最后一条用户消息重锚
-            self.messages = msgs;
-            // fork anchors best-effort (same as the open-time repair path)
-            let mut ids = self.active_user_entry_ids.iter();
-            for m in self.messages.iter_mut() {
-                if m.role == Role::User {
-                    m.entry_id = ids.next().cloned();
+        self.leaf_watch_in_flight = true;
+        let epoch = self.agent.epoch;
+        let f_read = f.clone();
+        cx.spawn(async move |this, cx| {
+            let msgs = cx
+                .background_executor()
+                .spawn(async move { msgs_from_tail(read_leaf_messages(&f_read, LEAF_REPAIR_MAX)) })
+                .await;
+            let _ = this.update(cx, |r, cx| {
+                r.leaf_watch_in_flight = false;
+                if r.agent.epoch != epoch || r.file.as_deref() != Some(f.as_path()) {
+                    return; // 重启/重绑在飞期间已换身份
                 }
-            }
-            self.apply_pending_locate(cx);
-            self.restore_anchor_after_reload();
-            self.notify_list(cx);
-            self.status = status_line(true, "synced from disk");
-        }
+                if r.agent_running || !r.pending_echoes.is_empty() {
+                    return; // 读的这段时间会话动了：外部快照过期，下轮再看
+                }
+                if msgs.len() != r.messages.len() {
+                    // 整表重读：锚点索引可能失效，重读后按最后一条用户消息重锚
+                    r.messages = msgs;
+                    // fork anchors best-effort (same as the open-time repair path)
+                    let mut ids = r.active_user_entry_ids.iter();
+                    for m in r.messages.iter_mut() {
+                        if m.role == Role::User {
+                            m.entry_id = ids.next().cloned();
+                        }
+                    }
+                    r.apply_pending_locate(cx);
+                    r.restore_anchor_after_reload();
+                    r.notify_list(cx);
+                    r.status = status_line(true, "synced from disk");
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// 磁盘计数后台化（秒开深度优化 pi-flash-2o92）：`count_message_entries`
+    /// 在主线程 `fs::read` 整个会话文件（O(文件大小)，20MB ≈ 几十 ms 且
+    /// 随文件线性放大）——open 路径改为调度后台任务算完回灌。
+    ///
+    /// 计数晚到的补偿：get_messages 快照到达时计数还是 0，修复守卫
+    /// （`rpc < disk`）空转过一轮；计数落地后若快照比磁盘短，补一次
+    /// 后台 leaf 修复对账（对抗失败无副作用——显示维持 RPC 权威投影）。
+    pub(crate) fn load_disk_msg_count(&mut self, cx: &mut Context<Self>) {
+        let Some(f) = self.file.clone() else { return };
+        let epoch = self.agent.epoch;
+        let f_count = f.clone();
+        cx.spawn(async move |this, cx| {
+            let n = cx
+                .background_executor()
+                .spawn(async move { pi_link::sessions::count_message_entries(&f_count) as usize })
+                .await;
+            let _ = this.update(cx, |r, cx| {
+                if r.agent.epoch != epoch || r.file.as_deref() != Some(f.as_path()) {
+                    return; // 重启/重绑在飞期间已换身份，旧文件的计数作废
+                }
+                r.disk_msg_count = n;
+                if let Some(rpc_len) = r.last_rpc_msg_count {
+                    if n > rpc_len && !r.agent_running {
+                        r.spawn_leaf_repair(rpc_len, None, cx);
+                    }
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// 后台 leaf 修复（get_messages 快照短于磁盘计数时的磁盘侧重建）：
+    /// 磁盘链必须长于快照才换入（与原同步版长度竞赛同规则）；`fallback`
+    /// = 落败分支的 RPC 权威投影（deferred 调用方把投影延后到这里，
+    /// None = 计数晚到补偿，投影早已上屏）。回灌守卫同
+    /// check_external_append；读的这段时间有新快照到达
+    /// （last_rpc_msg_count 变了）也作废，避免陈旧投影回退。
+    pub(crate) fn spawn_leaf_repair(
+        &mut self,
+        rpc_len: usize,
+        fallback: Option<Vec<serde_json::Value>>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(f) = self.file.clone() else { return };
+        let epoch = self.agent.epoch;
+        let f_read = f.clone();
+        cx.spawn(async move |this, cx| {
+            let disk = cx
+                .background_executor()
+                .spawn(async move { msgs_from_tail(read_leaf_messages(&f_read, LEAF_REPAIR_MAX)) })
+                .await;
+            let _ = this.update(cx, |r, cx| {
+                if r.agent.epoch != epoch || r.file.as_deref() != Some(f.as_path()) {
+                    return;
+                }
+                if r.agent_running || r.last_rpc_msg_count != Some(rpc_len) {
+                    return; // 会话动了 / 已有更新的快照：陈旧对账作废
+                }
+                if disk.len() > rpc_len {
+                    r.messages = disk;
+                    r.pending_echoes.clear();
+                    // entry-id mapping stays the RPC/get_entries view
+                    // (fork anchors best-effort on repaired chains)
+                    let mut ids = r.active_user_entry_ids.iter();
+                    for m in r.messages.iter_mut() {
+                        if m.role == Role::User {
+                            m.entry_id = ids.next().cloned();
+                        }
+                    }
+                    r.apply_pending_locate(cx);
+                    r.notify_list(cx);
+                    r.status = "resumed (leaf chain repaired from disk)".into();
+                } else if let Some(rpc) = fallback {
+                    // 磁盘没赢 → RPC 权威投影（原同步版的落败分支，延后到
+                    // 后台重读落地才执行——延后期间显示维持 tail 预渲染）
+                    r.project_rpc_messages(rpc, cx);
+                    r.status = status_line(true, "resumed");
+                }
+                // 计数晚到补偿（无 fallback）：显示维持已上屏的权威投影
+            });
+        })
+        .detach();
     }
 
     /// Backfill message stamps from the session-file tail: snapshots never
