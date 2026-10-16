@@ -1802,22 +1802,29 @@ impl InputState {
         // 解再钳进内容滚动范围——内容放得下时不裁顶（此前光标贴底行会把
         // 首行推出视口外且停在那里）。
         let edge_height = (3 * line_height).min(bounds.size.height / 2.0);
-        if row_offset_y - edge_height < -scroll_offset.y {
-            // Scroll up
-            scroll_offset.y = -row_offset_y + edge_height;
-        } else if row_offset_y + edge_height > -scroll_offset.y + bounds.size.height {
-            // Scroll down
-            scroll_offset.y = -(row_offset_y - bounds.size.height + edge_height);
-        }
-
-        scroll_offset.x = scroll_offset.x.min(px(0.));
         let max_scroll_up = f32::from(
             self.text_wrapper.len() as f32 * line_height - bounds.size.height,
         )
         .max(0.0);
-        scroll_offset.y = scroll_offset.y.clamp(px(-max_scroll_up), px(0.));
-        self.deferred_scroll_offset = Some(scroll_offset);
-        cx.notify();
+        if row_offset_y - edge_height < -scroll_offset.y {
+            // Scroll up
+            scroll_offset.y = (-row_offset_y + edge_height).clamp(px(-max_scroll_up), px(0.));
+        } else if row_offset_y + edge_height > -scroll_offset.y + bounds.size.height {
+            // Scroll down
+            scroll_offset.y =
+                (-(row_offset_y - bounds.size.height + edge_height)).clamp(px(-max_scroll_up), px(0.));
+        }
+
+        scroll_offset.x = scroll_offset.x.min(px(0.));
+        // 光标已可见时不重写滚动位：滚轮走 update_scroll_offset，钳的是含
+        // 垫底（scroll_size 多出半视口空底）的范围，可以把末行停进视口中部；
+        // 此处若无条件把 offset 重钳进纯内容范围并落 deferred，点击这个可见
+        // 行就会把停好的位拽回内容底——该行瞬移到屏幕底部（2026-10-16）。
+        // 内容钳制只属于上面两支的「解」，不作用于用户停好的滚动位。
+        if scroll_offset != self.scroll_handle.offset() {
+            self.deferred_scroll_offset = Some(scroll_offset);
+            cx.notify();
+        }
     }
 
     pub(super) fn show_character_palette(

@@ -1,3 +1,26 @@
+## 待验证（本轮修复）——editor 点击可见行，该行瞬移屏幕底部（滚动位被拽回内容底）
+
+用户口径：把文件最后一行滚到屏幕中间（下方留空），鼠标点击该行，该行跳到
+屏幕底部。（021 md 源码编辑器实测；任何 code editor 场景皆然）
+
+- ✅ 根因（vendor gpui-component `input/state.rs`，两个钳制范围不一致 +
+  scroll_to 无条件落账）：
+  1. 滚轮路径 `update_scroll_offset` 钳的是 `scroll_size`（内容高 +
+     `empty_bottom_height` 半视口垫底）——允许 overscroll，末行能合法停进
+     视口中部（滚动位比纯内容底更深）。
+  2. 点击 → `move_to` → `scroll_to`：光标行明明完整可见（上下两支越界判据
+     都不命中），但函数尾部**无条件**把 offset 重钳进纯内容范围
+     `[-(wrapper.len()×行高-H), 0]` 并写 `deferred_scroll_offset`——停在
+     垫底区的滚动位被拽回内容底（视口上收半视口-行高），点击行瞬移屏幕
+     底部。
+  3. 2026-10-15 鬼畜振荡修复笔记里「滚轮含垫底与本处纯内容钳制并存不冲突」
+     的判断不成立——冲突就出在「光标可见也落账」这一步。
+- ✅ 修法：内容钳制收进上下两支越界分支（只作用于「解」）；函数尾改为
+  `scroll_offset != scroll_handle.offset()` 才写 deferred + notify——光标
+  可见时滚动位一字节不动，用户停好的 overscroll 位保留。分支解的钳制行为
+  与 10-15 修复完全一致（解不越内容底、不裁顶），composer 振荡修复不受
+  影响。
+
 ## 待验证（本轮修复）——editor 打开 minified js 卡到死（单行 94 万字符）
 
 用户口径：打开 `素材-2026柴油裂解价差-echarts.min.js`（1,030,855 字节、
