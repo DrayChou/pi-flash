@@ -115,14 +115,26 @@ fi
 
 echo
 echo "== 4. build 无新警告 / test 全绿 =="
-cargo build -p app --quiet 2>&1 | grep -c "^warning" > /tmp/warn_app
-echo "app warnings: $(cat /tmp/warn_app) (基线对比交由 CI;本地以不新增为准)"
-cargo test --quiet > /tmp/test_out 2>&1
-if grep -q "FAILED" /tmp/test_out; then
-  echo "VIOLATION: tests failed"
+# 构建失败也要红（不能只数 warning：error 行不匹配 ^warning，曾把编译
+# 损坏静默成 "app warnings: 0" + "tests ok"，0.1.10 发版被 release 构建
+# 拦下才发现）
+if cargo build -p app --quiet 2>&1 | tee /tmp/build_app | grep -c "^warning" > /tmp/warn_app; then
+  :
+fi
+if grep -q "^error" /tmp/build_app; then
+  echo "VIOLATION: app build failed（末 15 行：）"
+  tail -15 /tmp/build_app
   fail=1
-else
+fi
+echo "app warnings: $(cat /tmp/warn_app) (基线对比交由 CI;本地以不新增为准)"
+# 退出码为准（编译失败/测试失败都非 0）——只 grep 输出里的 FAILED 会漏掉
+# 编译损坏（error 输出里没有 FAILED 字样）
+if cargo test --quiet > /tmp/test_out 2>&1; then
   echo "tests ok"
+else
+  echo "VIOLATION: tests failed（编译或运行，末 20 行：）"
+  tail -20 /tmp/test_out
+  fail=1
 fi
 
 echo

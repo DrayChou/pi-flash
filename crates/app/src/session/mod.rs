@@ -812,7 +812,7 @@ fn nav_gutter(
 /// ICON_MD(16)、图标↔数字 gap SP4(8)、组间 gap SP5(10)、数字
 /// ui(11) secondary
 fn nav_summary_header(
-    summary: &crate::session::runtime::TurnSummary,
+    summary: &crate::session::runtime::NavData,
     t: &'static crate::appearance::theme::Theme,
 ) -> gpui::AnyElement {
     use crate::ui::tokens::{icon as tok_icon, space};
