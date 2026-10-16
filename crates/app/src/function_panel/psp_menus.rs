@@ -2,7 +2,7 @@
 //! psp_overlays.rs 内切拆出（check_arch 文件 1500 行上限），纯结构搬移。
 //! 卡片形制（menu_card/menu_item/menu_sep）仍住在 psp_overlays。
 
-use gpui::{MouseButton, SharedString};
+use gpui::{MouseButton, SharedString, prelude::*};
 
 use crate::Chat;
 use crate::i18n::tr;

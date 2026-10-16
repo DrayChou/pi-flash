@@ -944,8 +944,8 @@ impl crate::Chat {
 /// **不持数据** —— 内容全从 `chat.aux.remote.qr` 现读，扫码 worker 的事件由 200ms
 /// 泵 drain 后 `cx.notify()`，弹窗随之重绘。
 pub(crate) fn render_wx_qr(
-    chat: &Chat,
-    weak: &gpui::WeakEntity<Chat>,
+    chat: &crate::Chat,
+    weak: &gpui::WeakEntity<crate::Chat>,
     t: &theme::Theme,
 ) -> gpui::AnyElement {
     use crate::settings::remote::mono_lines;
