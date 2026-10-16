@@ -547,21 +547,10 @@ fn files_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
                 "path": g.path.display().to_string(),
             })).collect::<Vec<_>>(),
         })),
-        // 021 Pin 收藏夹：存储清单（绝对路径）+ 浮层开合与展示行（名称
-        // 字母序，与渲染共用 pinned_rows 排序口径），files.pin / files.pin_menu
-        // 的事务断言靠这两条
+        // 021 Pin 收藏夹：存储清单（绝对路径）+ 视图开合（rows 即视图行，
+        // depth 0 = 收藏根行），files.pin / files.pin_view 的事务断言靠这两条
         "pins": chat.ws.pinned.iter().map(|p| p.display().to_string()).collect::<Vec<_>>(),
-        "pin_menu": chat.dlg.pin_menu.then(|| json!({
-            "rows": crate::function_panel::file_actions::pinned_rows(&chat.ws.cwd, &chat.ws.pinned)
-                .iter()
-                .map(|(p, is_dir, name, dir)| json!({
-                    "path": p.display().to_string(),
-                    "is_dir": is_dir,
-                    "name": name,
-                    "dir": dir,
-                }))
-                .collect::<Vec<_>>(),
-        })),
+        "pin_view": chat.ws.pin_view,
     })
 }
 

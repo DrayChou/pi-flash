@@ -556,10 +556,10 @@ pub(super) fn dispatch(
             chat.toggle_tree_proj_menu(cx);
             ok()
         }
-        method::FILES_PIN_MENU => {
-            // 021 Pin 收藏夹浮层的无坐标入口：toggle 开/收；开合与清单读
-            // files 面 pin_menu/pins
-            chat.toggle_pin_menu(cx);
+        method::FILES_PIN_VIEW => {
+            // 021 Pin 收藏夹视图的无坐标入口：toggle 树体区域视图开关；
+            // 开合读 files 面 pin_view，视图行读 rows
+            chat.toggle_pin_view(cx);
             ok()
         }
         method::FILES_PIN => {

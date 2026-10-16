@@ -186,8 +186,19 @@ pub fn flatten(cwd: &Path, expanded: &HashSet<PathBuf>, git_files: &[GitFile]) -
         changed_dirs.insert(cwd.to_path_buf());
     }
 
-    // 仓库根的排除文件（.git/info/exclude）压栈底，再压根 .gitignore；
-    // 子目录的 .gitignore 在下钻时继续压栈（深层覆盖浅层，同 git 语义）。
+    let stack = root_ignore_stack(cwd);
+
+    let mut out = Vec::new();
+    if expanded.contains(cwd) {
+        walk(cwd, 0, expanded, &git_map, &changed_dirs, &stack, false, &mut out);
+    }
+    out
+}
+
+/// 仓库根的 ignore 栈（`.git/info/exclude` 压栈底，再压根 `.gitignore`；
+/// 子目录的 .gitignore 在 walk 下钻时继续压栈）。flatten / flatten_pins
+/// 共用的初始化。
+fn root_ignore_stack(cwd: &Path) -> IgnoreStack {
     let mut stack = match build_gitignore_at(cwd, ".git/info/exclude") {
         Some(gi) => IgnoreStack::none().append(IgnoreKind::RepoExclude, Arc::new(gi)),
         None => IgnoreStack::none(),
@@ -195,10 +206,90 @@ pub fn flatten(cwd: &Path, expanded: &HashSet<PathBuf>, git_files: &[GitFile]) -
     if let Some(gi) = build_gitignore_at(cwd, ".gitignore") {
         stack = stack.append(IgnoreKind::Gitignore(Arc::from(cwd)), Arc::new(gi));
     }
+    stack
+}
+
+/// Pin 收藏夹视图（021 三改：Pin = 与「只看变更」同级的独立视图，本质是
+/// 文件树过滤器）——每个收藏条目是一棵根树：根行 depth 0（name =
+/// file_name，**不链式折叠**——pin 的是显式节点），展开的目录从该路径
+/// `walk(depth 1)` 下钻，子级排序/gitignore/链式折叠全复用主树语义。
+/// 渲染层以 `depth == 0` 判定收藏根行（子行恒 depth ≥ 1）。
+/// 根行失效（外部已删）跳过；调用方（toggle）负责清失效条目，这里只兜底。
+pub fn flatten_pins(
+    cwd: &Path,
+    pins: &[PathBuf],
+    expanded: &HashSet<PathBuf>,
+    git_files: &[GitFile],
+) -> Vec<TreeRow> {
+    let git_map: HashMap<PathBuf, GitStatus> = git_files
+        .iter()
+        .map(|f| (f.path.clone(), f.status))
+        .collect();
+    // 无根行，cwd 不进 changed_dirs（主树 flatten 的「根圆点」语义不适用）
+    let changed_dirs = changed_ancestor_dirs(cwd, git_files);
+    let stack = root_ignore_stack(cwd);
+
+    // 展示序：名称字母序（大小写不敏感），同名按完整路径（Windows 盘内
+    // 路径大小写不敏感，键用小写化）。非绝对路径不进视图——gitignore 匹配
+    // （is_abs_path_ignored）按绝对路径 strip_prefix，收相对路径必炸；正常
+    // 入口（tree_pin_toggle）已归一，这里兜历史脏数据。
+    let mut roots: Vec<&PathBuf> = pins
+        .iter()
+        .filter(|p| p.exists() && p.is_absolute())
+        .collect();
+    roots.sort_by(|a, b| {
+        let ka = a
+            .file_name()
+            .map(|n| n.to_string_lossy().to_lowercase())
+            .unwrap_or_else(|| a.to_string_lossy().to_lowercase());
+        let kb = b
+            .file_name()
+            .map(|n| n.to_string_lossy().to_lowercase())
+            .unwrap_or_else(|| b.to_string_lossy().to_lowercase());
+        ka.cmp(&kb).then_with(|| a.to_string_lossy().cmp(&b.to_string_lossy()))
+    });
 
     let mut out = Vec::new();
-    if expanded.contains(cwd) {
-        walk(cwd, 0, expanded, &git_map, &changed_dirs, &stack, false, &mut out);
+    for p in roots {
+        let is_dir = p.is_dir();
+        let expanded_root = is_dir && expanded.contains(p);
+        let ignored = stack.is_abs_path_ignored(p, is_dir);
+        out.push(TreeRow {
+            path: p.clone(),
+            name: p
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| p.to_string_lossy().to_string()),
+            depth: 0,
+            is_dir,
+            expanded: expanded_root,
+            git: git_map.get(p).copied(),
+            changed_dot: changed_dirs.contains(p),
+            ignored,
+        });
+        if expanded_root {
+            // 根已 ignored → 子级整体继承（walk 的 parent_ignored 同语义）；
+            // 否则压入根目录自己的 .gitignore 再下钻
+            let child_stack = if ignored {
+                stack.clone()
+            } else {
+                let mut s2 = stack.clone();
+                if let Some(gi) = build_gitignore_at(p, ".gitignore") {
+                    s2 = s2.append(IgnoreKind::Gitignore(Arc::from(p.as_path())), Arc::new(gi));
+                }
+                s2
+            };
+            walk(
+                p,
+                1,
+                expanded,
+                &git_map,
+                &changed_dirs,
+                &child_stack,
+                ignored,
+                &mut out,
+            );
+        }
     }
     out
 }
@@ -632,5 +723,45 @@ mod tests {
 
         // 无变更 = 空表（渲染层出「暂无变更」空态）
         assert!(flatten_changes(&t.0, &[]).is_empty());
+    }
+
+    #[test]
+    fn flatten_pins_roots_sorted_children_via_walk() {
+        let t = TempTree::new("pins");
+        t.file("src/deep/lib.rs");
+        t.file("docs/guide.md");
+        std::fs::write(t.0.join("docs/.gitignore"), "draft.md\n").unwrap();
+        t.file("docs/draft.md");
+        t.file("beta.txt");
+
+        // pin 序故意乱：展示序 = 名称字母序；src 未展开 = 折叠根行
+        let pins = vec![t.0.join("src"), t.0.join("beta.txt"), t.0.join("docs")];
+        let rows = flatten_pins(&t.0, &pins, &HashSet::new(), &[]);
+        let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, vec!["beta.txt", "docs", "src"]);
+        assert!(rows.iter().all(|r| r.depth == 0), "未展开只有三根行");
+
+        // 展开 docs：根行 depth 0 + 子行 depth 1（gitignore 在根目录内生效；
+        // .gitignore 自身是普通可见行，v61 dot 文件语义）
+        let mut expanded = HashSet::new();
+        expanded.insert(t.0.join("docs"));
+        let rows = flatten_pins(&t.0, &pins, &expanded, &[]);
+        let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec!["beta.txt", "docs", ".gitignore", "draft.md", "guide.md", "src"]
+        );
+        let docs = &rows[1];
+        assert!(docs.is_dir && docs.expanded && docs.depth == 0);
+        let draft = &rows[3];
+        assert_eq!(draft.depth, 1);
+        assert!(draft.ignored, "根内 .gitignore 命中的子行置灰");
+        assert!(!rows[4].ignored, "guide.md 是普通行");
+
+        // 失效条目（外部已删）兜底跳过
+        let stale = vec![t.0.join("nope"), t.0.join("beta.txt")];
+        let rows = flatten_pins(&t.0, &stale, &HashSet::new(), &[]);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].name, "beta.txt");
     }
 }

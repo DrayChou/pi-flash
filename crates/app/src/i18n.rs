@@ -340,7 +340,8 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("file_tree.pin", "Pin", "Pin", "Pin"),
     ("file_tree.unpin", "取消固定", "取消釘選", "Unpin"),
     ("file_tree.pin_favorites", "Pin 收藏夹", "Pin 收藏夾", "Pin favorites"),
-    ("file_tree.pin_remove", "移除", "移除", "Remove"),
+    ("file_tree.back_to_tree", "返回目录树", "返回目錄樹", "Back to file tree"),
+    ("file_tree.no_pins_view", "暂无收藏", "暫無收藏", "No pins"),
     // 会话功能栏（session::session_fn_bar，原 topbar ⋯ 菜单三入口）
     ("session.open_terminal", "打开终端", "開啟終端機", "Open terminal"),
     ("session.system_prompt", "系统提示词", "系統提示詞", "System prompt"),
