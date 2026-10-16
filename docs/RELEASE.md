@@ -44,6 +44,9 @@
 - [ ] 发布说明就绪：`tmp/release-notes-<v>.md`（安装/更新命令 + 本版要点；**双语**：中文段在上、
       单独一行 `<!-- EN -->`、下接英文段，见 `docs/CHANGELOG规范.md`；中文段收编 CHANGELOG.md、
       英文段收编 CHANGELOG_EN.md、全文作 Release 正文。纯中文可发版，英文后补走 `gh release edit`）
+- [ ] 跨过 0.1.10 的过渡：0.1.10 里是旧落位代码（自更新有缺陷），用户侧
+      更新须走 `npm install -g pi-flash@latest`（薄壳整目录落位）；0.1.11 起
+      才由新的「解压新目录 + 启动交接」链路接管（081 §8）
 - [ ] 网络：github.com 可达（推送 + 资产上传）；npm 已登录（**仅首发/回退需要**）
 - [ ] Trusted Publisher 若已配置：确认本次发版落在其 **2 天绑定窗口**内（见 §4）
 - [ ] 说明文件在 `tmp/` 下（untracked，不触门禁）

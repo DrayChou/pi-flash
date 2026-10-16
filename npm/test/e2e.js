@@ -11,7 +11,7 @@
 //   ⑤ --ignore-scripts 首启自愈                   ⑥ SHA256SUMS 兜底
 //   ⑦ 损坏载荷被 SHA-256 拦截                      ⑧ 旧→新版本更新=同一条命令
 //   ⑨ 同版本快路径不重复下载
-//   ⑩ 081 应用内更新落位：staging+标记 → 启动时 swap
+//   ⑩ 081 应用内更新：payload-<版本>/ 新载荷目录 → 启动时选它跑
 //   ⑪ 载荷比薄壳新（应用内更新先行）→ 不降级、不重复下载
 //   ⑫ 版本预取：壳滞后于 GitHub latest → 载荷直接装 latest（080）
 //
@@ -144,6 +144,9 @@ function stampOf(prefix) {
 function launcherOf(prefix) {
   return path.join(prefix, "node_modules", "pi-flash", "bin", "pi-flash.js");
 }
+function markerOf(dir) {
+  return fs.readFileSync(path.join(dir, "marker.txt"), "utf8");
+}
 
 // --- 主流程 -------------------------------------------------------------------
 async function main() {
@@ -264,47 +267,43 @@ async function main() {
   const ms = Date.now() - t0;
   check(`直接启动（${ms}ms）`, r.status === 0 && ms < 5000, r.stderr);
 
-  console.log("\n⑩ 081 应用内更新落位：staging + 标记 → 启动时 swap");
+  console.log("\n⑩ 081 应用内更新：payload-<版本>/ → 启动时跑版本最高者");
   const prefix5 = path.join(WORK, "prefix5");
   r = await npm(["install", "-g", "--prefix", prefix5, tgz], { PI_FLASH_MIRROR: mirror });
   check(`安装 ${TEST_OLD} 成功`, r.status === 0 && stampOf(prefix5) === TEST_OLD, (r.stderr || ""));
-  const pkg5 = path.join(prefix5, "node_modules", "pi-flash");
-  const stageDir = path.join(pkg5, `payload.stage-${TEST_NEW}`);
-  fs.mkdirSync(stageDir, { recursive: true });
-  fs.copyFileSync(process.execPath, path.join(stageDir, "pi-flash.exe"));
-  fs.writeFileSync(path.join(stageDir, "marker.txt"), `payload-v${TEST_NEW}\n`);
-  fs.writeFileSync(path.join(stageDir, ".payload-version"), `${TEST_NEW}\n`);
-  fs.writeFileSync(
-    path.join(pkg5, "update-staged.json"),
-    JSON.stringify({ version: TEST_NEW, staged_at: 1 }),
-  );
-  r = await nodeRun(launcherOf(prefix5), ["--version"], { PI_FLASH_MIRROR: mirror });
-  check("swap 后启动成功", r.status === 0, r.stderr);
-  check(`版本戳 = ${TEST_NEW}`, stampOf(prefix5) === TEST_NEW, `实际 ${stampOf(prefix5)}`);
+  // 应用内更新的落位：解压出一个新载荷目录（不 rename、不碰 payload/）
+  const newPayload = path.join(prefix5, "node_modules", "pi-flash", `payload-${TEST_NEW}`);
+  fs.mkdirSync(newPayload, { recursive: true });
+  fs.copyFileSync(process.execPath, path.join(newPayload, "pi-flash.exe"));
+  fs.writeFileSync(path.join(newPayload, "marker.txt"), `payload-v${TEST_NEW}\n`);
+  fs.writeFileSync(path.join(newPayload, ".payload-version"), `${TEST_NEW}\n`);
+  // ① 启动：打印真实被 spawn 的 exe 路径（process.execPath）——必须落在新目录
+  r = await nodeRun(launcherOf(prefix5), ["-e", "console.log(process.execPath)"], {
+    PI_FLASH_MIRROR: mirror,
+  });
+  check(`启动的是 ${TEST_NEW} 载荷目录`, r.stdout.includes(`payload-${TEST_NEW}`), r.stdout);
   check(
-    "载荷内容已换新",
-    fs.readFileSync(path.join(payloadDirOf(prefix5), "marker.txt"), "utf8").includes(`payload-v${TEST_NEW}`),
+    `旧载荷目录未被碰（${TEST_OLD}）`,
+    markerOf(payloadDirOf(prefix5)).includes(`payload-v${TEST_OLD}`),
+    markerOf(payloadDirOf(prefix5)),
   );
-  check("标记已清除", !fs.existsSync(path.join(pkg5, "update-staged.json")));
-  check(
-    "staging/old 目录无残留",
-    fs
-      .readdirSync(pkg5)
-      .filter((e) => e.startsWith("payload.stage-") || e.startsWith("payload.old-"))
-      .length === 0,
-  );
-  check("更新日志行打印", /已应用更新/.test(r.stderr), r.stderr);
 
   console.log("\n⑪ 载荷比薄壳新：不降级、不重复下载");
   const t1 = Date.now();
   r = await nodeRun(launcherOf(prefix5), ["--version"], { PI_FLASH_MIRROR: "http://127.0.0.1:1" });
   const ms1 = Date.now() - t1;
   check(`直接启动（${ms1}ms）`, r.status === 0 && ms1 < 5000, r.stderr);
-  check(`载荷未被降级回 ${TEST_OLD}`, stampOf(prefix5) === TEST_NEW, `实际 ${stampOf(prefix5)}`);
+  check(`安装目录载荷未被重下（仍 ${TEST_OLD}）`, stampOf(prefix5) === TEST_OLD, `实际 ${stampOf(prefix5)}`);
   check(
-    `载荷内容保持 ${TEST_NEW}`,
-    fs.readFileSync(path.join(payloadDirOf(prefix5), "marker.txt"), "utf8").includes(`payload-v${TEST_NEW}`),
+    `新载荷目录保持 ${TEST_NEW}`,
+    markerOf(newPayload).includes(`payload-v${TEST_NEW}`),
   );
+  // 半截新载荷（无版本戳）不得被选中
+  fs.rmSync(path.join(newPayload, ".payload-version"));
+  r = await nodeRun(launcherOf(prefix5), ["-e", "console.log(process.execPath)"], {
+    PI_FLASH_MIRROR: "http://127.0.0.1:1",
+  });
+  check("半截载荷目录（无戳）回退旧载荷", !r.stdout.includes("payload-"), r.stdout);
 
   console.log("\n⑫ 版本预取：壳滞后于 GitHub latest → 载荷直接装 latest");
   const prefix6 = path.join(WORK, "prefix6");

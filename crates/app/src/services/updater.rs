@@ -1,25 +1,33 @@
 //! 软件自动更新（081-软件自动更新.md）：揭幕后延迟加载阶段后台检查 GitHub
-//! release → on=后台下载→SHA-256 校验→解压 staging（薄壳启动器下次启动
-//! swap 落位）→inputpanel 右下版本号位提示；off=版本号「x.x.x↑」可点击开
-//! release 页。新版本首启自动开 topbar「更新日志」tab；新会话页版本号
-//! 淡字点击 = 手动开同一页（show_changelog）。
+//! release → on=后台下载→SHA-256 校验→解压落位新载荷目录→inputpanel 右下
+//! 版本号位提示「点击重启更新」；off=版本号「x.x.x↑」可点击开 release 页。
+//! 新版本首启自动开 topbar「更新日志」tab；新会话页版本号淡字点击 = 手动开
+//! 同一页（show_changelog）。
 //!
-//! 落位协议（与 npm 薄壳 080 §3 协作）：
+//! # 落位布局（v0.1.11 改版，见 081 §7）
 //! ```text
-//! <pkg>/payload/                    当前载荷（exe 正在运行，不可整删）
-//! <pkg>/payload.stage-<ver>/        下载解压好的新载荷（含 .payload-version 戳）
-//! <pkg>/update-staged.json          staging 标记 {"version","staged_at"}——原子写
+//! <root>/payload/            安装时的载荷（npm 命令与快捷方式的稳定入口）
+//! <root>/payload-<版本>/      应用内更新落位的新载荷（版本写在目录名里）
 //! ```
-//! swap 执行者有两个（彼时旧进程已退出、目录无锁）：npm 启动器（命令行
-//! `pi-flash` 路径）与 **exe 自交换**（2026-10-14 补：双击/快捷方式直启
-//! exe 不经启动器，staging 永远没人落位、Ready 提示死循环——0.1.6 实测）。
-//! exe 自己也从不碰 payload 目录：它 spawn 一个分离的 powershell helper，
-//! 等本进程退出后完成 rename 并拉起新 exe（见下方「exe 自交换」节）。
+//! `<root>` = exe 所在目录的父目录（npm 薄壳 = `<pkg>`，绿色解压包 = 解压目录）。
 //!
-//! 网络纪律（设计文档定）：检测 timeout 30s，失败重试 2 次、间隔 10 分钟，
-//! 全程后台线程，绝不阻塞主进程；失败静默回落 Idle，下次启动再来。
-//! 下载源与 npm 薄壳同规则：直连优先，开传 3s 平均 <128KB/s 即按序切默认镜像
-//! （PI_FLASH_MIRROR 钉定唯一源 / PI_FLASH_MIRRORS 追加候选）。
+//! **更新的全部动作 = 解压出一个新目录 + 启动时交接**：
+//! 1. 下载解压到 `<root>/<载荷目录名>-<新版本>/`，版本戳 `.payload-version`
+//!    最后写（戳在 = 目录完整）——不碰任何在用文件；
+//! 2. 任何 exe 启动最前处（开窗之前）扫到「版本更高的完整载荷目录」就 spawn
+//!    它的 exe 并退出（交接）。双击旧目录的 exe 也能自动进新版。
+//!
+//! 0.1.6~0.1.10 的「重启后版本没更新→再次下载」死循环全部源自**整目录
+//! rename 撞 Windows 文件句柄**（孤儿 node sidecar / Defender 实时扫描 /
+//! Access denied；helper + 标记 + 重试 + 预热堆到 400 行仍在真机翻车）。
+//! 新方案不 rename、不等旧进程退出、不用 helper、不写标记文件，从根上不存在
+//! 该失败模式；旧版本目录由新版启动时后台清理（rename 当占用探针，删不动就留）。
+//!
+//! # 网络纪律（设计文档定）
+//! 检测 timeout 30s，失败重试 2 次、间隔 10 分钟，全程后台线程，绝不阻塞
+//! 主进程；失败静默回落 Idle，下次启动再来。下载源与 npm 薄壳同规则：直连
+//! 优先，开传 3s 平均 <128KB/s 即按序切默认镜像（`PI_FLASH_MIRROR` 钉定唯一源 /
+//! `PI_FLASH_MIRRORS` 追加候选）。
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -29,8 +37,8 @@ use std::time::Duration;
 
 /// 下载/检查仓库坐标（与 npm/bin/lib.js DIRECT_BASE 同源）。
 const RELEASES_DOWNLOAD_BASE: &str = "https://github.com/danielbill/pi-flash/releases/download";
-/// 默认镜像候选（<base>/v<version>/<asset> 同构布局的前缀加速，2026-10 实测可用，
-/// 与 npm/bin/lib.js DEFAULT_MIRRORS 同表；失效后 PR 更新两处）。
+/// 默认镜像候选（`<base>/v<version>/<asset>` 同构布局的前缀加速，2026-10 实测
+/// 可用，与 npm/bin/lib.js DEFAULT_MIRRORS 同表；失效后 PR 更新两处）。
 const DEFAULT_MIRRORS: [&str; 3] = [
     "https://gh-proxy.com/https://github.com/danielbill/pi-flash/releases/download",
     "https://ghfast.top/https://github.com/danielbill/pi-flash/releases/download",
@@ -47,7 +55,7 @@ const CHECK_TIMEOUT: Duration = Duration::from_secs(30);
 const CHANGELOG_TIMEOUT: Duration = Duration::from_secs(15);
 /// 检测失败重试间隔（设计文档：10 分钟 ×2 次）。
 const RETRY_INTERVAL: Duration = Duration::from_secs(600);
-/// 下载整体预算（zip ≈120MB；连接超时 30s 不封总量）。
+/// 下载整体预算（zip ≈85MB；连接超时 30s 不封总量）。
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 
 // ---------------------------------------------------------------------------
@@ -61,7 +69,7 @@ pub(crate) enum UpdateState {
     Idle,
     /// 后台下载中：转圈 + 「下载 x.x.x 版本中…」（faint）。
     Downloading { version: String },
-    /// 新载荷已就位：待重启（「请重启软件切换至 x.x.x 版本」，青蓝）。
+    /// 新载荷已就位：待重启（「下载完成，点击重启更新」，青蓝）。
     Ready { version: String },
     /// 自动更新 off：有新版（「x.x.x↑」青蓝可点击，开 release 页）。
     Available { version: String },
@@ -107,304 +115,153 @@ pub(crate) fn current_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
-// ---------------------------------------------------------------------------
-// 落位协议：pkg 目录 / staging / 标记
-// ---------------------------------------------------------------------------
-
-/// npm 包目录（exe 在 `<pkg>/payload/pi-flash.exe`）。开发机 cargo run 时
-/// 指向 target/debug 的祖父目录——更新流程在 debug 构建默认关闭，不会写。
-fn pkg_dir() -> Option<PathBuf> {
-    let exe = std::env::current_exe().ok()?;
-    Some(exe.parent()?.parent()?.to_path_buf())
-}
-
-fn staging_dir(pkg: &Path, version: &str) -> PathBuf {
-    pkg.join(format!("payload.stage-{}", version_key_string(version)))
-}
-
-fn marker_path(pkg: &Path) -> PathBuf {
-    pkg.join("update-staged.json")
-}
-
 fn version_key_string(v: &str) -> String {
     v.trim().trim_start_matches('v').to_string()
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct StagedUpdate {
-    pub version: String,
-    pub staged_at: u64,
+/// `x.y.z` 形状（≥2 段、全数字）。用来在目录名里认出「版本」段。
+fn is_version(s: &str) -> bool {
+    let parts: Vec<&str> = s.split('.').collect();
+    parts.len() >= 2
+        && parts
+            .iter()
+            .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
 }
 
-/// 读 staging 标记（结构合法且 staging 目录里有 exe + 吻合的版本戳才算数；
-/// 残缺的当垃圾清掉）。
-pub(crate) fn read_staged_in(pkg: &Path) -> Option<StagedUpdate> {
-    let raw = std::fs::read_to_string(marker_path(pkg)).ok()?;
-    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
-    let version = v
-        .get("version")
-        .and_then(|x| x.as_str())
-        .filter(|s| !s.is_empty())?
-        .to_string();
-    let staged_at = v.get("staged_at").and_then(|x| x.as_u64()).unwrap_or(0);
-    let dir = staging_dir(pkg, &version);
-    let exe_ok = dir.join("pi-flash.exe").is_file();
-    let stamp_ok = std::fs::read_to_string(dir.join(".payload-version"))
-        .map(|s| s.trim() == version)
-        .unwrap_or(false);
-    if exe_ok && stamp_ok {
-        return Some(StagedUpdate { version, staged_at });
+// ---------------------------------------------------------------------------
+// 落位布局：载荷目录 = exe 所在目录；安装根 = 它的父目录
+// ---------------------------------------------------------------------------
+
+/// 平台载荷 exe 相对载荷目录的路径。
+fn exe_rel() -> &'static str {
+    if cfg!(windows) {
+        "pi-flash.exe"
+    } else {
+        "pi-flash.app/Contents/MacOS/pi-flash"
     }
-    // 半截 staging（解压中断/被清）：标记一并作废
-    let _ = std::fs::remove_file(marker_path(pkg));
-    let _ = std::fs::remove_dir_all(&dir);
-    None
 }
 
-/// 原子写标记（tmp + rename）。
-fn write_staged_in(pkg: &Path, staged: &StagedUpdate) -> std::io::Result<()> {
-    let path = marker_path(pkg);
-    let tmp = path.with_extension("json.tmp");
-    let value = serde_json::json!({
-        "version": staged.version,
-        "staged_at": staged.staged_at,
+fn my_exe_dir() -> Option<PathBuf> {
+    std::env::current_exe().ok()?.parent().map(Path::to_path_buf)
+}
+
+/// 载荷目录名剥掉尾部 `-<版本>`：`payload-0.1.11` → `payload`、
+/// `pi-flash-0.1.11` → `pi-flash`、`payload` → `payload`（绿色包同理）。
+fn base_name(dir_name: &str) -> String {
+    match dir_name.rsplit_once('-') {
+        Some((base, tail)) if !base.is_empty() && is_version(tail) => base.to_string(),
+        _ => dir_name.to_string(),
+    }
+}
+
+/// 载荷目录是否完整：目录名以 `-<x.y.z>` 结尾 **且** 版本戳与之一致 **且**
+/// exe 在位。返回该目录承载的版本。戳是解压完成后最后写的，戳吻合 = 完整
+/// （半截下载/中断解压的目录天然落选，无需额外标记文件）。
+fn payload_version_of(dir: &Path) -> Option<String> {
+    let name = dir.file_name()?.to_str()?;
+    let ver = name.rsplit_once('-')?.1;
+    if !is_version(ver) {
+        return None;
+    }
+    let stamp = std::fs::read_to_string(dir.join(".payload-version")).ok()?;
+    (stamp.trim() == ver && dir.join(exe_rel()).is_file()).then(|| ver.to_string())
+}
+
+/// 安装根下所有完整载荷目录：(版本, 目录)。
+fn versioned_payloads(root: &Path) -> Vec<(String, PathBuf)> {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+        .filter_map(|e| payload_version_of(&e.path()).map(|v| (v, e.path())))
+        .collect()
+}
+
+/// 已就位、且确实比 `cur` 新的载荷目录（多份取版本最高者）。
+fn staged_newer(root: &Path, cur: &str) -> Option<(String, PathBuf)> {
+    versioned_payloads(root)
+        .into_iter()
+        .filter(|(v, _)| version_gt(v, cur))
+        .max_by(|a, b| version_key(&a.0).cmp(&version_key(&b.0)))
+}
+
+/// 启动最前处（main 开窗之前）调用：更高版本的完整载荷已就位就 spawn 它的
+/// exe 并返回 true（调用方随即退出，用户只感觉这次启动慢半拍）。顺序：
+/// 先起后台清理线程（删旧版本目录，不阻塞开窗），再判断交接。
+pub(crate) fn handoff_if_newer() -> bool {
+    let Some(me) = my_exe_dir() else {
+        return false;
+    };
+    let Some(root) = me.parent().map(Path::to_path_buf) else {
+        return false;
+    };
+    std::thread::spawn({
+        let root = root.clone();
+        let me = me.clone();
+        move || cleanup_older(root, me)
     });
-    std::fs::write(&tmp, serde_json::to_string(&value).unwrap_or_default())?;
-    std::fs::rename(&tmp, &path)
+    let Some((ver, dir)) = staged_newer(&root, current_version()) else {
+        return false;
+    };
+    let exe = dir.join(exe_rel());
+    eprintln!("[updater] 交接给已就位的新载荷 v{ver}：{}", exe.display());
+    match std::process::Command::new(&exe).spawn() {
+        Ok(_) => true,
+        Err(e) => {
+            eprintln!("[updater] 交接失败（{e}），继续以 v{} 启动", current_version());
+            false
+        }
+    }
 }
 
-/// 启动时初始状态：已有合法 staging（且确实更新）= Ready（不花网络）；
-/// 标记残留但不比当前新 = 垃圾清掉落 Idle。
+/// 启动时初始状态：已有更高版本的完整载荷 = Ready（交接没能拉起来时的兜底，
+/// 提示可点击重试），否则 Idle。
 pub(crate) fn initial_state() -> UpdateState {
-    let Some(pkg) = pkg_dir() else {
+    let Some(me) = my_exe_dir() else {
         return UpdateState::Idle;
     };
-    match read_staged_in(&pkg) {
-        Some(s) if version_gt(&s.version, current_version()) => UpdateState::Ready {
-            version: s.version,
-        },
-        Some(_) => {
-            let _ = std::fs::remove_file(marker_path(&pkg));
-            UpdateState::Idle
-        }
+    let Some(root) = me.parent() else {
+        return UpdateState::Idle;
+    };
+    match staged_newer(root, current_version()) {
+        Some((version, _)) => UpdateState::Ready { version },
         None => UpdateState::Idle,
     }
 }
 
-// ---------------------------------------------------------------------------
-// exe 自交换（081 §7，2026-10-14）：swap 执行点上移到 exe 自己
-// ---------------------------------------------------------------------------
-
-/// 启动最前处（main 开窗之前）调用：有合法 staging 标记且版本确实更新 =
-/// 该让位给 swap helper。标记版本不比当前新（残留垃圾）→ 清标记落 Idle。
-pub(crate) fn startup_swap_pending() -> bool {
-    let Some(pkg) = pkg_dir() else {
-        return false;
+/// 后台清理：删掉比当前版本旧的版本化载荷目录，以及超过 1 小时未更新的
+/// `update.tmp-*` 半截下载。删目录前先 `rename` 当**占用探针**——目录里有
+/// 进程在用的文件时 Windows rename 必败（0.1.6~0.1.10 的死循环正是这条
+/// 语义造成的），失败即跳过，绝不删活目录；下次启动再试。全程忽略错误。
+fn cleanup_older(root: PathBuf, me: PathBuf) {
+    for (ver, dir) in versioned_payloads(&root) {
+        if dir == me || !version_gt(current_version(), &ver) {
+            continue;
+        }
+        let trash = root.join(format!("update.tmp-del-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&trash);
+        if std::fs::rename(&dir, &trash).is_ok() {
+            let _ = std::fs::remove_dir_all(&trash);
+        }
+    }
+    let Ok(entries) = std::fs::read_dir(&root) else {
+        return;
     };
-    match read_staged_in(&pkg) {
-        Some(s) if version_gt(&s.version, current_version()) => true,
-        Some(_) => {
-            let _ = std::fs::remove_file(marker_path(&pkg));
-            false
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.starts_with("update.tmp-") {
+            continue;
         }
-        None => false,
-    }
-}
-
-/// powershell swap 脚本（swap 细节照抄启动器 applyStagedUpdate，npm/bin/lib.js）：
-/// ① 等目标进程退出（≤15s，超时全盘放弃）→ ①.5 杀命令行含 pkg 路径的孤儿
-/// node sidecar（宿主退出不跟死、句柄锁死目录 rename——0.1.8 实录自交换
-/// 死循环的占用源）→ ② rename payload→old（重试；耗尽 = 外部占用，放弃并
-/// 消费标记）→ ③ rename staging→payload（**同样重试**——0.1.10 实录：
-/// staging 是刚解压完的 1.5 万文件，Defender 实时扫描几十秒，旧版 ③ 无重试
-/// 一拍即死，用户「下载完立即点重启」每轮都撞进扫描窗口 = 无限重下；失败
-/// 把 old 搬回并消费标记；payload 缺失 = 上次半途崩，搬回 old、标记留待
-/// 下次）→ ④ 拉起载荷 exe（沿用原工作目录；swap 成败都拉——用户永远有
-/// 窗口，只是版本新旧之别）→ ⑤ 最后删 old。
-/// 全程写 `pkg\update-swap.log`：helper 是无窗口分离进程，落文件是唯一
-/// 可观测手段——0.1.10 死循环靠安装目录现场考古才定位，日志一锤定音。
-/// 占位符用唯一 token replace 而非 format!，避开 PS 花括号转义；单引号路径
-/// 内的单引号翻倍转义。exe_name/retry 参数化供测试注入假 exe、短重试窗口。
-/// 占位 token 取真实路径不可能出现的形状：多轮 replace 时先前注入的路径
-/// 不会再被后续 token 命中。
-fn swap_script(
-    target_pid: u32,
-    pkg: &Path,
-    stage: &Path,
-    work: &Path,
-    exe_name: &str,
-    retry_n: u32,
-    retry_ms: u32,
-) -> String {
-    let esc = |s: &Path| s.to_string_lossy().replace('\'', "''");
-    let mut s = String::from(
-        r#"$ErrorActionPreference = 'SilentlyContinue'
-$target = __PF_PID__
-$pkg    = '__PF_PKG__'
-$stage  = '__PF_STAGE__'
-$work   = '__PF_WORK__'
-$log = Join-Path $pkg 'update-swap.log'
-function Log([string]$msg) {
-    try {
-        $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss.fff')
-        Add-Content -LiteralPath $log -Value ("[" + $ts + "] " + $msg) -Encoding UTF8 -ErrorAction Stop
-    } catch {}
-}
-Log ("---- swap start pid=" + $target + " stage=" + $stage)
-# ① 等旧进程退出（≤15s；超时放弃，什么都不动）
-$alive = $true
-for ($i = 0; $i -lt 150; $i++) {
-    $alive = $null -ne (Get-Process -Id $target -ErrorAction SilentlyContinue)
-    if (-not $alive) { break }
-    Start-Sleep -Milliseconds 100
-}
-if ($alive) { Log "① 目标进程 15s 未退出，放弃"; exit 1 }
-# ①.5 清理钉死 pkg 目录的孤儿 sidecar：node.exe 命令行含 pkg 路径 = 本应用
-# 的 pi RPC / 微信桥 sidecar（宿主退出不等它们，句柄锁死目录 rename——0.1.8
-# 实录自交换死循环的占用源）。只认 node.exe，别的进程不碰。
-Get-CimInstance Win32_Process -Filter "Name='node.exe'" |
-    Where-Object { $_.CommandLine -like ('*' + $pkg + '*') } |
-    ForEach-Object { Log ("①.5 杀 sidecar node pid=" + $_.ProcessId); Stop-Process -Id $_.ProcessId -Force }
-Start-Sleep -Milliseconds 300
-# ② swap 上半场：payload → old。在则 rename（重试：杀完 sidecar 后仍被挡 =
-# 杀软扫描类外部占用）；重试耗尽 = 被占死，本次放弃且消费标记
-$payload = Join-Path $pkg 'payload'
-$oldName = 'payload.old-' + (Get-Date -Format 'yyyyMMddHHmmssfff')
-$old = Join-Path $pkg $oldName
-$moved = $false
-$blocked = $false
-$failClear = $false
-if (Test-Path -LiteralPath $payload) {
-    for ($i = 0; $i -lt __PF_RETRY_N__; $i++) {
-        try {
-            Rename-Item -LiteralPath $payload -NewName $oldName -ErrorAction Stop
-            $moved = $true; break
-        } catch {
-            Log ("② payload→old 第" + ($i + 1) + "次: " + $_.Exception.Message)
-            Start-Sleep -Milliseconds __PF_RETRY_MS__
+        let stale = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .map(|t| t.elapsed().map(|a| a > Duration::from_secs(3600)).unwrap_or(true))
+            .unwrap_or(true);
+        if stale {
+            let _ = std::fs::remove_dir_all(entry.path());
         }
-    }
-    if (-not $moved) { $blocked = $true; $failClear = $true; Log "② 重试耗尽，blocked" }
-} else {
-    Log "② payload 不在（半途崩?）"
-}
-# ③ swap 下半场：staging → payload，**带重试**——staging 刚解压完正被杀软
-# 实时扫描（0.1.10 实录：扫描几十秒，一拍即死 = 无限重下死循环）。失败把
-# old 搬回并消费标记；payload 缺失（上次半途崩）把 old 搬回、标记留着
-$swapped = $false
-if ($moved) {
-    for ($i = 0; $i -lt __PF_RETRY_N__; $i++) {
-        try {
-            Rename-Item -LiteralPath $stage -NewName 'payload' -ErrorAction Stop
-            $swapped = $true; break
-        } catch {
-            Log ("③ staging→payload 第" + ($i + 1) + "次: " + $_.Exception.Message)
-            Start-Sleep -Milliseconds __PF_RETRY_MS__
-        }
-    }
-    if (-not $swapped) {
-        Log "③ 重试耗尽，回滚 old→payload"
-        try {
-            Rename-Item -LiteralPath $old -NewName 'payload' -ErrorAction Stop
-            Log "③ 回滚完成"
-        } catch {
-            Log ("③ 回滚失败: " + $_.Exception.Message)
-        }
-        $failClear = $true
-    }
-} elseif (-not $blocked) {
-    $prev = Get-ChildItem -LiteralPath $pkg -Directory -Filter 'payload.old-*' | Select-Object -First 1
-    if ($prev) {
-        Log ("② 前次残留 old 回搬: " + $prev.Name)
-        Rename-Item -LiteralPath $prev.FullName -NewName 'payload' | Out-Null
-    }
-}
-# 标记生命周期：成功删除；rename 被占死/下半场失败也删除（0.1.8 实录死循环
-# 修复——标记残留时，④ 拉起的旧 exe 看到合法更新 staging 又开一轮，无限自旋）
-if ($swapped -or $failClear) {
-    Remove-Item -LiteralPath (Join-Path $pkg 'update-staged.json') -Force
-}
-# ④ 拉起载荷 exe（swap 成败都拉，应用永远打得开）
-$newExe = Join-Path $payload '__PF_EXE__'
-if (Test-Path -LiteralPath $newExe) {
-    if (Test-Path -LiteralPath $work) {
-        Start-Process -FilePath $newExe -WorkingDirectory $work
-    } else {
-        Start-Process -FilePath $newExe
-    }
-    Log "④ 已拉起 exe"
-} else {
-    Log ("④ exe 缺失，未拉起: " + $newExe)
-}
-# ⑤ 最后删 old（此刻 payload 已就位，删失败无碍）
-if (Test-Path -LiteralPath $old) { Remove-Item -LiteralPath $old -Recurse -Force }
-if ($swapped) { Log "swap OK"; exit 0 } else { Log "swap FAIL"; exit 1 }
-"#,
-    );
-    let pid = target_pid.to_string();
-    for (ph, val) in [
-        ("__PF_PID__", &pid),
-        ("__PF_PKG__", &esc(pkg)),
-        ("__PF_STAGE__", &esc(stage)),
-        ("__PF_WORK__", &esc(work)),
-        ("__PF_EXE__", &exe_name.replace('\'', "''")),
-        ("__PF_RETRY_N__", &retry_n.to_string()),
-        ("__PF_RETRY_MS__", &retry_ms.to_string()),
-    ] {
-        s = s.replace(ph, val);
-    }
-    s
-}
-
-/// 脚本走 -EncodedCommand（UTF-16LE base64）：绕开引号/换行在命令行上的
-/// 二次解释，路径含任意字符都安全。
-#[cfg(windows)]
-fn encode_ps(script: &str) -> String {
-    use base64::Engine as _;
-    let utf16le: Vec<u8> = script
-        .encode_utf16()
-        .flat_map(|u| u.to_le_bytes())
-        .collect();
-    base64::engine::general_purpose::STANDARD.encode(utf16le)
-}
-
-/// spawn 分离 swap helper（等本进程退出后 swap + 拉起新 exe）。helper 必须
-/// 是系统二进制：新旧 exe 都躺在待 rename 的目录里，运行中的镜像会锁死目录。
-/// false = 没起来（读不到合法标记 / powershell 缺失）——调用方继续按旧版跑。
-pub(crate) fn spawn_swap_helper() -> bool {
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        // CREATE_NO_WINDOW：不闪黑框。helper 与本进程无管道相连，本进程
-        // 随后退出不影响它。
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        let Some(pkg) = pkg_dir() else {
-            return false;
-        };
-        let Some(staged) = read_staged_in(&pkg) else {
-            return false;
-        };
-        let stage = staging_dir(&pkg, &staged.version);
-        let work = std::env::current_dir().unwrap_or_else(|_| pkg.clone());
-        // ②③ 各重试 120×500ms = 60s：0.1.10 实录 Defender 扫刚解压的 1.5 万
-        // 文件要几十秒，5s 窗口每轮必撞；60s 熬过扫描期（熬不过 = 真占用，
-        // 回滚旧版 + 消费标记 + 落日志）
-        let script = swap_script(std::process::id(), &pkg, &stage, &work, "pi-flash.exe", 120, 500);
-        std::process::Command::new("powershell.exe")
-            .args([
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-EncodedCommand",
-                &encode_ps(&script),
-            ])
-            .creation_flags(CREATE_NO_WINDOW)
-            .spawn()
-            .is_ok()
-    }
-    #[cfg(not(windows))]
-    {
-        false
     }
 }
 
@@ -494,7 +351,7 @@ fn fetch_release_body(version: &str) -> Result<String, String> {
 }
 
 // ---------------------------------------------------------------------------
-// 下载 → 校验 → 解压 staging
+// 下载 → 校验 → 落位
 // ---------------------------------------------------------------------------
 
 fn asset_name(version: &str) -> String {
@@ -543,8 +400,7 @@ fn safe_zip_path(dest: &Path, name: &str) -> Option<PathBuf> {
 /// 并行解压。条目互不依赖，按原子下标工作窃取；Windows 瓶颈是 Defender
 /// 对每个新建文件的实时扫描，多线程摊薄单文件延迟（单线程 4 万小文件
 /// 分钟级，并行后 10s 上下）。进度写 EXTRACT_PCT 供版本号位读取。
-/// 任一 Worker 出错即置 failed 停止取活，返回首个错误（与旧单线程语义一致：
-/// 一处失败整个解压失败）。
+/// 任一 Worker 出错即置 failed 停止取活，返回首个错误。
 fn extract_zip(zip_path: &Path, dest: &Path) -> Result<(), String> {
     let f = std::fs::File::open(zip_path).map_err(|e| format!("{e}"))?;
     let total = {
@@ -647,7 +503,7 @@ fn extract_zip(zip_path: &Path, dest: &Path) -> Result<(), String> {
 /// 找到含 pi-flash.exe 的那一层。
 fn locate_content_root(extract_dir: &Path) -> Option<PathBuf> {
     for root in [extract_dir.join("pi-flash"), extract_dir.to_path_buf()] {
-        if root.join("pi-flash.exe").is_file() {
+        if root.join(exe_rel()).is_file() {
             return Some(root);
         }
     }
@@ -679,8 +535,7 @@ fn set_download_percent(pct: Option<u8>) {
 
 /// 流水线相位：版本号位的进度通道二选一（下载 NN% / 解压 NN%）。
 /// 解压此前无通道，100% 后单线程解压 4 万小文件（Defender 逐个实时扫描）
-/// 要分钟级，UI 只能干等——0.1.8 用户实录「下载完卡一分钟」。相位 + 解压
-/// 百分比让等待显形，并行解压让等待变短。
+/// 要分钟级，UI 只能干等——0.1.8 用户实录「下载完卡一分钟」。
 pub(crate) const PHASE_IDLE: u8 = 0;
 pub(crate) const PHASE_DOWNLOAD: u8 = 1;
 pub(crate) const PHASE_EXTRACT: u8 = 2;
@@ -790,14 +645,7 @@ fn download_and_hash_cfg(
 /// 按候选源逐个试下载（每源一次，测速不过/网络错误都换下一个），全灭才报错。
 /// 返回（zip 的 SHA-256，命中源 base——校验和钉官方优先时兜底用）。
 fn download_mirrored(asset: &str, dest: &Path, ver: &str) -> Result<(String, String), String> {
-    download_mirrored_cfg(
-        asset,
-        dest,
-        ver,
-        &download_bases(),
-        speed_probe(),
-        min_speed_bps(),
-    )
+    download_mirrored_cfg(asset, dest, ver, &download_bases(), speed_probe(), min_speed_bps())
 }
 
 fn download_mirrored_cfg(
@@ -834,89 +682,26 @@ fn fetch_text(url: &str) -> Result<String, String> {
     resp.into_string().map_err(|e| format!("{e}"))
 }
 
-/// 清残留（080 §3.3）：`update.tmp-<pid>` 超过 1 小时未更新即删——活跃下载
-/// 持续写盘 mtime 常新，停更 1 小时 = 进程已死；`payload.old-*` 为 swap 中断
-/// 遗留，无条件删；`payload.stage-*` 只保留标记指向的那一个，其余删——③
-/// 失败回滚后标记已消费，staging 留在原地成 82MB 孤儿（0.1.10 实录）。npm
-/// 薄壳侧另有按 pid 精确判断的清理，这里只做兜底。
-fn cleanup_stale_staging(pkg: &Path) {
-    const STALE: Duration = Duration::from_secs(3600);
-    let Ok(entries) = std::fs::read_dir(pkg) else {
-        return;
-    };
-    // 标记解析出版本 V → 只有 stage-V 是「换装排队中」，其余 stage-* 都是
-    // 历史垃圾。调用点在 stage_update_in 起点，与本进程下载无并发；他实例
-    // 刚 rename staging 还没写标记的毫秒窗口理论可误删，失败模式 = 安全重下。
-    let marker_version: Option<String> = std::fs::read_to_string(marker_path(pkg))
-        .ok()
-        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
-        .and_then(|v| v.get("version").and_then(|x| x.as_str()).map(str::to_string));
-    for entry in entries.flatten() {
-        let file_name = entry.file_name();
-        let Some(name) = file_name.to_str() else {
-            continue;
-        };
-        if let Some(ver) = name.strip_prefix("payload.stage-") {
-            if marker_version.as_deref() != Some(ver) {
-                let _ = std::fs::remove_dir_all(entry.path());
-            }
-            continue;
-        }
-        let stale_tmp = name.starts_with("update.tmp-")
-            && entry
-                .metadata()
-                .and_then(|m| m.modified())
-                .map(|mtime| mtime.elapsed().map(|age| age > STALE).unwrap_or(true))
-                .unwrap_or(true);
-        if stale_tmp || name.starts_with("payload.old-") {
-            let _ = std::fs::remove_dir_all(entry.path());
-        }
-    }
-}
-
-/// 预热 staging（2026-10-16 实录，所有者定夺「扫描就该在安装时完成」）：
-/// 逐文件 open+read 首字节——杀软实时扫描在文件首次打开时同步完成，把
-/// 扫描成本吃进「解压安装中…」阶段。否则扫描窗口留在标记写好之后：用户
-/// 解压完立即点重启，swap ③ rename staging 撞上目录树锁（0.1.10 实录 5 轮
-/// 全败 = 无限重下）。预热完 staging 是「冷」目录，swap 秒过；预热本身
-/// 失败不拦安装（无杀软时 open 无害，有杀软时这一步躲不掉只是换个时点）。
-fn warm_up_staging(dir: &Path) {
-    let mut stack = vec![dir.to_path_buf()];
-    while let Some(d) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&d) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let p = entry.path();
-            if p.is_dir() {
-                stack.push(p);
-            } else if entry.metadata().map(|m| m.len() > 0).unwrap_or(false) {
-                // open + 读首字节即触发杀软同步扫描；内容不校验（读取本身
-                // 就是目的）。0 字节文件跳过——没有可扫的页。
-                if let Ok(mut f) = std::fs::File::open(&p) {
-                    let mut b = [0u8; 1];
-                    let _ = std::io::Read::read_exact(&mut f, &mut b);
-                }
-            }
-        }
-    }
-}
-
-/// 下载 + SHA-256 校验（sidecar → SHA256SUMS 兜底，080 §3.2 同序）+ 解压 +
-/// rename 成 staging + 写标记。成功返回版本号。
+/// 下载 + SHA-256 校验（sidecar → SHA256SUMS 兜底，080 §3.2 同序）+ 解压到
+/// 新的载荷目录 `<root>/<基名>-<版本>/`（版本戳最后写）。成功返回版本号。
+/// 落位目标就是「更新后要运行的目录」——没有 rename、没有标记文件。
 fn stage_update(rel: &ReleaseInfo) -> Result<String, String> {
-    let pkg = pkg_dir().ok_or("无法定位安装目录")?;
-    stage_update_in(&pkg, rel)
+    let me = my_exe_dir().ok_or("无法定位当前载荷目录")?;
+    stage_update_in(&me, rel)
 }
 
-/// 测试可注入版（update_pipeline_end_to_end / bad_hash 用例）：pkg 显式传入
-/// ——测试进程的 pkg_dir() 指向 target/，不隔离。下载源仍走 download_bases()
-/// （测试用 PI_FLASH_MIRROR 定向本地假源）。
-fn stage_update_in(pkg: &Path, rel: &ReleaseInfo) -> Result<String, String> {
-    std::fs::create_dir_all(pkg).map_err(|e| format!("{e}"))?;
-    cleanup_stale_staging(pkg);
-    let ver = rel.version.clone();
-    let tmp = pkg.join(format!("update.tmp-{}", std::process::id()));
+/// 显式传入**当前载荷目录**的版本（测试注入用：测试进程的 current_exe 指向
+/// target/，不隔离）。下载源仍走 download_bases()（测试用 PI_FLASH_MIRROR
+/// 定向本地假源）。
+fn stage_update_in(me: &Path, rel: &ReleaseInfo) -> Result<String, String> {
+    let root = me.parent().ok_or("无法定位安装根目录")?.to_path_buf();
+    let ver = version_key_string(&rel.version);
+    let stem = base_name(&me.file_name().unwrap_or_default().to_string_lossy());
+    let target = root.join(format!("{stem}-{ver}"));
+    if target == me {
+        return Err(format!("目标目录就是当前运行目录（v{ver}），拒绝覆盖"));
+    }
+    let tmp = root.join(format!("update.tmp-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);
     std::fs::create_dir_all(tmp.join("x")).map_err(|e| format!("{e}"))?;
 
@@ -957,18 +742,14 @@ fn stage_update_in(pkg: &Path, rel: &ReleaseInfo) -> Result<String, String> {
 
         set_phase(PHASE_EXTRACT);
         extract_zip(&zip_path, &tmp.join("x"))?;
-        let root = locate_content_root(&tmp.join("x"))
+        let content = locate_content_root(&tmp.join("x"))
             .ok_or("载荷结构异常：找不到 pi-flash.exe")?;
 
-        // rename 成 staging（同卷原子）；旧 staging 先清
-        let staging = staging_dir(pkg, &ver);
-        let _ = std::fs::remove_dir_all(&staging);
-        std::fs::rename(&root, &staging).map_err(|e| format!("staging 落位失败：{e}"))?;
-        std::fs::write(staging.join(".payload-version"), format!("{ver}\n"))
-            .map_err(|e| format!("{e}"))?;
-        // 标记写好前预热（杀软扫描吃进安装时，2026-10-16 实录）：staging 冷了
-        // 才写标记——标记即「可以点重启了」的承诺
-        warm_up_staging(&staging);
+        // 上一轮半截的同版本目录先清（解压中断/被清），再 rename 成最终目录
+        let _ = std::fs::remove_dir_all(&target);
+        std::fs::rename(&content, &target).map_err(|e| format!("载荷落位失败：{e}"))?;
+        std::fs::write(target.join(".payload-version"), format!("{ver}\n"))
+            .map_err(|e| format!("写版本戳失败：{e}"))?;
 
         // 更新日志缓存（重启后的更新日志页直接读本地）
         if !rel.body.is_empty() {
@@ -979,18 +760,6 @@ fn stage_update_in(pkg: &Path, rel: &ReleaseInfo) -> Result<String, String> {
                 let _ = std::fs::write(&p, &rel.body);
             }
         }
-
-        write_staged_in(
-            pkg,
-            &StagedUpdate {
-                version: ver.clone(),
-                staged_at: std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs(),
-            },
-        )
-        .map_err(|e| format!("写更新标记失败：{e}"))?;
         Ok(())
     })();
 
@@ -1018,10 +787,7 @@ fn write_last_seen(version: &str) {
     if let Some(parent) = p.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let _ = pi_link::config::write_json(
-        &p,
-        &serde_json::json!({ "last_seen_version": version }),
-    );
+    let _ = pi_link::config::write_json(&p, &serde_json::json!({ "last_seen_version": version }));
 }
 
 fn read_changelog_cache(version: &str) -> Option<String> {
@@ -1127,7 +893,8 @@ impl crate::Chat {
     /// 打开（或聚焦）topbar「更新日志」tab。
     pub(crate) fn open_changelog_tab(&mut self, cx: &mut gpui::Context<Self>) {
         match self
-            .ws.panel_tabs
+            .ws
+            .panel_tabs
             .iter()
             .position(|t| matches!(t, crate::PanelTab::Changelog))
         {
@@ -1142,23 +909,33 @@ impl crate::Chat {
         cx.notify();
     }
 
-    /// Ready 提示点击（「下载完成，点击重启更新」）：persist UI → spawn
-    /// swap helper（等本进程退出后落位新载荷并拉起新 exe）→ 本进程退出。
-    /// helper 起不来就原地不动，提示留给下次启动的自动交接。
+    /// Ready 提示点击（「下载完成，点击重启更新」）：persist UI → spawn 新版
+    /// 载荷目录里的 exe（新目录，零锁）→ 本进程退出。spawn 不起来就原地不动，
+    /// 提示留给下次启动的交接。
     pub(crate) fn restart_to_apply_update(&mut self, cx: &mut gpui::Context<Self>) {
         self.persist_ui();
-        if spawn_swap_helper() {
+        let Some(me) = my_exe_dir() else { return };
+        let Some(root) = me.parent() else { return };
+        let Some((version, dir)) = staged_newer(root, current_version()) else {
+            // 目录已被清（异常）→ 回落 Idle，下次检查重下
+            self.aux.update = UpdateState::Idle;
+            cx.notify();
+            return;
+        };
+        let exe = dir.join(exe_rel());
+        eprintln!("[updater] 重启切换到 v{version}：{}", exe.display());
+        if std::process::Command::new(&exe).spawn().is_ok() {
             cx.quit();
         }
     }
 
-    /// 后台检查更新（on=下载 staging，off=只提示 ↑）。检测失败重试 2 次、
-    /// 间隔 10 分钟（设计文档定），全程不阻塞主进程，最终失败静默。
+    /// 后台检查更新（on=下载落位新载荷目录，off=只提示 ↑）。检测失败重试 2
+    /// 次、间隔 10 分钟（设计文档定），全程不阻塞主进程，最终失败静默。
     pub(crate) fn spawn_update_check(&mut self, cx: &mut gpui::Context<Self>) {
         if !Self::checks_enabled() {
             return;
         }
-        // 已有 staging：不花网络，等重启
+        // 已有就位的新载荷：不花网络，等重启
         if matches!(self.aux.update, UpdateState::Ready { .. }) {
             return;
         }
@@ -1166,10 +943,7 @@ impl crate::Chat {
             // ① 检测（3 次尝试，间隔 10 分钟）
             let mut latest: Option<ReleaseInfo> = None;
             for attempt in 0..3 {
-                let r = cx
-                    .background_executor()
-                    .spawn(async { fetch_latest() })
-                    .await;
+                let r = cx.background_executor().spawn(async { fetch_latest() }).await;
                 match r {
                     Ok(rel) => {
                         latest = Some(rel);
@@ -1200,7 +974,7 @@ impl crate::Chat {
                 });
                 return;
             }
-            // ③ 后台下载 → staging
+            // ③ 后台下载 → 落位新载荷目录
             let _ = this.update(cx, |c, cx| {
                 c.aux.update = UpdateState::Downloading {
                     version: rel.version.clone(),
@@ -1262,6 +1036,28 @@ fn open_url(url: &str) {
 mod tests {
     use super::*;
 
+    /// 独立临时目录（测试进程共用 target/，不能污染真安装根）。
+    fn temp_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "pf-upd-{name}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .subsec_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// 造一个「完整载荷目录」：exe（假文件）+ 版本戳。
+    fn fake_payload(dir: &Path, ver: &str) {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(dir.join(exe_rel()), b"fake-exe").unwrap();
+        std::fs::write(dir.join(".payload-version"), format!("{ver}\n")).unwrap();
+    }
+
     #[test]
     fn version_compare() {
         assert!(version_gt("1.2.3", "1.2.2"));
@@ -1272,6 +1068,54 @@ mod tests {
         assert!(!version_gt("1.2", "1.2.0"), "缺段按 0");
         assert!(!version_gt("0.1.0", "0.2.0"));
         assert!(!version_gt("abc", "0.0.1"), "非数段按 0");
+    }
+
+    #[test]
+    fn base_name_strips_version_suffix() {
+        assert_eq!(base_name("payload-0.1.11"), "payload");
+        assert_eq!(base_name("pi-flash-0.1.11"), "pi-flash");
+        assert_eq!(base_name("payload"), "payload");
+        assert_eq!(base_name("pi-flash"), "pi-flash", "绿色包基名不能被吃掉");
+        assert_eq!(base_name("my-app"), "my-app", "非数字尾巴不算版本");
+        assert_eq!(base_name("pi-flash-0.1"), "pi-flash");
+    }
+
+    /// 布局核心：目录名带版本 + 戳吻合 + exe 在位 = 可交接的新载荷；半截目录、
+    /// 名字与戳不符、非版本目录一律落选。
+    #[test]
+    fn staged_newer_picks_complete_payload_only() {
+        let root = temp_dir("layout");
+        std::fs::create_dir_all(root.join("payload")).unwrap();
+        fake_payload(&root.join("payload-0.1.10"), "0.1.10");
+        // 半截：目录名对、戳缺失
+        let broken = root.join("payload-0.1.11");
+        std::fs::create_dir_all(&broken).unwrap();
+        std::fs::write(broken.join(exe_rel()), b"fake-exe").unwrap();
+        // 名字与戳不符
+        fake_payload(&root.join("payload-0.1.12"), "0.1.10");
+
+        let got = staged_newer(&root, "0.1.9").unwrap();
+        assert_eq!(got.0, "0.1.10", "只有完整目录算数");
+        assert_eq!(got.1, root.join("payload-0.1.10"));
+        assert!(staged_newer(&root, "0.1.10").is_none(), "同版本不算更新");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// 清理：只删比自己旧的完整载荷目录，且不碰基名无版本的安装目录 /
+    /// 自己所在目录 / 更高的新载荷。
+    #[test]
+    fn cleanup_removes_only_older_payloads() {
+        let root = temp_dir("cleanup");
+        std::fs::create_dir_all(root.join("payload")).unwrap();
+        fake_payload(&root.join("payload-0.1.9"), "0.1.9");
+        fake_payload(&root.join("payload-0.1.10"), "0.1.10");
+        fake_payload(&root.join("payload-0.1.11"), "0.1.11");
+        cleanup_older(root.clone(), root.join("payload-0.1.10"));
+        assert!(!root.join("payload-0.1.9").exists(), "旧版本目录被清");
+        assert!(root.join("payload-0.1.10").exists(), "自己不动");
+        assert!(root.join("payload-0.1.11").exists(), "更新的不动");
+        assert!(root.join("payload").exists(), "安装目录（无版本）不动");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -1295,494 +1139,6 @@ mod tests {
         assert!(safe_zip_path(dest, "a/../../etc").is_none(), "上跳拒绝");
         assert!(safe_zip_path(dest, "C:\\evil").is_none(), "盘符拒绝");
         assert!(safe_zip_path(dest, "a/./b").is_some(), "点段折叠");
-    }
-
-    #[test]
-    fn staged_marker_roundtrip() {
-        let dir = std::env::temp_dir().join(format!(
-            "pf-updater-test-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .subsec_nanos()
-        ));
-        let pkg = dir.join("pkg");
-        std::fs::create_dir_all(staging_dir(&pkg, "0.1.2")).unwrap();
-        std::fs::write(staging_dir(&pkg, "0.1.2").join("pi-flash.exe"), b"x").unwrap();
-        std::fs::write(staging_dir(&pkg, "0.1.2").join(".payload-version"), "0.1.2\n").unwrap();
-
-        // 半截 staging：无标记 → None
-        assert!(read_staged_in(&pkg).is_none());
-
-        write_staged_in(
-            &pkg,
-            &StagedUpdate {
-                version: "0.1.2".into(),
-                staged_at: 42,
-            },
-        )
-        .unwrap();
-        let staged = read_staged_in(&pkg).unwrap();
-        assert_eq!(staged.version, "0.1.2");
-
-        // staging 目录被清 → 标记作废并清理
-        std::fs::remove_dir_all(staging_dir(&pkg, "0.1.2")).unwrap();
-        assert!(read_staged_in(&pkg).is_none());
-        assert!(!marker_path(&pkg).exists(), "残缺标记一并清除");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    // --- exe 自交换（081 §7）：脚本生成 + 真 powershell 端到端 --------------
-
-    #[test]
-    fn swap_script_build() {
-        let script = swap_script(
-            4242,
-            Path::new("C:\\app pi'flash"),
-            Path::new("C:\\app pi'flash\\payload.stage-0.2.0"),
-            Path::new("C:\\my work"),
-            "pi-flash.exe",
-            120,
-            500,
-        );
-        assert!(script.contains("$target = 4242"));
-        assert!(script.contains("'C:\\app pi''flash'"), "路径内单引号翻倍转义");
-        assert!(!script.contains("__PF_"), "占位符全部替换");
-        assert!(script.contains("Win32_Process"), "①.5 孤儿 sidecar 清理在脚本里");
-        assert!(script.contains("$failClear"), "失败消费标记（0.1.8 死循环修复）");
-        assert!(script.contains("update-swap.log"), "全程落日志（0.1.10 考古教训）");
-    }
-
-    /// 真 powershell 跑通 swap 全流程（假 exe）：等真退出的进程 → payload
-    /// 翻转成新版 → 标记/staging/old 全清。这是 0.1.6「双击直启 Ready 死
-    /// 循环」bug 的修复主路径，必须真机绿。
-    #[cfg(windows)]
-    #[test]
-    fn swap_helper_end_to_end() {
-        let dir = std::env::temp_dir().join(format!(
-            "pf-swap-e2e-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .subsec_nanos()
-        ));
-        let pkg = dir.join("pkg");
-        let payload = pkg.join("payload");
-        std::fs::create_dir_all(payload.join("vendor")).unwrap();
-        std::fs::write(payload.join("pi-flash.exe"), b"old").unwrap();
-        std::fs::write(payload.join(".payload-version"), "0.1.5\n").unwrap();
-        let stage = staging_dir(&pkg, "0.1.6");
-        std::fs::create_dir_all(&stage).unwrap();
-        std::fs::write(stage.join("pi-flash.exe"), b"new").unwrap();
-        std::fs::write(stage.join(".payload-version"), "0.1.6\n").unwrap();
-        write_staged_in(
-            &pkg,
-            &StagedUpdate {
-                version: "0.1.6".into(),
-                staged_at: 1,
-            },
-        )
-        .unwrap();
-
-        // 已退出的真进程 pid：helper 的等退循环立刻通过
-        let mut dying = std::process::Command::new("cmd").args(["/C", "exit"]).spawn().unwrap();
-        let pid = dying.id();
-        dying.wait().unwrap();
-
-        let script = swap_script(pid, &pkg, &stage, &dir, "pi-flash.exe", 10, 100);
-        let out = std::process::Command::new("powershell.exe")
-            .args([
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-EncodedCommand",
-                &encode_ps(&script),
-            ])
-            .output()
-            .unwrap();
-        assert!(
-            out.status.success(),
-            "helper 应报成功：{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-
-        // 载荷已是新版；staging / 标记 / old 全清
-        assert_eq!(
-            std::fs::read_to_string(payload.join(".payload-version")).unwrap(),
-            "0.1.6\n"
-        );
-        assert!(!stage.exists(), "staging 应已翻转为 payload");
-        assert!(read_staged_in(&pkg).is_none(), "标记应已清除");
-        let leftovers: Vec<_> = std::fs::read_dir(&pkg)
-            .unwrap()
-            .flatten()
-            .filter(|e| e.file_name().to_string_lossy().starts_with("payload.old-"))
-            .collect();
-        assert!(leftovers.is_empty(), "old 目录应已删除：{leftovers:?}");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// 崩溃恢复：swap 半途崩过（payload 不在、payload.old-* 遗留、标记还在）
-    /// → helper 把 old 搬回、不动标记、仍尝试拉起（应用打得开）、报失败。
-    /// 注：「目录 rename 被占」此前以为不可达，0.1.8 实录可达（孤儿 node
-    /// sidecar 句柄钉死 payload 目录，且 5s 重试熬不过不死的进程）——被占死
-    /// 路径现在消费标记防自旋，见 swap_helper_blocked_rename_clears_marker；
-    /// 本用例的「payload 缺失」分支无 rename 可挡，标记仍留待下次。
-    #[cfg(windows)]
-    #[test]
-    fn swap_helper_recover_after_crash() {
-        let dir = std::env::temp_dir().join(format!(
-            "pf-swap-rec-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .subsec_nanos()
-        ));
-        let pkg = dir.join("pkg");
-        let payload = pkg.join("payload");
-        // 崩溃现场：payload 已被 rename 成 old，staging 与标记原样
-        let old = pkg.join("payload.old-20261014");
-        std::fs::create_dir_all(&old).unwrap();
-        std::fs::write(old.join("pi-flash.exe"), b"old").unwrap();
-        std::fs::write(old.join(".payload-version"), "0.1.5\n").unwrap();
-        let stage = staging_dir(&pkg, "0.1.6");
-        std::fs::create_dir_all(&stage).unwrap();
-        std::fs::write(stage.join("pi-flash.exe"), b"new").unwrap();
-        std::fs::write(stage.join(".payload-version"), "0.1.6\n").unwrap();
-        write_staged_in(
-            &pkg,
-            &StagedUpdate {
-                version: "0.1.6".into(),
-                staged_at: 1,
-            },
-        )
-        .unwrap();
-
-        let mut dying = std::process::Command::new("cmd").args(["/C", "exit"]).spawn().unwrap();
-        let pid = dying.id();
-        dying.wait().unwrap();
-
-        let script = swap_script(pid, &pkg, &stage, &dir, "pi-flash.exe", 10, 100);
-        let out = std::process::Command::new("powershell.exe")
-            .args([
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-EncodedCommand",
-                &encode_ps(&script),
-            ])
-            .output()
-            .unwrap();
-        assert!(!out.status.success(), "swap 未完成应报失败");
-
-        // old 搬回成 payload（应用能启动旧版）；staging 与标记原样留待下次
-        assert_eq!(
-            std::fs::read_to_string(payload.join(".payload-version")).unwrap(),
-            "0.1.5\n",
-            "old 应被搬回成 payload"
-        );
-        assert!(stage.exists(), "staging 不应被动");
-        assert!(read_staged_in(&pkg).is_some(), "标记应留待下次");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// rename 被占死（0.1.8 实录死循环的复现路径）：外部进程以 share-none
-    /// 持有 payload 内文件，杀 sidecar 清不掉它 → ② 重试 5s 耗尽 → 本次放弃
-    /// 且必须消费标记、payload/staging 原样。标记残留 = ④ 拉起的旧 exe 看到
-    /// 合法 staging 再来一轮 → 无限自旋（黑框每轮闪一个：exe 是 console 子系统）。
-    /// 占用者用 powershell 而非 node.exe——①.5 只杀 node sidecar，杀不掉的
-    /// 外部占用正是本用例要守的分支。
-    #[cfg(windows)]
-    #[test]
-    fn swap_helper_blocked_rename_clears_marker() {
-        let dir = std::env::temp_dir().join(format!(
-            "pf-swap-blk-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .subsec_nanos()
-        ));
-        let pkg = dir.join("pkg");
-        let payload = pkg.join("payload");
-        std::fs::create_dir_all(payload.join("vendor")).unwrap();
-        std::fs::write(payload.join("pi-flash.exe"), b"old").unwrap();
-        std::fs::write(payload.join(".payload-version"), "0.1.5\n").unwrap();
-        let stage = staging_dir(&pkg, "0.1.6");
-        std::fs::create_dir_all(&stage).unwrap();
-        std::fs::write(stage.join("pi-flash.exe"), b"new").unwrap();
-        std::fs::write(stage.join(".payload-version"), "0.1.6\n").unwrap();
-        write_staged_in(
-            &pkg,
-            &StagedUpdate {
-                version: "0.1.6".into(),
-                staged_at: 1,
-            },
-        )
-        .unwrap();
-
-        // 外部占用者：share-none 打开 payload\pi-flash.exe（父目录 rename 被
-        // 挡），powershell 进程、不在 ①.5 的清理范围
-        let holder_path = payload.join("pi-flash.exe");
-        let mut holder = std::process::Command::new("powershell.exe")
-            .args([
-                "-NoProfile",
-                "-Command",
-                &format!(
-                    "$f=[System.IO.File]::Open('{}','Open','Read','None'); Start-Sleep -Seconds 30",
-                    holder_path.display()
-                ),
-            ])
-            .spawn()
-            .unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(1500));
-
-        let mut dying = std::process::Command::new("cmd").args(["/C", "exit"]).spawn().unwrap();
-        let pid = dying.id();
-        dying.wait().unwrap();
-
-        let script = swap_script(pid, &pkg, &stage, &dir, "pi-flash.exe", 10, 100);
-        let out = std::process::Command::new("powershell.exe")
-            .args([
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-EncodedCommand",
-                &encode_ps(&script),
-            ])
-            .output()
-            .unwrap();
-        holder.kill();
-        let _ = holder.wait();
-
-        assert!(!out.status.success(), "swap 未完成应报失败");
-        assert!(
-            read_staged_in(&pkg).is_none(),
-            "被占死也必须消费标记——残留即死循环（0.1.8 实录）"
-        );
-        assert_eq!(
-            std::fs::read_to_string(payload.join(".payload-version")).unwrap(),
-            "0.1.5\n",
-            "payload 应原样保留"
-        );
-        assert!(stage.exists(), "staging 不应被动（留作下次安装的原料）");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// ③ staging→payload 被短暂占用 → 重试窗口内释放 → swap 必须成功
-    /// （0.1.10 实录死循环的钉子用例：旧版 ③ 无重试，Defender 扫刚解压的
-    /// staging（目录树锁）一拍即死 → 回滚 + 消费标记 + 重新下载，用户每轮
-    /// 「解压完立即点重启」每轮都撞扫描窗口。修复 = ③ 带重试 + 安装期预热
-    /// （预热无法在 CI 断言杀软行为，这里钉的是重试兜底本身）。占用者持
-    /// staging 内文件 600ms 后自放，注入重试窗口 10×100ms=1s > 600ms。
-    #[cfg(windows)]
-    #[test]
-    fn swap_helper_stage_blocked_retry_succeeds() {
-        let dir = std::env::temp_dir().join(format!(
-            "pf-swap-rty-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .subsec_nanos()
-        ));
-        let pkg = dir.join("pkg");
-        let payload = pkg.join("payload");
-        std::fs::create_dir_all(payload.join("vendor")).unwrap();
-        std::fs::write(payload.join("pi-flash.exe"), b"old").unwrap();
-        std::fs::write(payload.join(".payload-version"), "0.1.9\n").unwrap();
-        let stage = staging_dir(&pkg, "0.1.10");
-        std::fs::create_dir_all(&stage).unwrap();
-        std::fs::write(stage.join("pi-flash.exe"), b"new").unwrap();
-        std::fs::write(stage.join(".payload-version"), "0.1.10\n").unwrap();
-        write_staged_in(
-            &pkg,
-            &StagedUpdate {
-                version: "0.1.10".into(),
-                staged_at: 1,
-            },
-        )
-        .unwrap();
-
-        // 占用者模拟杀软扫描：share-none 持有 staging 内文件 2.5s 后释放
-        //（0.1.10 实录里 Defender 对 1.5 万文件扫几十秒，这里等比缩小）。
-        // 2.5s 必须盖过 helper 的启动+①.5 CIM 查询延迟（实测 ~1.2s），保证
-        // ③ 首击落在占用期内——重试路径被真正踩到，而非擦边绕过。
-        let holder_path = stage.join("pi-flash.exe");
-        let mut holder = std::process::Command::new("powershell.exe")
-            .args([
-                "-NoProfile",
-                "-Command",
-                &format!(
-                    "$f=[System.IO.File]::Open('{}','Open','Read','None'); Start-Sleep -Milliseconds 2500; $f.Close()",
-                    holder_path.display()
-                ),
-            ])
-            .spawn()
-            .unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(200));
-
-        let mut dying = std::process::Command::new("cmd").args(["/C", "exit"]).spawn().unwrap();
-        let pid = dying.id();
-        dying.wait().unwrap();
-
-        let script = swap_script(pid, &pkg, &stage, &dir, "pi-flash.exe", 40, 100);
-        let out = std::process::Command::new("powershell.exe")
-            .args([
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-EncodedCommand",
-                &encode_ps(&script),
-            ])
-            .output()
-            .unwrap();
-        holder.kill();
-        let _ = holder.wait();
-
-        assert!(out.status.success(), "重试窗口内释放就必须换上（旧版一拍即死）");
-        assert_eq!(
-            std::fs::read_to_string(payload.join(".payload-version")).unwrap(),
-            "0.1.10\n",
-            "payload 应翻转到新版"
-        );
-        assert!(!stage.exists(), "staging 应已换装成 payload");
-        assert!(read_staged_in(&pkg).is_none(), "成功后标记应消费");
-        let log = std::fs::read_to_string(pkg.join("update-swap.log")).unwrap_or_default();
-        assert!(
-            log.contains("③ staging→payload 第1次"),
-            "③ 必须真的重试过（占用盖过 helper 启动延迟），实际：{log}"
-        );
-        assert!(log.contains("swap OK"), "重试成功后应有 OK 记录，实际：{log}");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// 并行解压树完整性：Compress-Archive 造真 zip（嵌套目录 + PS 5.1 的
-    /// 反斜杠条目名——safe_zip_path 归一化正为此），并行解压后逐文件比对
-    /// 内容；进度终值必须到 100（pif-ui snapshot progress 的数据源）。
-    #[cfg(windows)]
-    #[test]
-    fn extract_zip_parallel_tree_intact() {
-        let _guard = PROGRESS_LOCK.lock().unwrap();
-        let dir = std::env::temp_dir().join(format!(
-            "pf-extract-par-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .subsec_nanos()
-        ));
-        let src = dir.join("pi-flash");
-        let mut files: Vec<(String, Vec<u8>)> = Vec::new();
-        for i in 0..120 {
-            let rel = if i % 3 == 0 {
-                format!("vendor/pi/deep/dir{i}/module_{i}.js")
-            } else if i % 3 == 1 {
-                format!("vendor/node_modules/pkg{i}/lib/index.js")
-            } else {
-                format!("assets/i18n/msg_{i}.json")
-            };
-            let body = format!("payload {i}: {}", "x".repeat(i * 37 % 900));
-            let p = src.join(&rel);
-            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
-            std::fs::write(&p, &body).unwrap();
-            files.push((rel, body.into_bytes()));
-        }
-        let zip_path = dir.join("t.zip");
-        let ps = format!(
-            "Compress-Archive -Path '{}' -DestinationPath '{}' -Force",
-            src.display(),
-            zip_path.display()
-        );
-        let out = std::process::Command::new("powershell.exe")
-            .args(["-NoProfile", "-Command", &ps])
-            .output()
-            .unwrap();
-        assert!(
-            out.status.success(),
-            "Compress-Archive 失败：{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-
-        let dest = dir.join("out");
-        extract_zip(&zip_path, &dest).unwrap();
-        // Compress-Archive -Path <目录> 连包装目录一起进 zip：条目名带
-        // pi-flash/ 前缀（与 release.sh 产物同形，locate_content_root 消费）
-        for (rel, body) in &files {
-            let got = std::fs::read(dest.join("pi-flash").join(rel.replace('/', "\\")))
-                .unwrap_or_else(|e| panic!("{rel}: {e}"));
-            assert_eq!(&got, body, "{rel} 内容不符");
-        }
-        assert_eq!(extract_percent(), Some(100), "解压进度终值应为 100");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// 真机计时（`cargo test -p app --bin pi-flash extract_real_dist -- --ignored
-    /// --nocapture`）：对 dist/ 里最新真 zip 跑并行解压，打印耗时与条目数。
-    /// 基线对照 = PowerShell Expand-Archive（单线程，≈旧实现）；dist/ 不存在
-    /// 时跳过。不进常规门禁。
-    #[cfg(windows)]
-    #[test]
-    #[ignore]
-    fn extract_real_dist_zip_timing() {
-        // cargo test 的 cwd 是 crate 根；CARGO_MANIFEST_DIR = <ws>/crates/app，
-        // 剥两级到工作区根（同 vendor.rs base_candidates 惯例）
-        let dist = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .and_then(Path::parent)
-            .unwrap()
-            .join("dist");
-        let mut best: Option<(std::path::PathBuf, std::time::Duration)> = None;
-        if let Ok(entries) = std::fs::read_dir(&dist) {
-            for e in entries.flatten() {
-                let name = e.file_name().to_string_lossy().to_string();
-                if name.starts_with("pi-flash-") && name.ends_with("-win32-x64.zip") {
-                    let score = e
-                        .metadata()
-                        .and_then(|m| m.modified())
-                        .map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default())
-                        .unwrap_or_default();
-                    if best.as_ref().map(|(_, s)| score > *s).unwrap_or(true) {
-                        best = Some((e.path(), score));
-                    }
-                }
-            }
-        }
-        let Some((zip_path, _)) = best else {
-            eprintln!("dist/ 无 zip，跳过");
-            return;
-        };
-        let dest = std::env::temp_dir().join(format!("pf-extract-real-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dest);
-        let t0 = std::time::Instant::now();
-        extract_zip(&zip_path, &dest).unwrap();
-        let dt = t0.elapsed();
-        let count = count_files(&dest);
-        eprintln!(
-            "并行解压 {:?}：{} 个文件，{:?}（{:?}/s）",
-            zip_path.file_name().unwrap(),
-            count,
-            dt,
-            (count as f64 / dt.as_secs_f64()) as u64
-        );
-        let _ = std::fs::remove_dir_all(&dest);
-    }
-
-    fn count_files(root: &Path) -> usize {
-        let mut n = 0;
-        if let Ok(entries) = std::fs::read_dir(root) {
-            for e in entries.flatten() {
-                if e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                    n += count_files(&e.path());
-                } else {
-                    n += 1;
-                }
-            }
-        }
-        n
     }
 
     // --- 下载引擎功能测试（本地裸 TCP 假源，真下载真哈希真守卫） ------------
@@ -1903,15 +1259,15 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("pf-upd-real-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let dest = dir.join(&asset);
-        let (hash, chosen) =
-            download_mirrored(&asset, &dest, &rel.version).unwrap_or_else(|e| panic!("下载失败：{e}"));
+        let (hash, chosen) = download_mirrored(&asset, &dest, &rel.version)
+            .unwrap_or_else(|e| panic!("下载失败：{e}"));
         eprintln!("v{} 命中源：{chosen}\nsha256={hash}\n文件：{}", rel.version, dest.display());
         assert_eq!(download_percent(), Some(100));
         assert!(dest.metadata().unwrap().len() > 0);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    // --- 更新管线端到端（假源 + 真 zip + 真 powershell 交换，无 GUI） ----------
+    // --- 更新管线端到端（假源 + 真 zip，无 GUI 无 powershell） ----------------
     // 进度全局量（DOWNLOAD_PCT/EXTRACT_PCT/UPDATE_PHASE）跨测试共享：凡断言
     // 或触发它们的用例一律持锁，防 cargo 并行线程互扰。
 
@@ -1961,7 +1317,7 @@ mod tests {
         let fix_root = site.join(format!("fix-{ver}"));
         let pkg = fix_root.join("pi-flash");
         std::fs::create_dir_all(&pkg).unwrap();
-        std::fs::write(pkg.join("pi-flash.exe"), exe_bytes).unwrap();
+        std::fs::write(pkg.join(exe_rel()), exe_bytes).unwrap();
         std::fs::write(pkg.join("marker.txt"), marker).unwrap();
 
         let ver_dir = site.join(format!("v{ver}"));
@@ -1994,31 +1350,19 @@ mod tests {
         std::fs::write(ver_dir.join("SHA256SUMS"), format!("{hash}  {name}\n")).unwrap();
     }
 
-    /// 0.1.8→0.1.9 用户实录的全链路自动化（无 GUI 主防线）：假源 latest=9.9.9
-    /// → stage_update 落 staging+标记 → read_staged_in 可见（Ready 态数据源）
-    /// → 真 powershell swap → 载荷翻转、标记/staging/old 清、无残留。
-    /// 注：哈希钉定会先试一次真 github 的 sidecar（本机被墙约 20s 超时后落到
-    /// 假源）——偏慢是真实行为的代价，别当 flake 修。
+    /// 用户实录链路（无 GUI 主防线）：假源 latest → stage 落位新载荷目录
+    /// → 目录/戳/内容齐全 → `staged_newer` 认账（启动交接与 Ready 态的数据源）
+    /// → 清理旧版本目录时不动它。
     #[cfg(windows)]
     #[test]
     fn update_pipeline_end_to_end() {
         let _guard = PROGRESS_LOCK.lock().unwrap();
-        let dir = std::env::temp_dir().join(format!(
-            "pf-pipe-e2e-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .subsec_nanos()
-        ));
-        let pkg = dir.join("pkg");
-        let payload = pkg.join("payload");
-        std::fs::create_dir_all(&payload).unwrap();
-        std::fs::write(payload.join("pi-flash.exe"), b"old").unwrap();
-        std::fs::write(payload.join(".payload-version"), "0.1.8\n").unwrap();
+        let root = temp_dir("pipe-e2e");
+        let me = root.join("payload"); // 当前载荷目录（模拟 npm 薄壳布局）
+        fake_payload(&me, "0.1.8");
 
         let ver = "9.9.9";
-        let site = dir.join("site");
+        let site = root.join("site");
         build_release_fixture(&site, ver, b"new", "payload-v9.9.9\n");
         let base = serve_dir(&site);
         // SAFETY：活跃测试里只有本测试与 bad_hash 用例读 PI_FLASH_MIRROR，
@@ -2029,91 +1373,50 @@ mod tests {
             version: ver.to_string(),
             body: String::new(),
         };
-        let staged = stage_update_in(&pkg, &rel).unwrap();
+        let staged = stage_update_in(&me, &rel).unwrap();
         assert_eq!(staged, ver);
+
+        let target = root.join(format!("payload-{ver}"));
         assert_eq!(
-            std::fs::read_to_string(staging_dir(&pkg, ver).join(".payload-version")).unwrap(),
+            std::fs::read_to_string(target.join(".payload-version")).unwrap(),
             format!("{ver}\n")
         );
-        let info = read_staged_in(&pkg).unwrap();
         assert_eq!(
-            info.version, ver,
-            "staging+标记合法（Ready 态的数据源）"
-        );
-
-        // swap：真 powershell 翻转载荷（等退死 pid 秒过）
-        let mut dying = std::process::Command::new("cmd")
-            .args(["/C", "exit"])
-            .spawn()
-            .unwrap();
-        let pid = dying.id();
-        dying.wait().unwrap();
-        let script = swap_script(pid, &pkg, &staging_dir(&pkg, ver), &dir, "pi-flash.exe", 10, 100);
-        let out = std::process::Command::new("powershell.exe")
-            .args([
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-EncodedCommand",
-                &encode_ps(&script),
-            ])
-            .output()
-            .unwrap();
-        assert!(
-            out.status.success(),
-            "helper 应报成功：{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-
-        assert_eq!(
-            std::fs::read_to_string(payload.join(".payload-version")).unwrap(),
-            format!("{ver}\n"),
-            "载荷已翻转到新版本"
-        );
-        assert_eq!(
-            std::fs::read(payload.join("marker.txt")).unwrap(),
+            std::fs::read(target.join("marker.txt")).unwrap(),
             b"payload-v9.9.9\n",
-            "载荷内容确为新夹具"
+            "载荷内容为新夹具"
         );
-        assert!(read_staged_in(&pkg).is_none(), "标记应已清除");
-        let residue: Vec<_> = std::fs::read_dir(&pkg)
+        assert_eq!(
+            staged_newer(&root, "0.1.8").map(|(v, _)| v),
+            Some(ver.to_string()),
+            "启动交接认账"
+        );
+        // 旧版本清理不碰新载荷；旧载荷目录（无版本名）也不动
+        cleanup_older(root.clone(), me.clone());
+        assert!(target.exists(), "新载荷目录不能被清理碰掉");
+        assert!(me.exists(), "安装目录不动");
+        let tmp_left: Vec<_> = std::fs::read_dir(&root)
             .unwrap()
             .flatten()
-            .filter(|e| {
-                let n = e.file_name().to_string_lossy().to_string();
-                n.starts_with("payload.stage-")
-                    || n.starts_with("payload.old-")
-                    || n.starts_with("update.tmp-")
-            })
+            .filter(|e| e.file_name().to_string_lossy().starts_with("update.tmp-"))
             .collect();
-        assert!(residue.is_empty(), "无 staging/old/tmp 残留：{residue:?}");
+        assert!(tmp_left.is_empty(), "半截下载目录已清：{tmp_left:?}");
 
         unsafe { std::env::remove_var("PI_FLASH_MIRROR") };
-        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// 哈希不符的失败路径（0.1.8 实录「静默回落」的可检出性）：stage 报
-    /// SHA-256 错；旧载荷原样，无 staging/标记/tmp 残留。
+    /// 哈希不符的失败路径：stage 报 SHA-256 错；旧载荷原样，无新目录/无 tmp 残留。
     #[cfg(windows)]
     #[test]
     fn stage_update_bad_hash_leaves_no_trace() {
         let _guard = PROGRESS_LOCK.lock().unwrap();
-        let dir = std::env::temp_dir().join(format!(
-            "pf-pipe-bad-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .subsec_nanos()
-        ));
-        let pkg = dir.join("pkg");
-        let payload = pkg.join("payload");
-        std::fs::create_dir_all(&payload).unwrap();
-        std::fs::write(payload.join("pi-flash.exe"), b"old").unwrap();
-        std::fs::write(payload.join(".payload-version"), "0.1.8\n").unwrap();
+        let root = temp_dir("pipe-bad");
+        let me = root.join("payload");
+        fake_payload(&me, "0.1.8");
 
         let ver = "9.9.9";
-        let site = dir.join("site");
+        let site = root.join("site");
         build_release_fixture(&site, ver, b"new", "payload-v9.9.9\n");
         // 篡改 sidecar 与 SUMS 为错哈希（64 位十六进制保证能被解析后比对）
         let bad = format!("{}\n", "0".repeat(64));
@@ -2131,17 +1434,16 @@ mod tests {
             version: ver.to_string(),
             body: String::new(),
         };
-        let err = stage_update_in(&pkg, &rel).unwrap_err();
+        let err = stage_update_in(&me, &rel).unwrap_err();
         assert!(err.contains("SHA-256"), "应报校验不符：{err}");
 
         assert_eq!(
-            std::fs::read_to_string(payload.join(".payload-version")).unwrap(),
+            std::fs::read_to_string(me.join(".payload-version")).unwrap(),
             "0.1.8\n",
             "旧载荷原样"
         );
-        assert!(!marker_path(&pkg).exists(), "无标记");
-        assert!(!staging_dir(&pkg, ver).exists(), "无 staging");
-        let residue: Vec<_> = std::fs::read_dir(&pkg)
+        assert!(!root.join(format!("payload-{ver}")).exists(), "无新载荷目录");
+        let residue: Vec<_> = std::fs::read_dir(&root)
             .unwrap()
             .flatten()
             .filter(|e| e.file_name().to_string_lossy().starts_with("update.tmp-"))
@@ -2149,6 +1451,138 @@ mod tests {
         assert!(residue.is_empty(), "tmp 已清：{residue:?}");
 
         unsafe { std::env::remove_var("PI_FLASH_MIRROR") };
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// 拒绝落位到当前运行目录（防止自覆盖）。
+    #[test]
+    fn stage_refuses_running_dir() {
+        let root = temp_dir("self-target");
+        let me = root.join("payload-0.1.10");
+        fake_payload(&me, "0.1.10");
+        let rel = ReleaseInfo {
+            version: "0.1.10".to_string(),
+            body: String::new(),
+        };
+        let err = stage_update_in(&me, &rel).unwrap_err();
+        assert!(err.contains("当前运行目录"), "{err}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// 并行解压树完整性：Compress-Archive 造真 zip（嵌套目录 + PS 5.1 的
+    /// 反斜杠条目名——safe_zip_path 归一化正为此），并行解压后逐文件比对
+    /// 内容；进度终值必须到 100（pif-ui snapshot progress 的数据源）。
+    #[cfg(windows)]
+    #[test]
+    fn extract_zip_parallel_tree_intact() {
+        let _guard = PROGRESS_LOCK.lock().unwrap();
+        let dir = temp_dir("extract-par");
+        let src = dir.join("pi-flash");
+        let mut files: Vec<(String, Vec<u8>)> = Vec::new();
+        for i in 0..120 {
+            let rel = if i % 3 == 0 {
+                format!("vendor/pi/deep/dir{i}/module_{i}.js")
+            } else if i % 3 == 1 {
+                format!("vendor/node_modules/pkg{i}/lib/index.js")
+            } else {
+                format!("assets/i18n/msg_{i}.json")
+            };
+            let body = format!("payload {i}: {}", "x".repeat(i * 37 % 900));
+            let p = src.join(&rel);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(&p, &body).unwrap();
+            files.push((rel, body.into_bytes()));
+        }
+        let zip_path = dir.join("t.zip");
+        let ps = format!(
+            "Compress-Archive -Path '{}' -DestinationPath '{}' -Force",
+            src.display(),
+            zip_path.display()
+        );
+        let out = std::process::Command::new("powershell.exe")
+            .args(["-NoProfile", "-Command", &ps])
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "Compress-Archive 失败：{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+
+        let dest = dir.join("out");
+        extract_zip(&zip_path, &dest).unwrap();
+        // Compress-Archive -Path <目录> 连包装目录一起进 zip：条目名带
+        // pi-flash/ 前缀（与 release.sh 产物同形，locate_content_root 消费）
+        for (rel, body) in &files {
+            let got = std::fs::read(dest.join("pi-flash").join(rel.replace('/', "\\")))
+                .unwrap_or_else(|e| panic!("{rel}: {e}"));
+            assert_eq!(&got, body, "{rel} 内容不符");
+        }
+        assert_eq!(extract_percent(), Some(100), "解压进度终值应为 100");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 真机计时（`cargo test -p app --bin pi-flash extract_real_dist -- --ignored
+    /// --nocapture`）：对 dist/ 里最新真 zip 跑并行解压，打印耗时与条目数。
+    /// 基线对照 = PowerShell Expand-Archive（单线程）。dist/ 不存在时跳过。
+    #[cfg(windows)]
+    #[test]
+    #[ignore]
+    fn extract_real_dist_zip_timing() {
+        // cargo test 的 cwd 是 crate 根；CARGO_MANIFEST_DIR = <ws>/crates/app，
+        // 剥两级到工作区根（同 vendor.rs base_candidates 惯例）
+        let dist = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .unwrap()
+            .join("dist");
+        let mut best: Option<(PathBuf, std::time::Duration)> = None;
+        if let Ok(entries) = std::fs::read_dir(&dist) {
+            for e in entries.flatten() {
+                let name = e.file_name().to_string_lossy().to_string();
+                if name.starts_with("pi-flash-") && name.ends_with("-win32-x64.zip") {
+                    let score = e
+                        .metadata()
+                        .and_then(|m| m.modified())
+                        .map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default())
+                        .unwrap_or_default();
+                    if best.as_ref().map(|(_, s)| score > *s).unwrap_or(true) {
+                        best = Some((e.path(), score));
+                    }
+                }
+            }
+        }
+        let Some((zip_path, _)) = best else {
+            eprintln!("dist/ 无 zip，跳过");
+            return;
+        };
+        let dest = std::env::temp_dir().join(format!("pf-extract-real-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dest);
+        let t0 = std::time::Instant::now();
+        extract_zip(&zip_path, &dest).unwrap();
+        let dt = t0.elapsed();
+        let count = count_files(&dest);
+        eprintln!(
+            "并行解压 {:?}：{} 个文件，{:?}（{:?}/s）",
+            zip_path.file_name().unwrap(),
+            count,
+            dt,
+            (count as f64 / dt.as_secs_f64()) as u64
+        );
+        let _ = std::fs::remove_dir_all(&dest);
+    }
+
+    fn count_files(root: &Path) -> usize {
+        let mut n = 0;
+        if let Ok(entries) = std::fs::read_dir(root) {
+            for e in entries.flatten() {
+                if e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                    n += count_files(&e.path());
+                } else {
+                    n += 1;
+                }
+            }
+        }
+        n
     }
 }

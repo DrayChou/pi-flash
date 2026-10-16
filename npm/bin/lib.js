@@ -3,9 +3,10 @@
 // 设计蓝本：docs/模块设计/080-软件分发.md §3（冲突以该文为准）。
 //
 // 载荷布局（包目录内，npm uninstall 随包清除）：
-//   <pkg>/payload/.payload-version       版本戳，最后写入——缺失/不符即视为载荷不可信
-//   <pkg>/payload/pi-flash.exe           win32-x64（release zip 根为 pi-flash/ 包装目录）
-//   <pkg>/payload/pi-flash.app/…         darwin-arm64（release zip 根即 .app）
+//   <pkg>/payload/.payload-version          安装时的载荷版本戳，最后写入（戳在 = 完整）
+//   <pkg>/payload/pi-flash.exe              稳定入口（npm 命令与快捷方式都指它）
+//   <pkg>/payload-<版本>/.payload-version   应用内更新（081）解压出的新载荷目录
+//   <pkg>/payload-<版本>/pi-flash.exe       ——只解压不 rename，启动时跑版本最高者
 //
 // 下载源：GitHub 直连优先，测速不过阈值自动按序切默认镜像列表（080 §3.2）；
 // PI_FLASH_MIRROR 指定唯一源、PI_FLASH_MIRRORS 追加候选。镜像须保持同构布局
@@ -165,130 +166,42 @@ function compareVersions(a, b) {
   return 0;
 }
 
-// 载荷可信 = 版本戳与包版本一致、或戳比包版本**新**（应用内自动更新先行，
-// 薄壳还是旧版），且 exe 存在。戳更旧/缺失才走 ensure 补齐（不降级）。
-function payloadOk(tag = platformTag()) {
+// --- 载荷目录解析（081 v0.1.11 改版）---------------------------------------------
+// 安装目录 payload/ 是稳定入口（薄壳命令与快捷方式都指它）；应用内更新把新载荷
+// 解压到 <pkg>/payload-<版本>/，**只解压不 rename**（0.1.6~0.1.10 的落位死循环
+// 全源自整目录 rename 撞 Windows 文件句柄）。这里选**版本最高的完整载荷**启动：
+// 目录名带 -<x.y.z> 且 .payload-version 戳吻合、exe 在位（戳最后写，戳在 = 完整）。
+function stampOfDir(dir) {
   try {
-    const stamp = fs.readFileSync(STAMP_FILE, "utf8").trim();
-    if (compareVersions(stamp, pkgVersion) < 0) return false;
-    return fs.existsSync(exePath(tag));
+    return fs.readFileSync(path.join(dir, ".payload-version"), "utf8").trim() || null;
   } catch {
-    return false;
-  }
-}
-
-// --- 应用内更新落位（081）：exe 把新载荷下到 staging + 标记，swap 在这里做
-// （彼时旧进程已退出、目录无锁）。布局：
-//   <pkg>/payload.stage-<ver>/    新载荷（exe 自带 .payload-version 戳）
-//   <pkg>/update-staged.json      {"version","staged_at"}
-const STAGE_MARKER = path.join(pkgDir, "update-staged.json");
-const STAGE_PREFIX = "payload.stage-";
-const OLD_PREFIX = "payload.old-";
-
-function readStaged() {
-  try {
-    const staged = JSON.parse(fs.readFileSync(STAGE_MARKER, "utf8"));
-    if (staged && typeof staged.version === "string" && staged.version.trim()) {
-      return { version: staged.version.trim().replace(/^v/, "") };
-    }
-  } catch {}
-  return null;
-}
-
-// 清残留：上次 swap 中断的 payload.old-* / 缺文件的 staging + 标记
-function cleanupStale() {
-  for (const entry of fs.readdirSync(pkgDir)) {
-    if (entry.startsWith(OLD_PREFIX)) {
-      try {
-        fs.rmSync(path.join(pkgDir, entry), { recursive: true, force: true });
-      } catch {}
-    }
-  }
-  const staged = readStaged();
-  if (!staged) {
-    try {
-      fs.rmSync(STAGE_MARKER, { force: true });
-    } catch {}
-    return;
-  }
-  const dir = path.join(pkgDir, `${STAGE_PREFIX}${staged.version}`);
-  const complete =
-    fs.existsSync(path.join(dir, exeRelPath(platformTag()))) &&
-    fs.existsSync(path.join(dir, ".payload-version"));
-  if (!complete) {
-    try {
-      fs.rmSync(dir, { recursive: true, force: true });
-      fs.rmSync(STAGE_MARKER, { force: true });
-    } catch {}
-  }
-}
-
-// swap：rename payload→old → rename staging→payload → 删标记 → 删 old。
-// 旧实例仍在跑（rename EBUSY/EPERM）则跳过，标记留给下次启动再试。
-function applyStagedUpdate() {
-  let staged;
-  try {
-    staged = readStaged();
-  } catch {}
-  if (!staged) return null;
-  cleanupStale();
-  const stageDir = path.join(pkgDir, `${STAGE_PREFIX}${staged.version}`);
-  if (!fs.existsSync(stageDir)) {
-    try {
-      fs.rmSync(STAGE_MARKER, { force: true });
-    } catch {}
     return null;
   }
-  // 已应用过（戳不旧于 staging）→ 清标记走正常启动
-  let stamp = null;
-  try {
-    stamp = fs.readFileSync(STAMP_FILE, "utf8").trim();
-  } catch {}
-  if (stamp && compareVersions(staged.version, stamp) <= 0) {
-    try {
-      fs.rmSync(STAGE_MARKER, { force: true });
-    } catch {}
-    return null;
-  }
-  const oldDir = path.join(pkgDir, `${OLD_PREFIX}${Date.now()}`);
-  try {
-    fs.renameSync(PAYLOAD_DIR, oldDir);
-  } catch (err) {
-    if (isBusyError(err)) return null; // 旧实例在跑：下次启动再换
-    throw err;
-  }
-  try {
-    // staging→payload 带重试：staging 是刚解压完的上万文件，杀软实时扫描
-    // 几十秒（0.1.10 实录：无重试一拍即死 = 应用内更新无限重下死循环）。
-    // 20×500ms = 10s：launcher 启动路径用户在终端等着，不能太拖。
-    renameWithRetry(stageDir, PAYLOAD_DIR, 20, 500);
-    fs.rmSync(STAGE_MARKER, { force: true });
-  } catch (err) {
-    // swap 半途失败：payload 可能已不在——把 old 搬回来兜底
-    try {
-      if (!fs.existsSync(PAYLOAD_DIR)) fs.renameSync(oldDir, PAYLOAD_DIR);
-    } catch {}
-    throw err;
-  }
-  try {
-    fs.rmSync(oldDir, { recursive: true, force: true });
-  } catch {}
-  return { from: stamp || "(缺失)", to: staged.version };
 }
 
-// 带重试的 rename（杀软扫描类短暂占用：熬过扫描窗口即可成）。间隔 sleepMs
-// 重试 n 次，仍失败抛最后一个错。Atomics.wait = 同步 sleep（launcher 全同步
-// 代码，没有 async 可借）。
-function renameWithRetry(from, to, n, sleepMs) {
-  for (let i = 0; ; i++) {
-    try {
-      fs.renameSync(from, to);
-      return;
-    } catch (err) {
-      if (i >= n - 1 || !isBusyError(err)) throw err;
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, sleepMs);
-    }
+function resolvePayload(tag = platformTag()) {
+  let best = { dir: PAYLOAD_DIR, version: stampOfDir(PAYLOAD_DIR) };
+  let entries = [];
+  try {
+    entries = fs.readdirSync(pkgDir);
+  } catch {}
+  for (const entry of entries) {
+    const m = /^(.+)-(\d+(?:\.\d+)+)$/.exec(entry);
+    if (!m) continue;
+    const dir = path.join(pkgDir, entry);
+    if (stampOfDir(dir) !== m[2]) continue;
+    if (!fs.existsSync(path.join(dir, exeRelPath(tag)))) continue;
+    if (compareVersions(m[2], best.version || "0") > 0) best = { dir, version: m[2] };
   }
+  return best;
+}
+
+// 载荷可信 = 最优载荷的版本戳不旧于包版本（应用内自动更新先行：戳比包版本新
+// 也算可信），且 exe 在位。戳更旧/缺失才走 ensure 补齐（不降级）。
+function payloadOk(tag = platformTag()) {
+  const best = resolvePayload(tag);
+  if (compareVersions(best.version || "0", pkgVersion) < 0) return false;
+  return fs.existsSync(path.join(best.dir, exeRelPath(tag)));
 }
 
 // --- 网络 -------------------------------------------------------------------
@@ -545,19 +458,8 @@ function busyMessage() {
   return "载荷目录被占用——请先退出正在运行的 pi-flash，再重新执行安装/更新。";
 }
 
-// pid 存活探测：ESRCH = 进程不存在；EPERM = 存在但无权限（按活的处理）
-function pidAlive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return err.code === "EPERM";
-  }
-}
-
-// 清本机残留（080 §3.3）：半截下载 payload.tmp-<pid> / update.tmp-<pid>
-// （含应用内更新器 081 留下的）按 pid 存活判断删除，活进程的不碰；
-// payload.old-* 只在 swap 中断后遗留，无条件删。启动器每次启动与下载前都跑。
+// 清本机残留（080 §3.3）：超过 1 小时未动过的半截下载 payload.tmp-<pid>
+// （活跃下载持续写盘 mtime 常新，停更 1 小时 = 进程已死）。每次启动与下载前都跑。
 function rmLeftovers() {
   let entries;
   try {
@@ -566,14 +468,13 @@ function rmLeftovers() {
     return;
   }
   for (const entry of entries) {
-    const tmp = /^(?:payload|update)\.tmp-(\d+)$/.exec(entry);
-    if (tmp) {
-      const pid = parseInt(tmp[1], 10);
-      if (pid === process.pid || pidAlive(pid)) continue;
-    } else if (!entry.startsWith(OLD_PREFIX)) {
-      continue;
-    }
-    fs.rmSync(path.join(pkgDir, entry), { recursive: true, force: true });
+    if (!entry.startsWith(TMP_PREFIX)) continue;
+    const p = path.join(pkgDir, entry);
+    try {
+      if (Date.now() - fs.statSync(p).mtimeMs > 3600_000) {
+        fs.rmSync(p, { recursive: true, force: true });
+      }
+    } catch {}
   }
 }
 
@@ -656,10 +557,9 @@ module.exports = {
   assetUrls,
   exeRelPath,
   exePath,
+  resolvePayload,
   payloadOk,
   compareVersions,
-  readStaged,
-  applyStagedUpdate,
   minSpeedBps,
   probeMs,
   fmtMB,

@@ -2,24 +2,27 @@
 "use strict";
 // pi-flash 启动器（npm 薄壳的 bin 入口）：
 //   1. Node 版本检查（对齐 pi-web 的门槛与文案）
-//   2. 应用内更新落位——exe 下载好的 staging swap 到 payload（081；无标记
-//      即零成本直过）
-//   3. 载荷自愈——版本戳不符/缺失就先补齐（兜底 --ignore-scripts、镜像剥
-//      postinstall、半途断网；戳比包版本新 = 应用内更新先行，不降级）
+//   2. 载荷目录解析——应用内更新把新载荷解压到 <pkg>/payload-<版本>/（081，
+//      只解压不 rename），选版本最高的完整载荷启动；双击场景由 exe 自己的
+//      启动交接兜底
+//   3. 载荷自愈——戳不旧于包版本才算可信，否则先补齐（兜底 --ignore-scripts、
+//      镜像剥 postinstall、半途断网；应用内更新先行 = 戳比包版本新也不降级）
 //   4. spawn 平台载荷，stdio 透传、信号转发、退出码透传
 // 设计蓝本：docs/模块设计/080-软件分发.md §3.1、081-软件自动更新.md。
 const { spawn } = require("child_process");
+const path = require("path");
 const {
   pkgVersion,
   isNodeVersionSupported,
   nodeVersionMessage,
   platformTag,
+  exeRelPath,
+  resolvePayload,
   payloadOk,
-  exePath,
   ensure,
   busyMessage,
-  applyStagedUpdate,
   rmLeftovers,
+  assetUrls,
 } = require("./lib");
 
 if (!isNodeVersionSupported(process.versions.node)) {
@@ -36,18 +39,10 @@ if (!isNodeVersionSupported(process.versions.node)) {
     process.exit(1);
   }
 
-  // 清上次中断的半截下载/swap 残留（死进程的才删，活的不碰）；失败不拦启动
+  // 清上次中断的半截下载残留（>1 小时的才删）；失败不拦启动
   try {
     rmLeftovers();
   } catch {}
-
-  // 081：应用内更新已把新载荷下到 staging → 先 swap 再启动
-  try {
-    const applied = applyStagedUpdate();
-    if (applied) console.error(`   已应用更新：v${applied.from} → v${applied.to}`);
-  } catch (error) {
-    console.error(`✗ 更新落位失败（使用当前载荷启动）：${error.message}`);
-  }
 
   if (!payloadOk(tag)) {
     console.error(`   载荷缺失或版本不符，正在补齐（v${pkgVersion}）…`);
@@ -55,12 +50,14 @@ if (!isNodeVersionSupported(process.versions.node)) {
       await ensure();
     } catch (error) {
       console.error(`\n✗ 载荷补齐失败：\n  ${error.message}`);
-      console.error(`  重试：npm rebuild pi-flash    手动：${require("./lib").assetUrls(tag).releasePage}`);
+      console.error(`  重试：npm rebuild pi-flash    手动：${assetUrls(tag).releasePage}`);
       process.exit(1);
     }
   }
 
-  const exe = exePath(tag);
+  // 081：应用内更新的新载荷在 <pkg>/payload-<版本>/，选版本最高的完整载荷跑
+  const payload = resolvePayload(tag);
+  const exe = path.join(payload.dir, exeRelPath(tag));
   const child = spawn(exe, process.argv.slice(2), {
     stdio: "inherit",
     cwd: process.cwd(),

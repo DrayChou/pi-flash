@@ -539,6 +539,12 @@ pub(super) fn dispatch(
             cx.notify();
             ok()
         }
+        // 081 自动更新：「下载完成，点击重启更新」的点击（spawn 新载荷 exe 后
+        // 本进程退出；观察者看进程树/新版目录落位）
+        method::UPDATE_RESTART => {
+            chat.restart_to_apply_update(cx);
+            ok()
+        }
         method::PROJECT_PICKER_OPEN => {
             let fresh = params.get("fresh").and_then(Value::as_bool).unwrap_or(false);
             chat.open_project_picker(fresh, cx);
