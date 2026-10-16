@@ -285,17 +285,35 @@ fn cleanup_older(root: PathBuf, me: PathBuf) {
             continue;
         }
         if !name.starts_with("update.tmp-") {
+            // 落位成功、版本戳还没写就被杀（`payload-<版本>/`：里面有 exe，但没有
+            // 戳）：它不是「完整载荷」（交接和上面的版本清理都看不见它），也不是
+            // 那批老垃圾，会永久占盘 300MB。超 1 小时才删——免得误删另一个实例刚
+            // rename 完、马上要写戳的那个目录。
+            let looks_like_payload = name
+                .rsplit_once('-')
+                .map(|(_, v)| is_version(v))
+                .unwrap_or(false)
+                && entry.path().join(exe_rel()).is_file();
+            if looks_like_payload && payload_version_of(&entry.path()).is_none() {
+                if older_than_an_hour(&entry) {
+                    let _ = std::fs::remove_dir_all(entry.path());
+                }
+            }
             continue;
         }
-        let stale = entry
-            .metadata()
-            .and_then(|m| m.modified())
-            .map(|t| t.elapsed().map(|a| a > Duration::from_secs(3600)).unwrap_or(true))
-            .unwrap_or(true);
-        if stale {
+        if older_than_an_hour(&entry) {
             let _ = std::fs::remove_dir_all(entry.path());
         }
     }
+}
+
+/// 目录/文件超过 1 小时没被动过（拿不到时间戳就当作是旧的）。
+fn older_than_an_hour(entry: &std::fs::DirEntry) -> bool {
+    entry
+        .metadata()
+        .and_then(|m| m.modified())
+        .map(|t| t.elapsed().map(|a| a > Duration::from_secs(3600)).unwrap_or(true))
+        .unwrap_or(true)
 }
 
 /// 删一个残留时目录/文件都可能（老垃圾里两者都有）。
@@ -305,6 +323,56 @@ fn remove_path(p: &Path) {
     } else {
         let _ = std::fs::remove_file(p);
     }
+}
+
+/// 把目录里每个文件读一遍（并行，最多 8 线程）：安装阶段就把「首次打开」的
+/// 成本花掉（杀软/文件系统对新载荷一万多个文件的首次扫描），这样点击重启、
+/// 以及以后每次打开新版本都跟平时一样秒开——启动路径一行代码都不加。
+/// 单文件失败只跳过：这只是优化，不影响安装正确性。返回（读到的文件数, 毫秒）。
+fn touch_tree(dir: &Path) -> (usize, u128) {
+    let mut files = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&d) else {
+            continue;
+        };
+        for e in entries.flatten() {
+            match e.file_type() {
+                Ok(t) if t.is_dir() => stack.push(e.path()),
+                Ok(t) if t.is_file() => {
+                    if e.metadata().map(|m| m.len() > 0).unwrap_or(false) {
+                        files.push(e.path());
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    let t0 = std::time::Instant::now();
+    let next = AtomicUsize::new(0);
+    let done = AtomicUsize::new(0);
+    let workers = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4)
+        .clamp(1, 8);
+    std::thread::scope(|s| {
+        for _ in 0..workers {
+            s.spawn(|| loop {
+                let i = next.fetch_add(1, Ordering::Relaxed);
+                let Some(p) = files.get(i) else { break };
+                let mut buf = [0u8; 4096];
+                if let Ok(mut f) = std::fs::File::open(p) {
+                    if f.read(&mut buf).is_ok() {
+                        done.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+            });
+        }
+    });
+    let ms = t0.elapsed().as_millis();
+    let n = done.load(Ordering::Relaxed);
+    eprintln!("[updater] 安装收尾：读过 {n}/{} 个文件，{ms} ms", files.len());
+    (n, ms)
 }
 
 // ---------------------------------------------------------------------------
@@ -790,6 +858,11 @@ fn stage_update_in(me: &Path, rel: &ReleaseInfo) -> Result<String, String> {
         // 上一轮半截的同版本目录先清（解压中断/被清），再 rename 成最终目录
         let _ = std::fs::remove_dir_all(&target);
         std::fs::rename(&content, &target).map_err(|e| format!("载荷落位失败：{e}"))?;
+
+        // 安装阶段把成本花完：每个文件读一遍，然后才写版本戳。有戳 = 装好且
+        // 成本已付（点重启、以后每次打开都是秒开）；没戳 = 没装（交接不用它，
+        // 下次重装）。
+        touch_tree(&target);
         std::fs::write(target.join(".payload-version"), format!("{ver}\n"))
             .map_err(|e| format!("写版本戳失败：{e}"))?;
 
