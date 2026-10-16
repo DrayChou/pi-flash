@@ -329,6 +329,10 @@ pub(crate) struct WsUi {
     /// 态不持久化）。行存在性在使用点对 tree_rows 复核（外部删除/切项目
     /// 后残留 → F2 静默忽略）。
     pub(crate) tree_selected: Option<PathBuf>,
+    /// 文件树滚动条共享状态（与会话列表 `psp.psp_sb_state` 同款分体：
+    /// psp_scrollbar 的 hover 常显 + autohide 挂在状态上，两面板各持一份
+    /// ——共用会让悬停一边持续续上另一边的淡出计时）
+    pub(crate) tree_sb_state: crate::ui::psp_scrollbar::PspScrollbarState,
     // fs watch（services::watcher）：tx 永驻（每次挂 watch clone 一份），
     // rx 被 startup 的泵取走；watcher 句柄 drop 即解除监听。
     pub(crate) fs_watch_tx: std::sync::mpsc::Sender<()>,
@@ -453,6 +457,7 @@ impl Chat {
                 tree_rows: std::sync::Arc::new(Vec::new()),
                 tree_drag_expand: None,
                 tree_selected: None,
+                tree_sb_state: crate::ui::psp_scrollbar::PspScrollbarState::new(),
                 fs_watch: None,
                 file_watches: std::collections::HashMap::new(),
                 changes_only: ui.tree_changes_only,

@@ -283,25 +283,42 @@ pub(crate) fn files_view(
                         });
                     },
                 )
-                .child(vlist(
-                    FILE_TREE_LIST_ID,
-                    rows.len(),
-                    CHANGES_ROW_H,
-                    VListHeight::Fill,
-                    false,
-                    true,
-                    tr("file_tree.no_changes"),
-                    None,
-                    move |ix, _window, _cx| match rows.get(ix) {
-                        Some(row) => changes_row(
-                            row.clone(),
-                            editing.clone(),
-                            selected.as_ref().is_some_and(|p| same_path(p, &row.path)),
-                            weak_c.clone(),
-                        ),
-                        None => div().into_any_element(),
-                    },
-                )),
+                .child(
+                    // 会话列表同款滚动条挂法（psp-scroll-wrap 镜像）：vlist
+                    // 自带的 menu_scrollbar 关掉，改 relative 包裹 + 右缘
+                    // absolute 条；变更容器无水平内边距，条 right(0) 已贴
+                    // dock 右缘
+                    div()
+                        .id("changes-scroll-wrap")
+                        .relative()
+                        .flex_1()
+                        .min_h_0()
+                        .w_full()
+                        .on_hover(cx.listener(|this, hovered: &bool, _w, cx| {
+                            this.ws.tree_sb_state.set_parent_hovered(*hovered);
+                            cx.notify();
+                        }))
+                        .child(vlist(
+                            FILE_TREE_LIST_ID,
+                            rows.len(),
+                            CHANGES_ROW_H,
+                            VListHeight::Fill,
+                            false,
+                            false,
+                            tr("file_tree.no_changes"),
+                            None,
+                            move |ix, _window, _cx| match rows.get(ix) {
+                                Some(row) => changes_row(
+                                    row.clone(),
+                                    editing.clone(),
+                                    selected.as_ref().is_some_and(|p| same_path(p, &row.path)),
+                                    weak_c.clone(),
+                                ),
+                                None => div().into_any_element(),
+                            },
+                        ))
+                        .child(tree_scrollbar(chat, 0.)),
+                ),
         );
     } else if !files_min {
         let weak_bg = weak.clone();
@@ -367,59 +384,98 @@ pub(crate) fn files_view(
                         c.tree_move_commit(&drag.path, drag.is_dir, &cwd, cx);
                     });
                 })
-                .child(vlist(
-                    FILE_TREE_LIST_ID,
-                    total,
-                    ROW_H,
-                    VListHeight::Fill,
-                    false,
-                    true,
-                    "暂无文件",
-                    Some(sticky),
-                    move |ix, _window, _cx| {
-                        // 行内新建：该输出位渲染编辑行，其余行做索引平移
-                        if edit_slot.is_some_and(|(eix, _)| ix == eix) {
-                            let Some((_, depth)) = edit_slot else { return div().into_any_element() };
-                            return tree_edit_row(
-                                edit.clone().expect("slot checked"),
-                                depth,
-                                &live_name,
-                            );
-                        }
-                        let row_ix = match edit_ix {
-                            Some(eix) if ix > eix => ix - 1,
-                            _ => ix,
-                        };
-                        let Some(row) = rows.get(row_ix) else { return div().into_any_element() };
-                        // 邻行深度决定各段引导线的首尾裁剪（整段只在首行留上
-                        // 4px、尾行留下 4px，段中连续成一条线）；编辑行占位时
-                        // 邻行深度取编辑行的深度
-                        let depth_at = |out_ix: usize| -> Option<usize> {
-                            if Some(out_ix) == edit_ix {
-                                edit_slot.map(|(_, d)| d)
-                            } else {
-                                let rix = match edit_ix {
-                                    Some(eix) if out_ix > eix => out_ix - 1,
-                                    _ => out_ix,
+                .child(
+                    // 会话列表同款滚动条挂法：vlist 自带的 menu_scrollbar
+                    // 关掉，改 relative 包裹 + 右缘 absolute 条；容器 px(6)
+                    // → 条外扩 6 抵消，右缘齐 dock 右缘（同会话列表贴边）
+                    div()
+                        .id("tree-scroll-wrap")
+                        .relative()
+                        .flex_1()
+                        .min_h_0()
+                        .w_full()
+                        .on_hover(cx.listener(|this, hovered: &bool, _w, cx| {
+                            this.ws.tree_sb_state.set_parent_hovered(*hovered);
+                            cx.notify();
+                        }))
+                        .child(vlist(
+                            FILE_TREE_LIST_ID,
+                            total,
+                            ROW_H,
+                            VListHeight::Fill,
+                            false,
+                            false,
+                            "暂无文件",
+                            Some(sticky),
+                            move |ix, _window, _cx| {
+                                // 行内新建：该输出位渲染编辑行，其余行做索引平移
+                                if edit_slot.is_some_and(|(eix, _)| ix == eix) {
+                                    let Some((_, depth)) = edit_slot else { return div().into_any_element() };
+                                    return tree_edit_row(
+                                        edit.clone().expect("slot checked"),
+                                        depth,
+                                        &live_name,
+                                    );
+                                }
+                                let row_ix = match edit_ix {
+                                    Some(eix) if ix > eix => ix - 1,
+                                    _ => ix,
                                 };
-                                rows.get(rix).map(|r| r.depth)
-                            }
-                        };
-                        let prev_depth = if ix == 0 { None } else { depth_at(ix - 1) };
-                        let next_depth = depth_at(ix + 1);
-                        tree_row(
-                            row.clone(),
-                            prev_depth,
-                            next_depth,
-                            edit.clone(),
-                            selected.as_ref().is_some_and(|p| same_path(p, &row.path)),
-                            weak.clone(),
-                        )
-                    },
-                )),
+                                let Some(row) = rows.get(row_ix) else { return div().into_any_element() };
+                                // 邻行深度决定各段引导线的首尾裁剪（整段只在首行留上
+                                // 4px、尾行留下 4px，段中连续成一条线）；编辑行占位时
+                                // 邻行深度取编辑行的深度
+                                let depth_at = |out_ix: usize| -> Option<usize> {
+                                    if Some(out_ix) == edit_ix {
+                                        edit_slot.map(|(_, d)| d)
+                                    } else {
+                                        let rix = match edit_ix {
+                                            Some(eix) if out_ix > eix => out_ix - 1,
+                                            _ => out_ix,
+                                        };
+                                        rows.get(rix).map(|r| r.depth)
+                                    }
+                                };
+                                let prev_depth = if ix == 0 { None } else { depth_at(ix - 1) };
+                                let next_depth = depth_at(ix + 1);
+                                tree_row(
+                                    row.clone(),
+                                    prev_depth,
+                                    next_depth,
+                                    edit.clone(),
+                                    selected.as_ref().is_some_and(|p| same_path(p, &row.path)),
+                                    weak.clone(),
+                                )
+                            },
+                        ))
+                        .child(tree_scrollbar(chat, 6.)),
+                ),
         );
     }
     col.into_any_element()
+}
+
+/// 树/变更列表共用的滚动条条带（会话列表 psp-scroll 同款挂法）：absolute
+/// 贴列表区右缘、宽 10 命中区，内容 = psp_scrollbar（hover 常显 + 3s 淡出
+/// + thumb 悬停加宽，与会话列表一根代码）。`right_ext` = 条带相对列表
+/// 包裹的外扩量，抵消所在容器的水平内边距让条带右缘齐 dock 右缘（树列表
+/// 容器 px(6) → 6；变更容器无边距 → 0）；thumb 右缘最终 = dock 右 − 4，
+/// 与会话列表逐像素同位。
+fn tree_scrollbar(chat: &Chat, right_ext: f32) -> gpui::AnyElement {
+    div()
+        .absolute()
+        .top(px(0.))
+        .bottom(px(0.))
+        .right(px(-right_ext))
+        .w(px(10.))
+        .child(crate::ui::psp_scrollbar::psp_scrollbar(
+            &chat.ws.tree_sb_state,
+            &crate::ui::vlist::scroll_handle(FILE_TREE_LIST_ID)
+                .0
+                .borrow()
+                .base_handle,
+        ))
+        .into_any_element()
 }
 
 /// 变更列表行高（比树行稍宽舒，对齐 pi-web 截图的呼吸感）。
