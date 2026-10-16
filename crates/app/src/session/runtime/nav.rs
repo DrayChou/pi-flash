@@ -57,7 +57,7 @@ impl SessionRuntime {
     /// process's back, and pi's in-memory chain never notices. While idle,
     /// a size change triggers a disk leaf-chain re-read.
     pub(crate) fn check_external_append(&mut self, cx: &mut Context<Self>) {
-        if self.agent_running || self.pending_echo.is_some() {
+        if self.agent_running || !self.pending_echoes.is_empty() {
             return;
         }
         let Some(f) = self.file.clone() else { return };

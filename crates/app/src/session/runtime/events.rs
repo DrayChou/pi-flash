@@ -6,6 +6,7 @@ use pi_link::protocol::{
     AssistantEvent, Block, Command, Event, SessionState, SessionStats, SlashCommand, Usage, content_blocks, parse_tree,
 };
 
+use crate::i18n::tr;
 use crate::session::messages::{Msg, Role, UsageLine, merge_tool_result, msgs_from_tail, result_payload};
 use pi_link::sessions::read_leaf_messages;
 
@@ -173,7 +174,7 @@ impl SessionRuntime {
                                     msgs_from_tail(read_leaf_messages(path, LEAF_REPAIR_MAX));
                                 if msgs.len() > rpc_msgs.len() {
                                     self.messages = msgs;
-                                    self.pending_echo = None;
+                                    self.pending_echoes.clear();
                                     // entry-id mapping stays the RPC/get_entries view
                                     // (fork anchors best-effort on repaired chains)
                                     let mut ids = self.active_user_entry_ids.iter();
@@ -197,7 +198,7 @@ impl SessionRuntime {
                         // cached pre-render instead of appending (fixes
                         // doubled rows after the tail pre-render)
                         self.messages.clear();
-                        self.pending_echo = None;
+                        self.pending_echoes.clear();
                         for msg in &rpc_msgs {
                             let blocks = content_blocks(&msg["content"]);
                             let usage = Usage::parse(&msg["usage"]);
@@ -251,21 +252,33 @@ impl SessionRuntime {
                     self.finalize_bash(result, cx);
                 } else if success {
                     self.status = format!("{command} ok");
+                } else if command == "prompt" {
+                    self.status =
+                        format!("prompt failed: {}", error.unwrap_or_default());
+                    // 发送失败：等待行不能一直转下去；锚点也无从跟随
+                    self.phase_waiting = false;
+                    self.pending_echoes.clear();
+                    self.pager.release();
+                    // 发送失败 = 本轮未跑成，红点
+                    self.turn_error = true;
+                    // preflight 拒绝（无鉴权/无模型）= 什么都没落盘，撤伪标签
+                    if !self.try_bind_reported_file(cx) {
+                        cx.emit(SessionEvent::PendingTab(None));
+                    }
+                } else if command == "follow_up" || command == "steer" {
+                    // 排队/插话被 pi 拒（扩展命令不允许排队、输入被
+                    // handler 消费掉、无可用模型…）：`PiSession::send` 只写 stdin
+                    // 不等应答，拒信是**异步**回来的，所以不能在发送帧上
+                    // 就判死。乐观气泡**留着**（用户还看得见自己写了什么，
+                    // 不算静默丢失），这里只负责出声原因。
+                    self.status = format!(
+                        "{}: {}",
+                        tr("status.queued"),
+                        error.unwrap_or_else(|| "—".into())
+                    );
                 } else {
                     self.status =
                         format!("{command} failed: {}", error.unwrap_or_default());
-                    if command == "prompt" {
-                        // 发送失败：等待行不能一直转下去；锚点也无从跟随
-                        self.phase_waiting = false;
-                        self.pending_echo = None;
-                        self.pager.release();
-                        // 发送失败 = 本轮未跑成，红点
-                        self.turn_error = true;
-                        // preflight 拒绝（无鉴权/无模型）= 什么都没落盘，撤伪标签
-                        if !self.try_bind_reported_file(cx) {
-                            cx.emit(SessionEvent::PendingTab(None));
-                        }
-                    }
                 }
             }
             Event::MessageStart { role, blocks, timestamp, is_error, tool_call_id, custom_type: _, custom_display: _, details, raw_system } => {
@@ -298,14 +311,21 @@ impl SessionRuntime {
                             })
                             .collect::<Vec<_>>()
                             .join("");
-                        // 去重只看 pending_echo：pi 回显 user 消息 ≠ agent 已开始应答，
-                        // 等待行（spark + 正在思考… + shimmer）必须活到第一个 assistant 事件
-                        let optimistic = self.pending_echo.is_some()
-                            && matches!(self.messages.last(), Some(m)
-                                if m.role == Role::User && m.plain_text() == echo_text);
-                        self.pending_echo = None;
-                        if optimistic {
-                            if let Some(m) = self.messages.last_mut() {
+                        // 去重口径（2026-10-16）：只看 pending_echoes 里的同文
+                        // 条目，命中就**按位置**就地升级那条乐观气泡，不再要求
+                        // 它是 messages.last()——排队发送的回显前面必然堆着本轮
+                        // 的 assistant 消息，last() 口径下必然重复成两条气泡。
+                        // 不命中则照常 push（pi 侧自行产生的 user 消息）。
+                        // 回显到达 ≠ agent 已开始应答，等待行（spark + 正在思考…
+                        // + shimmer）必须活到第一个 assistant 事件
+                        if let Some(ix) = self.pending_echoes.iter().position(|p| *p == echo_text) {
+                            self.pending_echoes.remove(ix);
+                            if let Some(ix) = self
+                                .messages
+                                .iter()
+                                .rposition(|m| m.role == Role::User && m.plain_text() == echo_text)
+                            {
+                                let m = &mut self.messages[ix];
                                 m.blocks = blocks;
                             }
                         } else {
@@ -329,7 +349,11 @@ impl SessionRuntime {
                     }
                     "assistant" => {
                         self.phase_waiting = false;
-                        self.pending_echo = None;
+                        // 不清 pending_echoes：排队发送的回显在**下一轮 turn 边界**
+                        // 才到，中间会先流过本轮的一堆 assistant 事件；这里
+                        // 清了就是“排队气泡回显时又被当成新消息推了一条”
+                        // （2026-10-16）。收口放到轮终（AgentEnd/AgentSettled/发送失败/
+                        // 整表重读）。
                         self.streaming_content = false;
                         self.messages.push(Msg {
                             role: Role::Assistant,
@@ -396,7 +420,6 @@ impl SessionRuntime {
             }
             Event::MessageUpdate(assistant_event) => {
                 self.phase_waiting = false;
-                self.pending_echo = None;
                 self.streaming_content = true;
                 // 060 微信回推：把流式事件原样冒给订阅方，由它自己决定何时
                 // flush（ZCode assistantReplyBuffer 语义，§6 坑1 边界不按 chunk）
@@ -593,7 +616,7 @@ impl SessionRuntime {
             Event::AgentSettled => {
                 self.agent_running = false;
                 self.phase_waiting = false;
-                self.pending_echo = None;
+                self.pending_echoes.clear();
                 self.streaming_content = false;
                 // 一轮结束**不**退役锚点：pi-web 只是 promptAnchorActive=false
                 // 让垫片收敛，容器 scrollTop 保持——短回复留在屏顶、长回复由
@@ -630,13 +653,13 @@ impl SessionRuntime {
                     // 点停止仍走 abort_stream：pi abortRetry 取消退避，乐观复位
                     // 语义不变。
                     self.phase_waiting = false;
-                    self.pending_echo = None;
+                    self.pending_echoes.clear();
                     self.streaming_content = false;
                     cx.emit(SessionEvent::Changed);
                 } else {
                     self.agent_running = false;
                     self.phase_waiting = false;
-                    self.pending_echo = None;
+                    self.pending_echoes.clear();
                     self.streaming_content = false;
                     // 同上：轮末不退役锚点（短回复继续钉在屏顶）
                     self.settle_turn();

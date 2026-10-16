@@ -114,9 +114,14 @@ pub(crate) struct SessionRuntime {
     /// text/thinking/toolcall deltas in flight (pi-web hasStreamingContent
     /// parity): the running/waiting phase row yields while content streams
     pub streaming_content: bool,
-    /// 乐观发送的用户文本：只用于把 pi 回显的同文 user 消息就地升级（去重）。
+    /// 乐观发送的用户文本队列（FIFO）：只用于把 pi 回显的同文 user 消息
+    /// 就地升级（去重）。排队发送（follow_up）一次可积多条，且回显往往
+    /// 晚到（下一轮 turn 边界才emit message_start），所以是列表而非单值；
+    /// 匹配也不看「是不是最后一条」——排队的回显前面必然已经堆了本轮的
+    /// assistant 消息（2026-10-16 修：单值 + last() 口径下 steer/排队回显
+    /// 必然重复成两条气泡）。
     /// 与 phase_waiting 解耦 —— 回显到达 ≠ agent 已应答，等待行不能被它掐掉。
-    pub pending_echo: Option<String>,
+    pub pending_echoes: Vec<String>,
     pub stream_started: Option<std::time::Instant>,
     pub agent_running: bool,
     /// 本轮结局（三色通知的红档）：**最后一条 assistant 消息**
@@ -245,7 +250,7 @@ impl SessionRuntime {
             collapsed: std::collections::HashMap::new(),
             phase_waiting: false,
             streaming_content: false,
-            pending_echo: None,
+            pending_echoes: Vec::new(),
             stream_started: None,
             agent_running: false,
             turn_error: false,

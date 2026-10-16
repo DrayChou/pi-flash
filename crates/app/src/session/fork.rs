@@ -183,7 +183,7 @@ impl SessionRuntime {
         // 尾部开始看
         self.pager.release();
         self.messages.clear();
-        self.pending_echo = None;
+        self.pending_echoes.clear();
         self.phase_waiting = false;
         self.streaming_content = false;
         self.agent_running = false;

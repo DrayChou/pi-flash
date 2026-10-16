@@ -21,8 +21,9 @@ impl SessionRuntime {
         }
     }
 
-    /// 引导：中断当前运行并立即注入此消息（rpc steer）。乐观上屏与翻页
-    /// 和 prompt 发送一致——发送帧气泡钉视口顶，不等回显。
+    /// steer（中断当前运行并立即注入）——**仅 pif-ui 自动化调用**（2026-10-16
+    /// 用户定批：UI 发送一律排队，composer 不再走这条路）。乐观上屏与翻页和
+    /// prompt/排队发送一致——发送帧气泡钉视口顶，不等回显。
     pub(crate) fn steer_input(&mut self, cx: &mut Context<Self>) {
         let text = self.input.trim().to_string();
         if text.is_empty() && self.pending_images.is_empty() {
@@ -57,12 +58,12 @@ impl SessionRuntime {
         }
     }
 
-    /// 乐观上屏 + 发送帧翻页（prompt/steer 共用，pi-web optimistic user
+    /// 乐观上屏 + 发送帧翻页（prompt/排队共用，pi-web optimistic user
     /// message parity）：气泡立即显示并钉视口顶，RPC 回显经 pending_echo
     /// 去重就地升级。
     fn optimistic_send(&mut self, text: String, cx: &mut Context<Self>) {
         // 伪标签：还没绑定会话文件的 draft，乐观发送的同一帧就在侧栏挂标
-        // 签（真标签要等 pi 落盘 + 磁盘扫描，进程冷启 1-3s）。prompt/steer/
+        // 签（真标签要等 pi 落盘 + 磁盘扫描，进程冷启 1-3s）。prompt/排队/
         // 微信远程三个入口共用本漏斗；已绑定会话被 file 守卫挡掉。
         if self.file.is_none() {
             let preview = text
@@ -73,7 +74,7 @@ impl SessionRuntime {
                 .to_string();
             cx.emit(SessionEvent::PendingTab(Some(preview)));
         }
-        self.pending_echo = Some(text.clone());
+        self.pending_echoes.push(text.clone());
         self.messages.push(Msg {
             role: Role::User,
             bash: None,
@@ -99,8 +100,18 @@ impl SessionRuntime {
         cx.notify();
     }
 
-    /// 后续消息：Agent 完成后排队此消息（rpc follow_up，pi 1.0 原生携带
-    /// images）。
+    /// 排队消息（rpc follow_up，pi 1.0 原生携带 images）：**运行中发送的正
+    /// 路**（2026-10-16 用户定夺：composer 只有 Enter 一个发送键，运行中
+    /// 一律排队，不再有 steer 插话）。
+    ///
+    /// 三条硬要求（上一版踩过的坑）：
+    /// 1. **先上屏再发**——pi 的 `followUp` 只入队 + 发 queue_update，等到
+    ///    下一轮 turn 边界才 emit message_start(user)；不上屏就是“打字被
+    ///    吞了”的观感；
+    /// 2. **发成功才清输入**——上一版 `let _ = session.send(..)` 丢弃返回 +
+    ///    无条件 `input.clear()`，pi 侧拒绝（`/ext-cmd` 扩展命令不允许排队、
+    ///    输入被扩展 handler 消费、进程不在）时内容静默蒸发；
+    /// 3. **失败保留草稿**并写 status（同 send_input 的 Err 口径）。
     pub(crate) fn follow_up_input(&mut self, cx: &mut Context<Self>) {
         // 压缩锁：UI 已锁死，这里是绕过 UI 调用的兜底
         if self.compacting {
@@ -110,6 +121,11 @@ impl SessionRuntime {
         if text.is_empty() && self.pending_images.is_empty() {
             return;
         }
+        let Some(session) = &self.agent.session else {
+            self.status = tr("status.disconnected").into();
+            cx.notify();
+            return;
+        };
         let images: Vec<serde_json::Value> = self
             .pending_images
             .iter()
@@ -119,11 +135,26 @@ impl SessionRuntime {
                 })
             })
             .collect();
-        if let Some(session) = &self.agent.session {
-            let _ = session.send(&Command::FollowUp { message: text, images });
+        match session.send(&Command::FollowUp { message: text.clone(), images }) {
+            Ok(_) => {
+                if !text.is_empty() && self.history.last().map(|h| h != &text).unwrap_or(true) {
+                    self.history.push(text.clone());
+                }
+                self.history_ix = None;
+                self.input.clear();
+                self.pending_images.clear();
+                self.status = tr("status.queued").into();
+                // 技能命令不做乐观回显（pi-web parity）：RPC 回显的是展开信封
+                // 文本，乐观插入裸 "/skill:xxx" 会多出一条重复气泡
+                if !text.is_empty() && !text.starts_with("/skill:") {
+                    self.optimistic_send(text, cx);
+                }
+            }
+            Err(e) => {
+                // 排队被拒：草稿与附件原样留着，用户改完能重发
+                self.status = e;
+            }
         }
-        self.input.clear();
-        self.pending_images.clear();
         cx.notify();
     }
 
@@ -135,7 +166,7 @@ impl SessionRuntime {
         self.stream_started = None;
         // 中止：等待行立即收起（不等 agent_settled）
         self.phase_waiting = false;
-        self.pending_echo = None;
+        self.pending_echoes.clear();
         // 中止即「不在跑」：状态槽转圈 / composer 停止按钮都读 agent_running，
         // 若 pi 的终止事件迟到或压根不来（进程被掐），不就地复位就会永久显示
         // 运行中——同一条「立即收起」语义
@@ -370,8 +401,9 @@ impl SessionRuntime {
             cx.notify();
             return;
         }
-        // 运行中发消息 = steer（事件驱动 agent_running 优先：快照 is_streaming
-        // 一轮内恒 false，会让「引导」变成新 prompt）
+        // 运行中发消息 = 排队（2026-10-16 用户定夺：统一排队，不再 steer
+        // 插话；事件驱动 agent_running 优先——快照 is_streaming 一轮内恒
+        // false，会让「排队」退化成新 prompt）
         let streaming = self.agent_running || self.state.as_ref().is_some_and(|s| s.is_streaming);
         let images: Vec<serde_json::Value> = self
             .pending_images
@@ -385,7 +417,7 @@ impl SessionRuntime {
             })
             .collect();
         let cmd = if streaming {
-            Command::Steer { message: text.clone(), images: images.clone() }
+            Command::FollowUp { message: text.clone(), images: images.clone() }
         } else {
             Command::Prompt { message: text.clone(), images }
         };
@@ -399,10 +431,14 @@ impl SessionRuntime {
                 self.history_ix = None;
                 self.input.clear();
                 self.pending_images.clear();
-                self.status = if streaming { "steering" } else { "running" }.into();
+                self.status = if streaming {
+                    tr("status.queued").into()
+                } else {
+                    "running".into()
+                };
                 // 技能命令不做乐观回显（pi-web parity）：RPC 回显的是展开
                 // 信封文本（渲染层折叠成紧凑命令），乐观插入裸 "/skill:xxx"
-                // 会多出一条重复气泡。prompt 与 steer 一致——发送帧即上屏
+                // 会多出一条重复气泡。prompt 与排队一致——发送帧即上屏
                 // 翻页，不等回显
                 if !text.is_empty() && !text.starts_with("/skill:") {
                     self.optimistic_send(text, cx);
@@ -434,11 +470,11 @@ impl SessionRuntime {
             cx.notify();
             return false;
         };
-        // 运行中 = steer，否则 prompt（与 composer 完全一致）
+        // 运行中 = 排队，否则 prompt（与 composer 完全一致）
         let streaming =
             self.agent_running || self.state.as_ref().is_some_and(|s| s.is_streaming);
         let cmd = if streaming {
-            Command::Steer { message: text.clone(), images: Vec::new() }
+            Command::FollowUp { message: text.clone(), images: Vec::new() }
         } else {
             Command::Prompt { message: text.clone(), images: Vec::new() }
         };
@@ -448,7 +484,11 @@ impl SessionRuntime {
                 self.history.push(text.clone());
             }
             self.history_ix = None;
-            self.status = if streaming { "steering" } else { "running" }.into();
+            self.status = if streaming {
+                tr("status.queued").into()
+            } else {
+                "running".into()
+            };
             // 让桌面端也看到这条消息（微信发的同样属于这轮对话）
             if !text.starts_with("/skill:") {
                 self.optimistic_send(text, cx);

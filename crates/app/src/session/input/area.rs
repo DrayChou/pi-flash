@@ -344,16 +344,13 @@ fn wire_composer_keys(
         .on_key_down(cx.listener(
             |this, ev: &KeyDownEvent, window, cx| {
                 let key = ev.keystroke.key.as_str();                if key == "enter" && ev.keystroke.modifiers.shift {
+                    // Shift+Enter 永远是换行，无论 agent 在不在跑（2026-10-16
+                    // 用户定批：composer 只有 Enter 一个发送键，排队语义全
+                    // 并到 Enter 上）。历史上这里曾抢走做“排队追问”
+                    // ——用户一输字就被发走、输入框抹掉。
                     // IME 组合期平台不派发按键（gpui windows events.rs），
                     // 无需组合守卫
-                    let streaming = this.rt().read(cx).agent_running;
-                    let can_queue =
-                        !this.composer.input.is_empty() || !this.composer.pending_images.is_empty();
-                    if streaming {
-                        if can_queue {
-                            this.follow_up_input(cx);
-                        }
-                    } else if let Some(c) = &this.composer.composer {
+                    if let Some(c) = &this.composer.composer {
                         c.update(cx, |f, fcx| f.insert_newline(window, fcx));
                     }
                     cx.stop_propagation();
@@ -554,12 +551,10 @@ fn ensure_composer(
                     return;
                 }
                 let can_queue = !chat.composer.input.is_empty() || !chat.composer.pending_images.is_empty();
-                let streaming = chat.rt().read(cx).agent_running;
-                if streaming {
-                    if can_queue {
-                        chat.steer_input(cx);
-                    }
-                } else if can_queue {
+                // 运行中也是“排队”，不再 steer 插话（2026-10-16 用户定批：
+                // 所有发送统一排队）。send_input 自身也按 agent_running
+                // 分流，故直接走它即可（两处同口径，一处分叉不可）
+                if can_queue {
                     chat.send_input(cx);
                 } else {
                     // 空输入回车：不发送，顺手清掉组件自插的换行
