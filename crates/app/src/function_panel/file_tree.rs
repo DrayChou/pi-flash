@@ -559,8 +559,10 @@ fn action_bar(
                 .flex_1()
                 .min_w_0()
                 .overflow_hidden()
-                .whitespace_nowrap()
-                .text_ellipsis()
+                // gpui div 默认 block（Style::default 显式 Display::Block），
+                // 名字与 chevron 会竖着堆——标题行显式横排
+                .flex()
+                .items_center()
                 .text_size(crate::appearance::ui_size(12.))
                 // 020-1：当前项目名 = 主题色 + 粗体（与项目列表选中行一致）
                 .font_weight(gpui::FontWeight::BOLD)
@@ -572,7 +574,17 @@ fn action_bar(
                 .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
                     let _ = w_proj.update(cx, |c, cx| c.toggle_tree_proj_menu(cx));
                 })
-                .child(project)
+                // 名字单独吃剩余宽做 ellipsis（flex 里截断样式要落在文本项
+                // 自己的收缩盒上），chevron 恒贴名字后
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_ellipsis()
+                        .child(project),
+                )
                 // 开合指示：下拉开着时翻向上
                 .child(
                     div()
