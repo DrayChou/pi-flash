@@ -64,7 +64,7 @@ pub(crate) fn mc_shortcuts_view(window: &Window) -> gpui::AnyElement {
             div()
                 .text_size(crate::appearance::ui_size(20.))
                 .font_weight(FontWeight::SEMIBOLD)
-                .text_color(rgb(T().text))
+                .text_color(rgb(T().text_faint))
                 .child(SharedString::from(tr("shortcuts.title").to_string())),
         )
         .child(
@@ -253,8 +253,9 @@ fn keycaps(stroke: &Keystroke) -> gpui::AnyElement {
 fn keycap(label: String, modifier: bool) -> gpui::AnyElement {
     let t = T();
     let cap_bg = if t.dark { t.tool_bg } else { 0xffffff };
-    let mod_bg = crate::appearance::theme::mix_rgb(t.bg, t.text, if t.dark { 0.06 } else { 0.05 });
-    let edge = crate::appearance::theme::mix_rgb(t.border, 0x000000, if t.dark { 0.55 } else { 0.14 });
+    // mix_rgb 权重 = 第一参数占比：往底色里掺 5% 文字色、往边框色里掺黑
+    let mod_bg = crate::appearance::theme::mix_rgb(t.text, t.bg, if t.dark { 0.06 } else { 0.05 });
+    let edge = crate::appearance::theme::mix_rgb(t.border, 0x000000, if t.dark { 0.45 } else { 0.86 });
     div()
         .flex_shrink_0()
         .rounded(px(5.))
