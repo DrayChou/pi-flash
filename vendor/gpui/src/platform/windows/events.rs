@@ -1081,16 +1081,23 @@ impl WindowsWindowInner {
     }
 
     fn handle_cursor_changed(&self, lparam: LPARAM) -> Option<isize> {
+        // PF vendored patch（2026-10-16）：句柄**变了就立刻** SetCursor，不再
+        // 只在 Some/None 翻转时设。原写法把「有→有」的样式切换全押在系统
+        // WM_SETCURSOR 上，而拖拽（按住键）期间系统不再派发 WM_SETCURSOR →
+        // 拖拽全程光标钉在起手样式，松手那一刻才被补上（项目行 OpenHand →
+        // 拖拽 ClosedHand 错位一整段，用户实机反馈「hover 和拖动都是小手、
+        // 放下才是抓住」）。窗口句柄变化即设，与悬停切换同一条路。
         let mut state = self.state.borrow_mut();
-        let had_cursor = state.current_cursor.is_some();
-
-        state.current_cursor = if lparam.0 == 0 {
+        let new_cursor = if lparam.0 == 0 {
             None
         } else {
             Some(HCURSOR(lparam.0 as _))
         };
 
-        if had_cursor != state.current_cursor.is_some() {
+        let changed = state.current_cursor.map(|c| c.0) != new_cursor.map(|c| c.0);
+        state.current_cursor = new_cursor;
+
+        if changed {
             unsafe { SetCursor(state.current_cursor) };
         }
 
