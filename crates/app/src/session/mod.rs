@@ -625,7 +625,9 @@ fn nav_gutter(
             // 14 = 与段左缘齐平（gutter 14 = 段命中区 10 实体 + 右 4 透明）
             .right(px(14.))
             .top_0()
-            .bottom_0()
+            // 下缘与 input panel 底线对齐（composer 悬浮 bottom 20，input/area.rs
+            // composer_wrap）——旧值 bottom_0 拖到窗口底，上下让位不对称
+            .bottom(px(20.))
             .w(px(400.))
             .flex()
             .flex_col()
