@@ -61,6 +61,10 @@ pub mod switch {
     pub const SM_KNOB: f32 = 8.;
     pub const SM_ON_ML: f32 = 10.;
     pub const SM_OFF_ML: f32 = 2.;
+    /// 部分选中（Mixed）：轨道用 accent 减淡铺底，knob 停在「开」位。
+    /// 组头「全选组」与模型页整商开关同口径——只要有一项启用就算亮，
+    /// 「全部 vs 部分」由轨道浓度 + 旁边的 {enabled}/{total} 计数区分。
+    pub const MD_MIXED_ALPHA: f32 = 0.45;
 }
 
 /// §5.4 复选 / 单选（px）。勾色 = accent_contrast。

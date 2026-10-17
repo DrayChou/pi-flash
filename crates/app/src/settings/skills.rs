@@ -77,6 +77,8 @@ pub(crate) fn mc_skills_view(
             continue;
         }
         let visible = items.iter().filter(|s| !s.disable_invocation).count();
+        // 全选 = 开；有部分/全关分得清（见 [`SwitchMark`]）
+        let mark = SwitchMark::from_counts(visible, items.len());
         let all_visible = visible == items.len();
         let bulk_paths: Vec<String> = items
             .iter()
@@ -95,7 +97,7 @@ pub(crate) fn mc_skills_view(
                 ),
                 weak,
                 format!("{visible}/{}", items.len()),
-                all_visible,
+                mark,
                 false,
                 move |c, cx| c.mc_toggle_skills_bulk(bulk_paths.clone(), all_visible, cx),
             )),

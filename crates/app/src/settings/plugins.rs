@@ -302,17 +302,13 @@ fn pl_sidebar(
                     .text_color(rgb(t.text_dim))
                     .child(tr("extensions.global_defaults")),
             )
-            .child(
-                div()
-                    .font_family(crate::editor::markdown::MONO_FAMILY)
-                    .text_size(crate::appearance::ui_size(10.))
-                    .text_color(rgb(t.text_dim))
-                    .child(SharedString::from(format!("{enabled}/{total}"))),
-            )
-            .child(config_switch(
+            // 计数 + 总开关合成一个组头三态开关（与技能页同一画法）：
+            // 部分启用时轨道减淡、knob 停在开位，不装成全关也不同于全选。
+            .child(group_switch(
                 "pl-bulk-g",
                 weak,
-                total > 0 && enabled == total,
+                format!("{enabled}/{total}"),
+                SwitchMark::from_counts(enabled, total),
                 false,
                 move |c, cx| c.mc_toggle_packages_bulk(enabled != total, cx),
             )),

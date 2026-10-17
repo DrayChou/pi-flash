@@ -165,6 +165,11 @@
 | SW_MD（默认） | 28×16 | 8（半高） | 10 | ml2 / ml14 |
 | SW_SM | 24×14 | 7 | 8 | ml2 / ml10 |
 
+- 三态（`SwitchMark`：Off / Mixed / On）：
+  - **On（全选）** = accent 实底 + bg 色 knob，knob 在开位；
+  - **Mixed（部分选中）** = accent 减淡铺底（`tokens::switch::MD_MIXED_ALPHA`）+ 同色调略深描边 + knob 在开位；
+  - **Off** = bg_selected 底 + border，knob 在关位；
+  - 用于「一组若干项」的总开关（技能分组 / 扩展全局 / MCP 全局）：一项没开不能装成一半，只开了一部分也不能装成全关——部分看轨道浓度，具体数字交给旁边的 `{enabled}/{total}`。禁用仍是整体 opacity 0.5（别拿减淡轨道当禁用）。
 - 选中 = accent 底 + bg 色 knob；未选 = bg_selected 底 + border；禁用整体 opacity 0.5。
 - 与 Zed（32×20/knob12）、Fluent（40×20/thumb12）同族，按 12px 密度再收半档（2026-10-09 定夺）。存量 config_switch 32×18、misc 34×19、组头 24×14 全部收敛到 28×16（`settings/widgets.rs::switch_el` 为唯一画法，组头行内开关同尺寸）。SW_SM 24×14 为**预留档**（当前无消费方；需要更小开关必须用它，禁止自造第三种尺寸）。状态直切、无动画——GPUI 现状即无插值，规范不虚构动画。
 

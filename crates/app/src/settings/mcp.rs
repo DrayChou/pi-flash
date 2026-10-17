@@ -206,7 +206,7 @@ fn mcp_sidebar(
             "mcp-bulk-g",
             weak,
             format!("{enabled}/{total}"),
-            total > 0 && enabled == total,
+            SwitchMark::from_counts(enabled, total),
             total == 0,
             move |c, cx| c.mcp_bulk(enabled != total, cx),
         ),
