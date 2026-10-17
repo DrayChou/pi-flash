@@ -3544,6 +3544,14 @@ impl Window {
         }
     }
 
+    /// pi-flash patch: 鼠标事件注入（UI 自动化穿透/命中类 bug 复现，
+    /// pi-flash-hlo6）。dispatch_event 返回 pub(crate) 的 DispatchEventResult，
+    /// 外部 crate 无法直调；同 dispatch_keystroke 模式包一层只回 bool。
+    pub fn dispatch_mouse_input(&mut self, event: PlatformInput, cx: &mut App) -> bool {
+        let result = self.dispatch_event(event, cx);
+        !result.propagate
+    }
+
     /// Dispatch a given keystroke as though the user had typed it.
     /// You can create a keystroke with Keystroke::parse("").
     pub fn dispatch_keystroke(&mut self, keystroke: Keystroke, cx: &mut App) -> bool {

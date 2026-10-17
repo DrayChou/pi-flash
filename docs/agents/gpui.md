@@ -56,6 +56,20 @@
 - overlay 必须 `absolute().inset_0()` + `occlude()`（防 0 高容器裁掉子元素 / 鼠标穿透）；但 `occlude()` 会**截断祖先 hitbox**（hit_test 从后往前 break）→ 行级 hover 失效、滚轮困死——消息气泡禁止加 occlude。
 - hover 事件按绘制逆序派发：向下移动时上一行 leave 晚于下一行 enter → enter-only 置位。
 - gpui 无逐元素 backdrop blur → 遮罩用 bg 色 80% 透明近似柔雾。
+- **滚轮派发给所有命中 hitbox（含祖先）且同帧连动**：内层滚一半外层跟着滚，
+  无「先内后外」。要嵌套语义得在内层挂 `on_scroll_wheel` 边界拦截：滚动前已
+  在对应边界才放行（否则 `cx.stop_propagation()`）；未溢出（max_offset=0）
+  恒放行。两个坑：① 滚动 offset 存储域是 **[-max, 0]**（0=顶，负向滚向
+  底）；② 同 div 内置滚动 handler 注册晚于自定义 listener，bubble 相位逆
+  序派发 → listener 先收、内置后滚，`offset()` 已含本次 delta，判边界要
+  减回去取滚动前值（用户气泡拦截 v63-8，turn.rs；设置页双滚同源未修，等
+  反馈）。
+- **鼠标事件注入（自动化）**：`Window::dispatch_event` 返回 pub(crate) 类
+  型，外部 crate 直调报 private；vendor 加了 `dispatch_mouse_input`（pi-flash-hlo6）
+  包一层只回 bool，配 pif-ui `input.mouse` op（click/down/up/move/rclick，
+  x/y 绝对或 rx/ry 相对坐标）——穿透/命中类 bug 的可信复现通道，全程走真
+  实 hit_test 事件链；与 input.keys 同因必须 `window.defer` 派发（防
+  entity_map 重入）。
 
 ## 文本与绘制
 

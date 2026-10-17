@@ -456,6 +456,39 @@ pub(crate) fn render_msg(
                                     .track_scroll(&scroll_handle)
                                     .flex_1()
                                     .min_w_0()
+                                    // v63-8: 气泡内滚拦截（穿透修复）。gpui 滚轮派发给
+                                    // 所有命中 hitbox（含祖先，v63-3 删 occlude 后无
+                                    // 人拦），长气泡上滚轮会**同帧**连动外层会话列表
+                                    // ——「用户消息鼠标穿透」。在此判断：滚动前已在
+                                    // 对应边界才放行（原生嵌套滚动语义：内滚到底，
+                                    // 下一滚才带动外层）；未溢出（max=0）恒放行。
+                                    // 注意 gpui 滚动 offset 存储域为 [-max, 0]，且
+                                    // 同 div 内置滚动 handler 先于本 listener 执行，
+                                    // offset() 已含本次 delta，须减回去取滚动前值。
+                                    .on_scroll_wheel({
+                                        let sh = scroll_handle.clone();
+                                        move |ev: &gpui::ScrollWheelEvent, window, cx| {
+                                            let max = sh.max_offset().height;
+                                            if max <= px(0.) {
+                                                return; // 未溢出：无内滚空间，恒放行
+                                            }
+                                            let delta_y =
+                                                ev.delta.pixel_delta(window.line_height()).y;
+                                            if delta_y == px(0.) {
+                                                return;
+                                            }
+                                            let off_pre = sh.offset().y - delta_y;
+                                            const EPS: f32 = 1.; // 浮点容差，防边界误拦
+                                            let at_edge = if delta_y > px(0.) {
+                                                off_pre >= px(-EPS) // 已在顶
+                                            } else {
+                                                off_pre <= px(-f32::from(max) + EPS) // 已在底
+                                            };
+                                            if !at_edge {
+                                                cx.stop_propagation();
+                                            }
+                                        }
+                                    })
                                     // 此处**不得** occlude()：gpui hit_test 命中
                                     // BlockMouse 即 break，会把祖先（本行的
                                     // bar_hover_wired）一起挡掉 → 鼠标停在气泡上

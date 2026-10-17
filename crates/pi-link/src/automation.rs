@@ -109,6 +109,11 @@ pub mod method {
     pub const PROJECT_PICKER_OPEN: &str = "project.picker_open";
     pub const INPUT_KEYS: &str = "input.keys";
     pub const INPUT_FOCUS: &str = "input.focus";
+    /// 注入鼠标事件（走真实 gpui hit_test 事件链，穿透/命中类 bug 的自动化
+    /// 入口）：action = click|down|up|move|rclick；坐标 x/y 给窗口内绝对
+    /// 物理像素，或 rx/ry 给 0..1 相对视口（缺省 0.5/0.5）；count = 连击数
+    /// （缺省 1）。回 {deferred: true}，效果断言照事务范式 wait/snapshot/shot
+    pub const INPUT_MOUSE: &str = "input.mouse";
     /// 打开（或聚焦）工作区终端（UI 测试用；状态读 app 面的
     /// focused/terminals/active_terminal，网格读 term 面）
     pub const TERMINAL_OPEN: &str = "terminal.open";

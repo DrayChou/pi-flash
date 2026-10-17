@@ -115,6 +115,83 @@ pub(super) fn dispatch(
             });
             Ok(json!({"deferred": true}))
         }
+        method::INPUT_MOUSE => {
+            // 走真实 gpui 事件链的鼠标注入：hover/on_click/起选守卫全按
+            // 线上 hit_test 语义响应，是穿透/命中类 bug 的唯一可信模拟。
+            // 与 INPUT_KEYS 同因 defer：本 op 包在 chat.aux.update 里，
+            // 同步派发必触 entity_map 重入断言。
+            use gpui::{px, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PlatformInput, Point};
+            let action = params
+                .get("action")
+                .and_then(Value::as_str)
+                .unwrap_or("click")
+                .to_string();
+            let size = window.viewport_size();
+            let coord = |abs: &str, rel: &str, total: f32, dflt: f32| -> f32 {
+                if let Some(v) = params.get(abs).and_then(Value::as_f64) {
+                    v as f32
+                } else if let Some(v) = params.get(rel).and_then(Value::as_f64) {
+                    (v as f32).clamp(0., 1.) * total
+                } else {
+                    dflt
+                }
+            };
+            let position = Point::new(
+                px(coord("x", "rx", f32::from(size.width), f32::from(size.width) / 2.)),
+                px(coord("y", "ry", f32::from(size.height), f32::from(size.height) / 2.)),
+            );
+            if !matches!(action.as_str(), "click" | "down" | "up" | "move" | "rclick") {
+                return Err(bad(format!(
+                    "未知 action: {action:?}（可用 click|down|up|move|rclick）"
+                )));
+            }
+            let button = match params.get("button").and_then(Value::as_str) {
+                Some("right") => MouseButton::Right,
+                _ => MouseButton::Left,
+            };
+            let count = params.get("count").and_then(Value::as_u64).unwrap_or(1) as usize;
+            window.defer(cx, move |window, cx| {
+                let send = |window: &mut Window, cx: &mut gpui::App, down: bool| {
+                    let ev = if down {
+                        PlatformInput::MouseDown(MouseDownEvent {
+                            button,
+                            position,
+                            click_count: count,
+                            first_mouse: false,
+                            ..Default::default()
+                        })
+                    } else {
+                        PlatformInput::MouseUp(MouseUpEvent {
+                            button,
+                            position,
+                            click_count: count,
+                            ..Default::default()
+                        })
+                    };
+                    window.dispatch_mouse_input(ev, cx);
+                };
+                match action.as_str() {
+                "move" => {
+                    window.dispatch_mouse_input(
+                        PlatformInput::MouseMove(MouseMoveEvent {
+                            position,
+                            ..Default::default()
+                        }),
+                        cx,
+                    );
+                }
+                "down" => send(window, cx, true),
+                "up" => send(window, cx, false),
+                // rclick = 右键单击（开上下文菜单类）
+                "rclick" | "click" => {
+                    send(window, cx, true);
+                    send(window, cx, false);
+                }
+                _ => unreachable!(),
+                }
+            });
+            Ok(json!({"deferred": true, "position": {"x": f32::from(position.x), "y": f32::from(position.y)}}))
+        }
         method::INPUT_FOCUS => {
             // 元素级 focus（非坐标点击）：焦点/键位类 bug 的自动化入口。
             // window.focus 只设焦点 id + refresh，无同步回调，chat.aux.update
