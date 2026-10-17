@@ -22,8 +22,11 @@ title: 界面 Apperance
 
 ## 会话内容宽度
 滑块 180px（规范 §5.12）+ 右侧实时读数 `920 px` + 「复位」钮；拖动即预览，
-松手落盘到 `app_settings.json` 的 `chat_content_width`。阈值：默认 920 /
-最小 560（约 40 汉字一行，再窄正文与代码块硬折行）/ 最大 1600 / 步进 10。
+松手落盘到 `app_settings.json` 的 `chat_content_width`。阈值（2026-10-29 用户定案）：默认 920 /
+最小 560（默认字号 15px 下约 37 汉字一行，再窄正文与代码块一句一折行）/
+**最大 1200** / **步进 20**。列宽是 `w_full().max_w(cap)` 的封顶值，小屏
+自动取可用宽，与机器分辨率无关。窗口最小尺寸 = 还原尺寸 1180×760
+（`main.rs` 的 `WINDOW_W_MIN/H_MIN`）。
 消息列、composer 胶囊、新会话页内容带、ask 问卷卡读同一值（pi-web
 `--chat-content-max-width` parity），改一处整列同宽。
 

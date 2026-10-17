@@ -672,6 +672,7 @@ mod tests {
     use super::*;
 
     /// 轨道 180px / 旋钮 12px：可用行程 168px，两端旋钮中心对应 min/max。
+    /// 数值域用真实设置区间（560..1200，步进 20）。
     fn track() -> gpui::Bounds<gpui::Pixels> {
         gpui::Bounds::new(
             gpui::point(px(0.), px(0.)),
@@ -682,16 +683,16 @@ mod tests {
     #[test]
     fn width_slider_maps_x_to_quantized_value() {
         // 左端（旋钮中心）= min、右端 = max、中点 = 中值
-        assert_eq!(value_at(track(), 560., 1600., 10., px(6.)), 560.);
-        assert_eq!(value_at(track(), 560., 1600., 10., px(174.)), 1600.);
-        assert_eq!(value_at(track(), 560., 1600., 10., px(90.)), 1080.);
+        assert_eq!(value_at(track(), 560., 1200., 20., px(6.)), 560.);
+        assert_eq!(value_at(track(), 560., 1200., 20., px(174.)), 1200.);
+        assert_eq!(value_at(track(), 560., 1200., 20., px(90.)), 880.);
     }
 
     #[test]
     fn width_slider_clamps_outside_track_and_quantizes() {
-        assert_eq!(value_at(track(), 560., 1600., 10., px(-40.)), 560.);
-        assert_eq!(value_at(track(), 560., 1600., 10., px(400.)), 1600.);
-        // 未落在整档上 → 就近 10px 档（x=12 ≈ 596 → 600）
-        assert_eq!(value_at(track(), 560., 1600., 10., px(12.)), 600.);
+        assert_eq!(value_at(track(), 560., 1200., 20., px(-40.)), 560.);
+        assert_eq!(value_at(track(), 560., 1200., 20., px(400.)), 1200.);
+        // 未落在整档上 → 就近 20px 档（x=12 ≈ 583 → 580）
+        assert_eq!(value_at(track(), 560., 1200., 20., px(12.)), 580.);
     }
 }

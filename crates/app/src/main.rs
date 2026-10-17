@@ -53,6 +53,12 @@ pub(crate) use shell::types::*;
 pub(crate) use ui::ComposerInput;
 pub(crate) use session::menu::slash_menu_view;
 
+/// 常规（非最大化）窗口尺寸 = 窗口最小尺寸（2026-10-29 用户定案：点击窗口
+/// 「缩小」钮还原到的尺寸就是最小尺寸）。逻辑像素（gpui 按 scale_factor 折算
+/// 后再交给 WM_GETMINMAXINFO），唯一落点在 `run()` 的建窗参数。
+pub(crate) const WINDOW_W_MIN: f32 = 1180.;
+pub(crate) const WINDOW_H_MIN: f32 = 760.;
+
 // composer 覆盖动作（注册为 "Input" 上下文绑定，见 run() 里 bind_keys）：
 // ↑/↓ 在菜单态导航补全、空输入态回溯历史，非空多行重新派发组件 MoveUp/
 // MoveDown；Tab 在菜单态接受补全；Ctrl+V 截获图片粘贴（composer 附件化，
@@ -223,17 +229,24 @@ fn main() {
             // 的 pending_zoom 补最大化——0.2.2 建窗即 Maximized 的延迟处理
             // 实测不生效，显式 zoom 是项目已验证路径（从建窗回调后移）。
             let _restored = get_window_state();
-            let bounds = gpui::Bounds::centered(None, gpui::size(px(1180.), px(760.)), cx);
+            // 常规（非最大化）窗口尺寸 = 最小窗口尺寸（2026-10-29 用户定案：
+            // 「点击缩小窗口按钮后的尺寸就是最小窗口尺寸」）——窗口还原到的
+            // 就是这一档，用户再也没必要拖得比它更小（宽度再小聊天列会被
+            // 挤到不可用）。两个数只此一处，改尺寸改这两个常量。
+            let bounds = gpui::Bounds::centered(
+                None,
+                gpui::size(px(WINDOW_W_MIN), px(WINDOW_H_MIN)),
+                cx,
+            );
             let window_bounds = gpui::WindowBounds::Windowed(bounds);
             let automation_chat: std::sync::OnceLock<gpui::WeakEntity<Chat>> =
                 std::sync::OnceLock::new();
             let window_handle = cx.open_window(
                 WindowOptions {
                     window_bounds: Some(window_bounds),
-                    // 最小宽度 900px（逻辑像素，gpui 按 scale_factor 换算再交给
-                    // WM_GETMINMAXINFO）：窗口再缩也不至于把聊天列挤到不可用。
-                    // 高度不设底（0 = 只保留边框开销），需要时再单独限。
-                    window_min_size: Some(gpui::size(px(900.), px(0.))),
+                    // 最小尺寸 = 还原尺寸（逻辑像素，gpui 按 scale_factor 换算后
+                    // 交给 WM_GETMINMAXINFO）
+                    window_min_size: Some(gpui::size(px(WINDOW_W_MIN), px(WINDOW_H_MIN))),
                     titlebar: Some(gpui::TitlebarOptions {
                         title: Some("pi-flash".into()),
                         // client-side title bar (v54 topbar 两段, window
