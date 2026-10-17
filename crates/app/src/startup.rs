@@ -755,14 +755,21 @@ fn recent_project() -> Option<(PathBuf, Option<PathBuf>)> {
         cands.push((r.path, r.last_opened_ms, None));
     }
 
-    // ② 会话活动（recents 前 32 条）：真正「最后工作」的证据
-    for s in pi_link::sessions::sessions_for_paths(&pi_link::recents::top_session_paths(32)) {
-        let cwd = PathBuf::from(&s.cwd);
+    // ② 会话活动（recents 前 32 条）：真正「最后工作」的证据。
+    //    活动时刻取 recents 的 active_ms（用户打开/发消息的时刻），**不是**
+    //    文件 mtime——读一条旧会话不改文件（mtime 停在几天前），「我刚在这里
+    //    干过活」只有 recents 知道；mtime 更新（外部写入）时取两者较大值。
+    let activity = pi_link::recents::top_activity(32);
+    let paths: Vec<PathBuf> = activity.iter().map(|(p, _)| p.clone()).collect();
+    let infos = pi_link::sessions::sessions_for_paths(&paths);
+    for (path, active_ms) in activity {
+        let Some(info) = infos.iter().find(|i| i.path == path) else { continue };
+        let cwd = PathBuf::from(&info.cwd);
         if !cwd.is_dir() || pi_link::paths::is_app_install_path(&cwd) {
             continue;
         }
-        let at = ms_of(s.modified);
-        cands.push((cwd, at, Some((at, s.path.clone()))));
+        let at = active_ms.max(ms_of(info.modified));
+        cands.push((cwd, at, Some((at, path.clone()))));
     }
 
     pick_recent(cands)
@@ -801,11 +808,15 @@ fn pick_recent(
 ///
 /// 1. `PI_FLASH_CWD` 显式覆盖（开发意图）：目录存在即进，restore=on 时附带
 ///    该项目的 per-project last_open（目录不存在不兜底，直接无项目态）；
-/// 2. **restore=on：全局最后工作的会话优先**——其所属项目随之成为 cwd
-///    （即使用户之后只是"打开过"别的项目没聊，也仍回到真正在聊的那个）；
-/// 3. 落最近活动项目（[`recent_project`]）：restore=on 但无可恢复会话时，
-///    或 restore=off 时（off = 停在**新会话页**，不加载旧会话）；
+/// 2. **cwd = 最近活动项目**（[`recent_project`]）：项目「打开/进入」时刻 ∪
+///    该项目会话最新活动取最大——用户在哪个项目里干活，下次就回哪个；
+/// 3. `startup_restore=on` 时连带加载**该项目自己的**最后会话；off 则停在
+///    该项目的新会话页（不加载）；
 /// 4. 真的没有任何项目记录（首次运行）→ None（无项目态）。
+///
+/// 注意：**不做「全局最后会话优先」**——那会让「刚打开过的项目」被别处的
+/// 旧会话压掉（用户实测：点了观宏知微的会话，重启回到 pi-flash）。恢复的
+/// 对象是「最近项目里的最后会话」，不是「全局最后会话」。
 fn boot_target() -> BootTarget {
     let restore = crate::services::workspace::startup_restore();
 
@@ -823,28 +834,23 @@ fn boot_target() -> BootTarget {
         return BootTarget::Project { cwd, session };
     }
 
-    // ② restore=on：最后工作的会话优先（会话所属项目 = cwd）
-    if restore {
-        for path in pi_link::recents::top_session_paths(8) {
-            let Some(info) = pi_link::sessions::sessions_for_paths(std::slice::from_ref(&path))
-                .into_iter()
-                .next()
-            else {
-                continue;
-            };
-            let cwd = PathBuf::from(&info.cwd);
-            if !cwd.is_dir() || pi_link::paths::is_app_install_path(&cwd) {
-                continue;
-            }
-            return BootTarget::Project { cwd, session: Some(path) };
-        }
-    }
-
-    // ③ 最近活动项目：restore=on 无会话可恢复 / restore=off → 该项目新会话页
-    match recent_project() {
-        Some((cwd, _)) => BootTarget::Project { cwd, session: None },
-        None => BootTarget::None,
-    }
+    // ② cwd = 最近活动项目；③ restore 只决定是否连带加载该项目的最后会话
+    let Some((cwd, last_session)) = recent_project() else {
+        return BootTarget::None;
+    };
+    let session = if restore {
+        last_session
+            .filter(|p| p.exists())
+            // 该项目的最新会话不在 recents 窗口内时，回落到 per-project 记忆
+            .or_else(|| {
+                crate::services::workspace::get_last_open(&cwd.to_string_lossy())
+                    .map(PathBuf::from)
+                    .filter(|p| p.exists())
+            })
+    } else {
+        None
+    };
+    BootTarget::Project { cwd, session }
 }
 
 /// 启动恢复 + 会话清单装载（010 重设计，原 spawn_session_list_load）：
