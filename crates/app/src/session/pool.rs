@@ -585,19 +585,16 @@ impl Chat {
         // 打开项目即注册（PF 项目注册表）：零会话也活跃，psp 分组与
         // 打开项目弹窗两面板并集口径（用户 2026-10-16 定案）
         pi_link::projects::register_project(&self.ws.cwd);
-        self.ws.branch = read_branch(&self.ws.cwd);
-        self.refresh_sessions();
         self.dlg.dialog = None;
-        self.ws.expanded_dirs.clear();
-        // 文件树：根项目行默认展开
-        self.ws.expanded_dirs.insert(self.ws.cwd.clone());
-        // 9rk0：同 remount_workspace——树先同步展平，git 标记随后台数据换入
-        self.rebuild_tree();
-        self.refresh_git(cx);
-        self.load_project_files();
-        self.attach_fs_watch();
-        // cwd 变了：cwd 外单文件监听面跟着重算（旧 cwd 下的文件现在要单挂）
-        self.retain_file_watches();
+        // 全套跟着新 cwd 重挂（Pin 收藏夹/树/git/fs watcher/项目文件索引/
+        // cwd 外单文件监听）——与 open_session 的池命中路径共用同一条
+        // remount_workspace。此前本函数把这一套自己抄了一遍，漏掉了
+        // **Pin 收藏夹**（按项目存的白名单）：切项目后 ws.pinned 还是上一个
+        // 项目的绝对路径，Pin 视图下 rebuild_tree → flatten_pins →
+        // is_abs_path_ignored → strip_prefix().unwrap() 当场 panic，
+        // 且 panic 发生在鼠标事件回调（非 unwind 边界）里 → 进程直接消失
+        // （用户 2026-10-17 报崩：从文件树切项目后点 psp 项目行 ＋ 新建会话）。
+        self.remount_workspace(cx);
         if let Some(p) = get_last_open(&self.ws.cwd.to_string_lossy()) {
             let path = PathBuf::from(&p);
             if path.exists() {

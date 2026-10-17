@@ -1,3 +1,43 @@
+## 待验证（本轮修复）——切项目后点项目行「＋ 新建会话」直接崩（进程消失）
+
+用户口径：从文件树切项目到 agentic-design-pattern → 打开一个 md → 点 pi-flash
+项目标签栏的新建会话，app 直接崩溃（无报错框，进程瞬间没了）。
+
+- ✅ 定位手法（值得复用）：release 崩得没日志，先看 Windows 事件日志
+  `Application Error` → 异常码 `0xc0000409`、异常数据 `7` = Rust panic
+  撞上不可 unwind 边界（gpui 鼠标事件回调）后的 fastfail，**不是**栈溢出
+  （那是 `0xc00000fd`）；转储在 `%LOCALAPPDATA%\CrashDumps\pi-flash.exe.*.dmp`，
+  `payload-x.y.z\pi-flash.exe` 与本地 `target\release\pi-flash.exe`
+  **字节一致**（md5 相同）且带 `pi_flash.pdb` → 自写 `pdbtool`（`pdb` crate 读
+  全局符号表）把转储栈上的 RVA 翻成函数名，直接看到
+  `new_session_in` → `switch_project` → `rebuild_tree` → `flatten_pins`；
+  再照 panic 现场留在栈上的字符串字面量（`called \`Result::unwrap()\` on an
+  \`Err\` value`）用 debug 构建复现，拿准行号 `services/file_tree.rs:116`。
+- ✅ 根因两层：
+  1. **触发面（真凶）**：`switch_project` 自己抄了一遍换 cwd 的重挂流程，
+     漏掉 **Pin 收藏夹**——那是按项目存的（`pins_for(ws_key)`，只有
+     `remount_workspace` 刷）。切项目后 `ws.pinned` 还是上一个项目的绝对
+     路径；Pin 视图下 `rebuild_tree` → `flatten_pins(new_cwd, 旧 pins)` →
+     `IgnoreStack::is_abs_path_ignored` → `abs_path.strip_prefix(abs_base_path)
+     .unwrap()` 当场 panic；panic 发生在鼠标事件回调（非 unwind 边界）→
+     `panic_cannot_unwind` → 进程直接 abort。只 pin 过文件、没切过项目的人
+     碰不到，所以显得「偶发」。
+  2. **炸点本身**：`is_abs_path_ignored` 的 `Some` 分支比 `RepoExclude`
+     分支少一句归属检查——后者有 `!abs_path.starts_with(ignore.path()) →
+     交上一层`，前者直接 `strip_prefix().unwrap()`。任何「规则来自不包含
+     本路径的 base」都会炸（Pin 脏数据、目录被移走的旧条目都能触发）。
+- ✅ 修法：① `switch_project` 不再自抄，改调 `remount_workspace`（与
+  `open_session` 池命中路径同一条），Pin 清单/退出空 Pin 视图自动跟着换；
+  ② `is_abs_path_ignored` 的 `Some` 分支补齐归属检查，跨 base 路径交上一层
+  （语义与 `RepoExclude` 分支一致，本项目内的命中照旧置灰）。
+- ✅ 验证：新测 `flatten_pins_survives_out_of_project_pin`（外项目绝对路径
+  进 Pin + 本项目命中仍置灰两向都锁）；`cargo test -p app` 296 全绿、
+  `cargo test -p pi-link` 142 全绿。pif-ui 隔离实例走原始序列复验：
+  agentic 里 pin 文件 → 开 Pin 视图 → 切到 pi-flash → `files` 面断言
+  `pin_view=false` 且 `pins=[]`；原崩溃序列（切项目 → 开 md → `project.
+  new_session_in` / psp ＋）跑通，app.log 零 panic；防御层单跑（留在
+  pi-flash 却 pin 了 agentic 文件再开 Pin 视图）出两行不炸。
+
 ## 待验证（本轮修复）——每次启动都从 payload 目录启动（未注册的安装目录常驻项目列表）
 
 用户口径：每次启动 pi-flash 都落在 `...node_modules\pi-flash\payload`，这个目录从没

@@ -113,14 +113,27 @@ impl IgnoreStack {
                 abs_base_path,
                 ignore,
                 parent: prev,
-            } => match ignore.matched(abs_path.strip_prefix(abs_base_path).unwrap(), is_dir) {
-                ignore::Match::None => IgnoreStack {
-                    top: prev.clone(),
+            } => {
+                // 规则来自不包含本路径的 base（Pin 收藏夹收到别项目的绝对
+                // 路径、目录被移走过的历史脏数据等）——与 RepoExclude 分支
+                // 同款处置：跳过本层、交上一层。原先直接 strip_prefix
+                // .unwrap()，非前缀路径当场 panic（用户 2026-10-17 报崩：
+                // 切项目时 Pin 清单没跟着换 → 崩在 flatten_pins）。
+                if !abs_path.starts_with(abs_base_path) {
+                    return IgnoreStack {
+                        top: prev.clone(),
+                    }
+                    .is_abs_path_ignored(abs_path, is_dir);
                 }
-                .is_abs_path_ignored(abs_path, is_dir),
-                ignore::Match::Ignore(_) => true,
-                ignore::Match::Whitelist(_) => false,
-            },
+                match ignore.matched(abs_path.strip_prefix(abs_base_path).unwrap(), is_dir) {
+                ignore::Match::None => IgnoreStack {
+                        top: prev.clone(),
+                    }
+                    .is_abs_path_ignored(abs_path, is_dir),
+                    ignore::Match::Ignore(_) => true,
+                    ignore::Match::Whitelist(_) => false,
+                }
+            }
         }
     }
 }
@@ -763,5 +776,35 @@ mod tests {
         let rows = flatten_pins(&t.0, &stale, &HashSet::new(), &[]);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].name, "beta.txt");
+    }
+
+    /// 回归（用户 2026-10-17 崩溃）：Pin 收藏夹收到**别的项目**的绝对路
+    /// 径时，gitignore 匹配不得 strip_prefix 失败就 panic。旧实现
+    /// `abs_path.strip_prefix(abs_base_path).unwrap()` 直接炸，且 panic
+    /// 发生在鼠标事件回调里（非 unwind 边界）→ 整个 app 瞬间消失。
+    #[test]
+    fn flatten_pins_survives_out_of_project_pin() {
+        let a = TempTree::new("pins-other-a");
+        let b = TempTree::new("pins-other-b");
+        std::fs::write(a.0.join(".gitignore"), "secret.txt\n").unwrap();
+        let secret = a.file("secret.txt"); // 另一个项目里被 .gitignore 命中的文件
+        let keep = b.file("keep.txt");
+
+        // 视图 cwd = b，pin 里混着 a 的绝对路径：以前当场 panic
+        let pins = vec![secret.clone(), keep.clone()];
+        let rows = flatten_pins(&b.0, &pins, &HashSet::new(), &[]);
+        let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, vec!["keep.txt", "secret.txt"]);
+        let secret_row = rows.iter().find(|r| r.name == "secret.txt").unwrap();
+        assert!(
+            !secret_row.ignored,
+            "外项目路径不归本项目 .gitignore 管（跳过本层交上层）"
+        );
+
+        // 本项目内的命中仍照旧置灰（守卫没把语义一起放掉）
+        std::fs::write(b.0.join(".gitignore"), "hidden.txt\n").unwrap();
+        let hidden = b.file("hidden.txt");
+        let rows = flatten_pins(&b.0, &[hidden], &HashSet::new(), &[]);
+        assert!(rows[0].ignored, "本项目 .gitignore 命中仍置灰");
     }
 }
