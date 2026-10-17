@@ -178,18 +178,22 @@ impl Render for Chat {
                 // 一次性首发（Zed focus_filename_editor 请求同位）
                 Some(_) => {}
                 None => {
-                    // 终端视图兜底：焦点不在**当前显示**的终端上（关/切 tab
-                    // 后旧终端元素已卸载但 handle 残留持焦，或焦点被丢到
-                    // 根节点）→ 交回显示的那个终端；否则键入无处可去
-                    // （双终端「打不进字」的根因）。非终端视图照旧回收给
-                    // chat 根。
-                    match self
-                        .shown_terminal_focus()
-                        .filter(|_| self.layout.content_view == crate::ContentView::Term)
+                    // 082 三期焦点归属（切 tab 不再自动聚焦内容区）：只有
+                    // 两个「回家」分支保留逐帧补焦——Chat = composer（home
+                    // 输入位），md 预览 = 预览容器（被动只读，方向键滚动
+                    // 无输入副作用）；Term 与 File 源码态不抢：内容区点击
+                    // 才接管键盘，中性态 = blur（键事件按根派发，全局键与
+                    // Ctrl+←/→ 照常可用）
+                    if self.layout.content_view == crate::ContentView::Chat {
+                        window.focus(&self.focus_handle(cx));
+                    } else if self.md_preview_active()
+                        && !self.ws.md_preview_focus.is_focused(window)
                     {
-                        Some(h) if !h.is_focused(window) => window.focus(&h),
-                        Some(_) => {}
-                        None => window.focus(&self.focus_handle(cx)),
+                        window.focus(&self.ws.md_preview_focus);
+                    } else if window.focused(cx).is_some() {
+                        // 中性态：blur 一次到位。blur() 无同值早退（focus()
+                        // 有），不判空会每帧 refresh → 持续空转重绘
+                        window.blur();
                     }
                 }
             }
@@ -558,25 +562,22 @@ impl Render for Chat {
                 this.layout.files_min = false;
                 cx.notify();
             }))
-            // 082 视图切换 Ctrl+←/→ 分流（绑定见 main.rs：Input 上下文同
-            // 深度后注册抢占组件词移动，composer/编辑器等一切输入焦点下
-            // 都会走到这里）：模态/弹层与编辑器搜索面板里退回组件词移动
-            //（ComposerPaste 兜底同款重派发），其余切 tab；切不动（已在
-            // 最左/最右边界）同样退回词移动，键不留死位
+            // 082 三期视图切换 Ctrl+←/→ 分流（绑定见 main.rs：无上下文，
+            // 任意焦点命中，终端/编辑器/输入框原键位一律截断）：仅模态/
+            // 弹层与编辑器搜索面板两处退回组件词移动（ComposerPaste 兜底
+            // 同款重派发），其余切 tab；边界 = no-op 死键（不再退回词移动）
             .on_action(cx.listener(|this, _: &ViewLeft, window, cx| {
-                if this.modal_layer_open()
-                    || this.editor_search_panel_focused(window, cx)
-                    || !this.cycle_content_tab(-1, window, cx)
-                {
+                if this.modal_layer_open() || this.editor_search_panel_focused(window, cx) {
                     window.dispatch_action(Box::new(gpui_component::input::MoveToPreviousWord), cx);
+                } else {
+                    this.cycle_content_tab(-1, window, cx);
                 }
             }))
             .on_action(cx.listener(|this, _: &ViewRight, window, cx| {
-                if this.modal_layer_open()
-                    || this.editor_search_panel_focused(window, cx)
-                    || !this.cycle_content_tab(1, window, cx)
-                {
+                if this.modal_layer_open() || this.editor_search_panel_focused(window, cx) {
                     window.dispatch_action(Box::new(gpui_component::input::MoveToNextWord), cx);
+                } else {
+                    this.cycle_content_tab(1, window, cx);
                 }
             }))
             // 消息划选 Ctrl+C 分流（绑定在 main.rs："Input" 深度后注册抢占
@@ -623,28 +624,8 @@ impl Render for Chat {
                     cx.stop_propagation();
                 }
             }))
-            // 082 视图切换 Ctrl+←/→ 兜底（输入焦点下的绑定路径见上方
-            // ViewLeft/ViewRight on_action）：这里只接「无绑定命中」的焦点
-            // 态（layout.focus 裸句柄等非 Input 场景）。终端焦点下
-            // terminal_key 先吞（发 PTY），不会到这里
-            .on_key_down(cx.listener(|this, ev: &gpui::KeyDownEvent, window, cx| {
-                let k = &ev.keystroke;
-                let step = match k.key.as_str() {
-                    "left" => Some(-1),
-                    "right" => Some(1),
-                    _ => None,
-                };
-                if let Some(step) = step
-                    && k.modifiers.control
-                    && !k.modifiers.alt
-                    && !k.modifiers.shift
-                    && !k.modifiers.platform
-                    && !this.modal_layer_open()
-                    && this.cycle_content_tab(step, window, cx)
-                {
-                    cx.stop_propagation();
-                }
-            }))
+            // 082 三期：Ctrl+←/→ 已升级为无上下文绑定（任意焦点命中，
+            // 绑定期先于监听器），此处的根 on_key_down 兜底不再可达，删除
             .child(body);
 
         if let Some(panel) = self.dlg.settings.clone() {

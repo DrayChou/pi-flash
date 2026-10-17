@@ -386,6 +386,10 @@ pub(crate) struct WsUi {
     /// reset 归零滚动
     pub(crate) md_preview_list: gpui::ListState,
     pub(crate) md_preview_list_path: Option<PathBuf>,
+    /// 082 三期：md 预览容器焦点句柄（key_context "MdPreview"，track_focus
+    /// 挂 render_preview_body 容器）——预览态的键盘滚动焦点，逐帧仲裁在
+    /// File+预览态补焦；切换/回收永远不碰内容区，预览是被动只读视图
+    pub(crate) md_preview_focus: gpui::FocusHandle,
     // TEMP 探针（023 调试）：外部改动检测 运行数/命中数
     pub(crate) ext_probe: (u32, u32),
     /// 023：打开文件后待聚焦的编辑器（Zed 行为：开文件即聚焦；渲染帧
@@ -532,6 +536,7 @@ impl Chat {
                 md_preview_scrollbar: gpui_component::scroll::ScrollbarState::default(),
                 md_preview_list: gpui::ListState::new(0, gpui::ListAlignment::Top, px(1000.)),
                 md_preview_list_path: None,
+                md_preview_focus: cx.focus_handle(),
                 fs_watch_tx,
                 fs_watch_rx: Some(fs_watch_rx_ch),
                 cwd: cwd.clone(),
@@ -872,6 +877,23 @@ impl Chat {
         // 搜索面板（Ctrl+F）输入框持焦同样不回收——它不是编辑器本体的
         // focus_handle，漏判会被下方仲裁抢回 composer，面板打不了字
         (handle.is_focused(window) || st.search_panel_focused(window, cx)).then_some(handle)
+    }
+
+    /// 082 三期：当前文件 tab 是否处于 **markdown 渲染预览态**（File 视图
+    /// + md kind + md_source=false）——逐帧仲裁据此把焦点交给预览容器。
+    pub(crate) fn md_preview_active(&self) -> bool {
+        if self.layout.content_view != ContentView::File {
+            return false;
+        }
+        let Some(path) = self.active_file_path() else {
+            return false;
+        };
+        crate::editor::kind::is_markdown(&path)
+            && self
+                .ws
+                .file_cache
+                .get(&path)
+                .is_some_and(|f| !f.md_source && !f.binary)
     }
 
     /// 082：编辑器搜索面板（Ctrl+F）输入框持焦判定——ViewLeft/ViewRight

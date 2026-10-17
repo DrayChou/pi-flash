@@ -298,7 +298,9 @@ fn content_tab(
     tab_icon: Option<&'static str>,
     badge: Option<gpui::AnyElement>,
     strike: bool,
-    view: ContentView,
+    // 082 三期后视图由 activate_content_tab 从 panel_tabs[ix] 推导，调用
+    // 方传入的 view 仅作签名兼容保留
+    _view: ContentView,
     cx: &mut gpui::Context<Chat>,
 ) -> impl gpui::IntoElement {
     let t = T();
@@ -309,29 +311,13 @@ fn content_tab(
         cx.notify();
     });
     let switch = cx.listener(move |this, _: &gpui::MouseDownEvent, window, cx| {
-        // 切 tab 立刻把键盘焦点交给目标视图：否则焦点留在已卸载的旧 tab
-        // （终端）/composer 上，键入落空——必须再点一下内容区才生效。
-        // 终端 = 直接给焦点句柄；文件 = pending_focus_file（编辑器实体
-        // 渲染帧懒建，与 open_file_tab 同一条路径）。
-        let target = this.ws.panel_tabs.get(ix).cloned();
-        let focus_term = match target {
-            Some(crate::PanelTab::Term(id)) => this
-                .ws.terminals
-                .iter()
-                .find(|t| t.id == id)
-                .map(|t| t.focus.clone()),
-            Some(crate::PanelTab::File(p)) => {
-                this.ws.pending_focus_file = Some(p);
-                None
-            }
-            _ => None,
-        };
-        this.activate_panel_tab(ix, cx);
-        this.set_content_view(view);
-        if let Some(f) = focus_term {
-            window.focus(&f);
-        }
-        cx.notify();
+        // 切 tab 只改状态，不自动聚焦内容区（082 三期：终端不再抢键盘；
+        // 键入目标由内容区点击决定）。与 Ctrl+←/→ 同一条路径：
+        // activate_content_tab（tabs.rs）内含视图真变化时的 window.blur()
+        // 截断旧焦点所有者（避免卸载元素句柄残留持焦、回切时「复活」）。
+        // 终端 = 点终端本体才持焦（term_view 的 mouse_down）；文件 = 显式
+        // 打开手势（树点开/eye 切源码/链接跳转）才走 pending_focus_file。
+        this.activate_content_tab(ix, window, cx);
     });
     // 行尾 ×（仅激活态由 tab_shell 渲染）——脏 tab 也要能关（关时走
     // FileDirty 确认弹窗）

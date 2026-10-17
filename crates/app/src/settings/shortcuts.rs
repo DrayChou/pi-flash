@@ -4,10 +4,10 @@
 //! （细边框 + 底部厚边，修饰键浅一档灰）。组标题与行文案的左缘都落在
 //! 原数字列起点（行内 px(2) 内边距处），去掉编号后不额外缩进。键帽来源
 //! 分两类：
-//! - 有 action 的五项：keymap 反查（`highest_precedence_binding_for_action`
+//! - 有 action 的项：keymap 反查（`highest_precedence_binding_for_action`
 //!   首键，单一事实源，与按钮 tooltip 键位 chip 同源，改绑定自动跟随）；
-//! - Ctrl+←/→ 与 F2：走渲染根按键兜底、**故意没有 action**（None-context
-//!   绑定会把输入框词移动抢掉，见 shell/render.rs），键串静态解析。
+//! - Ctrl+←/→（082 三期起已有 action，反查命中）；F2 与终端跳词两键走
+//!   渲染根按键兜底/PTY 直发，**无 action**，键串静态解析。
 
 use super::*;
 use gpui::{Action, AsKeystroke, FontWeight, Keystroke, Window};
@@ -47,18 +47,38 @@ pub(crate) fn mc_shortcuts_view(window: &Window) -> gpui::AnyElement {
         (
             tr("shortcuts.view_left"),
             tr("shortcuts.view_left_hint"),
-            Some(bare_key("ctrl-left")),
+            action_key(&crate::ViewLeft, window),
         ),
         (
             tr("shortcuts.view_right"),
             tr("shortcuts.view_right_hint"),
-            Some(bare_key("ctrl-right")),
+            action_key(&crate::ViewRight, window),
         ),
     ];
     let file_tree: Vec<(&str, &str, Option<Keystroke>)> = vec![(
         tr("file_tree.rename"),
         tr("shortcuts.rename_hint"),
         Some(bare_key("f2")),
+    )];
+    // 终端：跳词两键直发 PTY（无 action，静态解析）；键盘直通语义已在
+    // 跳词 hint 里说明（Ctrl+←/→ 留给切标签）
+    let terminal: Vec<(&str, &str, Option<Keystroke>)> = vec![
+        (
+            tr("shortcuts.term_word_jump_left"),
+            tr("shortcuts.term_word_jump_hint"),
+            Some(bare_key("ctrl-shift-left")),
+        ),
+        (
+            tr("shortcuts.term_word_jump_right"),
+            tr("shortcuts.term_word_jump_hint"),
+            Some(bare_key("ctrl-shift-right")),
+        ),
+    ];
+    // md 预览：六个滚动键无独立 action 展示价值，合一行（desc 列出全键）
+    let markdown: Vec<(&str, &str, Option<Keystroke>)> = vec![(
+        tr("shortcuts.md_scroll"),
+        tr("shortcuts.md_scroll_hint"),
+        None,
     )];
 
     // 弹窗 body 是 block 容器（taffy block 不解析流内auto margin），水平
@@ -72,6 +92,8 @@ pub(crate) fn mc_shortcuts_view(window: &Window) -> gpui::AnyElement {
     let groups = vec![
         (tr("shortcuts.group_global"), global),
         (tr("shortcuts.group_file_tree"), file_tree),
+        (tr("shortcuts.group_terminal"), terminal),
+        (tr("shortcuts.group_markdown"), markdown),
     ];
     let mut row_ix = 0usize;
     for (gi, (name, entries)) in groups.into_iter().enumerate() {

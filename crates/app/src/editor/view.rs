@@ -147,13 +147,19 @@ pub(crate) fn file_view(
     if !binary {
         ensure_file_editor(chat, &path, window, cx);
         consume_file_reload(chat, &path, window, cx);
-        // 开文件即聚焦（Zed 行为；编辑器实体就绪后消费；md 渲染态无实体则丢弃）
+        // 开文件即聚焦（Zed 行为；编辑器实体就绪后消费）。082 三期：仅
+        // 源码态消费——预览态（md_source=false）树里没有编辑器元素，聚焦
+        // 实体句柄必悬空（docs/agents/gpui.md 悬空句柄陷阱：旧焦点 blur、
+        // 新焦点收不到、键落根），预览焦点改由逐帧仲裁交给预览容器；
+        // 意图在此丢弃，等真正切回源码态时的显式手势再置
         if chat.ws.pending_focus_file.as_deref() == Some(path.as_path()) {
             chat.ws.pending_focus_file = None;
-            if let Some(ed) = chat.ws.file_cache.get(&path).and_then(|f| f.editor.clone()) {
-                if !ed.read(cx).focus_handle(cx).is_focused(window) {
-                    ed.update(cx, |st, scx| st.focus(window, scx));
-                }
+            let source_mode = chat.ws.file_cache.get(&path).is_some_and(|f| f.md_source);
+            if source_mode
+                && let Some(ed) = chat.ws.file_cache.get(&path).and_then(|f| f.editor.clone())
+                && !ed.read(cx).focus_handle(cx).is_focused(window)
+            {
+                ed.update(cx, |st, scx| st.focus(window, scx));
             }
         }
     }

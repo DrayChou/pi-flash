@@ -509,12 +509,38 @@ impl Chat {
         cx.notify();
     }
 
+    /// 激活内容区 tab（鼠标点标签与 Ctrl+←/→ 共用的唯一入口）。082 三期
+    /// 用户拍板：**切 tab 不再自动聚焦内容区**（终端不再抢键盘）——只改
+    /// 状态，并在视图真变化时 `window.blur()` 截断旧焦点所有者（避免卸载
+    /// 元素的句柄残留持焦、下次回到该视图时「复活」把键入静默送进终端）。
+    /// 键入目标由内容区点击决定；Term/File 源码态焦点逐帧仲裁不回收。
+    pub(crate) fn activate_content_tab(
+        &mut self,
+        ix: usize,
+        window: &mut gpui::Window,
+        cx: &mut Context<Self>,
+    ) {
+        let view = match self.ws.panel_tabs.get(ix) {
+            Some(PanelTab::Term(_)) => ContentView::Term,
+            Some(PanelTab::Changelog) => ContentView::Changelog,
+            Some(PanelTab::File(_)) => ContentView::File,
+            None => return,
+        };
+        let changed = self.layout.content_view != view || self.ws.active_panel_tab != Some(ix);
+        self.activate_panel_tab(ix, cx);
+        self.set_content_view(view);
+        if changed {
+            window.blur();
+            cx.notify();
+        }
+    }
+
     /// 082 视图切换：Ctrl+←/→ 切到当前标签左/右邻视图。tab 条 = 置顶会话
     /// tab + 自由标签区，顺序稳定（激活不重排，见 activate_panel_tab），
     /// 序列 [会话, p0..pn] 上的「左/右邻」= 下标 -1/+1。最左再往左、最右
-    /// 再往右 = no-op（不环绕，浏览器同语义）。焦点交接与 content_tab 的
-    /// switch 监听同款：终端直接给焦点句柄，文件走 pending_focus_file
-    /// （编辑器实体渲染帧懒建）。返回是否发生切换。
+    /// 再往右 = no-op（不环绕，浏览器同语义）。焦点策略见
+    /// activate_content_tab（不自动聚焦，视图变化即截断旧焦点）。
+    /// 返回是否发生切换。
     pub(crate) fn cycle_content_tab(
         &mut self,
         offset: isize,
@@ -545,35 +571,16 @@ impl Chat {
         };
         let Some(target) = target else { return false };
         match target {
-            Some(ix) => {
-                let tab = self.ws.panel_tabs.get(ix).cloned();
-                let view = match tab {
-                    Some(PanelTab::Term(_)) => ContentView::Term,
-                    Some(PanelTab::Changelog) => ContentView::Changelog,
-                    _ => ContentView::File,
-                };
-                let focus_term = match tab {
-                    Some(PanelTab::Term(id)) => self
-                        .ws
-                        .terminals
-                        .iter()
-                        .find(|t| t.id == id)
-                        .map(|t| t.focus.clone()),
-                    Some(PanelTab::File(p)) => {
-                        self.ws.pending_focus_file = Some(p);
-                        None
-                    }
-                    _ => None,
-                };
-                self.activate_panel_tab(ix, cx);
-                self.set_content_view(view);
-                if let Some(f) = focus_term {
-                    window.focus(&f);
+            Some(ix) => self.activate_content_tab(ix, window, cx),
+            None => {
+                let changed = self.layout.content_view != ContentView::Chat;
+                self.set_content_view(ContentView::Chat);
+                if changed {
+                    window.blur();
+                    cx.notify();
                 }
             }
-            None => self.set_content_view(ContentView::Chat),
         }
-        cx.notify();
         true
     }
 

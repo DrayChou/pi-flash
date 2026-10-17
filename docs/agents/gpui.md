@@ -59,11 +59,18 @@
 - **滚轮派发给所有命中 hitbox（含祖先）且同帧连动**：内层滚一半外层跟着滚，
   无「先内后外」。要嵌套语义得在内层挂 `on_scroll_wheel` 边界拦截：滚动前已
   在对应边界才放行（否则 `cx.stop_propagation()`）；未溢出（max_offset=0）
-  恒放行。两个坑：① 滚动 offset 存储域是 **[-max, 0]**（0=顶，负向滚向
-  底）；② 同 div 内置滚动 handler 注册晚于自定义 listener，bubble 相位逆
-  序派发 → listener 先收、内置后滚，`offset()` 已含本次 delta，判边界要
-  减回去取滚动前值（用户气泡拦截 v63-8，turn.rs；设置页双滚同源未修，等
-  反馈）。
+  恒放行。三个坑：① 滚动 offset 存储域是 **[-max, 0]**（0=顶，负向滚向
+  底）；② 同 div 内置滚动 handler（`paint_scroll_listener`）注册晚于自定义
+  listener，bubble 相位**逆注册序**派发 → 内置先滚、listener 后收，
+  `offset()` 已含本次 delta，判边界要减回去取滚动前值；③ **拦截能不能生效
+  全看注册时机**：谁后注册谁先收到。div 套 div 天然对（子级在父级 paint 内
+  注册，晚于父级）；gpui `List` 原本先 paint 条目、末尾才注册自己的滚轮 ⇒
+  列表比条目先滚，条目的 `stop_propagation` 永远晚一步（超高用户气泡「滚不
+  动、只有整屏滚」的根因，v63-9）。已 vendor 补丁：`elements/list.rs` 的
+  `List::paint` 把 `on_mouse_event` 挪到条目循环**之前**。回归锁
+  `session/messages/turn.rs` 的 `mod bubble_wheel`（内层未到边界列表不动 /
+  到边界才接手）。新增「列表里嵌滚动容器」的写法，先确认容器在列表条目里
+  （自动满足），再写边界拦截。
 - **鼠标事件注入（自动化）**：`Window::dispatch_event` 返回 pub(crate) 类
   型，外部 crate 直调报 private；vendor 加了 `dispatch_mouse_input`（pi-flash-hlo6）
   包一层只回 bool，配 pif-ui `input.mouse` op（click/down/up/move/rclick，
@@ -141,7 +148,7 @@
 
 ## keymap 与快捷键
 
-- **键盘派发顺序：绑定（keymap）先于 `on_key_down` 监听器**（`vendor/gpui/src/window.rs:3843-3857`：绑定命中 → 派发 action → 默认停传播，`finish_dispatch_key_event` 不再执行）——纯监听器兜不住「有绑定命中」的键（实例：消息划选 Ctrl+C 兜底监听器在 composer 焦点下永收不到，`ctrl-c→input::Copy`（Input context）总命中且空选区早退吞键）。要拦截 = 注册**同 context 深度、更晚注册**的绑定抢占（`keymap.rs:165` 同深度比注册序后注册赢），handler 分流：有目标态用之、否则 `window.dispatch_action` 转发原动作。**None-context 绑定深度=全栈长（`keymap.rs:208`），会在终端等任何焦点抢占**——终端 Ctrl+C 靠 `terminal_key` 监听器（content.rs:194），禁用 None-context 注册这类键；监听器只在「无绑定命中」区域兜底（如 chat 根焦点）。
+- **键盘派发顺序：绑定（keymap）先于 `on_key_down` 监听器**（`vendor/gpui/src/window.rs:3843-3857`：绑定命中 → 派发 action → 默认停传播，`finish_dispatch_key_event` 不再执行）——纯监听器兜不住「有绑定命中」的键（实例：消息划选 Ctrl+C 兜底监听器在 composer 焦点下永收不到，`ctrl-c→input::Copy`（Input context）总命中且空选区早退吞键）。要拦截 = 注册**同 context 深度、更晚注册**的绑定抢占（`keymap.rs:165` 同深度比注册序后注册赢），handler 分流：有目标态用之、否则 `window.dispatch_action` 转发原动作。**None-context 绑定深度=全栈长（`keymap.rs:208`），会在终端等任何焦点抢占**。两副面孔（082 三期定夺）：①壳层专属键（Ctrl+←/→ 切标签）**就靠它**——终端/编辑器/输入框原键位一律截断（082 二期 Input 上下文版在终端焦点下永不命中 = 切进终端即单门 trap，已废）；②要键**到达**终端的（Ctrl+C/V、方向键）**禁**用。修饰符精确匹配（`keystroke.rs:131`）使配对键不互斥：Ctrl+Shift+←/→ 不被 `ctrl-left` 绑定拦截，留给终端跳词（input_encode m=6 直出 `\x1b[1;6D/C`）。监听器只在「无绑定命中」区域兜底（如 chat 根焦点）。
 - 键串里的 `cmd-` 是 **platform 修饰键**（解析成 `modifiers.platform`，Windows 显示语义=Win），不是 ctrl 的别名；PF 不发 macOS，**禁注册 `cmd-*` 绑定**：`Kbd::binding_for_action` 反查走 `highest_precedence_binding_for_action`（= 注册序最后一条），gpui-component `Kbd::format` 把 platform 渲成字面 `"Win"` → tooltip 出现「Win+P」假键位（实际生效的仍是 ctrl-p）。全仓 keymap 注册点唯一：`main.rs` 初始化。
 
 ## 焦点
@@ -149,6 +156,7 @@
 - 焦点分两层：`window.focus(&h)` 直接写 `Window.focus`（`is_focused()` 读的就是它，`focus()` 同值提前 return），而**帧焦点路径**（`rendered_frame.focus`）只由这一帧 prepaint 过的 `set_focus_handle` 写出。给一个这一帧**不在元素树里**的句柄聚焦（组件的 fallback 句柄、滚出视口的虚拟列表行里的输入框）= 路径为空：旧持有者收 blur、新持有者收不到 focus，键事件按 root 兜底，而 `Window.focus` 还留着那个悬空 id（下次渲染又「复活」）。改焦点一律先问「这个元素这帧渲染了吗」。
 - `Chat::render` 的焦点级联每帧仲裁「谁持焦」（优先级：对话框/弹层 > 设置 > 文件编辑器 > 终端 > 行内编辑 > composer）。要在**存续期**持焦的行内输入框必须进这条级联；只挂一次性聚焦、靠 blur 收场的写法会被级联末级的 composer 回收逐帧打掉（文件树行内改名「焦点捕捉不到」的根因）。真夺焦（对话框/终端/编辑器/设置）走级联靠前分支，blur 收场照常。
 - gpui-component `InputState` 内件首帧才建（`TextInput::ensure_state`）→ 首发聚焦走 `TextInput::focus_soon`（want_focus 在输入框自己的 render 里兑现，内件建好即同帧生效，Zed `focus_filename_editor` 请求同位）；此后兜底用 `has_inner()` + `focus_handle_in()`（内件未建时不要碰 fallback 句柄）。
+- **切 tab ≠ 聚焦内容区（082 三期用户定夺）**：tab 切换是导航不是输入——`activate_content_tab`（editor/tabs.rs）只改状态，视图真变化即 `window.blur()` 截断旧焦点所有者（不 blur 则卸载元素句柄残留 `Window.focus`，回切该视图时「复活」把键入静默送进旧目标，如终端）。焦点归属由逐帧仲裁收口：Chat→composer、File+md 预览→预览容器（被动只读，`MdPreview` 上下文方向键滚动）、Term/File 源码→中性（blur，点击内容区才接管键盘）；显式打开手势（树点开/eye 切源码/md 链接）才置 `pending_focus_file`，且仅源码态消费（预览态树里无编辑器元素，聚焦实体句柄必悬空——即上行陷阱）。反例教训：给未渲染元素 `window.focus`（082 二期 cycle/切标签路径）+ 逐帧仲裁终端兑底分支 = 终端「永远持焦」假象，切进终端后所有键入 PTY、Ctrl+←/→ 也被 `terminal_key` 截走，键盘无逃生口。
 
 ## gpui-component
 
@@ -172,6 +180,7 @@
 - **vendor 本地改动（升级必须重套）**：`text/text_view.rs`（**起选遮挡守卫**，2026-10-15，pi-flash-hlo5）：selectable TextView 在 `prepaint` 插自身 Normal hitbox（`type PrepaintState = Hitbox`，插先于子树），起选 mouse-down **裸监听**加 `hitbox.is_hovered(window)` 守卫。根因：裸 `window.on_mouse_event` 收全窗所有事件，`bounds.contains` 只答「点在文本区内」不答「文本区在该点是否可见」——composer 悬浮胶囊（后绘 BlockMouse）叠在消息列上，胶囊上划选穿透选中身后的隐藏文本；`occlude()` 只挡 div 层命中路由，挡不住裸监听。语义：hit_test 从后往前走、遇 BlockMouse break，被遮挡者进不了 `mouse_hit_test.ids` → 守卫精确到点击点（同帧可见区照常起选），附带堵住被 content mask 裁掉的滚出区起选。**宿主悬浮层必须自挂 occlude 才享受此守卫**（回底钮 scroll-to-bottom 同期补挂——它无 BlockMouse hitbox 时身后文本照旧穿透）。
 - **vendor 本地改动（升级必须重套）**：`window.rs` + `platform.rs` + `platform/windows/`（**窗口内容回读**，zed main 的 D3D11 staging 纹理回读 `Window::render_to_image` 移植，约 100 行）——`ui.screenshot` op / `pif-ui shot` 的底座（UI 自动化 §1，000-自动化测试.md）：进程内截最近一帧、不抢 OS 屏、被遮挡/最小化窗口也能截。
 - **vendor 本地改动（升级必须重套）**：`elements/list.rs`（`list()` 虚拟列表滚轮，2026-10-15）：滚轮监听只应用**本事件**的 delta（原 `accumulated_scroll_delta` 跨事件累计再整包重放——同帧 N 个事件总位移 d₁·N+d₂·(N-1)+…，事件积压越多过量越狠；zed 上游同缺陷，平时一帧一事件掩盖，流式全窗重建拖长帧时滚轮一滚跳一大截）+ 行高硬编码 `px(20.)` 改真实 `window.line_height()`（div `paint_scroll_listener` 同款，随字号缩放）。app 侧配套 free_scroll 见「滚动」节。
+- **vendor 本地改动（升级必须重套）**：`elements/list.rs`（**滚轮注册时机**，v63-9，`List::paint`）：`window.on_mouse_event` 原在**条目 paint 之后**注册 → 冒泡相位逆注册序派发，列表比条目先收到滚轮，条目内滚动容器的 `stop_propagation()` 永远晚一步 ⇒ 超高用户气泡「带滚动条却滚不动、只有整屏滚」，且列表 sync 的 free_scroll 被误置。修法：把注册挪到条目循环**之前**（`hitbox_id`/`height`/`scroll_top` 在 prepaint 已有）。回归锁 `session/messages/turn.rs` 的 `mod bubble_wheel`。**通用规则：滚轮嵌套语义靠注册顺序，谁后注册谁先收到——popup/悬浮滚动层想抢在列表之前处理，只要晚注册即可。**
 - **vendor 本地改动（升级必须重套）**：`input/state.rs` `scroll_to`（**光标移动鬼畜振荡修复**，2026-10-15）：①`edge_height` 固定 3 行 → `min(3行, 视口半高)`——视口 H < 2×edge（composer 3~5 行高必中）时上下「安全区」重叠为空，两支判据的解互落对方触发区（deferred 实测 0→-40→-20→-40…永不收敛），而 `move_to`（movement.rs，**每次光标移动都调 scroll_to**）逐键重算 → 滚动位逐键翻转、auto_grow 容器 3↔4 行交替，快速连按即鬼畜；静止不抖是因为 scroll_to 只在光标移动时被调。②解钳进内容滚动范围 `[-(wrapper.len()×行高-H).max(0), 0]`——此前光标贴底行即使内容放得下也把首行裁出视口且停住（解无下界）。量法：composer 灌 5 行中文、Ctrl+End 到末行、pif-ui keys left 连打逐帧 shot——修复前可见行数 3↔4 交替、修复后 11 帧行带全等且差异仅在光标水平位移。
 - **vendor 本地改动（升级必须重套）**：`input/state.rs` `scroll_to`（**点击可见行瞬移屏幕底部修复**，2026-10-16）：滚轮路径 `update_scroll_offset` 钳的是含垫底的 `scroll_size`（半视口 overscroll），末行可合法停进视口中部；而 scroll_to 尾部曾**无条件**把 offset 重钳进纯内容范围并写 `deferred_scroll_offset`——点击视口中部的末行，停好的滚动位被拽回内容底、该行瞬移屏幕底部（10-15 那条「两钳制并存不冲突」的判断不成立，冲突在光标可见也落账）。修法：内容钳制收进上下两支越界分支（只作用于「解」），函数尾仅在 `scroll_offset != scroll_handle.offset()` 时写 deferred + notify——光标可见时滚动位不动，用户 overscroll 停车保留；分支解行为与 10-15 振荡修复一致（不越内容底、不裁顶）。
 - **vendor 本地改动（升级必须重套）**：`platform/windows/events.rs` `handle_cursor_changed`（**拖拽期光标不切样式修复**，2026-10-16）：原实现只在 `current_cursor` 的 **Some/None 翻转**时 `SetCursor`，「有→有」的样式切换全押给系统 `WM_SETCURSOR`；而**拖拽（按住键）期间系统不再派发 WM_SETCURSOR** → 光标整段钉在起手样式，松手那一刻才被补上（项目行 OpenHand → `App::set_active_drag_cursor_style(ClosedHand)` 的握紧手错位一整段：悬停与拖动同显小手、放下才显抓住）。修法 = 句柄**变了**（含 None 翻转与句柄不同）即 `SetCursor`。诊断记忆点：**同一处光标在不同修饰状态（拖拽/按住键）下表现不一致 → 先怀疑 SetCursor 的触发时机，不要一路往渲染/命中查找**。

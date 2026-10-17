@@ -355,6 +355,12 @@ pub(crate) fn kind_of(path: &Path) -> &'static dyn FileKind {
     }
 }
 
+/// md 判据（后缀注册表口径，与 MarkdownKind 路由同源）：md 双态视图与
+/// 逐帧仲裁（预览态焦点归属）共用，不再各写字符串匹配。
+pub(crate) fn is_markdown(path: &Path) -> bool {
+    kind_of(path).name() == "markdown"
+}
+
 /// 「在浏览器中打开」适用判据（html/htm）：编辑器右键菜单（edm-browser，
 /// 文件动作块首位）与文件树菜单（ftm-file-browser，021）共用同一处判断，
 /// 两处扩展名规则不再各写一份（漂移过：树菜单认 html 而编辑器菜单不动）。

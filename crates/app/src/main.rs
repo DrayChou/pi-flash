@@ -63,10 +63,15 @@ pub(crate) use session::menu::slash_menu_view;
 // 082 全局两动作（MaximizeSessionList/MaximizeFileTree）：子面板最大化，
 // Alt+1 / Alt+2，与 psp/文件树头部最大化钮同一语义。
 // 082 视图切换两动作（ViewLeft/ViewRight）：Ctrl+←/→ 切到当前标签左/右
-// 邻视图。注册为 "Input" 上下文同深度后注册抢占组件词移动（焦点级联末级
-// 把焦点停在 composer/编辑器等输入框——纯根监听器永远收不到这两个键），
-// 分流在渲染根 on_action；非输入焦点（无绑定命中）走根 on_key_down 兜底。
-actions!(app, [ComposerUp, ComposerDown, ComposerTab, ComposerPaste, FileSave, OpenProjectPicker, NewSession, OpenSessionSearch, CopyMessageSelection, MaximizeSessionList, MaximizeFileTree, ViewLeft, ViewRight, OpenFileSearch]);
+// 邻视图。082 三期用户拍板：这是**壳层专属键**——注册为无上下文（gpui
+// keymap 语义「无上下文 = 最深上下文」，任意焦点下都命中，且绑定期先于
+// on_key_down 监听器），终端/编辑器/composer 的原键位响应一律截断。
+// 必须排在 gpui_component::init 之后（同深度后注册者胜）。分流在渲染根
+// on_action：模态/弹层与编辑器搜索面板退回词移动，其余切 tab（边界 =
+// no-op 死键）。
+// 082 三期 md 预览滚动六动作（Preview*）：预览容器持焦（key_context
+// "MdPreview"）时方向/翻页/首尾键滚动虚拟列表，预览不再是键盘死角。
+actions!(app, [ComposerUp, ComposerDown, ComposerTab, ComposerPaste, FileSave, OpenProjectPicker, NewSession, OpenSessionSearch, CopyMessageSelection, MaximizeSessionList, MaximizeFileTree, ViewLeft, ViewRight, OpenFileSearch, PreviewUp, PreviewDown, PreviewPageUp, PreviewPageDown, PreviewHome, PreviewEnd]);
 use i18n::tr;
 use models_config::EnabledState;
 use crate::appearance::theme::theme as T;
@@ -177,14 +182,21 @@ fn main() {
                 // 023 fileView：编辑器里 Ctrl+S 保存（composer 等其他 Input
                 // 上下文内无人监听该 action，自然空转）
                 KeyBinding::new("ctrl-s", FileSave, Some("Input")),
-                // 082 视图切换：同深度后注册抢占组件 ctrl-left/right 词移动
-                // （MoveTo{Previous,Next}Word）——composer/编辑器/对话框等
-                // 一切输入焦点下也能切 tab。分流在渲染根 on_action：模态/
-                // 弹层与编辑器搜索面板里退回组件词移动，其余切 tab（切不动
-                // 即在边界，同样退回词移动）。终端焦点无 Input 上下文，
-                // terminal_key 照旧把键发 PTY
-                KeyBinding::new("ctrl-left", ViewLeft, Some("Input")),
-                KeyBinding::new("ctrl-right", ViewRight, Some("Input")),
+                // 082 三期视图切换：无上下文绑定 = 任意焦点命中（含终端、
+                // 中性态、预览），绑定期先于监听器 → terminal_key 吃不到
+                // 这组键，Ctrl+←/→ 永远是壳层切 tab。终端内跳词改走
+                // Ctrl+Shift+←/→（修饰符精确匹配不被本绑定拦截，
+                // input_encode 现有 m=6 编码直接出 \x1b[1;6D/C，零代码）
+                KeyBinding::new("ctrl-left", ViewLeft, None),
+                KeyBinding::new("ctrl-right", ViewRight, None),
+                // 082 三期 md 预览滚动（MdPreview 上下文 = 预览容器持焦时
+                // 生效；组件未占这些键——Input/List 上下文的同名键互不干扰）
+                KeyBinding::new("up", PreviewUp, Some("MdPreview")),
+                KeyBinding::new("down", PreviewDown, Some("MdPreview")),
+                KeyBinding::new("pageup", PreviewPageUp, Some("MdPreview")),
+                KeyBinding::new("pagedown", PreviewPageDown, Some("MdPreview")),
+                KeyBinding::new("home", PreviewHome, Some("MdPreview")),
+                KeyBinding::new("end", PreviewEnd, Some("MdPreview")),
                 // psp 全局三键（无上下文 = 任意焦点可用；组件输入框未占这三个键）
                 // 禁注册 cmd-*：gpui 的 cmd 是 platform 修饰键（≠ctrl 别名），
                 // 后注册会赢得 tooltip 键位反查，Windows 上显示成 Win+P

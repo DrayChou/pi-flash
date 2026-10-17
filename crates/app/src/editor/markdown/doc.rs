@@ -335,6 +335,11 @@ pub(crate) fn render_preview_body(
     div()
         .id("md-preview")
         .relative()
+        // 082 三期：预览容器可聚焦（被动只读视图，持焦只为了键盘滚动，
+        // 无输入副作用）——逐帧仲裁在 File+预览态把焦点交给它，↑/↓/翻页
+        // 键不再死角；Ctrl+←/→ 是无上下文壳层绑定，仍优先切 tab
+        .track_focus(&chat.ws.md_preview_focus)
+        .key_context("MdPreview")
         .flex_1()
         .min_h_0()
         .min_w_0()
@@ -357,6 +362,34 @@ pub(crate) fn render_preview_body(
                 cx.notify();
             });
         })
+        // 082 三期：预览键盘滚动（绑定见 main.rs MdPreview 上下文）。
+        // 方向键 = 3 行步进，翻页 = 85% 视口；Home/End 到首/尾
+        .on_action(cx.listener(|this, _: &crate::PreviewUp, window, cx| {
+            this.ws.md_preview_list.scroll_by(-window.line_height() * 3.);
+            cx.notify();
+        }))
+        .on_action(cx.listener(|this, _: &crate::PreviewDown, window, cx| {
+            this.ws.md_preview_list.scroll_by(window.line_height() * 3.);
+            cx.notify();
+        }))
+        .on_action(cx.listener(|this, _: &crate::PreviewPageUp, window, cx| {
+            this.ws.md_preview_list.scroll_by(-window.viewport_size().height * 0.85);
+            cx.notify();
+        }))
+        .on_action(cx.listener(|this, _: &crate::PreviewPageDown, window, cx| {
+            this.ws.md_preview_list.scroll_by(window.viewport_size().height * 0.85);
+            cx.notify();
+        }))
+        .on_action(cx.listener(|this, _: &crate::PreviewHome, _window, cx| {
+            this.ws
+                .md_preview_list
+                .scroll_to(gpui::ListOffset { item_ix: 0, offset_in_item: px(0.) });
+            cx.notify();
+        }))
+        .on_action(cx.listener(|this, _: &crate::PreviewEnd, _window, cx| {
+            this.ws.md_preview_list.scroll_by(px(1_000_000.));
+            cx.notify();
+        }))
         .child(
             gpui::list(chat.ws.md_preview_list.clone(), move |ix, _window, _cx| {
                 // 预览内路径点击基准 = 预览文件所在目录（pi-web baseDir 同型）
