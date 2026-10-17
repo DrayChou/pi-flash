@@ -172,6 +172,37 @@ pub const KITCHEN: Theme = Theme {
 };
 
 /// `[data-theme="rose"]`
+/// Catppuccin Latte（灰蓝移植，源自 Obsidian 主题 AnuPpuccin 的浅色底子）。
+/// 中性灰阶原样取 Catppuccin Latte 官方色板——灰白底带 220° 蓝紫相（不是
+/// 纯灰），12 档灰阶均匀，正文对底 7.06:1（WCAG AAA）。强调色取色板 mauve
+/// 紫（链接对底 4.79:1、白字压底 5.41:1；与用户 Obsidian 自选 accent 同紫系）。
+/// 语义校准：user_bg = base 掺 10% mauve；accent_hover 浅色系惯例加深
+/// （hsl L58→46）；nav 取 base/mantle 之间（比 bg 略深 ~2%，对齐 mist 口径）。
+pub const LATTE: Theme = Theme {
+    dark: false,
+    bg: 0xeff1f5,          // base
+    bg_panel: 0xe6e9ef,    // mantle
+    bg_hover: 0xdce0e8,    // crust
+    bg_selected: 0xccd0da, // surface0
+    border: 0xbcc0cc,      // surface1
+    text: 0x4c4f69,        // text（subtext 系原色）
+    text_muted: 0x5c5f77,  // subtext1
+    text_dim: 0x6c6f85,    // subtext0
+    text_soft: 0x8c8fa1,   // overlay1（跳过 overlay2，拉开与 dim 的档距）
+    text_faint: 0x9ca0b0,  // overlay0
+    accent: 0x8839ef,      // mauve
+    accent_hover: 0x6812d9,
+    accent_contrast: 0xffffff,
+    user_bg: 0xe5dff4,     // base + 10% mauve（用户消息块淡紫）
+    assistant_bg: 0xeff1f5,
+    tool_bg: 0xe6e9ef,     // mantle（bg 深 ~3%）
+    bg_subtle: 0x0000000a,
+    chrome: 0xdce0e8,      // crust（topbar/statusbar 比 panel 深）
+    nav: 0xe9ecf2,         // base↔mantle 插值
+    danger: 0xd20f39,      // Latte red
+    danger_hover: 0xe64553, // Latte maroon（同向提亮）
+};
+
 pub const ROSE: Theme = Theme {
     dark: false,
     bg: 0xfcf7f8,
@@ -201,6 +232,7 @@ pub const ALL: &[(&str, Theme)] = &[
     ("kitchen", KITCHEN),
     ("mist", MIST),
     ("rose", ROSE),
+    ("latte", LATTE),
     ("one-light", ONE_LIGHT),
     ("nord-light", NORD_LIGHT),
     ("nord-dark", NORD_DARK),
