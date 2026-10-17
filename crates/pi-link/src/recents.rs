@@ -185,15 +185,6 @@ impl Recents {
             .collect()
     }
 
-    /// 一条路径记录的活跃时刻（ms）；不在清单里 = None。
-    pub fn activity_ms(&self, path: &Path) -> Option<i64> {
-        let key = path_key(path);
-        self.entries
-            .iter()
-            .find(|e| path_key(&e.path) == key)
-            .map(|e| e.last_active_ms)
-    }
-
     /// Paths active within the window (recency order). The list capacity is
     /// the hard upper bound — a 30-day window on a heavy setup can outgrow
     /// it, and the psp list then simply ends at the capacity.
@@ -288,35 +279,6 @@ pub fn recent_load_paths(window_days: u64) -> Vec<PathBuf> {
     with_recents(|r| {
         seed_if_empty(r);
         r.window_paths(window_days)
-    })
-}
-
-/// 全局最新活跃会话的 (路径, 活跃时刻 ms)（降序前 n 条；已过滤不存在文件）。
-///
-/// 活跃时刻来自 recents 的 `active_ms`（用户**打开/发消息**的时刻），不是
-/// 会话文件 mtime：读一条旧会话不改文件，mtime 停在几天前，但「我刚在这里
-/// 干过活」只有 recents 知道——启动落点的「最近活动项目」必须用它。
-pub fn top_activity(n: usize) -> Vec<(PathBuf, i64)> {
-    with_recents(|r| {
-        seed_if_empty(r);
-        r.top_paths(n)
-            .into_iter()
-            .filter(|p| p.is_file())
-            .map(|p| {
-                let at = r.activity_ms(&p).unwrap_or_else(|| {
-                    std::fs::metadata(&p)
-                        .ok()
-                        .and_then(|m| m.modified().ok())
-                        .map(|t| {
-                            t.duration_since(std::time::UNIX_EPOCH)
-                                .map(|d| d.as_millis() as i64)
-                                .unwrap_or(0)
-                        })
-                        .unwrap_or(0)
-                });
-                (p, at)
-            })
-            .collect()
     })
 }
 
