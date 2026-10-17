@@ -116,6 +116,8 @@ impl Chat {
         // 020 项目用户排序：拖过才有序列，没拖过存空表（读回 = None）
         st.proj_order = self.psp.proj_order.clone().unwrap_or_default();
         save_ui_state(&st);
+        // 文件树状态（展开集合 + Pin 视图）跟着 UI 持久化时机落盘：关窗/退出
+        self.archive_tree_state();
     }
 
     pub(crate) fn toggle_panes(&mut self, cx: &mut gpui::Context<Self>) {

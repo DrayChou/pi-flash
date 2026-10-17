@@ -5,6 +5,15 @@
 use gpui::*;
 use crate::*;
 
+/// 一个项目的文件树内存态（对齐 Zed `expanded_dir_ids` 的 per-worktree
+/// 结构）：展开集合 + Pin 视图开关。切项目不丢、可落盘恢复（010/021）。
+#[derive(Clone, Default)]
+pub(crate) struct TreeMemory {
+    pub(crate) expanded: std::collections::HashSet<PathBuf>,
+    /// 该项目是否停在 Pin 收藏夹视图
+    pub(crate) pin: bool,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) enum Dialog {
     /// 042：新增 Provider 清单弹窗（两组：自定义 / API KEY；订阅组缓行）

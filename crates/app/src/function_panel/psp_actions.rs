@@ -114,7 +114,7 @@ impl Chat {
         cx.notify();
     }
 
-    /// psp「删除项目及所有会话」：删除该项目全部会话文件（活跃会话先中止
+    /// psp「删除所有会话移除项目」：删除该项目全部会话文件（活跃会话先中止
     /// 并重置为新草稿），从 psp 移除该组。
     pub(crate) fn delete_project(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         let sessions: Vec<PathBuf> = self

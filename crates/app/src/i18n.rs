@@ -481,7 +481,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("plugins.from", "从", "", ""),
     ("plugins.state", "状态", "", ""),
     ("psp.confirm_delete", "确认删除", "", ""),
-    ("psp.delete_project", "删除项目及所有会话", "", ""),
+    ("psp.delete_project", "删除所有会话移除项目", "删除所有会话移除项目", "delete all sessions and remove project"),
     ("psp.list_mode", "列表方式", "", ""),
     ("psp.maximize_session_list", "最大化会话列表", "最大化會話列表", "Maximize session list"),
     ("psp.messages_count", "{n} 条消息", "", ""),

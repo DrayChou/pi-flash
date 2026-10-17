@@ -10,7 +10,7 @@
 //!   口径）去重合并
 //! - 打开后的项目即使零会话也活跃：同时出现在 psp 项目分组与打开项目
 //!   弹窗；30 天窗口同样适用于注册表时刻（长期不开自然淡出）
-//! - 「删除项目及所有会话」走 [`Registry::remove`] 同步清册
+//! - 「删除所有会话移除项目」走 [`Registry::remove`] 同步清册
 //!
 //! 结构仿 recents.rs：可测内核（显式 file 参数）+ 进程级单例薄壳。
 
@@ -96,7 +96,7 @@ impl Registry {
         &self.entries
     }
 
-    /// 项目被删除（psp「删除项目及所有会话」）时同步清册。
+    /// 项目被删除（psp「删除所有会话移除项目」）时同步清册。
     pub fn remove(&mut self, path: &Path) {
         let key = path_key(path);
         let before = self.entries.len();

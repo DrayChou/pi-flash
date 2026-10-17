@@ -80,7 +80,6 @@ mod audit {
 "model.search_provider",
 "model.loading_registry",
 "psp.confirm_delete",
-"psp.delete_project",
 "psp.list_mode",
 "psp.messages_count",
 "psp.no_sessions",

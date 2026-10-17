@@ -216,6 +216,8 @@ impl Chat {
                 self.ws.pin_view = false;
             }
         }
+        // Pin 视图开关悬项目态：立即归档（重启后按项目恢复该视图）
+        self.archive_tree_state();
         self.rebuild_tree();
         cx.notify();
     }

@@ -351,19 +351,19 @@ impl Chat {
     /// open_session 的池命中与新运行时两条路径共用。
     pub(crate) fn remount_workspace(&mut self, cx: &mut Context<Self>) {
         let Some(cwd) = self.ws.cwd.clone() else { return };
+        // ① 归档旧项目的文件树状态（展开集合 + Pin 视图）：对齐 Zed 的
+        // per-worktree 内存表，切回来不丢；同时落盘（`__tree`）
+        self.archive_tree_state();
         self.ws.branch = read_branch(&cwd);
-        self.ws.expanded_dirs.clear();
-        // 文件树：根项目行默认展开
-        self.ws.expanded_dirs.insert(cwd.clone());
-        // 021 Pin 收藏夹跟随项目（换 cwd 换清单）；新项目收藏为空则退出
-        // Pin 视图（refresh_git 随后 rebuild 按新模式展平）
+        // ② Pin 收藏清单先装载（下面恢复树状态时要判断 Pin 视图是否可用）
         self.ws.pinned = crate::services::workspace::pins_for(&cwd.to_string_lossy())
             .into_iter()
             .map(PathBuf::from)
             .collect();
-        if self.ws.pin_view && self.ws.pinned.is_empty() {
-            self.ws.pin_view = false;
-        }
+        // ③ 文件树展开集合：内存 → 磁盘 → 默认「只展开根」（对齐 Zed：打开
+        //    项目默认展开 cwd）；Pin 视图同样按项目恢复（关闭前开着 = 重启
+        //    还开），但收藏为空时无意义（照旧退回文件树）
+        self.restore_tree_state(&cwd);
         self.refresh_sessions();
         self.load_project_files();
         // 9rk0：refresh_git 的 rebuild_tree 随数据后台换入（~150ms），这里先

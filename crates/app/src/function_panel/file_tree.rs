@@ -1458,6 +1458,49 @@ pub(crate) fn tree_right_click(weak: &gpui::WeakEntity<Chat>, row: &TreeRow) -> 
 // ---------------------------------------------------------------------------
 
 impl Chat {
+    /// 归档当前项目的文件树状态（展开集合 + Pin 视图）→ 内存表 + 落盘
+    /// （`__tree`）。调用点：切项目（remount 开头）、保存 UI 状态（关窗/退出）、
+    /// Pin 视图开关。展开/折叠本身不即时落盘（高频动作，靠这些时机兜住）。
+    pub(crate) fn archive_tree_state(&mut self) {
+        let Some((key, cwd)) = self.ws.tree_owner.clone() else { return };
+        let mem = crate::TreeMemory {
+            expanded: self.ws.expanded_dirs.clone(),
+            pin: self.ws.pin_view,
+        };
+        crate::services::workspace::save_tree_state(
+            &cwd.to_string_lossy(),
+            &crate::services::workspace::TreeState {
+                expanded: crate::services::workspace::tree_rel_paths(&cwd, &mem.expanded),
+                pin: mem.pin,
+            },
+        );
+        self.ws.tree_memory.insert(key, mem);
+    }
+
+    /// 恢复一个项目的文件树状态：内存表（本次会话切回过）→ 磁盘 `__tree`
+    /// → 默认「只展开根」（对齐 Zed：打开项目默认展开 cwd）。失效条目在
+    /// `tree_abs_paths` 里 prune（目录已删 / 项目外），恒含根。
+    pub(crate) fn restore_tree_state(&mut self, cwd: &Path) {
+        use crate::services::workspace as ws_store;
+        let key = ws_store::same_ws_key(&cwd.to_string_lossy());
+        let (expanded, pin) = match self.ws.tree_memory.get(&key) {
+            Some(mem) => (mem.expanded.clone(), mem.pin),
+            None => match ws_store::tree_state_for(&cwd.to_string_lossy()) {
+                Some(st) => (ws_store::tree_abs_paths(cwd, &st.expanded), st.pin),
+                // 无记录 = 默认态：只展开根（flatten 从这里 walk 出第一层）
+                None => (std::collections::HashSet::from([cwd.to_path_buf()]), false),
+            },
+        };
+        self.ws.expanded_dirs = expanded;
+        self.ws.expanded_dirs.insert(cwd.to_path_buf());
+        self.ws.tree_owner = Some((key, cwd.to_path_buf()));
+        // Pin 视图按项目恢复；收藏清单为空时无意义（行为与 021 一致：退回树）
+        self.ws.pin_view = pin && !self.ws.pinned.is_empty();
+        if self.ws.pin_view {
+            self.ws.changes_only = false;
+        }
+    }
+
     /// 文件树展平缓存重建（services::file_tree::flatten：每展开目录读一次
     /// 盘 + gitignore 过滤 + Zed 语义排序 + git 徽标回填）。展开/折叠、
     /// git 刷新、fs 事件、切项目后都走这里。三种视图各吃各的展平：

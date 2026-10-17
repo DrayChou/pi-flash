@@ -376,6 +376,13 @@ pub(crate) struct WsUi {
     /// 名称字母排）。装载点 = 启动 / remount_workspace（切项目换清单），
     /// 落盘走 services::workspace::save_pins_for。
     pub(crate) pinned: Vec<PathBuf>,
+    /// 文件树状态（010/021，对齐 Zed 的 per-worktree 内存态）：每项目一份
+    /// 展开集合 + Pin 视图开关。切项目不丢（Zed `expanded_dir_ids` 同构），
+    /// 另加磁盘持久化（`__tree`，Zed 不做）。
+    pub(crate) tree_memory: std::collections::HashMap<String, TreeMemory>,
+    /// `expanded_dirs` / `pin_view` 当前属于哪个项目（切项目时据此归档，
+    /// 用归档时的原拼写路径写盘）
+    pub(crate) tree_owner: Option<(String, PathBuf)>,
     /// 021 文件搜索（Dialog::FileSearch）：命中（相对路径清单切片）、
     /// 查询词镜像与扫描状态（防抖代际同 search_gen）
     pub(crate) file_search_hits: Vec<String>,
@@ -461,6 +468,8 @@ impl Chat {
                 changes_only: ui.tree_changes_only,
                 pin_view: false,
                 pinned: Vec::new(),
+                tree_memory: std::collections::HashMap::new(),
+                tree_owner: None,
                 file_search_hits: Vec::new(),
                 file_search_needle: String::new(),
                 file_search_gen: 0,
