@@ -528,6 +528,15 @@ pub(super) fn dispatch(
             ok()
         }
 
+        method::PROJECT_NEW_SESSION_IN => {
+            let cwd = params_path(params, "cwd")?;
+            if !cwd.is_dir() {
+                return Err(not_found(format!("目录不存在: {}", cwd.display())));
+            }
+            chat.new_session_in(cwd, cx);
+            ok()
+        }
+
         // ---- git ----
         method::GIT_STAGE => {
             let r = git_stage_op(chat, params, true);

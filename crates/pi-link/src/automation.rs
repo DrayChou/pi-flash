@@ -105,6 +105,8 @@ pub mod method {
     pub const MODEL_PICKER_OPEN: &str = "model.picker_open";
     pub const WX_QR_OPEN: &str = "wx.qr_open";
     pub const PROJECT_SWITCH: &str = "project.switch";
+    /// psp 项目行 ＋ 按钮同源入口（切到该项目并新建会话）；UI 测试用
+    pub const PROJECT_NEW_SESSION_IN: &str = "project.new_session_in";
     /// 004 打开项目菜单（psp icon / 012 操作栏同源入口；UI 测试用）
     pub const PROJECT_PICKER_OPEN: &str = "project.picker_open";
     pub const INPUT_KEYS: &str = "input.keys";
