@@ -2,6 +2,40 @@
 
 All notable changes to released versions live here; see `docs/CHANGELOG规范.md` for the format.
 
+## [0.1.11] - 2026-10-17
+
+This release focuses on: a reworked in-app update staging — versioned payload directory + startup handover (powershell swap removed), fixing the root cause of the 0.1.10 endless redownload loop; two new themes ("kitchen" and "pine"); faster session open and project switching; Ctrl+L global file search on the shortcuts page.
+
+### Install & Update
+
+```bash
+npm install -g pi-flash@latest   # same command for first install and updates
+pi-flash
+```
+
+Requires Node.js ≥ 22.19.
+Or download the zip portable build, extract and double-click `pi-flash.exe` — no Node needed.
+Windows x64 only.
+
+**In-app update is broken on 0.1.10 and earlier — please update via the npm command above (or re-download the zip)**: the updater shipped with those versions uses a flawed whole-directory swap and cannot install new builds (the 0.1.10 endless redownload loop was one symptom); only from 0.1.11 does the new "versioned directory extraction + startup handover" chain take over, and in-app updates work again from this release on. Zip portable users should likewise reinstall via npm or re-download the zip instead of relying on the old in-app updater.
+
+### New
+- In-app update rework: after download the payload is extracted into a versioned directory; at startup a self-verifying handover (directory name version must equal the process version, preventing spawn storms) launches the new build, and the powershell swap is gone entirely; the 0.1.10 endless redownload root cause (the swap racing into antivirus scanning) is fixed for good; machines upgrading from older builds clean up legacy leftovers at startup; extraction cost is paid once at install time, and stampless half-extracted payloads are removed; the real-machine update pipeline is scripted into tests (with three failure injections)
+- Two new themes: "kitchen" (MiMo 014 cream-paper letterpress feel) and "pine" (Pine Forest Green port); kitchen moves to the front of the theme list, ayu-light removed — light themes back to one row of 5
+- Shortcuts page: Ctrl+L global file search
+- The compaction locked-state hint now shows a spinner up front
+
+### Fixes
+- Shortcuts page vertical centering actually works (centering moved up to the mc-body flex layer)
+- Session toolbar icons 13→16 spec size, aligned with the left control bar small icons
+- Detail cards / search popups no longer tick seconds (time_ago minimum granularity is now minutes)
+- Turn-summary user lines no longer cut in half on the third line (line_clamp(3))
+- Compaction locked-state hint gets a 12px left inset, aligned with the placeholder
+- Pine accent toned down (2ecc40 → 29a83c)
+
+### Improvements
+- Deep session open-time optimization: leaf full-text reread and on-disk counting fully backgrounded
+- Project-switch git refresh backgrounded: main thread 190-313ms → 106-126ms
 ## [0.1.10] - 2026-10-16
 
 This release focuses on: the keyboard shortcuts system (082), file-tree Pin favorites and cross-project switching, drag-to-reorder project tabs, a consolidated usage panel; the npm shell now pre-fetches the real latest version before downloading the payload (registry mirror lag no longer ships old versions); built-in pi upgraded to 1.3.0. If you are still on ≤ 0.1.8, please reinstall via npm or the zip — the in-app update chain has been fixed since 0.1.9.
