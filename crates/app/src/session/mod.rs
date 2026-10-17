@@ -668,7 +668,8 @@ fn nav_gutter(
             //（v63-6 踩坑；session_list 的父容器同样是 flex().flex_col()）
             .flex()
             .flex_col()
-            .bg(rgb(t.bg))
+            // 背景同功能面板（左 dock t.nav）——旧值 t.bg 比面板浅一档
+            .bg(rgb(t.nav))
             .border_l_1()
             .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x80)))
             // 水平 padding 必须挂外层容器：gpui List 的 prepaint 只应用
@@ -858,7 +859,8 @@ fn nav_summary_header(
         .border_b_1()
         // 分隔线与面板左边框同档（0x40 太淡看不出）
         .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x80)))
-        .bg(rgb(t.bg));
+        // 背景同功能面板（左 dock t.nav）
+        .bg(rgb(t.nav));
     for (icon_name, count, colon) in stat_groups {
         let mut group = div()
             .flex()
