@@ -243,6 +243,13 @@ impl Chat {
         // 内件建好即兑现为焦点；此后由焦点级联按「编辑存续期 = 焦点所有者」
         // 兜底，不再重复请求。
         input.update(cx, |ti, tcx| ti.focus_soon(tcx));
+        // 编辑行滚进视口（Zed new_entry：虚拟行即选中行 → update_visible_entries
+        // autoscroll 同位）：根下新建行排列表最顶，视窗停在下方时键入全程
+        // 不可见。deferred 滚动（reveal 同构：按 sticky 链收缩视口后居中）
+        // 下一帧按真实视口高夹紧执行，编辑行出界才最小滚动
+        let (slot, depth) = self.tree_new_edit_slot(&dir);
+        crate::ui::vlist::scroll_handle(super::file_tree::FILE_TREE_LIST_ID)
+            .scroll_to_item_with_offset(slot, gpui::ScrollStrategy::Center, depth);
         self.dlg.tree_edit = Some(TreeEdit {
             kind: TreeEditKind::New { dir },
             is_dir,
@@ -545,9 +552,21 @@ impl Chat {
                     self.ws.expanded_dirs.insert(p.clone());
                     anc = p.parent().map(|q| q.to_path_buf());
                 }
+                // 树表即时重建（不等 fs watcher 合批 ~100-250ms）：新建行
+                // 此刻就在表里，下面的 reveal / 打开链才有行可定位
+                self.rebuild_tree();
                 self.refresh_git(cx);
-                // Zed auto_open：新建的文件随即打开（目录不打开）
-                if !is_dir {
+                if is_dir {
+                    // 目录：选中 + 滚进视口（Zed confirm_edit：selection 挪到
+                    // 新条目 → expand_to_selection → autoscroll；目录不打开）。
+                    // 根下新建目录按排序落列表最顶，视窗停在下方时不滚动
+                    // 跟随就看不到刚建的目录
+                    self.ws.tree_selected = Some(target.clone());
+                    self.reveal_tree_row(&target);
+                } else {
+                    // Zed auto_open：新建的文件随即打开；激活链 open_file_tab
+                    // → activate_panel_tab → sync_tree_to_file 顺带选中 +
+                    // reveal（行表已重建，定位不再扑空）
                     self.open_file_tab(target, cx);
                 }
                 // 创建成功静默（Zed 同：成功无提示）

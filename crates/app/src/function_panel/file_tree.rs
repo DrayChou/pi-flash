@@ -89,6 +89,23 @@ impl Chat {
         handle.scroll_to_item_with_offset(ix, gpui::ScrollStrategy::Center, depth);
     }
 
+    /// 新建虚拟编辑行在 vlist 输出位里的落点（下标, 缩进深度）：Zed new_entry
+    /// 虚拟行插在目标目录行下方、子项之前；目标 = 项目根时插列表顶（根下新
+    /// 建目录按排序也落最顶）。目录行不在表里（理论不可达：open_file_new 已
+    /// 沿途展开）兜底排表尾。渲染落点（tree_list_view edit_slot）与打开编辑
+    /// 行时的自动滚动共用本公式，两处永不漂移。
+    pub(crate) fn tree_new_edit_slot(&self, dir: &Path) -> (usize, usize) {
+        if same_path(dir, &self.ws.cwd) {
+            return (0, 0);
+        }
+        self.ws.tree_rows
+            .iter()
+            .position(|r| r.is_dir && same_path(&r.path, dir))
+            .map_or((self.ws.tree_rows.len(), 1), |ix| {
+                (ix + 1, self.ws.tree_rows[ix].depth + 1)
+            })
+    }
+
     /// 文件标签激活时的树同步（PF 与 Zed 的分歧点：Zed 多 worktree 面板挂
     /// 多根，PF 单根树跟随激活标签）：文件在当前项目内只定位选中；属于已知
     /// 其它项目（psp.projects，含当前 cwd 的 0 会话组）则改写 cwd 走
@@ -476,19 +493,10 @@ fn tree_list_view(
     let edit = chat.dlg.tree_edit.clone();
     let selected = chat.ws.tree_selected.clone();
     // 新建行的落点（Zed new_entry：虚拟行插在目录行下方、子项之前；
-    // 目标 = 项目根时插列表顶）。改名行不注入（原地替换该行）。
+    // 目标 = 项目根时插列表顶）。改名行不注入（原地替换该行）。公式收在
+    // Chat::tree_new_edit_slot，open_file_new 的编辑行自动滚动同源。
     let edit_slot: Option<(usize, usize)> = edit.as_ref().and_then(|e| match &e.kind {
-        crate::function_panel::TreeEditKind::New { dir } => {
-            if same_path(dir, &chat.ws.cwd) {
-                Some((0, 0))
-            } else {
-                Some(
-                    rows.iter()
-                        .position(|r| r.is_dir && same_path(&r.path, dir))
-                        .map_or((rows.len(), 1), |ix| (ix + 1, rows[ix].depth + 1)),
-                )
-            }
-        }
+        crate::function_panel::TreeEditKind::New { dir } => Some(chat.tree_new_edit_slot(dir)),
         crate::function_panel::TreeEditKind::Rename { .. } => None,
     });
     let edit_ix = edit_slot.map(|(ix, _)| ix);
