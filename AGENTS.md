@@ -64,6 +64,7 @@ crates/pi-link/src/     钉版 pi RPC 协议层（typed bridge，测试在此）
   pf_providers.rs         ~/.pi-flash/providers.json 自定义 provider（051）
   credentials.rs          OS 凭据库 keyring + $PF_KEY_* 引用（051）
   probe.rs                apikey 保存后通路探查（042）
+  projects.rs             PF 项目注册表 ~/.pi-flash/projects.json（打开项目即注册，004）
   estimate.rs             token 估算（pi-web parity）
   mcp.rs                  mcp.json 全局/项目配置（043）
   skills.rs               技能发现 + SKILL.md frontmatter 编辑
