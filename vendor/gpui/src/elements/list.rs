@@ -1085,12 +1085,14 @@ impl Element for List {
         cx: &mut App,
     ) {
         let current_view = window.current_view();
-        window.with_content_mask(Some(ContentMask { bounds }), |window| {
-            for item in &mut prepaint.layout.item_layouts {
-                item.element.paint(window, cx);
-            }
-        });
 
+        // PF patch（滚轮注册必须先于条目 paint）：注册顺序 = 冒泡相位的派发
+        // 逆序。列表若在自己 paint 的**末尾**注册滚轮，条目（paint 期间注册）
+        // 就比它早注册 ⇒ 派发时列表**先**收到滚轮，同帧把整屏同向滚走；条目
+        // 内滚动容器此时再 `cx.stop_propagation()` 已经晚了（列表早就滚了），
+        // 表现为「超高气泡带滚动条却滚不动，只能整屏滚」（v63-9 用户报障）。
+        // 挪到条目循环之前注册，条目（含其内滚动容器的边界拦截）先派发：内层
+        // 未到边界就 stop_propagation，列表原地不动；到边界才轮到列表接手。
         let list_state = self.state.clone();
         let height = bounds.size.height;
         let scroll_top = prepaint.layout.scroll_top;
@@ -1111,6 +1113,12 @@ impl Element for List {
                     window,
                     cx,
                 )
+            }
+        });
+
+        window.with_content_mask(Some(ContentMask { bounds }), |window| {
+            for item in &mut prepaint.layout.item_layouts {
+                item.element.paint(window, cx);
             }
         });
     }
