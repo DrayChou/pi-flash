@@ -442,19 +442,21 @@ impl Chat {
                 exe_dir.to_string_lossy().to_lowercase()
                     == raw_cwd.to_string_lossy().to_lowercase()
             });
-        let cwd = if cwd_is_exe_dir {
-            get_last_workspace()
-                .map(PathBuf::from)
-                .filter(|p| p.is_dir())
-                .or_else(|| {
+        // true = exe 目录启动且无 last_workspace，落用户主目录兑底——
+        // 这不是用户「打开项目」，不进项目注册表
+        let (cwd, boot_home_fallback) = if cwd_is_exe_dir {
+            match get_last_workspace().map(PathBuf::from).filter(|p| p.is_dir()) {
+                Some(p) => (p, false),
+                None => (
                     std::env::var("USERPROFILE")
                         .or_else(|_| std::env::var("HOME"))
                         .map(PathBuf::from)
-                        .ok()
-                })
-                .unwrap_or(raw_cwd)
+                        .unwrap_or(raw_cwd),
+                    true,
+                ),
+            }
         } else {
-            raw_cwd
+            (raw_cwd, false)
         };
         // startup restore decides workspace + last session BEFORE the first
         // spawn — exactly one pi process (ARCHITECTURE.md §4, was two)
@@ -467,6 +469,11 @@ impl Chat {
             cwd
         };
         let branch = read_branch(&cwd);
+        // 打开项目即注册（PF 项目注册表）：启动落进的项目也 touch——零会话
+        // 也活跃（psp 分组 + 打开项目弹窗并集口径）；主目录兑底不算打开
+        if !boot_home_fallback && cwd.is_dir() {
+            pi_link::projects::register_project(&cwd);
+        }
         let last_open = if startup_restore() {
             get_last_open(&cwd.to_string_lossy())
                 .map(PathBuf::from)

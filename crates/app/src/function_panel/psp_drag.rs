@@ -303,6 +303,7 @@ mod tests {
             name: name.to_string(),
             path: PathBuf::from(format!(r"D:\{name}")),
             sessions: Vec::new(),
+            opened_ms: 0,
         }
     }
 

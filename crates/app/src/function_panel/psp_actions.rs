@@ -138,6 +138,8 @@ impl Chat {
             let _ = std::fs::remove_file(p);
         }
         self.psp.projects.retain(|g| !same_path(&g.path, &path));
+        // PF 项目注册表同步清册：删了的项目不再凭注册出现在两面板
+        pi_link::projects::remove_project(&path);
         if same_path(&self.ws.cwd, &path) {
             // 当前项目被删：清当前组数据，保留草稿会话
             self.pool.sessions.clear();

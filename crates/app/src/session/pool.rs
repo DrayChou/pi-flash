@@ -582,6 +582,9 @@ impl Chat {
         self.ws.cwd = cwd;
         // mark as the globally-last active workspace for startup restore
         set_last_workspace(&self.ws.cwd.to_string_lossy());
+        // 打开项目即注册（PF 项目注册表）：零会话也活跃，psp 分组与
+        // 打开项目弹窗两面板并集口径（用户 2026-10-16 定案）
+        pi_link::projects::register_project(&self.ws.cwd);
         self.ws.branch = read_branch(&self.ws.cwd);
         self.refresh_sessions();
         self.dlg.dialog = None;

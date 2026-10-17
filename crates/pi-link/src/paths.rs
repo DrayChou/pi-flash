@@ -40,6 +40,11 @@ pub fn pf_auth_file() -> Option<PathBuf> {
     file("pf-auth.json")
 }
 
+/// `~/.pi-flash/projects.json` — PF 项目注册表（打开项目即注册，004）。
+pub fn projects_file() -> Option<PathBuf> {
+    file("projects.json")
+}
+
 /// `~/.pi-flash/providers.json` — PF 自定义 provider 账本（051 M1.1：PF
 /// 永不写 pi 的 models.json，自定义内容全部记在这里，spawn 经扩展注入）。
 pub fn pf_providers_file() -> Option<PathBuf> {

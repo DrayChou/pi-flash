@@ -154,6 +154,13 @@ pub fn same_path(a: &Path, b: &Path) -> bool {
     same_ws(&a.to_string_lossy(), &b.to_string_lossy())
 }
 
+/// 项目行/组名：目录名，无尾件（根盘等）回落全路径。
+pub fn project_name(path: &Path) -> String {
+    path.file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.to_string_lossy().to_string())
+}
+
 /// `path` 是否在 `root` 之下（含 root 本身）：与 same_path 同一套字符串级
 /// 规范化（分隔符统一为 `\`、去尾分隔符、大小写折叠），所以 Windows 上
 /// `d:/a\b` 与 `D:\A` 的层级关系判得对。023 用它决定「这个目录是否已被

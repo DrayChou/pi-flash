@@ -142,6 +142,24 @@ impl Chat {
     /// 版排序：用户排序 > 首建默认序（当前项目钉顶 + 活动倒序，仅一次）>
     /// 运行期保序；组内会话恒按活动倒序——详见下方实现注释）。
     pub(crate) fn rebuild_projects(&mut self, all: Vec<pi_link::sessions::SessionInfo>) {
+        // PF 项目注册表（打开项目即注册）：注册表里的项目即使零会话也有组
+        // （见下方空组兑底），打开时刻参与 newest() 排序兑底
+        let records = pi_link::projects::project_records();
+        let opened: std::collections::HashMap<String, i64> = records
+            .iter()
+            .map(|r| {
+                (
+                    same_ws_key(&r.path.to_string_lossy()),
+                    r.last_opened_ms,
+                )
+            })
+            .collect();
+        let opened_ms = |p: &std::path::Path| {
+            opened
+                .get(&same_ws_key(&p.to_string_lossy()))
+                .copied()
+                .unwrap_or(0)
+        };
         let mut groups: Vec<crate::ProjectGroup> = Vec::new();
         for s in all {
             let cwd = PathBuf::from(s.cwd.clone());
@@ -152,10 +170,8 @@ impl Chat {
                 g.sessions.push(s);
             } else {
                 groups.push(crate::ProjectGroup {
-                    name: cwd
-                        .file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| cwd.to_string_lossy().to_string()),
+                    name: crate::services::workspace::project_name(&cwd),
+                    opened_ms: opened_ms(&cwd),
                     path: cwd,
                     sessions: vec![s],
                 });
@@ -164,12 +180,31 @@ impl Chat {
         let cwd = self.ws.cwd.clone();
         if !groups.iter().any(|g| same_ws(&g.path.to_string_lossy(), &cwd.to_string_lossy())) {
             groups.push(crate::ProjectGroup {
-                name: cwd
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| cwd.to_string_lossy().to_string()),
+                name: crate::services::workspace::project_name(&cwd),
                 path: cwd.clone(),
                 sessions: Vec::new(),
+                opened_ms: opened_ms(&cwd),
+            });
+        }
+        // 注册表兑底：PF 打开过（注册）但零会话、也非当前项目的项目建空组
+        // ——打开后同时出现在 psp 分组与打开项目弹窗（用户 2026-10-16 定案）；
+        // 目录已删的注册项不再出现
+        for r in &records {
+            if !r.path.is_dir() {
+                continue;
+            }
+            let key = same_ws_key(&r.path.to_string_lossy());
+            if groups
+                .iter()
+                .any(|g| same_ws_key(&g.path.to_string_lossy()) == key)
+            {
+                continue;
+            }
+            groups.push(crate::ProjectGroup {
+                name: crate::services::workspace::project_name(&r.path),
+                path: r.path.clone(),
+                sessions: Vec::new(),
+                opened_ms: r.last_opened_ms,
             });
         }
         // 组内会话恒按活动倒序（020）：项目排序走哪条路都不影响组内
@@ -268,11 +303,16 @@ impl Chat {
 }
 
 fn newest(g: &crate::ProjectGroup) -> std::time::SystemTime {
-    g.sessions
+    let from_sessions = g
+        .sessions
         .iter()
         .map(|s| s.modified)
         .max()
-        .unwrap_or(std::time::UNIX_EPOCH)
+        .unwrap_or(std::time::UNIX_EPOCH);
+    // 注册表打开时刻兑底：零会话的注册项目按打开时刻参与活动排序
+    let from_open = std::time::UNIX_EPOCH
+        + std::time::Duration::from_millis(g.opened_ms.max(0) as u64);
+    from_sessions.max(from_open)
 }
 
 // ---------------------------------------------------------------------------

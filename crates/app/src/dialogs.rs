@@ -1321,6 +1321,18 @@ fn project_visible(chat: &Chat) -> Vec<usize> {
 fn collect_recent_projects(cutoff_ms: i64) -> Vec<crate::ProjectEntry> {
     let mut by_key: std::collections::HashMap<String, crate::ProjectEntry> =
         std::collections::HashMap::new();
+    // PF 项目注册表先行：打开项目即注册，零会话也入选（同 30 天窗口；
+    // 目录已删的注册项不再出现）。注册表拼写占坑，下方会话扫描不覆盖
+    for r in pi_link::projects::project_records() {
+        if r.last_opened_ms < cutoff_ms || !r.path.is_dir() {
+            continue;
+        }
+        let key = crate::services::workspace::same_ws_key(&r.path.to_string_lossy());
+        by_key.entry(key).or_insert(crate::ProjectEntry {
+            name: crate::services::workspace::project_name(&r.path),
+            path: r.path.clone(),
+        });
+    }
     for s in pi_link::sessions::list_sessions(2000) {
         let ms = s
             .modified

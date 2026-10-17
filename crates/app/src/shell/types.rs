@@ -104,6 +104,9 @@ pub(crate) struct ProjectGroup {
     pub name: String,
     pub path: PathBuf,
     pub sessions: Vec<SessionInfo>,
+    /// PF 项目注册表最近打开时刻（ms；0 = 未注册）。仅作 newest() 排序
+    /// 兑底：零会话的注册项目按打开时刻参与活动排序，不再垫底（004）。
+    pub opened_ms: i64,
 }
 
 /// 004 打开项目菜单的一行：项目名（目录名）+ 路径。
