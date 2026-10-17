@@ -62,15 +62,10 @@ pub(crate) fn mc_shortcuts_view(window: &Window) -> gpui::AnyElement {
     )];
 
     // 弹窗 body 是 block 容器（taffy block 不解析流内auto margin），水平
-    // 居中走 items_center + max_w；垂直居中用 min_h_full（内容超 body 高
-    // 时仍从顶部长出、滚动可用，比 h_full 抗小窗）+ justify_center
-    let mut root = div()
-        .w_full()
-        .min_h_full()
-        .flex()
-        .flex_col()
-        .items_center()
-        .justify_center();
+    // 居中走 items_center + max_w；上下居中由宿主 mc-body 转纵排 flex 的
+    // justify_center 完成（block 容器里子元素百分比 min_h 不解析，pane 自
+    // 身撑不出高度，见 settings/mod.rs）
+    let mut root = div().w_full().flex().flex_col().items_center();
     let mut col = div().w_full().max_w(px(COL_W)).flex().flex_col();
 
     // 组：组名 + 细线延伸 + 条数；行内只有标题/说明 + 点线引导（无编号）

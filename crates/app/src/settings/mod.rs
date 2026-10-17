@@ -371,7 +371,7 @@ pub(crate) fn render_settings(
     // pane 自身 h_full（顶条/底栏/侧栏滚动各自管理）
     let single_column = tab == TAB_GENERAL || tab == TAB_MISC || tab == TAB_ABOUT || tab == TAB_SHORTCUTS;
     let body = if single_column {
-        div()
+        let mut body_el = div()
             .id("mc-body")
             .flex_1()
             .min_w_0()
@@ -379,9 +379,14 @@ pub(crate) fn render_settings(
             .pt(px(22.))
             .pl(px(30.))
             .pr(px(30.))
-            .pb(px(30.))
-            .child(pane)
-            .into_any_element()
+            .pb(px(30.));
+        // 快捷键页：内容上下居中。居中必须做在 body 自身的 flex 布局里
+        // （justify_center）——taffy block 布局不解析子元素百分比 min_h，
+        // pane 里写 min_h_full 拿不到 body 高度，等于没居中
+        if tab == TAB_SHORTCUTS {
+            body_el = body_el.flex().flex_col().justify_center();
+        }
+        body_el.child(pane).into_any_element()
     } else {
         // 分栏页：列表与详情统一 15px 内边距（与内容缘等距），包装层不再
         // 另加 20（否则左侧多出 20 不对称）；分栏页全部全出血，顶条/底栏
