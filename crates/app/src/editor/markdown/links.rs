@@ -41,7 +41,11 @@ pub(super) fn open_path_with(target: Option<MdTarget>, path: String, cx: &mut gp
             let p = if p.is_absolute() {
                 p.to_path_buf()
             } else {
-                base.as_deref().unwrap_or(&c.ws.cwd).join(p)
+                // base（预览文件所在目录）优先；无 base 且无项目 → 无从解析
+                let Some(cwd) = c.ws.cwd.as_deref() else {
+                    return;
+                };
+                base.as_deref().unwrap_or(cwd).join(p)
             };
             c.open_file_tab(p, cx);
         });

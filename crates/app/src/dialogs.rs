@@ -107,7 +107,8 @@ fn render_file_search(
     } else {
         crate::i18n::tf("file_tree.files", &[("n", chat.ws.file_search_hits.len().to_string())]).into()
     };
-    let cwd = chat.ws.cwd.clone();
+    let cwd_base = chat.ws.cwd.clone().unwrap_or_default();
+    let cwd = cwd_base.clone();
     let mut list = div().flex().flex_col().w_full();
     for (ix, rel) in chat.ws.file_search_hits.iter().enumerate() {
         let abs = cwd.join(rel);
@@ -757,10 +758,13 @@ fn render_project_picker(
         let path = p.path.clone();
         let weak_row = weak.clone();
         let name: SharedString = p.name.clone().into();
-        let selected = crate::services::workspace::same_ws(
-            &p.path.to_string_lossy(),
-            &chat.ws.cwd.to_string_lossy(),
-        );
+        let selected = chat
+            .ws
+            .cwd
+            .as_deref()
+            .is_some_and(|cur| {
+                crate::services::workspace::same_ws(&p.path.to_string_lossy(), &cur.to_string_lossy())
+            });
         rows.push(
             div()
                 .id(SharedString::from(format!("proj-{row_ix}")))
@@ -1044,11 +1048,13 @@ fn render_session_search(
 
 impl Chat {
     pub(crate) fn open_git_diff(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        // 无项目态：没有 git 仓库可 diff（git 面本为空，防御）
+        let Some(cwd) = self.ws.cwd.clone() else { return };
         let untracked = self
             .ws.git_files
             .iter()
             .any(|f| f.path == path && f.status == GitStatus::Untracked);
-        let patch = git_file_diff(&self.ws.cwd, &path, untracked);
+        let patch = git_file_diff(&cwd, &path, untracked);
         self.dlg.dialog = Some(Dialog::GitDiff { path, patch });
         cx.notify();
     }
@@ -1106,22 +1112,21 @@ impl Chat {
                 .background_spawn(async move { collect_recent_projects(cutoff) })
                 .await;
             let _ = weak.update(cx, |c, cx| {
-                // 当前项目兜底入选（无 30 天活动也显示，004：默认选中该项目）
-                let cwd_key = c.ws.cwd.to_string_lossy().to_string();
-                if !entries
-                    .iter()
-                    .any(|p| crate::services::workspace::same_ws(&p.path.to_string_lossy(), &cwd_key))
-                {
-                    let name = c
-                        .ws.cwd
-                        .file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| cwd_key.clone());
-                    entries.push(crate::ProjectEntry {
-                        name,
-                        path: c.ws.cwd.clone(),
-                    });
-                    entries.sort_by(|a, b| project_sort_key(a).cmp(&project_sort_key(b)));
+                // 当前项目兜底入选（无 30 天活动也显示，004：默认选中该项目）；
+                // 无项目态没有「当前项目」，不兜底
+                if let Some(cwd) = c.ws.cwd.clone() {
+                    let cwd_key = cwd.to_string_lossy().to_string();
+                    if !entries
+                        .iter()
+                        .any(|p| crate::services::workspace::same_ws(&p.path.to_string_lossy(), &cwd_key))
+                    {
+                        let name = cwd
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_else(|| cwd_key.clone());
+                        entries.push(crate::ProjectEntry { name, path: cwd });
+                        entries.sort_by(|a, b| project_sort_key(a).cmp(&project_sort_key(b)));
+                    }
                 }
                 c.psp.project_hits = entries;
                 // 回填即落默认选中（当前项目行；被过滤词挡住则原默认）
@@ -1176,10 +1181,15 @@ impl Chat {
     pub(crate) fn project_sel_default(&self) -> usize {
         let visible = project_visible(self);
         let cur = visible.iter().position(|&ix| {
-            crate::services::workspace::same_ws(
-                &self.psp.project_hits[ix].path.to_string_lossy(),
-                &self.ws.cwd.to_string_lossy(),
-            )
+            self.ws
+                .cwd
+                .as_deref()
+                .is_some_and(|cur| {
+                    crate::services::workspace::same_ws(
+                        &self.psp.project_hits[ix].path.to_string_lossy(),
+                        &cur.to_string_lossy(),
+                    )
+                })
         });
         match cur {
             Some(row) => row + 1,
@@ -1228,7 +1238,11 @@ impl Chat {
             return;
         }
         self.psp.search_running = true;
-        let cwd = self.ws.cwd.clone();
+        // 无项目态：没有可搜索的当前项目（psp 全局搜索不受影响，另入口）
+        let Some(cwd) = self.ws.cwd.clone() else {
+            self.psp.search_running = false;
+            return;
+        };
         cx.spawn(async move |weak, cx| {
             cx.background_executor()
                 .timer(std::time::Duration::from_millis(300))

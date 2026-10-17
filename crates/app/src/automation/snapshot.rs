@@ -9,6 +9,7 @@ use crate::{Chat, Dialog};
 use gpui::{Context, Focusable};
 use pi_link::protocol::Block;
 use serde_json::{json, Value};
+use std::path::Path;
 use std::time::UNIX_EPOCH;
 
 pub(crate) const SURFACES: [&str; 9] = [
@@ -45,6 +46,16 @@ pub(crate) fn surface(
             }
         }
     }
+}
+
+
+/// snapshot 的 cwd 字段：无项目态 = 空串（不指代任何真实目录）
+fn cwd_json(chat: &Chat) -> String {
+    chat.ws
+        .cwd
+        .as_deref()
+        .map(|p| p.display().to_string())
+        .unwrap_or_default()
 }
 
 fn surface_one(chat: &Chat, window: &gpui::Window, cx: &Context<Chat>, name: &str) -> Value {
@@ -180,7 +191,7 @@ fn app_surface(chat: &Chat, window: &gpui::Window, cx: &Context<Chat>) -> Value 
         "version": env!("CARGO_PKG_VERSION"),
         "theme": crate::appearance::theme::theme_name(),
         "lang": crate::i18n::LANG_LABELS[crate::i18n::lang_ix()],
-        "cwd": chat.ws.cwd.display().to_string(),
+        "cwd": cwd_json(chat),
         "branch": chat.ws.branch,
         "booted": chat.pool.booted,
         "focused": focused_str(chat, window, cx),
@@ -322,7 +333,7 @@ fn sessions_surface(chat: &Chat) -> Value {
         .map(|e| json!({"key": e.key, "preview": truncate(&e.preview, 120), "cwd": e.cwd}))
         .collect();
     json!({
-        "cwd": chat.ws.cwd.display().to_string(),
+        "cwd": cwd_json(chat),
         "active_key": chat.pool.active_key,
         "active_file": opt_path(chat.psp.active_file.as_ref()),
         "runtimes": chat.pool.runtimes.keys().cloned().collect::<Vec<_>>(),
@@ -485,7 +496,11 @@ fn files_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
     let crumbs: Vec<String> = active_file
         .as_ref()
         .map(|p| {
-            crate::editor::view::breadcrumb_segments(&chat.ws.cwd, p)
+            // 无项目态：无工作区相对化基準，直接用绝对路径段
+            crate::editor::view::breadcrumb_segments(
+                chat.ws.cwd.as_deref().unwrap_or_else(|| Path::new("")),
+                p,
+            )
                 .iter()
                 .map(|(t, _)| t.to_string())
                 .collect()
@@ -518,7 +533,7 @@ fn files_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
         })
         .collect();
     json!({
-        "cwd": chat.ws.cwd.display().to_string(),
+        "cwd": cwd_json(chat),
         "crumbs": crumbs,
         // 023 外部改动检测的监听面：cwd 递归 watch + cwd 外打开文件的
         // 单文件目录 watch（Zed single-file worktree 同款）——断言「工作区外

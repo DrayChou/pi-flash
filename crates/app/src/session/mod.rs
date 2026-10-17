@@ -155,29 +155,38 @@ fn session_fn_bar(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyEle
     let t = T();
     // 栏首项目名（2026-10-14）：当前工作区基名（ws.cwd），粗体亮色，后随
     // 淡色 chevron（编辑器面包屑同款 ">"），再接原有三钮。功能面板打开时
-    // 不显示（面板里已有项目名，重复），收拢时才补位。
+    // 不显示（面板里已有项目名，重复），收拢时才补位。无项目态显示占位名。
     let project: Option<SharedString> = if chat.layout.panes_hidden {
         Some(
-            chat.ws
-                .cwd
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| chat.ws.cwd.to_string_lossy().to_string())
+            chat.project()
+                .map(|p| {
+                    p.file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| p.to_string_lossy().to_string())
+                })
+                .unwrap_or_else(|| tr("statusbar.no_project").to_string())
                 .into(),
         )
     } else {
         None
     };
     // 会话组目录（sfbar-sessdir）：pi sessions 根下按 cwd 编码的组目录，
-    // 还没建（无落盘会话）退回 sessions 根——与 psp 项目详情卡同口径
+    // 还没建（无落盘会话）退回 sessions 根——与 psp 项目详情卡同口径；
+    // 无项目态直接开 sessions 根
     let sess_dir_btn = {
         let cwd = chat.ws.cwd.clone();
         move |_: &gpui::MouseDownEvent, _w: &mut gpui::Window, _cx: &mut gpui::App| {
             let dir = pi_link::sessions::sessions_root().map(|root| {
-                let d = root.join(pi_link::sessions::group_name_for_cwd(
-                    &cwd.to_string_lossy(),
-                ));
-                if d.is_dir() { d } else { root }
+                match cwd.as_deref() {
+                    Some(c) => {
+                        let d = root.join(pi_link::sessions::group_name_for_cwd(
+                            &c.to_string_lossy(),
+                        ));
+                        if d.is_dir() { d } else { root }
+                    }
+                    // 无项目态：直接开 sessions 根
+                    None => root,
+                }
             });
             if let Some(d) = dir {
                 crate::services::shell_open::reveal_in_explorer(&d);

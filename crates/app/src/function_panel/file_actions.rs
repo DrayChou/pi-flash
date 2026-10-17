@@ -114,7 +114,11 @@ impl Chat {
             return;
         }
         self.ws.file_search_scanning = true;
-        let cwd = self.ws.cwd.clone();
+        // 无项目态：没有可搜索的工作区
+        let Some(cwd) = self.ws.cwd.clone() else {
+            self.ws.file_search_scanning = false;
+            return;
+        };
         cx.spawn(async move |weak, cx| {
             cx.background_executor()
                 .timer(std::time::Duration::from_millis(250))
@@ -146,8 +150,10 @@ impl Chat {
     /// 命中行点击：打开文件 tab（主体渲染/编辑器配置由 kind handler 决定；
     /// 10MB/二进制闸同样生效）。
     pub(crate) fn open_file_search_hit(&mut self, rel: &str, cx: &mut Context<Self>) {
+        // 无项目态：命中清单本就不可能存在，防御
+        let Some(cwd) = self.ws.cwd.clone() else { return };
         self.dlg.dialog = None;
-        self.open_file_tab(self.ws.cwd.join(rel), cx);
+        self.open_file_tab(cwd.join(rel), cx);
     }
 
     // -------------------------------------------------------------------
@@ -160,11 +166,8 @@ impl Chat {
     /// cwd 下——收藏清单一律存绝对路径（flatten/gitignore 匹配/改名跟随
     /// 都按绝对路径工作）。
     pub(crate) fn tree_pin_toggle(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        let path = if path.is_relative() {
-            self.ws.cwd.join(path)
-        } else {
-            path
-        };
+        let Some(cwd) = self.ws.cwd.clone() else { return };
+        let path = if path.is_relative() { cwd.join(path) } else { path };
         match self.ws.pinned.iter().position(|p| same_path(p, &path)) {
             Some(ix) => {
                 self.ws.pinned.remove(ix);
@@ -188,7 +191,10 @@ impl Chat {
             .iter()
             .map(|p| p.to_string_lossy().to_string())
             .collect();
-        crate::services::workspace::save_pins_for(&self.ws.cwd.to_string_lossy(), &pins);
+        // 无项目态：收藏无归属项目，不落盘（pinned 本应为空）
+        if let Some(cwd) = self.ws.cwd.as_deref() {
+            crate::services::workspace::save_pins_for(&cwd.to_string_lossy(), &pins);
+        }
     }
 
     /// 操作栏 Pin 钮：开/收 Pin 收藏夹视图（树体区域整体切换，同「切换
@@ -497,10 +503,11 @@ impl Chat {
     /// 沿途展开 `dir` 的祖先链与自身并重建展平表（新建行要落在可见的
     /// 目录行下方，Zed new_entry 展开 directory_id 同款）。项目根无需展开。
     fn expand_tree_dir(&mut self, dir: &Path) {
+        let cwd = self.ws.cwd.clone();
         let mut anc = Some(dir.to_path_buf());
         let mut opened = false;
         while let Some(p) = anc {
-            if same_path(&p, &self.ws.cwd) {
+            if cwd.as_deref().is_some_and(|cur| same_path(&p, cur)) {
                 break;
             }
             opened |= self.ws.expanded_dirs.insert(p.clone());
@@ -530,7 +537,12 @@ impl Chat {
             return;
         }
         let target = dir.join(&name);
-        if !target.starts_with(&self.ws.cwd) {
+        let in_root = self
+            .ws
+            .cwd
+            .as_deref()
+            .is_some_and(|cur| target.starts_with(cur));
+        if !in_root {
             self.set_status(tr("conflict.path_escapes_root").to_string(), cx);
             return;
         }
@@ -544,9 +556,10 @@ impl Chat {
         match r {
             Ok(_) => {
                 // 沿途目录展开，让新条目立即可见（树与变更过滤两态都认）
+                let cwd = self.ws.cwd.clone();
                 let mut anc = target.parent().map(|p| p.to_path_buf());
                 while let Some(p) = anc {
-                    if same_path(&p, &self.ws.cwd) {
+                    if cwd.as_deref().is_some_and(|cur| same_path(&p, cur)) {
                         break;
                     }
                     self.ws.expanded_dirs.insert(p.clone());
@@ -674,11 +687,12 @@ impl Chat {
         dst_dir: &Path,
         cx: &mut Context<Self>,
     ) {
-        // 护栏：源与目标都必须在项目根内，根本身不可移动
+        // 护栏：源与目标都必须在项目根内，根本身不可移动（无项目态无树可动）
+        let Some(cwd) = self.ws.cwd.clone() else { return };
         let in_root = |p: &Path| {
-            same_path(p, &self.ws.cwd) || crate::services::workspace::is_under(p, &self.ws.cwd)
+            same_path(p, &cwd) || crate::services::workspace::is_under(p, &cwd)
         };
-        if same_path(src, &self.ws.cwd) || !in_root(src) || !in_root(dst_dir) {
+        if same_path(src, &cwd) || !in_root(src) || !in_root(dst_dir) {
             return;
         }
         let Some(name) = src.file_name() else { return };
@@ -701,9 +715,10 @@ impl Chat {
         self.remap_moved_entry(src, &target, src_is_dir);
         self.retain_file_watches();
         // 目标链沿途展开，让移动结果立即可见（同新建提交）
+        let cwd = self.ws.cwd.clone();
         let mut anc = target.parent().map(|p| p.to_path_buf());
         while let Some(p) = anc {
-            if same_path(&p, &self.ws.cwd) {
+            if cwd.as_deref().is_some_and(|cur| same_path(&p, cur)) {
                 break;
             }
             self.ws.expanded_dirs.insert(p.clone());
@@ -742,7 +757,7 @@ impl Chat {
     pub(crate) fn tree_delete_commit(&mut self, path: &Path, cx: &mut Context<Self>) {
         // 兜底护栏：项目根不可删（操作栏右键菜单已豁免该入口，这里防
         // 其他调用路径误投递）
-        if same_path(path, &self.ws.cwd) {
+        if self.ws.cwd.as_deref().is_some_and(|cur| same_path(path, cur)) {
             self.set_status(tr("tree.delete_root_denied").to_string(), cx);
             cx.notify();
             return;
@@ -845,7 +860,7 @@ impl Chat {
     pub(crate) fn tree_at_insert(&mut self, path: PathBuf, is_dir: bool, cx: &mut Context<Self>) {
         self.dlg.tree_menu = None;
         let rel = path
-            .strip_prefix(&self.ws.cwd)
+            .strip_prefix(self.ws.cwd.as_deref().unwrap_or(Path::new("")))
             .unwrap_or(&path)
             .to_string_lossy()
             .replace('\\', "/");

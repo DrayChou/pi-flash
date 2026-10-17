@@ -93,10 +93,13 @@ impl Chat {
 
     /// psp 项目行 ＋：切换到该项目并新建会话（组展开、选中）。
     pub(crate) fn new_session_in(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        if !same_path(&self.ws.cwd, &path) {
+        if !self.ws.cwd.as_deref().is_some_and(|cur| same_path(cur, &path)) {
             self.switch_project(path, cx);
         }
         self.new_session(cx);
+        // send 门回填（010 重设计）：无项目态发来的文字，选定目录后落新
+        // 草稿并把话说出去
+        self.flush_pending_send(cx);
     }
 
     /// psp 项目菜单「在终端中打开」：以该项目为 cwd 开终端 + 切内容区 tab。
@@ -140,7 +143,12 @@ impl Chat {
         self.psp.projects.retain(|g| !same_path(&g.path, &path));
         // PF 项目注册表同步清册：删了的项目不再凭注册出现在两面板
         pi_link::projects::remove_project(&path);
-        if same_path(&self.ws.cwd, &path) {
+        if self
+            .ws
+            .cwd
+            .as_deref()
+            .is_some_and(|cur| same_path(cur, &path))
+        {
             // 当前项目被删：清当前组数据，保留草稿会话
             self.pool.sessions.clear();
             self.sync_current_sessions();
@@ -202,7 +210,10 @@ impl Chat {
                     .iter()
                     .find(|g| g.sessions.iter().any(|s| same_path(&s.path, path)))
                     .map(|g| g.path.clone())
-                    .unwrap_or_else(|| self.ws.cwd.clone());
+                    .or_else(|| self.ws.cwd.clone());
+                let Some(cwd) = cwd else {
+                    return;
+                };
                 let rt = cx.new(|_| {
                     let mut r = session::runtime::SessionRuntime::new(
                         key.clone(),

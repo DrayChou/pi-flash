@@ -1198,7 +1198,14 @@ impl Chat {
         window: &mut gpui::Window,
         cx: &mut Context<Self>,
     ) {
-        let term_cwd = cwd_override.unwrap_or_else(|| self.ws.cwd.clone());
+        // 无项目态且无显式目录：没有可落终端的工作区，不开（防进程 cwd 泄入）
+        let term_cwd = match cwd_override {
+            Some(c) => c,
+            None => match self.ws.cwd.clone() {
+                Some(c) => c,
+                None => return,
+            },
+        };
         let Some(tx) = self.ws.term_events.clone() else { return };
         let (cell_w, line_h) = terminal::measure_cell(window);
         let font_size = terminal::font_size();

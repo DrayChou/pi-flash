@@ -213,7 +213,10 @@ impl Chat {
             self.set_content_view(crate::ContentView::Chat);
         }
         if let Some(f) = &file {
-            set_last_open(&self.ws.cwd.to_string_lossy(), &f.to_string_lossy());
+            // 无项目态不存在可切会话（switch_pool_rt 已先重挂），防御式取 Some
+            if let Some(cwd) = &self.ws.cwd {
+                set_last_open(&cwd.to_string_lossy(), &f.to_string_lossy());
+            }
             // v54: 切入会话清除未读/出错红点
             self.psp.unread.remove(f);
             self.psp.turn_errors.remove(f);
@@ -244,19 +247,22 @@ impl Chat {
 
 impl Chat {
     pub(crate) fn new_session(&mut self, cx: &mut Context<Self>) {
+        // 无项目态防御：new_session 只在有项目的上下文被调（composer 发送
+        // 已在 send 门处先要目录；切项目/恢复路径 cwd 已就位）
+        let Some(cwd) = self.ws.cwd.clone() else { return };
         // lazy draft (pi-web parity): the pi process spawns on the first
         // prompt, not now; running sessions are untouched
         let key = format!("draft-{}", self.pool.draft_seq);
         self.pool.draft_seq += 1;
         let rt = cx.new(|_| {
-            let mut r = session::runtime::SessionRuntime::new(key.clone(), self.ws.cwd.clone(), None);
+            let mut r = session::runtime::SessionRuntime::new(key.clone(), cwd.clone(), None);
             r.default_model = services::workspace::default_model_pref();
             r.status = tr("session.new").to_string();
             r
         });
         self.pool.runtimes.insert(key, rt.clone());
         self.subscribe_runtime(&rt, cx);
-        clear_last_open(&self.ws.cwd.to_string_lossy());
+        clear_last_open(&cwd.to_string_lossy());
         self.dlg.renaming = None;
         self.dlg.rename_input = None;
         self.switch_to(rt, cx);
@@ -319,8 +325,8 @@ impl Chat {
         cx: &mut Context<Self>,
     ) {
         let cwd = rt.read(cx).cwd.clone();
-        if !same_ws(&cwd.to_string_lossy(), &self.ws.cwd.to_string_lossy()) {
-            self.ws.cwd = cwd;
+        if !self.ws.cwd.as_deref().is_some_and(|cur| same_path(cur, &cwd)) {
+            self.ws.cwd = Some(cwd);
             self.remount_workspace(cx);
         }
         self.switch_to(rt, cx);
@@ -330,13 +336,14 @@ impl Chat {
     /// git/文件树/fs watcher/cwd 外单文件监听全套跟着新 cwd 重建。
     /// open_session 的池命中与新运行时两条路径共用。
     pub(crate) fn remount_workspace(&mut self, cx: &mut Context<Self>) {
-        self.ws.branch = read_branch(&self.ws.cwd);
+        let Some(cwd) = self.ws.cwd.clone() else { return };
+        self.ws.branch = read_branch(&cwd);
         self.ws.expanded_dirs.clear();
         // 文件树：根项目行默认展开
-        self.ws.expanded_dirs.insert(self.ws.cwd.clone());
+        self.ws.expanded_dirs.insert(cwd.clone());
         // 021 Pin 收藏夹跟随项目（换 cwd 换清单）；新项目收藏为空则退出
         // Pin 视图（refresh_git 随后 rebuild 按新模式展平）
-        self.ws.pinned = crate::services::workspace::pins_for(&self.ws.cwd.to_string_lossy())
+        self.ws.pinned = crate::services::workspace::pins_for(&cwd.to_string_lossy())
             .into_iter()
             .map(PathBuf::from)
             .collect();
@@ -360,7 +367,8 @@ impl Chat {
         // recents (003-session管理): opening is activity — promote to the
         // top of the recent-activity list (persist throttled)
         pi_link::recents::touch_recent(&path);
-        // cwd lookup: current project first, then all psp groups (v54 跨项目)
+        // cwd lookup: current project first, then all psp groups (v54 跨项目)，
+        // 兜底当前项目；三处皆无（无项目态孤儿会话）→ 不开
         let cwd = self
             .pool.sessions
             .iter()
@@ -372,7 +380,8 @@ impl Chat {
                     .find(|g| g.sessions.iter().any(|s| s.path == path))
                     .map(|g| g.path.clone())
             })
-            .unwrap_or_else(|| self.ws.cwd.clone());
+            .or_else(|| self.ws.cwd.clone());
+        let Some(cwd) = cwd else { return };
         let key = path.to_string_lossy().to_string();
         // pool hit: switch attention — instant, all messages in place
         if let Some(rt) = self.pool.runtimes.get(&key).cloned() {
@@ -412,11 +421,13 @@ impl Chat {
         // 秒开深度优化（pi-flash-2o92）：磁盘计数改后台——主线程全文件读
         // 是 O(会话大小) 的打开冻结源
         rt.update(cx, |r, cx| r.load_disk_msg_count(cx));
-        if !same_ws(&cwd.to_string_lossy(), &self.ws.cwd.to_string_lossy()) {
-            self.ws.cwd = cwd;
+        if !self.ws.cwd.as_deref().is_some_and(|cur| same_path(cur, &cwd)) {
+            self.ws.cwd = Some(cwd);
             self.remount_workspace(cx);
         }
-        set_last_open(&self.ws.cwd.to_string_lossy(), &path.to_string_lossy());
+        if let Some(cur) = &self.ws.cwd {
+            set_last_open(&cur.to_string_lossy(), &path.to_string_lossy());
+        }
         self.dlg.renaming = None;
         self.dlg.rename_input = None;
         self.dlg.confirm_delete = None;
@@ -540,7 +551,9 @@ impl Chat {
     }
 
     pub(crate) fn refresh_sessions(&mut self) {
-        let cwd = self.ws.cwd.to_string_lossy().to_string();
+        // 无项目态：没有「当前项目会话清单」可言（psp 窗口分组照常）
+        let Some(cwd) = self.ws.cwd.clone() else { return };
+        let cwd = cwd.to_string_lossy().to_string();
         let full = list_sessions_for_cwd(&cwd, 500)
             .into_iter()
             .filter(|s| same_ws(&s.cwd, &cwd))
@@ -579,12 +592,12 @@ impl Chat {
     }
 
     pub(crate) fn switch_project(&mut self, cwd: PathBuf, cx: &mut Context<Self>) {
-        self.ws.cwd = cwd;
-        // mark as the globally-last active workspace for startup restore
-        set_last_workspace(&self.ws.cwd.to_string_lossy());
+        // 「进入项目」唯一显式入口：cwd 只在这里 / 恢复路径 / open_session
+        // 跨项目三处被写入，全部源自用户动作（010 重设计：应用永不搢造）
+        self.ws.cwd = Some(cwd.clone());
         // 打开项目即注册（PF 项目注册表）：零会话也活跃，psp 分组与
         // 打开项目弹窗两面板并集口径（用户 2026-10-16 定案）
-        pi_link::projects::register_project(&self.ws.cwd);
+        pi_link::projects::register_project(&cwd);
         self.dlg.dialog = None;
         // 全套跟着新 cwd 重挂（Pin 收藏夹/树/git/fs watcher/项目文件索引/
         // cwd 外单文件监听）——与 open_session 的池命中路径共用同一条
@@ -595,13 +608,14 @@ impl Chat {
         // 且 panic 发生在鼠标事件回调（非 unwind 边界）里 → 进程直接消失
         // （用户 2026-10-17 报崩：从文件树切项目后点 psp 项目行 ＋ 新建会话）。
         self.remount_workspace(cx);
-        if let Some(p) = get_last_open(&self.ws.cwd.to_string_lossy()) {
-            let path = PathBuf::from(&p);
-            if path.exists() {
-                self.open_session(path, false, cx);
-                cx.notify();
-                return;
-            }
+        let resumed = get_last_open(&cwd.to_string_lossy())
+            .map(PathBuf::from)
+            .filter(|p| p.exists())
+            .map(|path| self.open_session(path, false, cx))
+            .is_some();
+        if resumed {
+            cx.notify();
+            return;
         }
         self.new_session(cx);
         cx.notify();
@@ -626,11 +640,15 @@ impl Chat {
     /// 当前项目的上下文（010-启动.md §5）：命中启动装载的集合就直接返回，
     /// 未命中（新打开的项目）用同一个装载函数现算一次并纳入集合。
     pub(crate) fn project_ctx_now(&mut self) -> startup::ProjectCtx {
-        let key = self.ws.cwd.to_string_lossy().to_string();
+        // 无项目态：无项目上下文（全局设置照常，项目层为空默认）
+        let Some(cwd) = self.ws.cwd.clone() else {
+            return startup::ProjectCtx::default();
+        };
+        let key = cwd.to_string_lossy().to_string();
         if let Some(ctx) = self.pool.project_ctx.get(&key) {
             return ctx.clone();
         }
-        let ctx = startup::load_project(&self.ws.cwd.clone());
+        let ctx = startup::load_project(&cwd);
         self.pool.project_ctx.insert(key, ctx.clone());
         ctx
     }

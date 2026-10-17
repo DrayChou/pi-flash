@@ -849,19 +849,26 @@ fn git_stage_op(chat: &mut Chat, params: &Value, stage: bool) -> Result<(), Stri
             .map(|f| f.path.clone())
             .collect();
         let mut last = Ok(());
-        for p in staged {
-            last = crate::services::git::git_unstage(&chat.ws.cwd, &p);
+        if let Some(cwd) = chat.ws.cwd.as_deref() {
+            for p in staged {
+                last = crate::services::git::git_unstage(cwd, &p);
+            }
         }
         last
-    } else if params.get("all").and_then(Value::as_bool).unwrap_or(false) {
-        crate::services::git::git_stage_all(&chat.ws.cwd)
-    } else {
-        let path = params_path(params, "path").map_err(|e| e.1)?;
-        if stage {
-            crate::services::git::git_stage(&chat.ws.cwd, &path)
+    } else if let Some(cwd) = chat.ws.cwd.as_deref() {
+        if params.get("all").and_then(Value::as_bool).unwrap_or(false) {
+            crate::services::git::git_stage_all(cwd)
         } else {
-            crate::services::git::git_unstage(&chat.ws.cwd, &path)
+            let path = params_path(params, "path").map_err(|e| e.1)?;
+            if stage {
+                crate::services::git::git_stage(cwd, &path)
+            } else {
+                crate::services::git::git_unstage(cwd, &path)
+            }
         }
+    } else {
+        // 无项目态：没有可操作的仓库
+        Err("no project".into())
     }
 }
 

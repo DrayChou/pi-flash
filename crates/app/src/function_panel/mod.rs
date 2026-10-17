@@ -183,8 +183,12 @@ impl Chat {
                 });
             }
         }
-        let cwd = self.ws.cwd.clone();
-        if !groups.iter().any(|g| same_ws(&g.path.to_string_lossy(), &cwd.to_string_lossy())) {
+        // 当前项目空组仅在有项目时建（无项目态没有「当前项目」行）
+        if let Some(cwd) = self.ws.cwd.clone()
+            && !groups
+                .iter()
+                .any(|g| same_ws(&g.path.to_string_lossy(), &cwd.to_string_lossy()))
+        {
             groups.push(crate::ProjectGroup {
                 name: crate::services::workspace::project_name(&cwd),
                 path: cwd.clone(),
@@ -240,9 +244,10 @@ impl Chat {
             });
         } else if self.psp.projects.is_empty() {
             // current pinned first, the rest by newest session mtime desc
+            let cwd = self.ws.cwd.clone();
             groups.sort_by(|a, b| {
-                let ka = same_ws(&a.path.to_string_lossy(), &cwd.to_string_lossy());
-                let kb = same_ws(&b.path.to_string_lossy(), &cwd.to_string_lossy());
+                let ka = cwd.as_deref().is_some_and(|cur| same_ws(&a.path.to_string_lossy(), &cur.to_string_lossy()));
+                let kb = cwd.as_deref().is_some_and(|cur| same_ws(&b.path.to_string_lossy(), &cur.to_string_lossy()));
                 match (ka, kb) {
                     (true, false) => std::cmp::Ordering::Less,
                     (false, true) => std::cmp::Ordering::Greater,
@@ -281,12 +286,15 @@ impl Chat {
         let hours = crate::services::workspace::auto_collapse_hours();
         let cutoff = std::time::SystemTime::now()
             - std::time::Duration::from_secs(hours * 3600);
-        let cwd = self.ws.cwd.to_string_lossy().to_string();
+        let cwd = self.ws.cwd.clone();
         for g in &self.psp.projects {
             if g.sessions.is_empty() {
                 continue;
             }
-            if same_ws(&g.path.to_string_lossy(), &cwd) {
+            if cwd
+                .as_deref()
+                .is_some_and(|cur| same_ws(&g.path.to_string_lossy(), &cur.to_string_lossy()))
+            {
                 continue;
             }
             if newest(g) < cutoff {
@@ -298,7 +306,12 @@ impl Chat {
 
     /// Keep `sessions` (current project) in sync with the matching group.
     pub(crate) fn sync_current_sessions(&mut self) {
-        let cwd = self.ws.cwd.to_string_lossy().to_string();
+        // 无项目态：没有「当前项目」清单
+        let Some(cwd) = self.ws.cwd.clone() else {
+            self.pool.sessions = Vec::new();
+            return;
+        };
+        let cwd = cwd.to_string_lossy().to_string();
         self.pool.sessions = self
             .psp.projects
             .iter()
@@ -681,7 +694,11 @@ fn project_row(
     let Some(g) = chat.psp.projects.get(pi) else {
         return div().into_any_element();
     };
-    let active = same_ws(&g.path.to_string_lossy(), &chat.ws.cwd.to_string_lossy());
+    let active = chat
+        .ws
+        .cwd
+        .as_deref()
+        .is_some_and(|cur| same_ws(&g.path.to_string_lossy(), &cur.to_string_lossy()));
     let collapsed = chat.psp.collapsed_keys.contains(&same_ws_key(&g.path.to_string_lossy()));
     let hovered = chat.psp.hovered_project == Some(pi);
     let path = g.path.clone();

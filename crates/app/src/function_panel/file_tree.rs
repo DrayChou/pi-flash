@@ -49,10 +49,11 @@ impl Chat {
     /// 行滚进视口。树右键菜单入口行本就可见（幂等）；编辑区右键菜单入口
     /// 可能该行还没展开/滚出视口，不做这些就没有输入框可编辑。
     pub(crate) fn reveal_tree_row(&mut self, path: &Path) {
+        let Some(cwd) = self.ws.cwd.clone() else { return };
         let mut anc = path.parent().map(|p| p.to_path_buf());
         let mut opened = false;
         while let Some(p) = anc {
-            if same_path(&p, &self.ws.cwd) {
+            if same_path(&p, &cwd) {
                 break;
             }
             opened |= self.ws.expanded_dirs.insert(p.clone());
@@ -95,7 +96,7 @@ impl Chat {
     /// 沿途展开）兜底排表尾。渲染落点（tree_list_view edit_slot）与打开编辑
     /// 行时的自动滚动共用本公式，两处永不漂移。
     pub(crate) fn tree_new_edit_slot(&self, dir: &Path) -> (usize, usize) {
-        if same_path(dir, &self.ws.cwd) {
+        if self.ws.cwd.as_deref().is_some_and(|cur| same_path(dir, cur)) {
             return (0, 0);
         }
         self.ws.tree_rows
@@ -114,7 +115,12 @@ impl Chat {
     /// 显式动作，也不写 last_workspace：启动落点只跟显式切项目）；两处都
     /// 不沾（附件类游离文件）则树不动。定位复用 reveal_tree_row。
     pub(crate) fn sync_tree_to_file(&mut self, path: &Path, cx: &mut gpui::Context<Self>) {
-        if !services::workspace::is_under(path, &self.ws.cwd) {
+        let under_current = self
+            .ws
+            .cwd
+            .as_deref()
+            .is_some_and(|cur| services::workspace::is_under(path, cur));
+        if !under_current {
             let root = self
                 .psp
                 .projects
@@ -125,7 +131,7 @@ impl Chat {
             let Some(root) = root else {
                 return;
             };
-            self.ws.cwd = root;
+            self.ws.cwd = Some(root);
             self.remount_workspace(cx);
         }
         self.ws.tree_selected = Some(path.to_path_buf());
@@ -143,11 +149,15 @@ impl Chat {
             cx.notify();
             return;
         }
+        let cur = self.ws.cwd.clone();
         let sel = self
             .psp
             .projects
             .iter()
-            .position(|g| same_ws(&g.path.to_string_lossy(), &self.ws.cwd.to_string_lossy()))
+            .position(|g| {
+                cur.as_deref()
+                    .is_some_and(|c| same_ws(&g.path.to_string_lossy(), &c.to_string_lossy()))
+            })
             .unwrap_or(0);
         self.dlg.tree_proj_menu = Some(crate::function_panel::TreeProjMenu { sel });
         cx.notify();
@@ -185,8 +195,13 @@ impl Chat {
             return;
         };
         let path = g.path.clone();
-        if !same_ws(&path.to_string_lossy(), &self.ws.cwd.to_string_lossy()) {
-            self.ws.cwd = path;
+        let cur_same = self
+            .ws
+            .cwd
+            .as_deref()
+            .is_some_and(|cur| same_ws(&path.to_string_lossy(), &cur.to_string_lossy()));
+        if !cur_same {
+            self.ws.cwd = Some(path);
             // 旧项目的选中条目不再成立（F2/高亮都按行存在性复核，残留无害，
             // 这里清掉是为了下拉切走再切回来不闪旧高亮）
             self.ws.tree_selected = None;
@@ -319,9 +334,10 @@ fn pin_list_view(
         .on_mouse_down(gpui::MouseButton::Right,
             move |ev: &gpui::MouseDownEvent, _, cx| {
                 cx.stop_propagation();
+                let Some(cwd_bg) = cwd_bg.clone() else { return };
                 let _ = weak_bg.update(cx, |c, cx| {
                     c.dlg.tree_menu = Some(crate::function_panel::TreeMenu::Dir {
-                        path: cwd_bg.clone(),
+                        path: cwd_bg,
                         x: f32::from(ev.position.x),
                         y: f32::from(ev.position.y),
                     });
@@ -364,7 +380,7 @@ fn pin_list_view(
                             //（pin 项目根本身时 rel 短于名称，置空）
                             let rel = row
                                 .path
-                                .strip_prefix(&cwd_rows)
+                                .strip_prefix(cwd_rows.as_deref().unwrap_or(Path::new("")))
                                 .unwrap_or(&row.path)
                                 .to_string_lossy()
                                 .replace('\\', "/");
@@ -427,9 +443,10 @@ fn changes_list_view(
         .on_mouse_down(gpui::MouseButton::Right,
             move |ev: &gpui::MouseDownEvent, _, cx| {
                 cx.stop_propagation();
+                let Some(cwd_bg) = cwd_bg.clone() else { return };
                 let _ = weak_bg.update(cx, |c, cx| {
                     c.dlg.tree_menu = Some(crate::function_panel::TreeMenu::Dir {
-                        path: cwd_bg.clone(),
+                        path: cwd_bg,
                         x: f32::from(ev.position.x),
                         y: f32::from(ev.position.y),
                     });
@@ -522,9 +539,10 @@ fn tree_list_view(
         .on_mouse_down(gpui::MouseButton::Right,
             move |ev: &gpui::MouseDownEvent, _, cx| {
                 cx.stop_propagation();
+                let Some(cwd_bg) = cwd_bg.clone() else { return };
                 let _ = weak_bg.update(cx, |c, cx| {
                     c.dlg.tree_menu = Some(crate::function_panel::TreeMenu::Dir {
-                        path: cwd_bg.clone(),
+                        path: cwd_bg,
                         x: f32::from(ev.position.x),
                         y: f32::from(ev.position.y),
                     });
@@ -537,8 +555,9 @@ fn tree_list_view(
         // 行之外的空隙；原地 drop 由 tree_move_commit 静默 no-op
         .on_drop::<TreeDrag>(move |drag, _, cx| {
             let _ = weak_root_drop.update(cx, |c, cx| {
-                let cwd = c.ws.cwd.clone();
-                c.tree_move_commit(&drag.path, drag.is_dir, &cwd, cx);
+                if let Some(cwd) = c.ws.cwd.clone() {
+                    c.tree_move_commit(&drag.path, drag.is_dir, &cwd, cx);
+                }
             });
         })
         .child(
@@ -868,10 +887,13 @@ fn action_bar(
     t: &'static crate::appearance::theme::Theme,
 ) -> gpui::AnyElement {
     let project: SharedString = chat
-        .ws.cwd
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| chat.ws.cwd.to_string_lossy().to_string())
+        .project()
+        .map(|p| {
+            p.file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| p.to_string_lossy().to_string())
+        })
+        .unwrap_or_else(|| tr("statusbar.no_project").to_string())
         .into();
     let changes_only = chat.ws.changes_only;
     let proj_open = chat.dlg.tree_proj_menu.is_some();
@@ -956,9 +978,10 @@ fn action_bar(
                 .on_mouse_down(gpui::MouseButton::Right,
                     move |ev: &gpui::MouseDownEvent, _, cx| {
                         cx.stop_propagation();
+                        let Some(cwd_menu) = cwd_menu.clone() else { return };
                         let _ = w_menu.update(cx, |c, cx| {
                             c.dlg.tree_menu = Some(crate::function_panel::TreeMenu::Dir {
-                                path: cwd_menu.clone(),
+                                path: cwd_menu,
                                 x: f32::from(ev.position.x),
                                 y: f32::from(ev.position.y),
                             });
@@ -1027,7 +1050,10 @@ fn action_bar(
                     false,
                     None,
                     move |_, _, _cx| {
-                        crate::services::shell_open::open_in_explorer(&cwd_explorer);
+                        // 无项目态：没有可展示的目录，按钮 no-op
+                        if let Some(cwd) = &cwd_explorer {
+                            crate::services::shell_open::open_in_explorer(cwd);
+                        }
                     },
                 ))
                 .child(bar_btn(
@@ -1038,8 +1064,10 @@ fn action_bar(
                     false,
                     None,
                     move |_, window, cx| {
+                        // 无项目态：没有可打开终端的目录，按钮 no-op
+                        let Some(cwd) = cwd_term.clone() else { return };
                         let _ = w_term.update(cx, |c, cx| {
-                            c.open_terminal_in(cwd_term.clone(), window, cx)
+                            c.open_terminal_in(cwd, window, cx)
                         });
                     },
                 ))
@@ -1436,25 +1464,35 @@ impl Chat {
     /// pin_view → flatten_pins（收藏森林）/ changes_only → flatten_changes
     /// （git status 直出）/ 树 → flatten。
     pub(crate) fn rebuild_tree(&mut self) {
+        // 无项目态：树恒空（占位 runtime 不挂任何工作区）
+        let Some(cwd) = self.ws.cwd.clone() else {
+            self.ws.tree_rows = std::sync::Arc::new(Vec::new());
+            return;
+        };
         self.ws.tree_rows = std::sync::Arc::new(if self.ws.pin_view {
             services::file_tree::flatten_pins(
-                &self.ws.cwd,
+                &cwd,
                 &self.ws.pinned,
                 &self.ws.expanded_dirs,
                 &self.ws.git_files,
             )
         } else if self.ws.changes_only {
             // 「只看变更」= 扁平表直接吃 git status 结果（不扫盘）
-            services::file_tree::flatten_changes(&self.ws.cwd, &self.ws.git_files)
+            services::file_tree::flatten_changes(&cwd, &self.ws.git_files)
         } else {
-            services::file_tree::flatten(&self.ws.cwd, &self.ws.expanded_dirs, &self.ws.git_files)
+            services::file_tree::flatten(&cwd, &self.ws.expanded_dirs, &self.ws.git_files)
         });
     }
 
     /// 挂上 fs watcher（递归 watch cwd；旧句柄 drop 即解除）。切项目时
     /// 重挂。事件由 startup::spawn_fs_watch_pump 合批后驱动 refresh_git。
     pub(crate) fn attach_fs_watch(&mut self) {
-        self.ws.fs_watch = services::watcher::watch(&self.ws.cwd, self.ws.fs_watch_tx.clone()).ok();
+        // 无项目态：无工作区监听
+        let Some(cwd) = self.ws.cwd.clone() else {
+            self.ws.fs_watch = None;
+            return;
+        };
+        self.ws.fs_watch = services::watcher::watch(&cwd, self.ws.fs_watch_tx.clone()).ok();
     }
 
     /// 023 外部改动检测的监听面维护（对齐 Zed 的 worktree 监听面）：
@@ -1471,7 +1509,11 @@ impl Chat {
         for t in &self.ws.panel_tabs {
             if let PanelTab::File(p) = t
                 && let Some(dir) = p.parent()
-                && !services::workspace::is_under(dir, &self.ws.cwd)
+                && !self
+                    .ws
+                    .cwd
+                    .as_deref()
+                    .is_some_and(|cur| services::workspace::is_under(dir, cur))
             {
                 wanted.insert(dir.to_path_buf());
             }
@@ -1492,7 +1534,12 @@ impl Chat {
     // -----------------------------------------------------------------------
 
     pub(crate) fn load_project_files(&mut self) {
-        self.ws.project_files = walk_files(&self.ws.cwd, 3, 400);
+        // 无项目态：项目文件索引恒空
+        let Some(cwd) = self.ws.cwd.clone() else {
+            self.ws.project_files = Vec::new();
+            return;
+        };
+        self.ws.project_files = walk_files(&cwd, 3, 400);
     }
 
 }

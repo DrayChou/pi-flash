@@ -28,10 +28,9 @@ pub(crate) fn view(
 ) -> gpui::Div {
     let t = T();
     let proj: SharedString = chat
-        .ws.cwd
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_default()
+        .project()
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+        .unwrap_or_else(|| tr("statusbar.no_project").to_string())
         .into();
     let n_changes = chat.ws.git_files.len();
     let changes_label = format!("Changes ({n_changes})");
@@ -172,7 +171,7 @@ fn build_git_tree(chat: &Chat) -> Vec<GitNode> {
     }
     for (path, ix) in files {
         let rel: Vec<String> = path
-            .strip_prefix(&chat.ws.cwd)
+            .strip_prefix(chat.ws.cwd.as_deref().unwrap_or(Path::new("")))
             .unwrap_or(&path)
             .components()
             .map(|c| c.as_os_str().to_string_lossy().to_string())
@@ -194,7 +193,7 @@ fn changes_body(
     } else {
         chat.ws.branch.clone().into()
     };
-    let ahead = git::git_ahead_count(&chat.ws.cwd);
+    let ahead = chat.ws.cwd.as_deref().map(git::git_ahead_count).unwrap_or(0);
     let last_commit = chat.ws.git_log.first().cloned();
 
     div()
@@ -254,7 +253,9 @@ fn changes_body(
                         .gap(px(5.))
                         .on_mouse_down(MouseButton::Left, cx.listener(
                             |this, _: &gpui::MouseDownEvent, _w, cx| {
-                                this.ws.git_error = git::git_stage_all(&this.ws.cwd).err();
+                                // 无项目态：没有可暂存的仓库，no-op
+                                let Some(cwd) = this.ws.cwd.clone() else { return };
+                                this.ws.git_error = git::git_stage_all(&cwd).err();
                                 this.refresh_git(cx);
                                 cx.notify();
                             },
@@ -375,7 +376,9 @@ fn changes_body(
                                 .hover(|s| s.bg(rgb(t.bg_hover)).text_color(rgb(t.text)))
                                 .on_mouse_down(MouseButton::Left, cx.listener(
                                     |this, _: &gpui::MouseDownEvent, _w, cx| {
-                                        match git::git_uncommit(&this.ws.cwd) {
+                                        // 无项目态：没有可撤销提交的仓库，no-op
+                                        let Some(cwd) = this.ws.cwd.clone() else { return };
+                                        match git::git_uncommit(&cwd) {
                                             Ok(()) => {
                                                 this.ws.git_error = None;
                                                 this.refresh_git(cx);
@@ -627,16 +630,19 @@ impl Chat {
     }
 
     pub(crate) fn refresh_git_log(&mut self) {
-        self.ws.git_log = git::git_log(&self.ws.cwd, 50);
+        // 无项目态：无提交历史可言
+        let Some(cwd) = self.ws.cwd.clone() else { return };
+        self.ws.git_log = git::git_log(&cwd, 50);
     }
 
     fn git_toggle_stage(&mut self, ix: usize, cx: &mut gpui::Context<Self>) {
+        let Some(cwd) = self.ws.cwd.clone() else { return };
         let Some(f) = self.ws.git_files.get(ix) else { return };
         let (path, staged) = (f.path.clone(), f.staged);
         let r = if staged {
-            git::git_unstage(&self.ws.cwd, &path)
+            git::git_unstage(&cwd, &path)
         } else {
-            git::git_stage(&self.ws.cwd, &path)
+            git::git_stage(&cwd, &path)
         };
         self.ws.git_error = r.err();
         self.refresh_git(cx);
@@ -644,8 +650,9 @@ impl Chat {
     }
 
     pub(crate) fn git_commit_staged(&mut self, cx: &mut gpui::Context<Self>) {
+        let Some(cwd) = self.ws.cwd.clone() else { return };
         let msg = self.ws.git_commit_input.read(cx).value().to_string();
-        match git::git_commit(&self.ws.cwd, &msg) {
+        match git::git_commit(&cwd, &msg) {
             Ok(()) => {
                 self.ws.git_error = None;
                 self.ws.git_commit_input.update(cx, |ti, cx| ti.set_value(String::new(), cx));
@@ -660,7 +667,7 @@ impl Chat {
     pub(crate) fn git_push_branch(&mut self, cx: &mut Context<Self>) {
         self.ws.git_error = Some(tr("git.pushing").to_string());
         cx.notify();
-        let cwd = self.ws.cwd.clone();
+        let Some(cwd) = self.ws.cwd.clone() else { return };
         cx.spawn(async move |this, cx| {
             // push is network-bound: keep it off the frame path
             let r = cx
@@ -685,7 +692,16 @@ impl Chat {
     pub(crate) fn refresh_git(&mut self, cx: &mut Context<Self>) {
         self.ws.git_refresh_gen += 1;
         let seq = self.ws.git_refresh_gen;
-        let cwd = self.ws.cwd.clone();
+        // 无项目态：清空 git 面（无工作区即无状态），照常走换入守卫
+        let Some(cwd) = self.ws.cwd.clone() else {
+            if !self.ws.git_files.is_empty() || self.ws.git_add_del != (0, 0) {
+                self.ws.git_files.clear();
+                self.ws.git_add_del = (0, 0);
+                self.ws.git_files_cwd = PathBuf::new();
+                cx.notify();
+            }
+            return;
+        };
         if self.ws.git_files_cwd != cwd {
             self.ws.git_files_cwd = cwd.clone();
             self.ws.git_files.clear();
@@ -699,7 +715,9 @@ impl Chat {
                 })
                 .await;
             let _ = this.update(cx, |chat, cx| {
-                if chat.ws.git_refresh_gen != seq || chat.ws.cwd != cwd {
+                if chat.ws.git_refresh_gen != seq
+                    || chat.ws.cwd.as_deref() != Some(cwd.as_path())
+                {
                     return;
                 }
                 chat.ws.git_files = files;

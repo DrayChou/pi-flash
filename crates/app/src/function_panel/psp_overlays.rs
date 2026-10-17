@@ -768,7 +768,12 @@ fn tree_menu_layer(
                 ));
             // 根目录（操作栏名字区右键）不出现 改名/删除——项目根本身不是
             // 可操作对象（改名会拖走整个工作区、删除等于删项目）
-            if !same_path(&path, &chat.ws.cwd) {
+            let is_root = chat
+                .ws
+                .cwd
+                .as_deref()
+                .is_some_and(|cur| same_path(&path, cur));
+            if !is_root {
                 card = card
                     .child(menu_sep())
                     .child(tree_item(
@@ -811,7 +816,8 @@ fn tree_menu_layer(
                             let dir = path
                                 .parent()
                                 .map(|p| p.to_path_buf())
-                                .unwrap_or_else(|| c.ws.cwd.clone());
+                                .or_else(|| c.ws.cwd.clone());
+                            let Some(dir) = dir else { return };
                             c.open_file_new(dir, false, cx)
                         }
                     },
@@ -828,7 +834,8 @@ fn tree_menu_layer(
                             let dir = path
                                 .parent()
                                 .map(|p| p.to_path_buf())
-                                .unwrap_or_else(|| c.ws.cwd.clone());
+                                .or_else(|| c.ws.cwd.clone());
+                            let Some(dir) = dir else { return };
                             c.open_file_new(dir, true, cx)
                         }
                     },
@@ -952,7 +959,11 @@ fn tree_proj_menu_layer(
             (
                 g.name.clone(),
                 g.path.clone(),
-                same_ws(&g.path.to_string_lossy(), &chat.ws.cwd.to_string_lossy()),
+                chat
+                    .ws
+                    .cwd
+                    .as_deref()
+                    .is_some_and(|cur| same_ws(&g.path.to_string_lossy(), &cur.to_string_lossy())),
             )
         })
         .collect();

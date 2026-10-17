@@ -190,7 +190,14 @@ impl Chat {
     pub(crate) fn mc_cli_op(&mut self, args: Vec<String>, done: String, cx: &mut Context<Self>) {
         let Some(tx) = self.cfg.op_tx.clone() else { return };
 
-        let cwd = self.ws.cwd.clone();
+        // 无项目态：pi CLI 安装/卸载是全局操作，进程 cwd 落用户主目录
+        //（只是一次性子进程的工作目录，不是项目语义，不入任何记忆）
+        let cwd = self.ws.cwd.clone().unwrap_or_else(|| {
+            std::env::var("USERPROFILE")
+                .or_else(|_| std::env::var("HOME"))
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| PathBuf::from("."))
+        });
         std::thread::spawn(move || {
             let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
             let msg = match pi_link::vendor::run_cli(&cwd, &arg_refs) {

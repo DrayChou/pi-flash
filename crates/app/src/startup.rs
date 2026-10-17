@@ -435,17 +435,14 @@ mod tests {
 
 /// 启动期后台任务 + 揭幕闸门（010-启动.md §9）。`Chat::new` 只调这一个入口，
 /// 启动阶段做了什么全在这一节里可见：
-/// 1. 首帧后附着初始 runtime 的 pi 进程并拉一次状态/命令/模型清单
-/// 2. 120ms 泵：悬停卡 / 导航 flyout / 状态条过期
-/// 3. 3s 外部追加观察：非空闲 runtime 的文件被外部（pi-web / CLI）追加时重读
-/// 4. 60s 空闲回收：非活动会话进程超 10 分钟未动就杀掉
-/// 5. 30s recents 对账：外部写入者的活跃时间回灌清单
-/// 6. 启动页闸门：pi 附着（或超时兜底）+ 最短展示 500ms → 揭幕
-pub(crate) fn spawn_boot_tasks(
-    rt: gpui::Entity<crate::session::runtime::SessionRuntime>,
-    cx: &mut gpui::Context<Chat>,
-) {
-    spawn_initial_attach(rt, cx);
+/// 1. 120ms 泵：悬停卡 / 导航 flyout / 状态条过期
+/// 2. 3s 外部追加观察：非空闲 runtime 的文件被外部（pi-web / CLI）追加时重读
+/// 3. 60s 空闲回收：非活动会话进程超 10 分钟未动就杀掉
+/// 4. 30s recents 对账：外部写入者的活跃时间回灌清单
+/// 5. 启动页闸门：pi 附着（或恢复已定案/超时兜底）+ 最短展示 500ms → 揭幕
+/// 6. 恢复最后会话 + 进入其项目 + 会话清单装载 = spawn_boot_restore
+///    （010 重设计：进程附着随恢复路径走，无项目态零进程，不再有首帧附着）
+pub(crate) fn spawn_boot_tasks(cx: &mut gpui::Context<Chat>) {
     spawn_pump_120ms(cx);
     spawn_external_append_watch(cx);
     spawn_idle_recycle(cx);
@@ -517,28 +514,8 @@ fn spawn_fs_watch_pump(cx: &mut gpui::Context<Chat>) {
     .detach();
 }
 
-/// 首帧后的进程附着（spawn 只做一次 ~100ms 的进程创建，不阻塞首帧）：
-/// 附着事件泵 + 拉一次 GetMessages/anchors/refresh_state（模型清单与命令的
-/// RPC 答复经事件泵进入 `models_by_cwd` 并回写自有缓存）。
-fn spawn_initial_attach(
-    rt: gpui::Entity<crate::session::runtime::SessionRuntime>,
-    cx: &mut gpui::Context<Chat>,
-) {
-    cx.spawn(async move |_this, cx| {
-        let _ = rt.update(cx, |r, cx| {
-            if r.agent.session.is_none() {
-                if let Some(rx) = r.spawn() {
-                    let epoch = r.agent.epoch;
-                    crate::session::runtime::SessionRuntime::attach_pump(&rt, rx, epoch, cx);
-                }
-            }
-            r.rpc(&pi_link::protocol::Command::GetMessages);
-            r.refresh_anchors();
-            r.refresh_state();
-        });
-    })
-    .detach();
-}
+/// 首帧后的进程附着已退役（010 重设计）：附着随恢复路径走——open_session
+/// 自带 spawn + GetMessages/anchors/refresh_state，无项目态零进程。
 
 /// 120ms 泵：导航 flyout / 状态条过期（光标闪烁由输入组件自管，
 /// 不再需要 2Hz 切换；会话详情卡 2026-10-15 起改右键召唤，无定时逻辑）。
@@ -671,17 +648,21 @@ fn spawn_splash_gate(cx: &mut gpui::Context<Chat>) {
             cx.background_executor()
                 .timer(std::time::Duration::from_millis(60))
                 .await;
-            let attached = this
+            let (attached, boot_resolved) = this
                 .update(cx, |c, cx| {
-                    c.pool.runtimes
+                    let attached = c
+                        .pool
+                        .runtimes
                         .get(&c.pool.active_key)
-                        .is_some_and(|r| r.read(cx).agent.session.is_some())
+                        .is_some_and(|r| r.read(cx).agent.session.is_some());
+                    (attached, c.pool.boot_resolved)
                 })
-                .unwrap_or(true); // 实体已亡（窗口关闭）：停止闸门
+                .unwrap_or((true, true)); // 实体已亡（窗口关闭）：停止闸门
             let elapsed = t0.elapsed();
             // MIN_SPLASH 从启动页首帧起算（忙机首帧可能晚于 pi 附着）
             let splash_shown = splash_paint_age().is_some_and(|age| age >= MIN_SPLASH);
-            if (attached && splash_shown) || elapsed >= SPLASH_TIMEOUT {
+            // 无项目态没有可附着的进程：boot_resolved 直接放行，不等超时
+            if ((attached || boot_resolved) && splash_shown) || elapsed >= SPLASH_TIMEOUT {
                 break;
             }
         }
@@ -703,19 +684,105 @@ fn spawn_splash_gate(cx: &mut gpui::Context<Chat>) {
     .detach();
 }
 
-/// 会话清单装载（010-启动.md §5/§6 第 6 步），全部在后台线程，首帧只画空壳：
-/// 当前项目会话（前 100）→ 「加载时间窗口」内活跃会话（清单驱动）→ 项目分组 →
-/// 集合内每个项目的项目上下文预装 → 活动序前 `TAIL_PRELOAD` 条的尾部预载。
-pub(crate) fn spawn_session_list_load(
-    cwd_text: String,
-    last_open: Option<PathBuf>,
-    cx: &mut gpui::Context<Chat>,
-) {
-    cx.spawn(async move |this, cx| {
-        let sessions = pi_link::sessions::list_sessions_for_cwd(&cwd_text, 100)
+/// 启动恢复目标（010 重设计）。
+pub(crate) enum BootTarget {
+    /// 进入项目（cwd）；session = 要恢复的最后会话（None = 项目新开草稿）。
+    Project { cwd: PathBuf, session: Option<PathBuf> },
+    /// 无项目态：维持 ws.cwd = None，零进程。
+    None,
+}
+
+/// 恢复目标判定（纯盘读，后台线程跑）：
+/// - `PI_FLASH_CWD` 显式覆盖优先（开发意图）：目录存在即进，其 per-project
+///   last_open 会话照常恢复；目录不存在按 None 处理，绝不兜底乱进；
+/// - 否则 `startup_restore=on` 时取全局 recents 最新会话——「最后工作的
+///   session」，其所属项目随之成为 cwd；跳过项目目录已删 / 落在应用自有
+///   目录（历史污染会话）的条目；
+/// - 其余 → None（无项目态）。
+fn boot_target() -> BootTarget {
+    if let Ok(cwd) = std::env::var("PI_FLASH_CWD") {
+        let cwd = PathBuf::from(cwd);
+        if !cwd.is_dir() {
+            return BootTarget::None;
+        }
+        let session = crate::services::workspace::startup_restore()
+            .then(|| crate::services::workspace::get_last_open(&cwd.to_string_lossy()))
+            .flatten()
+            .map(PathBuf::from)
+            .filter(|p| p.exists());
+        return BootTarget::Project { cwd, session };
+    }
+    if !crate::services::workspace::startup_restore() {
+        return BootTarget::None;
+    }
+    for path in pi_link::recents::top_session_paths(16) {
+        let Some(info) = pi_link::sessions::sessions_for_paths(std::slice::from_ref(&path))
             .into_iter()
-            .filter(|s| crate::services::workspace::same_ws(&s.cwd, &cwd_text))
-            .collect::<Vec<_>>();
+            .next()
+        else {
+            continue;
+        };
+        let cwd = PathBuf::from(info.cwd);
+        if !cwd.is_dir() || pi_link::paths::is_app_install_path(&cwd) {
+            continue;
+        }
+        return BootTarget::Project { cwd, session: Some(path) };
+    }
+    BootTarget::None
+}
+
+/// 启动恢复 + 会话清单装载（010 重设计，原 spawn_session_list_load）：
+/// 1. 判定恢复目标（后台线程）→ 进入其项目（remount + 恢复会话/新草稿）；
+///    无目标 → 维持无项目态并置 `boot_resolved`（揭幕闸门据此放行）。
+/// 2. 「加载时间窗口」内活跃会话 → 项目分组 → 集合内项目上下文预装 →
+///    活动序前 `TAIL_PRELOAD` 条的尾部预载。
+pub(crate) fn spawn_boot_restore(cx: &mut gpui::Context<Chat>) {
+    cx.spawn(async move |this, cx| {
+        let target = cx.background_spawn(async move { boot_target() }).await;
+        let (active_cwd, active_session) = match &target {
+            BootTarget::Project { cwd, session } => (
+                Some(cwd.to_string_lossy().to_string()),
+                session.clone(),
+            ),
+            BootTarget::None => (None, None),
+        };
+        let _ = this.update(cx, |chat, cx| {
+            match target {
+                BootTarget::Project { cwd, session } => {
+                    chat.ws.cwd = Some(cwd.clone());
+                    // 打开项目即注册：恢复落进的项目算显式打开
+                    pi_link::projects::register_project(&cwd);
+                    chat.remount_workspace(cx);
+                    let key = cwd.to_string_lossy().to_string();
+                    chat.pool
+                        .project_ctx
+                        .entry(key)
+                        .or_insert_with(|| load_project(&cwd));
+                    chat.reload_model_defaults();
+                    match session {
+                        Some(path) => chat.open_session(path, false, cx),
+                        // 项目在、会话无从恢复：新草稿（进程懒 spawn，闸门
+                        // 不等附着，boot_resolved 直接放行）
+                        None => {
+                            chat.pool.boot_resolved = true;
+                            chat.new_session(cx);
+                        }
+                    }
+                }
+                BootTarget::None => chat.pool.boot_resolved = true,
+            }
+            cx.notify();
+        });
+        // —— 会话清单装载（全部在后台线程，首帧只画空壳）：当前项目会话
+        //（前 100；无项目态跳过）→ 「加载时间窗口」内活跃会话 → 项目分组 →
+        // 集合内每个项目的项目上下文预装 → tail 预载 ——
+        let sessions = match &active_cwd {
+            Some(cwd_text) => pi_link::sessions::list_sessions_for_cwd(cwd_text, 100)
+                .into_iter()
+                .filter(|s| crate::services::workspace::same_ws(&s.cwd, cwd_text))
+                .collect::<Vec<_>>(),
+            None => Vec::new(),
+        };
         let _ = this.update(cx, |chat, cx| {
             chat.pool.sessions = sessions;
             cx.notify();
@@ -762,7 +829,7 @@ pub(crate) fn spawn_session_list_load(
             cx.notify();
         });
         // tail preload（活动序前 TAIL_PRELOAD 条；active 已由首屏渲染，跳过）
-        let active = last_open.clone();
+        let active = active_session;
         let preloaded = cx
             .background_spawn(async move {
                 let mut map = std::collections::HashMap::new();
@@ -789,4 +856,3 @@ pub(crate) fn spawn_session_list_load(
     })
     .detach();
 }
-  

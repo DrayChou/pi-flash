@@ -31,7 +31,7 @@ impl Chat {
     /// Provider ids in available-models display order.
     pub(crate) fn mc_provider_ids(&self) -> Vec<String> {
         let mut out: Vec<String> = Vec::new();
-        for m in self.catalog_for(&self.ws.cwd) {
+        for m in self.catalog_for(self.project()) {
             if !out.contains(&m.provider) {
                 out.push(m.provider.clone());
             }
@@ -51,7 +51,7 @@ impl Chat {
         provider: &str,
         enabled_set: &std::collections::HashSet<String>,
     ) -> (usize, usize) {
-        let catalog = self.catalog_for(&self.ws.cwd);
+        let catalog = self.catalog_for(self.project());
         let models: Vec<&pi_link::protocol::ModelInfo> = catalog
             .iter()
             .filter(|m| m.provider == provider)
@@ -80,7 +80,7 @@ impl Chat {
     /// Display name of one catalog model ("name", falling back to
     /// `provider/id` for models the catalog hasn't listed).
     pub(crate) fn model_display_name(&self, provider: &str, id: &str) -> String {
-        self.catalog_for(&self.ws.cwd)
+        self.catalog_for(self.project())
             .iter()
             .find(|m| m.provider == provider && m.id == id)
             .map(|m| m.label())
@@ -97,7 +97,7 @@ impl Chat {
             .map(|s| s.as_str())
             .collect();
         let mut list: Vec<pi_link::protocol::ModelInfo> = self
-            .catalog_for(&self.ws.cwd)
+            .catalog_for(self.project())
             .iter()
             .filter(|m| {
                 all_enabled || {
@@ -119,9 +119,14 @@ impl Chat {
         let settings_path = pi_link::config::settings_path();
         self.cfg.mc_patterns =
             pi_link::config::read_enabled_models(&settings_path).unwrap_or_else(|_| None);
-        let project = pi_link::config::project_settings_path(&self.ws.cwd);
-        self.cfg.mc_project_scope =
-            pi_link::config::read_enabled_models(&project).unwrap_or_else(|_| None).is_some();
+        let project = self
+            .ws
+            .cwd
+            .as_deref()
+            .map(pi_link::config::project_settings_path);
+        self.cfg.mc_project_scope = project
+            .and_then(|p| pi_link::config::read_enabled_models(&p).unwrap_or_else(|_| None))
+            .is_some();
         self.cfg.mc_default_model = services::workspace::default_model_pref();
         self.cfg.mc_default_thinking = pi_link::config::read_default_thinking_level(&settings_path);
         self.cfg.mc_model_thinking = pi_link::config::read_model_thinking_levels(&settings_path);
@@ -130,7 +135,7 @@ impl Chat {
     }
 
     pub(crate) fn new_session_default(&self) -> (Option<(String, String)>, Option<String>) {
-        let catalog = self.catalog_for(&self.ws.cwd);
+        let catalog = self.catalog_for(self.project());
         let in_scope = |m: &pi_link::protocol::ModelInfo| {
             self.cfg.mc_state.all_enabled
                 || {
@@ -194,7 +199,7 @@ impl Chat {
         self.cfg.mc_project_scope = ctx.project_scope;
         // 043：MCP 盘上现读——project_ctx 是启动缓存，本页写盘后重读只会
         // 拷到旧列表（040 globals 内存副本同款教训）
-        let (mcp_servers, mcp_errors) = pi_link::mcp::load(Some(&self.ws.cwd));
+        let (mcp_servers, mcp_errors) = pi_link::mcp::load(self.project());
         self.cfg.mcp_servers = mcp_servers;
         self.cfg.mcp_errors = mcp_errors;
         // 自定义 provider 编辑缓冲（PF 私有账本；面板打开/写盘后重建）
@@ -823,7 +828,7 @@ fn mc_models_detail(
     // catalog provider detail（API Key；OAuth 归 pi，PF 只管自有账本）
     let provider = selected.to_string();
     let models: Vec<pi_link::protocol::ModelInfo> = chat
-        .catalog_for(&chat.ws.cwd)
+        .catalog_for(chat.project())
         .iter()
         .filter(|m| m.provider == provider)
         .cloned()
@@ -1203,7 +1208,7 @@ impl Chat {
     /// `provider/modelId` refs of every available model, display order.
     /// Reads the shared catalog of the current project (models_by_cwd).
     pub(crate) fn mc_refs(&self) -> Vec<String> {
-        self.catalog_for(&self.ws.cwd)
+        self.catalog_for(self.project())
             .iter()
             .map(|m| format!("{}/{}", m.provider, m.id))
             .collect()
@@ -1248,10 +1253,9 @@ impl Chat {
     /// 042【移除】墓碑在此统一过滤（composer 模型菜单 / 设置列表 / 新会话
     /// 默认回落 / remote /模型 全走本口）——移除只删 PF 账本与凭据，pi 侧
     /// 目录缓存与 auth.json 不归 PF 管，数据面原样保留、展示层除名。
-    pub(crate) fn catalog_for(&self, cwd: &std::path::Path) -> Vec<pi_link::protocol::ModelInfo> {
-        let raw = self
-            .pool.models_by_cwd
-            .get(&cwd.to_string_lossy().to_string())
+    pub(crate) fn catalog_for(&self, cwd: Option<&std::path::Path>) -> Vec<pi_link::protocol::ModelInfo> {
+        let raw = cwd
+            .and_then(|c| self.pool.models_by_cwd.get(&c.to_string_lossy().to_string()))
             .map(|v| v.as_slice())
             .filter(|v| !v.is_empty())
             .unwrap_or(self.pool.globals.models.as_slice());
@@ -1276,7 +1280,7 @@ impl Chat {
             .collect();
         g.extend(fresh.iter().cloned());
         self.pool.globals.models = pi_link::catalog::dedupe(g);
-        let cwd_key = self.ws.cwd.to_string_lossy().to_string();
+        let cwd_key = self.project_key();
         let mut m: Vec<_> = self
             .pool.models_by_cwd
             .remove(&cwd_key)

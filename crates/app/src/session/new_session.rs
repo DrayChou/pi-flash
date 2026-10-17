@@ -167,9 +167,12 @@ fn action_bar(
     t: &'static crate::appearance::theme::Theme,
 ) -> AnyElement {
     let project: SharedString = chat
-        .ws.cwd
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
+        .project()
+        .map(|p| {
+            p.file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| p.to_string_lossy().to_string())
+        })
         .filter(|n| !n.is_empty())
         .unwrap_or_else(|| tr("action.select_project").to_string())
         .into();

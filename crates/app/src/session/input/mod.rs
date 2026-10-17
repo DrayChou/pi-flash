@@ -68,8 +68,10 @@ impl Chat {
     /// 缺失在后台线程重建；旧清单在重建期间先顶上。TTL/容量读
     /// app-settings.json，默认 60s / 10 项目）。
     pub(crate) fn ensure_at_index(&mut self, cx: &mut Context<Self>) {
+        // 无项目态：无文件索引可言（发送已被 send 门拦在选目录之前）
+        let Some(cwd) = self.ws.cwd.clone() else { return };
         let ttl = std::time::Duration::from_secs(services::workspace::at_index_ttl_secs());
-        let key = self.ws.cwd.to_string_lossy().to_string();
+        let key = cwd.to_string_lossy().to_string();
         let fresh = match self.composer.at_index.get(&key) {
             Some(e) => {
                 e.building || e.built.is_some_and(|t| t.elapsed() < ttl)
@@ -79,15 +81,13 @@ impl Chat {
         if fresh {
             return;
         }
-        let entry = self.composer.at_index.entry(key).or_default();
+        let entry = self.composer.at_index.entry(key.clone()).or_default();
         entry.building = true;
         entry.built = None;
         // 缓存上限（pi-web：超限整表清空——每 cwd 一份，重建很便宜）
         if self.composer.at_index.len() >= services::workspace::at_index_max_projects() {
             self.composer.at_index.clear();
         }
-        let cwd = self.ws.cwd.clone();
-        let key = cwd.to_string_lossy().to_string();
         cx.spawn(async move |this, cx| {
             // entries 派生也在后台：大仓库（20 万条）下主线程只做 Arc 换手
             let (files, entries) = cx
@@ -101,7 +101,7 @@ impl Chat {
                 .await;
             let _ = this.update(cx, |chat, cx| {
                 // key = 构建时的 cwd（期间切项目也不会写错条目）
-                let e = chat.composer.at_index.entry(key).or_default();
+                let e = chat.composer.at_index.entry(key.clone()).or_default();
                 e.files = std::sync::Arc::new(files);
                 e.entries = std::sync::Arc::new(entries);
                 e.built = Some(std::time::Instant::now());
@@ -142,7 +142,30 @@ impl Chat {
     }
 
     pub(crate) fn send_input(&mut self, cx: &mut Context<Self>) {
+        // 无项目态 send 门（010 重设计）：cwd 是会话的属性，发送前必须先有
+        // 目录。文字留在 composer（取消选择不丢），副本进 pending_send；
+        // 选定目录后 new_session_in → flush_pending_send 回填发送
+        if self.ws.cwd.is_none() {
+            if self.dlg.pending_send.is_none() {
+                self.dlg.pending_send = Some(self.composer.input.clone());
+            }
+            self.open_project_picker(true, cx);
+            return;
+        }
         self.with_active_editor(cx, |r, cx| r.send_input(cx));
+    }
+
+    /// send 门回填（new_session_in 落新草稿后调）：switch_to 会把 composer
+    /// 文字随旧 runtime 换走，先把暂存文字放回；期间用户真有新输入则以新
+    /// 输入为准（暂存弃掉，不自动发）。
+    pub(crate) fn flush_pending_send(&mut self, cx: &mut Context<Self>) {
+        let Some(stashed) = self.dlg.pending_send.take() else { return };
+        if self.composer.input.is_empty() {
+            self.set_input(stashed.clone(), cx);
+        }
+        if self.composer.input == stashed {
+            self.send_input(cx);
+        }
     }
 
     pub(crate) fn steer_input(&mut self, cx: &mut Context<Self>) {
@@ -183,8 +206,9 @@ impl Chat {
             return std::borrow::Cow::Borrowed(&rt.commands);
         }
         let mut out: Vec<pi_link::protocol::SlashCommand> = self
-            .pool.project_ctx
-            .get(&self.ws.cwd.to_string_lossy().to_string())
+            .pool
+            .project_ctx
+            .get(&self.project_key())
             .map(|ctx| ctx.skill_commands.clone())
             .unwrap_or_default();
         out.extend(self.pool.globals.commands.iter().cloned());

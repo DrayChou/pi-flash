@@ -258,7 +258,8 @@ fn file_nav_bar(
     // 为绝对路径。Windows 盘符前缀与根分隔符合成一段——Zed 面包屑同款：
     // `D:\` 是一个 crumb，此前拆成 `D:` 与 `\` 两段（且目录累积 acc 从 cwd
     // 拼起，盘符段后的兄弟菜单指向错误目录）。
-    let segments = breadcrumb_segments(&chat.ws.cwd, path);
+    // 无项目态：无 cwd 相对化基准，退化为绝对路径段
+    let segments = breadcrumb_segments(chat.ws.cwd.as_deref().unwrap_or_else(|| Path::new("")), path);
     let mut crumbs = div().min_w_0().flex().items_center().overflow_hidden();
     for (i, (seg_text, dir)) in segments.iter().enumerate() {
         let last = i + 1 == segments.len();

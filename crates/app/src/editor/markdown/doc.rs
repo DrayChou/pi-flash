@@ -6,6 +6,7 @@ use gpui::{
 };
 use crate::appearance::theme::Theme;
 use super::*;
+use std::path::PathBuf;
 
 static DOC_MODE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -305,7 +306,12 @@ pub(crate) fn render_preview_body(
     let abs = if path.is_absolute() {
         path.to_path_buf()
     } else {
-        chat.ws.cwd.join(path)
+        match chat.ws.cwd.clone() {
+            // 相对路径按工作区绝对化（不依赖进程 cwd）
+            Some(cwd) => cwd.join(path),
+            // 无项目态没有基准：给必然读不到的路径 → 按图片缺失渲染
+            None => PathBuf::from(std::path::MAIN_SEPARATOR.to_string()),
+        }
     };
     // 块级虚拟化（抄 zed thread_view 的 list 架构，v60）：ListState 每
     // 帧只建可视块条目（progress.md 784 块全量构建 ≈ 30ms/帧，滚动必

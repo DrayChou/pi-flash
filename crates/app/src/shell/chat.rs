@@ -225,6 +225,9 @@ pub(crate) struct DlgUi {
     pub(crate) tree_deleting: Vec<PathBuf>,
     pub(crate) status_toast: Option<(String, std::time::Instant)>,
     pub(crate) settings: Option<gpui::Entity<settings::SettingsPanel>>,
+    /// 010 重设计 send 门：无项目态下用户敲下的文字在弹「打开项目」前
+    /// 暂存于此，switch_project 选定目录后回填并自动发送（话不丢）
+    pub(crate) pending_send: Option<String>,
 }
 
 /// 会话池簇（4ea 字段重组）：常驻 runtime 池 + 注意力指针 + 索引缓存
@@ -249,6 +252,9 @@ pub(crate) struct PoolUi {
     pub(crate) ext_tokens: std::collections::HashMap<String, services::token_probe::TokenEntry>,
     /// 010-启动：启动页闸门；揭幕帧由 pending_zoom 补 §4 最大化
     pub(crate) booted: bool,
+    /// 010 重设计：启动恢复已定案（进入项目或维持无项目态）。无项目态没有
+    /// 可附着的进程，揭幕闸门据此放行，不必等 SPLASH_TIMEOUT 兜底。
+    pub(crate) boot_resolved: bool,
     pub(crate) pending_zoom: bool,
 }
 
@@ -407,7 +413,7 @@ pub(crate) struct WsUi {
     pub(crate) term_cursor_on: bool,
     pub(crate) term_cursor_focused: bool,
     pub(crate) term_events: Option<futures::channel::mpsc::UnboundedSender<(usize, alacritty_terminal::event::Event)>>,
-    pub(crate) cwd: PathBuf,
+    pub(crate) cwd: Option<PathBuf>,
     pub(crate) branch: String,
     // git panel
     pub(crate) git_files: Vec<GitFile>,
@@ -428,86 +434,14 @@ impl Chat {
     pub(crate) fn new(cx: &mut Context<Self>) -> Self {
         let focus = cx.focus_handle();
         let dialog_focus = cx.focus_handle();
-        // PI_FLASH_CWD 显式指定优先；否则用进程 cwd——但**双击 exe 启动**
-        // （资源管理器/任务栏）时进程 cwd = exe 所在目录，构建产物目录
-        // （如 target\debug）不是项目：rebuild_projects 会把工作区钉成
-        // 常驻项目组（0 会话也显示），于是每次这样启动都凭空多出一个
-        // 「debug」空项目、删了下次启动又回来。此场景不采纳进程 cwd，
-        // 回退上次工作区（startup_restore 只管恢复上次会话，工作区仍要
-        // 有合理起点；memory 的 __last 一直有记），再兜底用户主目录。
-        let raw_cwd = std::env::var("PI_FLASH_CWD")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-        let cwd_is_exe_dir = std::env::current_exe()
-            .ok()
-            .and_then(|e| e.parent().map(|p| p.to_path_buf()))
-            .is_some_and(|exe_dir| {
-                // Windows 路径大小写不敏感（workspace.json 里 __last 就是小写盘符）
-                exe_dir.to_string_lossy().to_lowercase()
-                    == raw_cwd.to_string_lossy().to_lowercase()
-            });
-        // 081 交接补链（2026-10-17）：npm 薄壳布局下双击老 `payload\pi-flash.exe`，
-        // 应用内更新后交接拉起的新 exe 目录已是 `payload-<新版本>`，继承
-        // cwd（老 payload 目录）≠ exe 目录 → 上面的等号探针失灵 → 老 payload
-        // 目录被当用户项目注册，__last 被污染，此后每次启动都从 payload 起。
-        // 凡 cwd 落在安装根内（交接继承、快捷方式「起始位置」= 包根、cd 进
-        // 载荷目录启动），一律按 exe 目录启动处理，不采纳为项目。
-        // PI_FLASH_CWD 显式指定是开发意图，不参与此放宽。
-        let cwd_in_install_root = std::env::var("PI_FLASH_CWD").is_err()
-            && std::env::current_exe()
-                .ok()
-                .is_some_and(|exe| {
-                    crate::services::workspace::cwd_inside_install_root(&exe, &raw_cwd)
-                });
-        // true = exe 目录启动（含安装根内 cwd）且无 last_workspace，落用户
-        // 主目录兑底——这不是用户「打开项目」，不进项目注册表
-        let (cwd, boot_home_fallback) = if cwd_is_exe_dir || cwd_in_install_root {
-            // __last 必须不是应用自有目录（is_app_install_path：安装根内）。
-            // 污染期写脏的 __last（payload）若照单全收，这里会把它恢复成
-            // 项目并重新注册——死循环的另一半；磁盘存量由 boot 的
-            // purge_app_paths / purge_app_install_memory 一次性清洗。
-            match get_last_workspace()
-                .map(PathBuf::from)
-                .filter(|p| p.is_dir() && !pi_link::paths::is_app_install_path(p))
-            {
-                Some(p) => (p, false),
-                None => (
-                    std::env::var("USERPROFILE")
-                        .or_else(|_| std::env::var("HOME"))
-                        .map(PathBuf::from)
-                        .unwrap_or(raw_cwd),
-                    true,
-                ),
-            }
-        } else {
-            (raw_cwd, false)
-        };
-        // startup restore decides workspace + last session BEFORE the first
-        // spawn — exactly one pi process (ARCHITECTURE.md §4, was two)
-        let last_ws = if startup_restore() { get_last_workspace() } else { None };
-        // 恢复目标同样消毒：__last 指向安装根内（交接污染存量）时不采纳
-        let target_ws = last_ws
-            .filter(|ws| !pi_link::paths::is_app_install_path(Path::new(ws)))
-            .unwrap_or_else(|| cwd.to_string_lossy().to_string());
-        let cwd = if !same_ws(&target_ws, &cwd.to_string_lossy()) {
-            let ws_path = PathBuf::from(&target_ws);
-            if ws_path.is_dir() { ws_path } else { cwd }
-        } else {
-            cwd
-        };
-        let branch = read_branch(&cwd);
-        // 打开项目即注册（PF 项目注册表）：启动落进的项目也 touch——零会话
-        // 也活跃（psp 分组 + 打开项目弹窗并集口径）；主目录兑底不算打开
-        if !boot_home_fallback && cwd.is_dir() {
-            pi_link::projects::register_project(&cwd);
-        }
-        let last_open = if startup_restore() {
-            get_last_open(&cwd.to_string_lossy())
-                .map(PathBuf::from)
-                .filter(|p| p.exists())
-        } else {
-            None
-        };
+        // 010 重设计（2026-10-17 用户定案）：**cwd 是会话的属性，不是应用状态**
+        // ——启动永远从无项目态出发（ws.cwd = None），应用不捏造任何当前目录
+        //（进程 cwd / exe 目录 / 主目录兜底整族删除；payload 死循环一类的根
+        // 因不复存在）。cwd 的合法来源只剩：
+        //   ① 启动恢复「最后工作的会话」（startup_restore=on，recents 全局
+        //      最新一条，其所属项目随之成为 cwd）——spawn_boot_restore 负责；
+        //   ② 显式意图：切项目/打开项目、PI_FLASH_CWD（开发覆盖，同走 ① 通道）。
+        // 无项目态下 composer 发送会弹「打开项目」先要一个目录（send 门）。
         let ui = ui_state();
         // fs watch 通道：tx 永驻 Chat，rx 交给 startup 的泵任务
         let (fs_watch_tx, fs_watch_rx_ch) = std::sync::mpsc::channel::<()>();
@@ -526,10 +460,7 @@ impl Chat {
                 file_watches: std::collections::HashMap::new(),
                 changes_only: ui.tree_changes_only,
                 pin_view: false,
-                pinned: services::workspace::pins_for(&cwd.to_string_lossy())
-                    .into_iter()
-                    .map(PathBuf::from)
-                    .collect(),
+                pinned: Vec::new(),
                 file_search_hits: Vec::new(),
                 file_search_needle: String::new(),
                 file_search_gen: 0,
@@ -547,7 +478,7 @@ impl Chat {
                 term_cursor_on: true,
                 term_cursor_focused: false,
                 term_events: None,
-                branch,
+                branch: String::new(),
                 git_files: Vec::new(),
                 git_selected: None,
                 git_tab: function_panel::git_panel::GitTab::Changes,
@@ -562,7 +493,7 @@ impl Chat {
                 md_preview_focus: cx.focus_handle(),
                 fs_watch_tx,
                 fs_watch_rx: Some(fs_watch_rx_ch),
-                cwd: cwd.clone(),
+                cwd: None,
                 git_commit_input: {
                     let input = cx.new(|cx| TextInput::new(cx).placeholder(tr("git.commit_placeholder")));
                     input
@@ -619,6 +550,7 @@ impl Chat {
                 project_ctx: std::collections::HashMap::new(),
                 ext_tokens: services::token_probe::read_cache(),
                 booted: false,
+                boot_resolved: false,
                 pending_zoom: false,
             },
             dlg: DlgUi {
@@ -652,13 +584,14 @@ impl Chat {
                 tree_deleting: Vec::new(),
                 status_toast: None,
                 settings: None,
+                pending_send: None,
             },
             psp: PspUi {
                 projects: Vec::new(),
                 project_hits: Vec::new(),
                 project_filter: String::new(),
                 project_sel: 0,
-                active_file: last_open.clone(),
+                active_file: None,
                 list_mode: if ui.list_mode == "flat" { ListMode::Flat } else { ListMode::Grouped },
                 sort_mode: if ui.sort_mode == "manual" { SortMode::Manual } else { SortMode::Time },
                 collapsed_keys: ui.collapsed.iter().cloned().collect(),
@@ -726,11 +659,9 @@ impl Chat {
         // 启动阶段：全局态一次性装载（010-启动.md §1/§6）——模型清单（磁盘 ∪ 自有
         // 缓存）、命令、默认项、插件、全局 mcp，全部先于第一帧进内存，**不 spawn 进程**。
         chat.pool.globals = startup::load_globals();
-        let cwd_key = chat.ws.cwd.to_string_lossy().to_string();
-        chat.pool.project_ctx
-            .insert(cwd_key, startup::load_project(&chat.ws.cwd.clone()));
         // new-session defaults (default model / thinking / enabledModels
         // scope) before the first frame — the draft pills render from them
+        //（无项目态：project scope 恒 false；恢复挂载后 spawn_boot_restore 重算）
         chat.reload_model_defaults();
         // wire input callbacks that need the root entity handle
         let weak_ext = cx.entity().downgrade();
@@ -748,10 +679,8 @@ impl Chat {
                 let _ = weak_ask.update(cx, |c, cx| c.ask_enter(cx));
             }));
         });
-        chat.load_project_files();
-        // 文件树：根项目行默认展开
-        chat.ws.expanded_dirs.insert(chat.ws.cwd.clone());
-        chat.refresh_git(cx);
+        // 文件树 / git / fs watch 的挂载全部随「进入项目」动作走
+        //（spawn_boot_restore / switch_project），无项目态零挂载。
 
         // settings panel CLI op pump (pi install/remove runs in background)
         let (op_tx, mut op_rx) = futures::channel::mpsc::unbounded::<String>();
@@ -817,42 +746,27 @@ impl Chat {
         // models panel state (enabledModels whitelist + credentials) for the
         // picker filter — loaded once at startup, refreshed when opened
         chat.reload_settings_panel();
-        // initial runtime: restore the last session (disk-direct tail) or a
-        // lazy draft. The process spawns AFTER first paint.
-        let rt_key = last_open
-            .as_deref()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|| "draft-0".to_string());
+        // 初始 runtime = 无项目态占位（draft-0）：cwd 为空、永不 spawn——
+        // 需要项目的动作全部在入口被门拦下（composer 发送 → 打开项目；
+        // 文件树/git/终端空态）。占位只为让 rt() 全路径安全（rpc 对未附着
+        // 进程是 no-op）；真正的恢复/挂载在 spawn_boot_restore。
         let rt = cx.new(|_| {
-            let mut r = session::runtime::SessionRuntime::new(
-                rt_key.clone(),
-                cwd.clone(),
-                last_open.clone(),
-            );
+            let mut r =
+                session::runtime::SessionRuntime::new("draft-0".to_string(), PathBuf::new(), None);
             r.default_model = services::workspace::default_model_pref();
-            if let Some(path) = &last_open {
-                r.messages = msgs_from_tail(read_tail_messages(path, 256 * 1024, 100));
-                // 秒开深度优化（pi-flash-2o92）：磁盘计数改后台（首个启动帧
-                // 不做 O(会话大小) 的全文件读）——回灌走 load_disk_msg_count
-                r.pager.reload(r.messages.len());
-                r.status = "resuming".into();
-            }
             r
         });
         chat.pool.draft_seq = 1; // "draft-0" is taken by the initial runtime above
-        chat.pool.runtimes.insert(rt_key.clone(), rt.clone());
-        chat.pool.active_key = rt_key.clone();
+        chat.pool.runtimes.insert("draft-0".to_string(), rt.clone());
+        chat.pool.active_key = "draft-0".to_string();
         chat.subscribe_runtime(&rt, cx);
-        rt.update(cx, |r, cx| r.load_disk_msg_count(cx));
-        // 010-启动.md §9：启动期的一切（首帧附着 / 120ms 泵 / 3s 外部追加观察 /
-        // 60s 空闲回收 / 30s recents 对账 / 启动页闸门 / 会话清单与项目集装载）
-        // 都由 startup 发起——启动阶段做了什么全在 startup.rs 里可见。
-        startup::spawn_boot_tasks(rt.clone(), cx);
-        startup::spawn_session_list_load(
-            chat.ws.cwd.to_string_lossy().to_string(),
-            last_open.clone(),
-            cx,
-        );
+        // 010-启动.md §9：启动期的一切（120ms 泵 / 3s 外部追加观察 / 60s 空闲
+        // 回收 / 30s recents 对账 / 启动页闸门）都由 startup 发起；恢复最后
+        // 会话 + 进入其项目 + 会话清单装载 = spawn_boot_restore（cwd 不再在
+        // Chat::new 捏造）。进程附着随恢复路径走（open_session 自带 spawn +
+        // GetMessages），无项目态零进程。
+        startup::spawn_boot_tasks(cx);
+        startup::spawn_boot_restore(cx);
         if PERF.load(std::sync::atomic::Ordering::Relaxed) {
             if let Some(t0) = T0.get() {
                 eprintln!("[perf] last-session tail rendered: {:?}", t0.elapsed());
@@ -869,6 +783,20 @@ impl Chat {
         chat
     }
 
+    /// 当前项目目录——None = 无项目态（启动未恢复、也未用任何显式动作进入
+    /// 过项目）。cwd 的合法来源只有显式动作：恢复最后会话（其项目随之成为
+    /// cwd）、切项目/打开项目、PI_FLASH_CWD。应用永不捏造（010 重设计）。
+    pub(crate) fn project(&self) -> Option<&Path> {
+        self.ws.cwd.as_deref()
+    }
+
+    /// 无项目态的键占位（空串）：只允许用于查内存 map（永不命中），禁止
+    /// 做任何 FS/进程语义——那类路径必须走 [`Self::project`] 的 None 分支。
+    pub(crate) fn project_key(&self) -> String {
+        self.project()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default()
+    }
 
     pub(crate) fn set_status(&mut self, msg: String, cx: &mut Context<Self>) {
         self.dlg.status_toast = Some((msg, std::time::Instant::now()));

@@ -282,6 +282,15 @@ pub fn recent_load_paths(window_days: u64) -> Vec<PathBuf> {
     })
 }
 
+/// 全局最新活跃会话（recency 降序前 n 条；已过滤不存在文件）——启动恢复
+/// 「最后工作的会话」用（010 重设计）。
+pub fn top_session_paths(n: usize) -> Vec<PathBuf> {
+    with_recents(|r| {
+        seed_if_empty(r);
+        r.top_paths(n).into_iter().filter(|p| p.is_file()).collect()
+    })
+}
+
 /// 30s poll: external-writer reconciliation over the sessions root.
 /// Enumerates the tree (metadata only), records mtime bumps with max
 /// semantics, prunes dead entries and saves. Files in `exclude` (live

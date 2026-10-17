@@ -19,7 +19,13 @@ impl Chat {
     pub(crate) fn open_file_tab(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         // 消息文本/远程控制可能传来相对路径：统一按 cwd 绝对化（已开复用
         // 的 same_path 比较与磁盘读取都基于绝对形态）
-        let path = if path.is_absolute() { path } else { self.ws.cwd.join(path) };
+        let path = if path.is_absolute() {
+            path
+        } else {
+            // 相对路径按当前项目绝对化；无项目态无从解析，拒绝打开
+            let Some(cwd) = self.ws.cwd.clone() else { return };
+            cwd.join(path)
+        };
         const MAX: u64 = 10 * 1024 * 1024;
         if std::fs::metadata(&path).map(|m| m.len() > MAX).unwrap_or(false) {
             self.set_status(

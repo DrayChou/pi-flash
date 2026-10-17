@@ -148,7 +148,7 @@ impl Chat {
     pub(crate) fn picker_models(&self, cx: &gpui::App) -> (Vec<pi_link::protocol::ModelInfo>, usize) {
         let picker_enabled = !self.cfg.mc_state.all_enabled;
         let scoped: Vec<pi_link::protocol::ModelInfo> = self
-            .catalog_for(&self.rt().read(cx).cwd)
+            .catalog_for(Some(self.rt().read(cx).cwd.as_path()))
             .iter()
             .filter(|m| {
                 !picker_enabled || {

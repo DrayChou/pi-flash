@@ -403,6 +403,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("composer.files", "文件", "檔案", "Files"),
     ("composer.slash_commands", "斜杠命令", "斜槓命令", "Slash commands"),
     ("composer.no_matching_files", "没有匹配的文件", "沒有符合的檔案", "No matching files"),
+    ("statusbar.no_project", "未选择项目", "未選擇專案", "No project"),
     ("composer.shell_local_only", "Shell · 输出仅本地（!!）", "Shell · 輸出僅本機（!!）", "Shell · output stays local (!!)"),
     ("composer.shell_to_model", "Shell · 输出发给模型", "Shell · 輸出傳送給模型", "Shell · output sent to model"),
     ("composer.running_hint", "执行中 · Esc 中止", "執行中 · Esc 中止", "Running · Esc to abort"),

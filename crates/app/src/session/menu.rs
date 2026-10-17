@@ -59,7 +59,7 @@ impl Chat {
                 // 打分走完整派生条目（目录 + 文件；pi-web 对全量打分，仓库
                 // 超过索引上限时深层文件仍可搜到）。索引没就绪 → 空列表，
                 // 后台构建完成的通知会把菜单刷出来
-                let key = self.ws.cwd.to_string_lossy().to_string();
+                let key = self.project_key();
                 let Some(entry) = self.composer.at_index.get(&key) else {
                     return Vec::new();
                 };
