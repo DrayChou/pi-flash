@@ -50,4 +50,7 @@
   - 真源可用，无需假源（见上一条）
   - 打断实测（下载完成、待重启时杀进程）：留下 `payload.stage-0.1.10`（263MB）+ `update-staged.json`，`payload\` 本身没被碰（老方案 stage 阶段不动在用目录）
   - `③` 的还原是**硬删**（工作副本可反复重建，不进回收站）；母本 `baseline\` 才是真副本，别手删
+  - **怎么让新代码被测到**（真源下新代码永远"已是最新"，因为自我版本 = 编译进 exe 的 0.1.10 = 真源最新发布）：临时降版窗口——`crates/app/Cargo.toml` 的 version 改 0.1.9 → `cargo build -p app` → `python tools/rig.py rebuild` → 立刻改回 + `git checkout -- Cargo.lock`。实测全程 2 分钟、`git status`/`git diff` 零残留（做不到时先确认没有别的 cargo/rustc 在跑）。改完 updater 想再测一次安装链路，就得重走一遍
+  - **新代码档启动必须带 `PI_FLASH_UPDATE_CHECK=1`**（debug 构建默认不检查更新，真实发版包是 release 默认查）：`rig.py start` 已代设
+  - 实测（2026-10-17，真源 0.1.10 资产 + 新代码）：下载走 `github.com/.../releases/download` → 解压 → 落位 → **`安装收尾：读过 15033/15033 个文件，301 ms`**（8 线程）→ `update.state=ready`。即"安装期把每个文件读一遍"对 15k 文件几乎不增加安装耗时
 - npm ≥11.5.1 的 `allowScripts` 门控会对薄壳 postinstall 报“not yet covered by allowScripts”警告（实测安装仍会跑脚本，失败则 npm 回滚）；命中拦截时的兜底是 `pi-flash.js` 启动时 `payloadOk()` 自愈补齐。
