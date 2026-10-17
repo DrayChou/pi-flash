@@ -25,11 +25,18 @@ pub struct FileListing {
 /// git ls-files：`-z` 分隔防路径带空格被拆；LC_ALL=C 稳定排序（route.ts
 /// 同参）。git 不存在 / 非 git 仓库 → None（调用方回退 walk）。
 pub fn list_with_git(cwd: &Path) -> Option<FileListing> {
-    let out = std::process::Command::new("git")
-        .args(["-C", &cwd.to_string_lossy(), "ls-files", "--cached", "--others", "--exclude-standard", "-z"])
-        .env("LC_ALL", "C")
-        .output()
-        .ok()?;
+    let mut cmd = std::process::Command::new("git");
+    cmd.args(["-C", &cwd.to_string_lossy(), "ls-files", "--cached", "--others", "--exclude-standard", "-z"])
+        .env("LC_ALL", "C");
+    // git 是 console 程序：GUI 宿主裸 spawn 会分配控制台并弹 Windows
+    // Terminal 窗口（口径同 git.rs::hide_console）。
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let out = cmd.output().ok()?;
     if !out.status.success() {
         return None;
     }

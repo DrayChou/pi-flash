@@ -54,3 +54,41 @@
   - **新代码档启动必须带 `PI_FLASH_UPDATE_CHECK=1`**（debug 构建默认不检查更新，真实发版包是 release 默认查）：`rig.py start` 已代设
   - 实测（2026-10-17，真源 0.1.10 资产 + 新代码）：下载走 `github.com/.../releases/download` → 解压 → 落位 → **`安装收尾：读过 15033/15033 个文件，301 ms`**（8 线程）→ `update.state=ready`。即"安装期把每个文件读一遍"对 15k 文件几乎不增加安装耗时
 - npm ≥11.5.1 的 `allowScripts` 门控会对薄壳 postinstall 报“not yet covered by allowScripts”警告（实测安装仍会跑脚本，失败则 npm 回滚）；命中拦截时的兜底是 `pi-flash.js` 启动时 `payloadOk()` 自愈补齐。
+
+## 启动时凭空多一个终端窗口（Windows 子系统/spawn flags）
+
+**症状**：PF 主窗口出现前先弹一个终端窗口（Windows Terminal，tab 名 = `pi-flash`，
+里面只有一行 `libpng warning: iCCP: known incorrect sRGB profile`，之后无提示符）。
+
+**根因**：`crates/app/src/main.rs` 缺 `#![windows_subsystem = "windows"]` →
+链接出的 exe 是 **console subsystem** → 进程一启动 Windows 就给它分配控制台 →
+机器若以 Windows Terminal 作默认终端宿主，系统替它开一个 WT 窗口（那行 iCCP 警告
+是 WT 自己加载 PNG 图标的诊断，与 PF 无关）。GUI 程序还会白挂一个
+`conhost.exe 0x4` 子进程。
+
+**判定姿势（可复用）**：
+
+- `Get-CimInstance Win32_Process` 看进程树：谁名下挂着 `conhost.exe`（父进程即
+  `AllocConsole` 的那个）；`conhost.exe --headless …` 则是内置终端的 ConPTY
+  服务端（不显示窗口，正常）。
+- 进程内自查：`GetConsoleProcessList` + `GetConsoleWindow`，`attached=true` 即
+  本进程已在控制台里（临时 extern "system" 打两个点，诊断完删）。
+- 只想验证 gpui 是否有责：写个 `#![windows_subsystem = "windows"]` 的最小 bin
+  链 gpui 开空窗——**实测 gpui 无罪**（无 conhost 子进程），病根在 app 自身。
+
+**铁律**：
+
+1. `main.rs` 的 `#![windows_subsystem = "windows"]` **勿删**（文件头注释已写缘由）。
+2. **任何** `std::process::Command` spawn Windows 子进程都要带
+   `CREATE_NO_WINDOW`（0x0800_0000）。GUI 宿主 spawn console 程序（git /
+   powershell / node）时，子进程默认新建控制台 → 又一个 WT 窗口。已带 flag 的：
+   `pi-link/{client,vendor,registry}.rs`、`services/token_probe.rs`；
+   本轮补上：`services/git.rs`（新增 `git_cmd()` 统一口径）、`services/file_index.rs`。
+3. 读 PE Subsystem 别手撸偏移——本地 python 按 `pe+24+68` 读 debug exe 得出 2、
+   release 得出 3，与实测行为矛盾；**以「进程树里有没有 conhost / 探针
+   attached」为准**，别信自己算的字段。
+
+**实测（debug exe，隔离 home，启动后 15s 采样）**：修复前 PF 名下有
+`conhost.exe 0x4` + `GetConsoleProcessList` 在 `main` 第一行就 `attached=true`；
+修复后同一探针 `attached=false`、进程树只剩 `node.exe`（pi 侧车）与 `git.exe`
+（都 CREATE_NO_WINDOW），无 conhost、无 WT 新进程。

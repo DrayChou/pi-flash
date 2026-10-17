@@ -3,6 +3,13 @@
 //! v54 shell: topbar 两段（左=收放钮 chrome / 右=内容 tabs+设置+窗口控制）·
 //! psp 项目+会话一体列表 · 内容区 chat/term/md 状态机 · statusbar 仅面板段。
 //! Layout values come from docs/UI设计/主界面UI设计-2.html (mist tokens).
+//! **Windows GUI 子系统（铁律，勿删）**：不写这条，链接出的 exe 是 console
+//! subsystem → 进程一启动 Windows 就给它分配控制台 → 机器若以 Windows
+//! Terminal 作默认终端宿主，就先弹一个终端窗口（tab 名=exe 名，里面只有
+//! WT 自己的一条 iCCP 警告），PF 主窗口才跟上；GUI 程序还白挂一个
+//! conhost 子进程。已实测：不写 = 启动即带控制台，写了 = 无 conhost、无
+//! 终端窗口。见 docs/agents/engineering.md。
+#![windows_subsystem = "windows"]
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};

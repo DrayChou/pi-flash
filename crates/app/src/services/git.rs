@@ -51,13 +51,28 @@ pub struct GitCommit {
     pub subject: String,
 }
 
+/// `git` 是 console 程序：GUI 宿主裸 spawn 会给它分配控制台，Windows
+/// Terminal 立刻弹一个窗口（tag 名=git）。一律 CREATE_NO_WINDOW 静默跑。
+#[cfg(windows)]
+fn hide_console(cmd: &mut std::process::Command) {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    cmd.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(windows))]
+fn hide_console(_cmd: &mut std::process::Command) {}
+
+/// 带 CREATE_NO_WINDOW 的 `git -C <cwd> <args>`。
+fn git_cmd(cwd: &Path, args: &[&str]) -> std::process::Command {
+    let mut cmd = std::process::Command::new("git");
+    cmd.arg("-C").arg(cwd).args(args);
+    hide_console(&mut cmd);
+    cmd
+}
+
 fn run_git(cwd: &Path, args: &[&str]) -> Option<String> {
-    let out = std::process::Command::new("git")
-        .arg("-C")
-        .arg(cwd)
-        .args(args)
-        .output()
-        .ok()?;
+    let out = git_cmd(cwd, args).output().ok()?;
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).to_string())
 }
 
@@ -155,12 +170,7 @@ pub fn git_file_diff(cwd: &Path, path: &Path, untracked: bool) -> String {
 
 /// run_git with error surface (commit/push report failure text).
 fn run_git_checked(cwd: &Path, args: &[&str]) -> Result<String, String> {
-    let out = std::process::Command::new("git")
-        .arg("-C")
-        .arg(cwd)
-        .args(args)
-        .output()
-        .map_err(|e| e.to_string())?;
+    let out = git_cmd(cwd, args).output().map_err(|e| e.to_string())?;
     if out.status.success() {
         Ok(String::from_utf8_lossy(&out.stdout).to_string())
     } else {
@@ -209,10 +219,7 @@ pub fn git_commit(cwd: &Path, message: &str) -> Result<(), String> {
 /// Push the current branch; returns remote output on success.
 pub fn git_push(cwd: &Path) -> Result<String, String> {
     // stderr carries the progress/ref output even on success
-    let out = std::process::Command::new("git")
-        .arg("-C")
-        .arg(cwd)
-        .args(["push", "--verbose"])
+    let out = git_cmd(cwd, &["push", "--verbose"])
         .output()
         .map_err(|e| e.to_string())?;
     let text = String::from_utf8_lossy(&out.stderr).trim().to_string();
