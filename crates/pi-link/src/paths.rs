@@ -4,7 +4,11 @@
 //! （`sessions/`、`settings.json`、`models.json`、`models-store.json`、`skills/`、
 //! `npm/`、`auth.json` …）。
 //!
-//! - 目录解析：`PI_FLASH_DIR` 优先（开发/测试隔离），否则 `%USERPROFILE%\.pi-flash`
+//! - 目录解析：`PI_FLASH_DIR` 优先（显式覆盖一切）；未设时按**构建档位**取
+//!   默认——release（npm 载荷/绿色包）= `%USERPROFILE%\.pi-flash`（正式 home），
+//!   debug/test（cargo run / cargo test）= workspace 的 `pi-flash-dev`（兜底
+//!   `~/.pi-flash-dev`）。正式/开发两条 home 由构建档位焊死，裸跑测试摸不到
+//!   正式目录（2026-10-18 测试写穿真实 workspace.json 冲掉 pins，即缺这道墙）。
 //! - 旧文件迁移：老的 `~/.pi/agent/pi-flash-*.json` 在新路径缺失时原样 `rename`
 //!   过来（不复制、不改内容）；新路径已存在则不动旧文件、不做清理。
 //!   迁移必须在任何读者（sessions 扫描器 / recents 单例 / workspace 记忆缓存）
@@ -13,14 +17,41 @@
 use std::path::{Path, PathBuf};
 
 /// pi-flash 配置目录（可能不存在）。
+///
+/// pro/dev 双 home：`PI_FLASH_DIR` 显式指定永远优先；未设时由**构建档位**
+/// 决定默认——debug/test 构建永不落正式目录，隔离不依赖命令行记得带前缀。
 pub fn dir() -> Option<PathBuf> {
     if let Ok(d) = std::env::var("PI_FLASH_DIR") {
         if !d.trim().is_empty() {
             return Some(PathBuf::from(d));
         }
     }
+    // 属性级 cfg 分支：release 构建不编译 dev_dir，反之亦然
+    #[cfg(debug_assertions)]
+    return dev_dir();
+    #[cfg(not(debug_assertions))]
+    return pro_dir();
+}
+
+/// 正式 home：仅 release 构建走到这（npm 载荷 / 绿色包）。debug 档不调用，压告警。
+#[cfg_attr(debug_assertions, allow(dead_code))]
+fn pro_dir() -> Option<PathBuf> {
     let home = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")).ok()?;
     Some(Path::new(&home).join(".pi-flash"))
+}
+
+/// 开发 home：debug/test 构建默认值。路径编译期烙进 `CARGO_MANIFEST_DIR`
+/// （`crates/<crate>` 上两级 = workspace 根）；workspace 已不在（debug exe
+/// 被拷走等）则退 `~/.pi-flash-dev`——仍非正式目录。
+#[cfg(debug_assertions)]
+fn dev_dir() -> Option<PathBuf> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(2)?;
+    let ws_dev = root.join("pi-flash-dev");
+    if ws_dev.parent().is_some_and(|p| p.is_dir()) {
+        return Some(ws_dev);
+    }
+    let home = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")).ok()?;
+    Some(Path::new(&home).join(".pi-flash-dev"))
 }
 
 /// pi-flash 配置目录，写前确保存在。

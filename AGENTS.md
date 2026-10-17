@@ -12,7 +12,7 @@ cargo run -p app                                # 运行（bin: pi-flash）
 RUST_MIN_STACK=33554432 cargo test -p pi-link   # 协议/路径测试都在 pi-link
 ```
 
-- 环境变量：`PI_FLASH_PI_BIN` 覆盖内置 pi；`PI_FLASH_THEME` 切主题（default/dark/rose）；`PI_FLASH_RPC_LOG` 开 RPC 线缆日志；**`PI_FLASH_DIR=./pi-flash-dev` = 标准 debug/测试 home**（已进 `.gitignore`，跑 dev 与任何测试都用）
+- 环境变量：`PI_FLASH_PI_BIN` 覆盖内置 pi；`PI_FLASH_THEME` 切主题（default/dark/rose）；`PI_FLASH_RPC_LOG` 开 RPC 线缆日志；**`PI_FLASH_DIR` 显式指定永远优先；未设时按构建档位取默认——debug/test（cargo run/cargo test）自动落 `./pi-flash-dev`，release 才落 `~/.pi-flash`**（2026-10-18 起 paths 层焊死，裸跑测试摸不到正式目录；dev home 已进 `.gitignore`）
 - UI 验证一律走 pif-ui 自动化链路，禁止抢真实屏幕
 
 # 铁律

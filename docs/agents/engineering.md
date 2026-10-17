@@ -41,8 +41,7 @@
 
 ## 标准 debug home 与 0.1.9 升级测试台
 
-- **标准 debug home：`./pi-flash-dev`**（`PI_FLASH_DIR` 指向它，已进 `.gitignore`）。跑 dev 与任何测试都用它，别再临时造 home：
-  `PI_FLASH_DIR="$(pwd -W)/pi-flash-dev" cargo run -p app`。它跨轮保留（设置 / 更新状态 / 缓存），所以测试实例不用重新登录。
+- **标准 debug home：`./pi-flash-dev`**（已进 `.gitignore`）。**2026-10-18 起 paths 层焊死双 home：debug/test 构建（cargo run / cargo test）默认自动落它，release 才落 `~/.pi-flash`；`PI_FLASH_DIR` 仍可显式覆盖**。历史命令带不带前缀都等价：`cargo run -p app`。它跨轮保留（设置 / 更新状态 / 缓存），所以测试实例不用重新登录。注意：`cargo run --release` 走正式 home，想隔离请显式 `PI_FLASH_DIR`。
 - **测试实例与真实 pi 的边界**：`PI_FLASH_DIR` 只搬 app 自有文件；pi 侧车仍用真实 `~/.pi/agent`（凭据/会话/设置）——测试实例产生的会话会出现在正常会话列表里，这是故意的（免登录）。
 - **0.1.9 升级测试台**（人工复现升级/打断；2026-10-17 搭）：`D:\pf-test-019\`
   - `payload\` = 真 0.1.9 载荷（`dist/pi-flash-0.1.9-win32-x64.zip` 解压）；`baseline\payload\` = 母本（硬链接克隆，还原用）

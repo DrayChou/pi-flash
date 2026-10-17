@@ -531,9 +531,9 @@ pub struct TreeState {
     pub pin: bool,
 }
 
-/// 读取一个项目的文件树状态（无记录 = None，调用方落默认「只展开根」）。
-pub fn tree_state_for(cwd: &str) -> Option<TreeState> {
-    let v = memory().get(WS_TREE_KEY)?.get(&ws_key(cwd))?.clone();
+/// 纯内核：从 map 读一个项目的文件树状态（无记录 = None）。
+fn tree_state_from(map: &serde_json::Map<String, Value>, cwd: &str) -> Option<TreeState> {
+    let v = map.get(WS_TREE_KEY)?.get(&ws_key(cwd))?.clone();
     let expanded = v
         .get("expanded")
         .and_then(|a| a.as_array())
@@ -547,9 +547,14 @@ pub fn tree_state_for(cwd: &str) -> Option<TreeState> {
     Some(TreeState { expanded, pin })
 }
 
-/// 整体改写一个项目的文件树状态；完全默认（只展开根且不在 Pin 视图）= 移除槽位。
-pub fn save_tree_state(cwd: &str, state: &TreeState) {
-    let mut map = memory();
+/// 读取一个项目的文件树状态（无记录 = None，调用方落默认「只展开根」）。
+pub fn tree_state_for(cwd: &str) -> Option<TreeState> {
+    tree_state_from(&memory(), cwd)
+}
+
+/// 纯内核：把一个项目的文件树状态写进传入 map（默认态 = 移除槽位）。
+/// **绝不碰全局缓存/落盘**——落盘职责归调用方（测试用内核，不写任何盘）。
+fn tree_state_into_map(map: &mut serde_json::Map<String, Value>, cwd: &str, state: &TreeState) {
     let key = ws_key(cwd);
     let entry = map
         .entry(WS_TREE_KEY.to_string())
@@ -571,6 +576,12 @@ pub fn save_tree_state(cwd: &str, state: &TreeState) {
             );
         }
     }
+}
+
+/// 整体改写一个项目的文件树状态；完全默认（只展开根且不在 Pin 视图）= 移除槽位。
+pub fn save_tree_state(cwd: &str, state: &TreeState) {
+    let mut map = memory();
+    tree_state_into_map(&mut map, cwd, state);
     set_memory(&map);
 }
 
@@ -1168,7 +1179,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
     }
 
-    /// 默认态（只展开根、不在 Pin 视图）不落槽位；有状态才写。
+    /// 默认态（只展开根、不在 Pin 视图）不落槽位；有状态才写。走纯内核，
+    /// 不经全局 save_tree_state —— 裸跑测试不写任何盘。
     #[test]
     fn tree_state_default_is_not_stored() {
         let base = tmpfile("tree-store").parent().unwrap().to_path_buf();
@@ -1177,14 +1189,20 @@ mod tests {
         std::fs::create_dir_all(&cwd).unwrap();
         let cwd_s = cwd.to_string_lossy().to_string();
 
-        save_tree_state(&cwd_s, &TreeState { expanded: vec![String::new()], pin: false });
-        assert!(tree_state_for(&cwd_s).is_none(), "默认态不占槽位");
+        let mut map = serde_json::Map::new();
+        tree_state_into_map(
+            &mut map,
+            &cwd_s,
+            &TreeState { expanded: vec![String::new()], pin: false },
+        );
+        assert!(tree_state_from(&map, &cwd_s).is_none(), "默认态不占槽位");
 
-        save_tree_state(
+        tree_state_into_map(
+            &mut map,
             &cwd_s,
             &TreeState { expanded: vec![String::new(), "src".into()], pin: true },
         );
-        let st = tree_state_for(&cwd_s).expect("有内容应可读回");
+        let st = tree_state_from(&map, &cwd_s).expect("有内容应可读回");
         assert_eq!(st.expanded, vec![String::new(), "src".to_string()]);
         assert!(st.pin);
         let _ = std::fs::remove_dir_all(&base);
