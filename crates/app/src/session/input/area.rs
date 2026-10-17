@@ -105,7 +105,7 @@ pub(crate) fn input_area(
     // ---- 胶囊 ----
     let mut capsule = div()
         .id("composer")
-        .w_full() // 尺寸由外层锚点统一定（消息列宽 / max 920），/ 菜单与胶囊同宽
+        .w_full() // 尺寸由外层锚点统一定（消息列宽 / 内容列宽封顶），/ 菜单与胶囊同宽
         .rounded(px(16.))
         .border_1()
         // 边框不随 agent 运行变色（pi-web 的 streaming 琥珀色已去掉）：
@@ -186,12 +186,14 @@ pub(crate) fn input_area(
     // 「回到最新」按钮：不贴底且有消息时，悬浮在输入面板顶部上方 20px
     let show_scroll_btn = !chat.rt().read(cx).pager.is_at_bottom()
         && !chat.rt().read(cx).messages.is_empty();
+    // 内容列宽（设置-界面可调；与消息列同源）
+    let content_w = crate::services::workspace::chat_content_width();
     // 胶囊高度测量槽（导航刻度条 033 居中用）；先克隆引用再拼元素，
     // 避免 &chat.composer.composer_h 与下方 slash_menu_view(&mut chat) 借用冲突
     let composer_h_slot = chat.composer.composer_h.clone();
     let inner = div()
         .relative()
-        // 必须撑满父宽：为 `w_full`+`max_w(920)` 的测量元素提供宽度基准，
+        // 必须撑满父宽：为 `w_full`+`max_w(内容列宽)` 的测量元素提供宽度基准，
         // 否则 shrink-to-fit 会把胶囊挤成窄条（会话界面实测踩坑）
         .w_full()
         .flex()
@@ -206,14 +208,14 @@ pub(crate) fn input_area(
                     .bottom(gpui::relative(1.))
                     .pb(px(8.))
                     // 与胶囊同宽同位：inner 会话界面下是全宽（仅 px(15) 内
-                    // 边距），直接铺满会比 920 封顶的胶囊宽一截；居中约束
-                    // 与测量元素（同款 max_w 920）对齐后左右边缘贴合胶囊
+                    // 边距），直接铺满会比内容列宽封顶的胶囊宽一截；居中约束
+                    // 与测量元素（同款 max_w）对齐后左右边缘贴合胶囊
                     .flex()
                     .justify_center()
                     .child(
                         div()
                             .w_full()
-                            .max_w(px(920.))
+                            .max_w(px(content_w))
                             .child(crate::slash_menu_view(chat, weak, t, cx)),
                     ),
             )
@@ -227,9 +229,9 @@ pub(crate) fn input_area(
                 div()
                     .relative()
                     // 外层（会话界面 px(15) / 新会话页内容簇）已扣除内边距，
-                    // 此处宽度 == 消息列宽，再以 920 封顶（pi-web 单一内容列宽）
+                    // 此处宽度 == 消息列宽，再按内容列宽封顶（pi-web 单一内容列宽）
                     .w_full()
-                    .max_w(px(920.))
+                    .max_w(px(content_w))
                     .child(capsule),
             ),
         );

@@ -17,7 +17,7 @@
 //!
 //! 触发判据在 `session::main_column`（messages 空且 agent 未跑）；composer
 //! 以 hero 模式（`input::input_area(.., hero=true)`）在正常流里排版，宽度
-//! 仍由消息列约束（px(15) + max_w 920）。
+//! 仍由消息列约束（px(15) + 设置项「会话内容宽度」封顶）。
 
 use gpui::{AnyElement, MouseButton, SharedString, div, prelude::*, px, relative, rgb};
 
@@ -99,10 +99,10 @@ pub(crate) fn page(
                 .justify_center()
                 .items_center()
                 .child(
-                    // 与消息列同宽（session_list 的 px(15) + max_w 920）
+                    // 与消息列同宽（session_list 的 px(15) + 同一内容列宽）
                     div()
                         .w_full()
-                        .max_w(px(920.))
+                        .max_w(px(crate::services::workspace::chat_content_width()))
                         .flex()
                         .flex_col()
                         .items_center()

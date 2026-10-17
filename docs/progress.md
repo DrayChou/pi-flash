@@ -33,6 +33,14 @@
 
 ## 里程碑索引（新 → 旧；一行一条，细节看对应提交）
 
+- 2026-10-29 **会话内容宽度可调（消息列 + inputpanel 同源）**：pi-web
+  `--chat-content-max-width` parity。原来 920 硬编码散在消息列 5 处 /
+  composer 测量元素 2 处 / 新会话页 1 处 / ask 问卷卡 1 处，改一处必错位。
+  收口为 `workspace::CHAT_WIDTH_*` + `chat_content_width()`，落盘
+  `app_settings.json` 的 `chat_content_width`；设置-界面页新增滑块（规范
+  §5.12，拖动只写内存预览、松手落盘）。阈值自定：默认 920（历史观感）/
+  最小 560（放开收窄——左 dock 吃宽，pi-web 的 min 等于默认即只许加宽）/
+  最大 1600（2000 行宽超可读上限）/ 步进 10。
 - 2026-10-17 **010 重设计：启动无项目态——cwd 是会话的属性**：用户定案
   「启动可以没有工作目录，new session 才让用户指定」。落点 = `PI_FLASH_CWD`
   → restore=on 时最后会话所属项目 → **最近活动项目**（项目注册表打开时刻 ∪

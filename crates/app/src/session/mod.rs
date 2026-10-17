@@ -325,7 +325,7 @@ pub(crate) fn scroll_to_bottom_button(
         .into_any_element()
 }
 
-/// Message list + phase row (v54: 920px 列，行距 22)。
+/// Message list + phase row (v54: 内容列宽见 `workspace::CHAT_WIDTH_*`，行距 22)。
 fn session_list(
     _chat: &mut Chat,
     chat_entity: gpui::Entity<Chat>,
@@ -334,6 +334,8 @@ fn session_list(
     rt_entity: gpui::Entity<crate::session::runtime::SessionRuntime>,
     t: &'static crate::appearance::theme::Theme,
 ) -> gpui::AnyElement {
+    // 内容列宽（设置-界面「会话内容宽度」；composer 胶囊读同一值）
+    let content_w = crate::services::workspace::chat_content_width();
     // 水平边距必须挂外层容器：gpui List 的 prepaint 只应用 padding.top/
     // bottom（item_origin = bounds.origin + (0, padding.top)），左右 padding
     // 对条目完全无效——此前 pl34/pr30「看起来不存在」即此因
@@ -342,7 +344,7 @@ fn session_list(
         .min_h_0()
         .flex()
         .flex_col()
-        // 两侧边距 15px（窄窗口下内容不贴边；920 列宽不动，宽窗居中）
+        // 两侧边距 15px（窄窗口下内容不贴边；列宽封顶后宽窗居中）
         // 必须与 composer 悬浮层 padding 一致（input.rs），否则胶囊与消息列错位
         .px(px(15.))
         // 内容区右键菜单（单项「复制」= 复制当前消息划选；渲染挂
@@ -370,7 +372,7 @@ fn session_list(
                 .child(
                     div()
                         .w_full()
-                        .max_w(px(920.))
+                        .max_w(px(content_w))
                         .child(render_custom_msg(m, ix, t, &rt_view.collapsed, &weak)),
                 )
                 .into_any_element(),
@@ -382,7 +384,7 @@ fn session_list(
                 .child(
                     div()
                         .w_full()
-                        .max_w(px(920.))
+                        .max_w(px(content_w))
                         .child(render_bash_msg(m, ix, t, &rt_view.collapsed, &weak)),
                 )
                 .into_any_element(),
@@ -393,7 +395,7 @@ fn session_list(
                 .child(
                     div()
                         .w_full()
-                        .max_w(px(920.))
+                        .max_w(px(content_w))
                         .child(render_msg(
                             m,
                             ix,
@@ -485,7 +487,7 @@ fn session_list(
                     .child(
                         div()
                             .w_full()
-                            .max_w(px(920.))
+                            .max_w(px(content_w))
                             .child(render_assistant_turn(
                                 &turn_msgs,
                                 &turn_ixs,
@@ -529,7 +531,7 @@ fn session_list(
                         .child(
                             div()
                                 .w_full()
-                                .max_w(px(920.))
+                                .max_w(px(content_w))
                                 .pt(px(2.))
                                 .child(phase_pulse(label, t)),
                         )

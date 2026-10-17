@@ -704,6 +704,10 @@ pub struct AppSettings {
     /// 界面页: Markdown 所见即所得（024 Live Preview 装饰；默认关——
     /// 已知回车崩溃与标题行距问题未修，用户显式开启才挂装饰）
     pub md_live_preview: Option<bool>,
+    /// 界面页: 会话内容宽度 px（消息列 / composer 胶囊 / 新会话页内容带 /
+    /// ask 问卷卡共用的单一内容列宽，pi-web `--chat-content-max-width`
+    /// parity；缺键 = [`CHAT_WIDTH_DEFAULT`]）
+    pub chat_content_width: Option<u64>,
 }
 
 fn app_settings_path() -> Option<PathBuf> {
@@ -787,6 +791,9 @@ pub fn app_settings() -> AppSettings {
                     }),
                     auto_update: map.get("auto_update").and_then(|v| v.as_bool()),
                     md_live_preview: map.get("md_live_preview").and_then(|v| v.as_bool()),
+                    chat_content_width: map
+                        .get("chat_content_width")
+                        .and_then(|v| v.as_u64()),
                 }
             }
             None => AppSettings::default(),
@@ -866,6 +873,9 @@ pub fn save_app_settings(s: &AppSettings) {
     }
     if let Some(v) = s.md_live_preview {
         obj.insert("md_live_preview".into(), Value::Bool(v));
+    }
+    if let Some(v) = s.chat_content_width {
+        obj.insert("chat_content_width".into(), Value::Number(v.into()));
     }
     save_map_to(&path, &obj);
 }
@@ -974,6 +984,54 @@ pub fn auto_update() -> bool {
 /// 走普通编辑器路径。已知回车崩溃与标题行距问题未修，显式开启才挂装饰）。
 pub fn md_live_preview() -> bool {
     app_settings().md_live_preview.unwrap_or(false)
+}
+
+// ---- 会话内容宽度（pi-web `--chat-content-max-width` parity）------------
+//
+// 单一内容列宽：消息列、composer 胶囊、新会话页内容带、ask 问卷卡全部读
+// 这里（此前各自硬编码 920），改一处即整列同宽、不会再错位。
+// 阈值取法：
+// - 默认 920 = 本仓历史观感（pi-web 默认 820，我们不跟随改默认值）；
+// - 最小 560 = 窄窗 / 侧栏全开时的阅读列底线（约 40 个汉字/行，再窄正文
+//   与代码块就开始硬折行）；pi-web 的 min 直接等于默认（只许加宽），我们
+//   放开收窄——PF 左 dock 会吃掉宽幅，收窄是真实需求；
+// - 最大 1600 = 宽屏上限（pi-web 给到 2000，但 2000px 正文行宽已超可读
+//   上限，只对超大代码块有利，故收一档）。
+pub const CHAT_WIDTH_MIN: u32 = 560;
+pub const CHAT_WIDTH_DEFAULT: u32 = 920;
+pub const CHAT_WIDTH_MAX: u32 = 1600;
+/// 滑块步进（10px：一次拖动 100 档，够细且存盘值不至于成乱数）
+pub const CHAT_WIDTH_STEP: u32 = 10;
+
+/// 会话内容宽度（px，已钳制；渲染期多次读取，只读缓存）。
+pub fn chat_content_width() -> f32 {
+    clamp_chat_width(app_settings().chat_content_width.unwrap_or(CHAT_WIDTH_DEFAULT as u64)) as f32
+}
+
+fn clamp_chat_width(v: u64) -> u32 {
+    (v as u32).clamp(CHAT_WIDTH_MIN, CHAT_WIDTH_MAX)
+}
+
+/// 会话内容宽度写盘（滑块松手 / 复位按钮）。
+pub fn set_chat_content_width(width: u32) {
+    let mut s = app_settings();
+    s.chat_content_width = Some(clamp_chat_width(width as u64) as u64);
+    save_app_settings(&s);
+}
+
+/// 拖动中的实时预览：只改内存缓存不落盘（每帧一个 MouseMove，逐帧写
+/// JSON 没必要），松手再 [`save_app_settings_now`] 落一次。
+pub fn preview_chat_content_width(width: u32) {
+    with_app_settings_cache(|cache| {
+        let mut s = (*cache).clone().unwrap_or_default();
+        s.chat_content_width = Some(clamp_chat_width(width as u64) as u64);
+        *cache = Some(s);
+    });
+}
+
+/// 把内存缓存（拖拽预览后的值）落盘。
+pub fn save_app_settings_now() {
+    save_app_settings(&app_settings());
 }
 
 // ---------------------------------------------------------------------------

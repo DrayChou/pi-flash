@@ -70,11 +70,61 @@ pub(crate) fn mc_general_view(
     // 标题——用户定夺多余，行内标题+描述已自明） ----------------------------
     // 首行外包 mt(7)：补齐与 section_label mt(20) 同款的小节间距（set_row
     // 自带 py(13)）
+    // 会话内容宽度（消息列 + composer 胶囊同源；pi-web chatContentWidth
+    // parity）：拖动即实时预览（消息列与胶囊同步变宽/变窄），松手写盘。
+    // 「复位」无需确认——再拖回来即可，不存在不可逆后果
+    let chat_w = crate::services::workspace::chat_content_width();
+    let w_min = crate::services::workspace::CHAT_WIDTH_MIN as f32;
+    let w_max = crate::services::workspace::CHAT_WIDTH_MAX as f32;
+    let w_step = crate::services::workspace::CHAT_WIDTH_STEP as f32;
+    let w_default = crate::services::workspace::CHAT_WIDTH_DEFAULT as f32;
+    col = col.child(
+        div().mt(px(7.)).child(set_row(
+            tr("settings.chat_width"),
+            tr("settings.chat_width_hint"),
+            div()
+                .flex()
+                .items_center()
+                .gap(px(12.))
+                .child(
+                    div()
+                        .min_w(px(56.))
+                        .flex()
+                        .justify_end()
+                        .font_family(crate::editor::markdown::MONO_FAMILY)
+                        .text_size(crate::appearance::ui_size(12.))
+                        .text_color(rgb(t.text_muted))
+                        .child(SharedString::from(format!("{} px", chat_w as u32))),
+                )
+                .child(width_slider(
+                    "general-chat-width",
+                    chat_w,
+                    w_min,
+                    w_max,
+                    w_step,
+                    weak,
+                ))
+                .child(config_button(
+                    "general-chat-width-reset",
+                    weak,
+                    tr("settings.reset_default"),
+                    Btn::Secondary,
+                    true,
+                    chat_w == w_default,
+                    move |_c, cx| {
+                        crate::services::workspace::set_chat_content_width(w_default as u32);
+                        cx.notify();
+                    },
+                ))
+                .into_any_element(),
+            t,
+        )),
+    );
     // 展示思考 switch（思考块始终渲染；关（默认）=新思考块收成一行，
     // 开=默认展开全文。用户手动开合过的块以显式状态为准）
     let show_thinking = crate::services::workspace::show_thinking();
     col = col.child(
-        div().mt(px(7.)).child(set_row(
+        set_row(
             tr("settings.show_thinking"),
             tr("settings.show_thinking_hint"),
             switch_base(
@@ -94,7 +144,7 @@ pub(crate) fn mc_general_view(
                 },
             ),
             t,
-        )),
+        ),
     );
 
     // ---- 语言：三个一排，左对齐（置底——用户定夺） ------------------------

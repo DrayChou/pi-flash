@@ -502,7 +502,8 @@ pub(crate) fn render_ask_card(chat: &mut Chat, weak: &gpui::WeakEntity<Chat>) ->
     // ---- 装配（浮层由 session/mod.rs main_column 挂进 chat-wrap 中栏；
     //      窄窗口下卡片随中栏收缩，两侧留 24px 呼吸边距） ----
     let card_el = div()
-        .w(px(920.))
+        // 问卷卡与内容列同宽（设置-界面「会话内容宽度」），窄窗由 max_w 收
+        .w(px(crate::services::workspace::chat_content_width()))
         .max_w(gpui::relative(1.))
         .bg(rgb(t.bg))
         .border_1()
