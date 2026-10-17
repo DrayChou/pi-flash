@@ -446,10 +446,30 @@ impl Chat {
                 exe_dir.to_string_lossy().to_lowercase()
                     == raw_cwd.to_string_lossy().to_lowercase()
             });
-        // true = exe 目录启动且无 last_workspace，落用户主目录兑底——
-        // 这不是用户「打开项目」，不进项目注册表
-        let (cwd, boot_home_fallback) = if cwd_is_exe_dir {
-            match get_last_workspace().map(PathBuf::from).filter(|p| p.is_dir()) {
+        // 081 交接补链（2026-10-17）：npm 薄壳布局下双击老 `payload\pi-flash.exe`，
+        // 应用内更新后交接拉起的新 exe 目录已是 `payload-<新版本>`，继承
+        // cwd（老 payload 目录）≠ exe 目录 → 上面的等号探针失灵 → 老 payload
+        // 目录被当用户项目注册，__last 被污染，此后每次启动都从 payload 起。
+        // 凡 cwd 落在安装根内（交接继承、快捷方式「起始位置」= 包根、cd 进
+        // 载荷目录启动），一律按 exe 目录启动处理，不采纳为项目。
+        // PI_FLASH_CWD 显式指定是开发意图，不参与此放宽。
+        let cwd_in_install_root = std::env::var("PI_FLASH_CWD").is_err()
+            && std::env::current_exe()
+                .ok()
+                .is_some_and(|exe| {
+                    crate::services::workspace::cwd_inside_install_root(&exe, &raw_cwd)
+                });
+        // true = exe 目录启动（含安装根内 cwd）且无 last_workspace，落用户
+        // 主目录兑底——这不是用户「打开项目」，不进项目注册表
+        let (cwd, boot_home_fallback) = if cwd_is_exe_dir || cwd_in_install_root {
+            // __last 必须不是应用自有目录（is_app_install_path：安装根内）。
+            // 污染期写脏的 __last（payload）若照单全收，这里会把它恢复成
+            // 项目并重新注册——死循环的另一半；磁盘存量由 boot 的
+            // purge_app_paths / purge_app_install_memory 一次性清洗。
+            match get_last_workspace()
+                .map(PathBuf::from)
+                .filter(|p| p.is_dir() && !pi_link::paths::is_app_install_path(p))
+            {
                 Some(p) => (p, false),
                 None => (
                     std::env::var("USERPROFILE")
@@ -465,7 +485,10 @@ impl Chat {
         // startup restore decides workspace + last session BEFORE the first
         // spawn — exactly one pi process (ARCHITECTURE.md §4, was two)
         let last_ws = if startup_restore() { get_last_workspace() } else { None };
-        let target_ws = last_ws.unwrap_or_else(|| cwd.to_string_lossy().to_string());
+        // 恢复目标同样消毒：__last 指向安装根内（交接污染存量）时不采纳
+        let target_ws = last_ws
+            .filter(|ws| !pi_link::paths::is_app_install_path(Path::new(ws)))
+            .unwrap_or_else(|| cwd.to_string_lossy().to_string());
         let cwd = if !same_ws(&target_ws, &cwd.to_string_lossy()) {
             let ws_path = PathBuf::from(&target_ws);
             if ws_path.is_dir() { ws_path } else { cwd }

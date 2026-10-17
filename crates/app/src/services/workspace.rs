@@ -178,9 +178,49 @@ pub fn file_sig(path: &Path) -> Option<(std::time::SystemTime, u64)> {
     Some((md.modified().ok()?, md.len()))
 }
 
+/// cwd 是否落在 npm 薄壳载荷布局的「安装根」内（bugfix 2026-10-17）。
+/// 载荷布局：`<包目录>/payload`（稳定入口）与 `<包目录>/payload-<版本>`（应
+/// 用内更新落位）二选一为 exe 目录。应用内更新后双击老 `payload\pi-flash.exe`，
+/// 交接拉起的新 exe 目录已换成 `payload-<新版本>`，继承 cwd（老 payload 目
+/// 录）≠ 子 exe 目录，「cwd == exe 目录」探针失灵 → 老 payload 目录被当用
+/// 户项目注册（打开项目即注册）、`__last` 被污染，此后每次启动都从 payload
+/// 起。判定：exe 目录名为 `payload` 或 `payload-<数字开头版本>` 时取安装根
+/// = 其父目录，cwd == 根或在其下即命中。非 payload 布局（cargo run、绿色
+/// 单目录）恒 false。
+pub fn cwd_inside_install_root(exe: &Path, cwd: &Path) -> bool {
+    let Some(exe_dir) = exe.parent() else { return false };
+    let dir_name = exe_dir.file_name().map(|n| n.to_string_lossy().to_lowercase());
+    let payload_layout = match dir_name.as_deref() {
+        Some("payload") => true,
+        Some(name) => {
+            name.starts_with("payload-")
+                && name["payload-".len()..]
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_digit())
+        }
+        None => false,
+    };
+    if !payload_layout {
+        return false;
+    }
+    let Some(root) = exe_dir.parent() else { return false };
+    is_under(cwd, root)
+}
+
+/// 应用自有目录（载荷目录 / npm 包根，见 `pi_link::paths::is_app_install_path`）
+/// 的 cwd 不进工作区记忆：0.1.x 更新交接 spawn 不设 cwd，新进程继承旧载荷
+/// 目录曾被记成 `__last`，之后每次启动都被恢复成 payload 项目。
+fn app_owned_cwd(cwd: &str) -> bool {
+    pi_link::paths::is_app_install_path(Path::new(cwd))
+}
+
 /// Remember `session_path` as the last open session for `cwd` and mark it
 /// as the globally-last active workspace (startup restore target).
 pub fn set_last_open(cwd: &str, session_path: &str) {
+    if app_owned_cwd(cwd) {
+        return;
+    }
     let mut map = memory();
     let key = ws_key(cwd);
     map.insert(WS_LAST_KEY.to_string(), Value::String(key.clone().into()));
@@ -225,6 +265,9 @@ pub fn save_lang_pref(ix: usize) {
 }
 
 pub fn set_last_workspace(cwd: &str) {
+    if app_owned_cwd(cwd) {
+        return;
+    }
     let mut map = memory();
     map.insert(
         WS_LAST_KEY.to_string(),
@@ -256,6 +299,42 @@ pub fn get_last_open(cwd: &str) -> Option<String> {
         .as_str()
         .filter(|s| !s.is_empty())
         .map(str::to_string)
+}
+
+/// 启动清洗（幂等）：工作区记忆里落在当前进程安装根内的存量键——`__last`
+/// （启动恢复目标被钉死在载荷目录 = 每次启动都落回 payload 的根因）与载荷
+/// 目录名下的每项目记忆——删键落盘。`__` 前缀的非路径键（布局/UI 状态）
+/// 不动。返回清除键数（0 = 干净 / 无从判定）。
+pub fn purge_app_install_memory() -> usize {
+    let mut map = memory();
+    purge_app_paths_in_map(&mut map, pi_link::paths::current_install_root().as_deref())
+}
+
+/// 纯内核（root 显式注入便于测试）：见 [`purge_app_install_memory`]。
+fn purge_app_paths_in_map(
+    map: &mut serde_json::Map<String, Value>,
+    root: Option<&Path>,
+) -> usize {
+    use pi_link::paths::is_app_install_path_at;
+    let Some(root) = root else { return 0 };
+    let before = map.len();
+    map.retain(|k, v| {
+        if k == WS_LAST_KEY {
+            // __last 的值是 ws_key 形式的路径字符串
+            v.as_str()
+                .map(|s| !is_app_install_path_at(Path::new(s), root))
+                .unwrap_or(true)
+        } else if k.starts_with("__") {
+            true // __dock/__window/__ui/__pins：布局与 UI 状态，非路径键
+        } else {
+            !is_app_install_path_at(Path::new(k), root)
+        }
+    });
+    let removed = before - map.len();
+    if removed > 0 {
+        set_memory(map);
+    }
+    removed
 }
 
 // ---------------------------------------------------------------------------
@@ -808,6 +887,32 @@ mod tests {
     }
 
     #[test]
+    fn purge_app_memory_drops_poisoned_keys_only() {
+        let root = Path::new("D:/softwares/pi-flash");
+        let mut map = serde_json::Map::new();
+        map.insert(
+            WS_LAST_KEY.into(),
+            Value::String("d:\\softwares\\pi-flash\\payload".into()),
+        );
+        map.insert(
+            "d:\\softwares\\pi-flash\\payload".into(),
+            Value::String("sess.jsonl".into()),
+        );
+        map.insert(
+            "d:\\ai_workspace\\pi_work".into(),
+            Value::String("keep.jsonl".into()),
+        );
+        map.insert("__window".into(), serde_json::json!({"max": true}));
+        assert_eq!(purge_app_paths_in_map(&mut map, Some(root)), 2);
+        assert!(!map.contains_key(WS_LAST_KEY), "脏 __last 删键");
+        assert!(!map.contains_key("d:\\softwares\\pi-flash\\payload"));
+        assert_eq!(map.get("d:\\ai_workspace\\pi_work").unwrap(), "keep.jsonl");
+        assert!(map.contains_key("__window"), "非路径键不动");
+        assert_eq!(purge_app_paths_in_map(&mut map, None), 0);
+        assert_eq!(purge_app_paths_in_map(&mut map, Some(root)), 0, "幂等");
+    }
+
+    #[test]
     fn map_io_roundtrip_and_noop_skip() {
         let path = tmpfile("ws.json");
         let mut map = serde_json::Map::new();
@@ -864,6 +969,29 @@ mod tests {
         assert!(!is_under(Path::new("D:\\proj2"), Path::new("D:\\proj")));
         // 工作区外（另一个盘/目录）
         assert!(!is_under(Path::new("D:\\my_obsidian\\vault"), Path::new("D:\\ai_workspace")));
+    }
+
+    #[test]
+    fn cwd_inside_install_root_matches_payload_layout_only() {
+        // npm 薄壳布局：交接继承老 payload 目录 / 起始位置 = 包根 → 命中
+        let exe = Path::new("D:\\softwares\\node\\pi-flash\\payload-0.1.12\\pi-flash.exe");
+        assert!(cwd_inside_install_root(exe, Path::new("D:\\softwares\\node\\pi-flash\\payload")));
+        assert!(cwd_inside_install_root(exe, Path::new("D:\\softwares\\node\\pi-flash")));
+        assert!(cwd_inside_install_root(exe, Path::new("d:/SOFTWARES/NODE/pi-flash/payload-0.1.12")));
+        // 老载荷 exe（payload 无版本后缀）同样算布局内
+        let old = Path::new("D:\\softwares\\node\\pi-flash\\payload\\pi-flash.exe");
+        assert!(cwd_inside_install_root(old, Path::new("D:\\softwares\\node\\pi-flash\\payload")));
+        // 用户项目（包外）不命中
+        assert!(!cwd_inside_install_root(exe, Path::new("D:\\ai_workspace\\pi-flash")));
+        assert!(!cwd_inside_install_root(exe, Path::new("D:\\softwares")));
+        // 非 payload 布局：cargo run / 绿色单目录 → 恒 false
+        let dev = Path::new("D:\\ai_workspace\\pi-flash\\target\\debug\\pi-flash.exe");
+        assert!(!cwd_inside_install_root(dev, Path::new("D:\\ai_workspace\\pi-flash\\target")));
+        let green = Path::new("D:\\tools\\pi-flash\\pi-flash.exe");
+        assert!(!cwd_inside_install_root(green, Path::new("D:\\tools")));
+        // payload- 后面不是数字（如 payload.tmp-del-123）不算布局
+        let del = Path::new("D:\\x\\pi-flash\\payload.tmp-del-1\\pi-flash.exe");
+        assert!(!cwd_inside_install_root(del, Path::new("D:\\x\\pi-flash")));
     }
 
     #[test]

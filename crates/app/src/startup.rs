@@ -78,6 +78,21 @@ pub(crate) fn boot() {
     if moved > 0 {
         eprintln!("[startup] migrated {moved} legacy pi-flash file(s) → ~/.pi-flash/");
     }
+    // 存量清洗（幂等）：注册表里落在当前安装根内的历史脏条目——0.1.x 更新
+    // 交接 spawn 不设 cwd，继承的老 payload 目录曾被当项目写进来（「payload
+    // 项目删了每次启动又回来」的根因，pi_link::paths::is_app_install_path）。
+    // 放在 boot 第一步：注册表 with_registry 惰性单例首读就是清洗后的盘面。
+    let purged = pi_link::projects::purge_app_paths();
+    if purged > 0 {
+        eprintln!("[startup] purged {purged} app-owned path(s) from project registry");
+    }
+    // 工作区记忆同批清洗：脏 __last（启动恢复目标被钉死在载荷目录 = 每次双
+    // 击都落回 payload 的另一半根因，恢复路径已在 Chat::new 消毒）+ 载荷目
+    // 录名下的每项目记忆；__ 前缀的非路径键（布局/UI 状态）不动
+    let purged_ws = crate::services::workspace::purge_app_install_memory();
+    if purged_ws > 0 {
+        eprintln!("[startup] purged {purged_ws} app-owned key(s) from workspace memory");
+    }
     pi_link::recents::ensure_seeded();
     pi_link::pf_providers::ensure_extension_template_or_warn();
     adopt_legacy_credentials();

@@ -1,3 +1,37 @@
+## 待验证（本轮修复）——每次启动都从 payload 目录启动（未注册的安装目录常驻项目列表）
+
+用户口径：每次启动 pi-flash 都落在 `...node_modules\pi-flash\payload`，这个目录从没
+注册过，从项目列表删掉下次启动又回来。
+
+- ✅ 根因（三层叠加，单修哪层都复发）：
+  1. **交接 spawn 不设 cwd**（`updater::handoff_if_newer`）：双击老入口
+     `payload\pi-flash.exe` → 交接拉起新 exe `payload-0.1.12\pi-flash.exe`，
+     子进程继承 cwd = 老 payload 目录。
+  2. **exe 目录探针失灵**（`shell/chat.rs`）：探针只认「cwd == exe 目录」；
+     新 exe 目录已是 `payload-0.1.12` ≠ 继承的 `payload` → 双击兑底没命中，
+     老 payload 目录被当用户项目采纳：`register_project` 入册 + 经
+     `set_last_open` 写脏 `__last` → 此后每次启动都恢复成 payload，自我延续。
+  3. **存量不洗**：`projects.rs::purge_app_paths` 写了没人调——注册表里的
+     payload 脏条目删了下次又写回。
+- ✅ 修法（四处合围）：① 交接 spawn 在「cwd == 自己 exe 目录」（双击签名）
+  时显式给子进程 `current_dir` = 子 exe 自己的载荷目录，让它同样命中 exe
+  目录兑底；终端/薄壳场景 cwd 是用户语义，保持继承。② 新纯函数
+  `workspace::cwd_inside_install_root`：exe 目录名为 `payload`/`payload-<版`
+  `本>`（npm 薄壳布局）时，cwd 落在安装根（包目录）内一律按 exe 目录启动
+  处理，不采纳为项目（堵快捷方式「起始位置」= 包根、手动 cd 进载荷目录
+  等残余路径）；`PI_FLASH_CWD` 显式指定不参与放宽。③ `startup::boot` 第
+  一步调 `purge_app_paths()` 洗注册表存量（幂等）。④ 写入口堵死：
+  `set_last_open`/`set_last_workspace` 拒记安装根内路径，`rebuild_projects`
+  不给安装根内 cwd 建常驻项目组，`register_project` 护栏拦新增。
+- ✅ 验证：`cargo test -p app` 295 全绿、`cargo test -p pi-link` 142 全绿
+  （含新测 `cwd_inside_install_root_matches_payload_layout_only`、
+  `install_root_covers_sibling_payload_dirs`）。真机待复验：双击老
+  `payload\pi-flash.exe` → 交接后落上次工作区而非 payload；项目列表无
+  payload 条目。
+- ✅ 顺带：`cleanup_removes_only_older_payloads` 陈旧测试修复——版本写死
+  `0.1.11` 当「更新的」，crate 版本涨过 0.1.11 后必挂；改为相对
+  `current_version()` 推导（older = 0.0.9，newer = `9<cur>`）。
+
 ## 待验证（本轮修复）——用户消息鼠标穿透（滚轮同帧连动会话列表）
 
 用户口径：会话里用户消息会鼠标穿透。

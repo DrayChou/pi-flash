@@ -105,6 +105,20 @@ impl Registry {
             self.save();
         }
     }
+
+    /// 清洗应用自有路径条目（install_root 显式注入便于测试；None = 无从
+    /// 判定，原样返回 0）。有清除才落盘，返回清除条数。
+    pub fn purge_app_paths_at(&mut self, install_root: Option<&Path>) -> usize {
+        let Some(root) = install_root else { return 0 };
+        let before = self.entries.len();
+        self.entries
+            .retain(|e| !crate::paths::is_app_install_path_at(&e.path, root));
+        let removed = before - self.entries.len();
+        if removed > 0 {
+            self.save();
+        }
+        removed
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -126,8 +140,23 @@ fn with_registry<T>(f: impl FnOnce(&mut Registry) -> T) -> Option<T> {
 
 /// 打开项目即注册：upsert + touch now + 落盘。
 pub fn register_project(path: &Path) {
+    // 应用自有目录（载荷目录 / npm 包根）不是用户项目，永不入册：0.1.x
+    // 更新交接 spawn 不设 cwd，新进程继承旧载荷目录曾被当项目写进来
+    //（存量由 `purge_app_paths` 在 boot 清洗）
+    if crate::paths::is_app_install_path(path) {
+        return;
+    }
     let ms = now_ms();
     let _ = with_registry(|reg| reg.register_at(path, ms));
+}
+
+/// 启动清洗（幂等）：注册表里落在当前进程安装根内的存量——历史交接写脏
+/// 的「payload」等项目——一次性清掉并落盘。
+pub fn purge_app_paths() -> usize {
+    with_registry(|reg| {
+        reg.purge_app_paths_at(crate::paths::current_install_root().as_deref())
+    })
+    .unwrap_or(0)
 }
 
 /// 最近打开降序的项目记录快照。
@@ -196,6 +225,22 @@ mod tests {
         }
         assert_eq!(r.records().len(), PROJECTS_CAPACITY);
         assert_eq!(r.records()[0].path, PathBuf::from("D:\\p0"));
+    }
+
+    #[test]
+    fn purge_app_paths_drops_install_dir_entries() {
+        let mut r = Registry::load(&temp_file("purge"));
+        r.register_at(Path::new("D:\\softwares\\pi-flash\\payload"), 3_000);
+        r.register_at(Path::new("D:\\work"), 2_000);
+        // None = 无从判定，不动
+        assert_eq!(r.purge_app_paths_at(None), 0);
+        assert_eq!(r.records().len(), 2);
+        let removed = r.purge_app_paths_at(Some(Path::new("D:/SOFTWARES/pi-flash")));
+        assert_eq!(removed, 1, "载荷目录条目清除，用户项目保留");
+        assert_eq!(r.records().len(), 1);
+        assert_eq!(r.records()[0].path, PathBuf::from("D:\\work"));
+        // 幂等
+        assert_eq!(r.purge_app_paths_at(Some(Path::new("D:/SOFTWARES/pi-flash"))), 0);
     }
 
     #[test]

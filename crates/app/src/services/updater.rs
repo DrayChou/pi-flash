@@ -234,7 +234,21 @@ pub(crate) fn handoff_if_newer() -> bool {
     };
     let exe = dir.join(exe_rel());
     eprintln!("[updater] 交接给已就位的新载荷 v{ver}：{}", exe.display());
-    match std::process::Command::new(&exe).spawn() {
+    // cwd 交接（2026-10-17 bugfix）：双击/快捷方式直启时本进程 cwd = 自己的
+    // 载荷目录（老 `payload\`）——这对子进程是垃圾 cwd：子 exe 已换到
+    // `payload-<新版本>\`，继承 cwd ≠ 子 exe 目录，Chat::new 的「exe 目录
+    // 启动」探针失灵 → 老 payload 目录被当成用户项目注册（打开项目即注
+    // 册）、__last 被污染，此后每次启动都从 payload 起。父进程 cwd == 自己
+    // exe 目录（双击签名）时，显式给子进程 current_dir = 它自己的载荷目
+    // 录，让它同样命中 exe 目录启动兜底；终端/薄壳场景 cwd 是用户语义
+    // （shell 所在项目），保持继承不动。
+    let double_click = std::env::current_dir()
+        .is_ok_and(|c| crate::services::workspace::same_path(&c, &me));
+    let mut cmd = std::process::Command::new(&exe);
+    if double_click {
+        cmd.current_dir(&dir);
+    }
+    match cmd.spawn() {
         Ok(_) => true,
         Err(e) => {
             eprintln!("[updater] 交接失败（{e}），继续以 v{} 启动", current_version());
@@ -1228,17 +1242,23 @@ mod tests {
     }
 
     /// 清理：只删比自己旧的完整载荷目录，且不碰基名无版本的安装目录 /
-    /// 自己所在目录 / 更高的新载荷。
+    /// 自己所在目录 / 更高的新载荷。版本全部相对 `current_version()` 推导：
+    /// cleanup_older 比的是编译期 crate 版本，写死具体号必随版本上涨碎掉
+    ///（0.1.12 起 0.1.11 已不算「更新的」）。
     #[test]
-    fn cleanup_removes_only_older_payloads() {        let root = temp_dir("cleanup");
+    fn cleanup_removes_only_older_payloads() {
+        let root = temp_dir("cleanup");
+        let cur = current_version();
+        let older = "0.0.9"; // 任何现实版本之下
+        let newer = format!("9{cur}"); // 首段 9 > 0，恒在当前版本之上
         std::fs::create_dir_all(root.join("payload")).unwrap();
-        fake_payload(&root.join("payload-0.1.9"), "0.1.9");
-        fake_payload(&root.join("payload-0.1.10"), "0.1.10");
-        fake_payload(&root.join("payload-0.1.11"), "0.1.11");
-        cleanup_older(root.clone(), root.join("payload-0.1.10"));
-        assert!(!root.join("payload-0.1.9").exists(), "旧版本目录被清");
-        assert!(root.join("payload-0.1.10").exists(), "自己不动");
-        assert!(root.join("payload-0.1.11").exists(), "更新的不动");
+        fake_payload(&root.join(format!("payload-{older}")), older);
+        fake_payload(&root.join(format!("payload-{cur}")), cur);
+        fake_payload(&root.join(&format!("payload-{newer}")), &newer);
+        cleanup_older(root.clone(), root.join(format!("payload-{cur}")));
+        assert!(!root.join(format!("payload-{older}")).exists(), "旧版本目录被清");
+        assert!(root.join(format!("payload-{cur}")).exists(), "自己不动");
+        assert!(root.join(format!("payload-{newer}")).exists(), "更新的不动");
         assert!(root.join("payload").exists(), "安装目录（无版本）不动");
         let _ = std::fs::remove_dir_all(&root);
     }

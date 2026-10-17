@@ -163,6 +163,12 @@ impl Chat {
         let mut groups: Vec<crate::ProjectGroup> = Vec::new();
         for s in all {
             let cwd = PathBuf::from(s.cwd.clone());
+            // 应用自有目录（载荷目录/npm 包根）不建组：污染期落在 payload
+            // 的历史脏会话不得把安装目录钉成常驻项目组（注册表已由 boot
+            // 清洗，这里堵会话扫描并集这一路）
+            if pi_link::paths::is_app_install_path(&cwd) {
+                continue;
+            }
             if let Some(g) = groups
                 .iter_mut()
                 .find(|g| same_ws(&g.path.to_string_lossy(), &cwd.to_string_lossy()))

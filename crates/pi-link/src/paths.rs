@@ -35,6 +35,70 @@ fn file(name: &str) -> Option<PathBuf> {
     Some(dir()?.join(name))
 }
 
+// ---------------------------------------------------------------------------
+// 应用自有目录识别（never-workspace 口径）：安装根下的任何路径都不是用户
+// 项目，禁止进工作区记忆与项目注册表。
+// ---------------------------------------------------------------------------
+
+/// 应用安装根（纯函数，exe 路径显式注入）：
+/// - npm 分发布局 `<pkg>/payload[-<版本>]/pi-flash.exe` → 根 = `<pkg>`（bin/、
+///   payload/、payload-* 全在它下面——更新交接跨载荷目录，只认 exe 目录
+///   本身拦不住「cwd 继承自旧 payload 目录」）；父目录名须含 pi-flash 才
+///   升一级，防用户项目恰好叫 `payload-*` 时整棵被误判；
+/// - 其余（绿色解压包 / target\debug 等）→ 根 = exe 目录本身。
+pub fn app_install_root(exe: &Path) -> PathBuf {
+    let dir = exe.parent().unwrap_or(exe);
+    let name = dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .map(str::to_ascii_lowercase)
+        .unwrap_or_default();
+    let looks_like_payload = name == "payload" || name.starts_with("payload-");
+    if !looks_like_payload {
+        return dir.to_path_buf();
+    }
+    let parent_is_pkg = dir
+        .parent()
+        .and_then(|p| p.file_name())
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n.to_ascii_lowercase().contains("pi-flash"));
+    if parent_is_pkg {
+        dir.parent().unwrap_or(dir).to_path_buf()
+    } else {
+        dir.to_path_buf()
+    }
+}
+
+/// 当前进程的应用安装根（定位不到 exe 时 None = 无从判定，调用方放行）。
+pub fn current_install_root() -> Option<PathBuf> {
+    std::env::current_exe().ok().map(|e| app_install_root(&e))
+}
+
+/// 路径键规范化（与 `projects::path_key` 同口径：`/`→`\\`、去尾分隔符、
+/// 大小写折叠）。paths 在 projects 下游，不能反向引用，就地实现。
+fn path_key_norm(p: &Path) -> String {
+    let mut k = p.to_string_lossy().replace('/', "\\");
+    while k.ends_with('\\') {
+        k.pop();
+    }
+    k.to_ascii_lowercase()
+}
+
+/// `p` 是否等于 `install_root` 或在其之下（纯函数，测试显式注入根）。
+pub fn is_app_install_path_at(p: &Path, install_root: &Path) -> bool {
+    let r = path_key_norm(install_root);
+    let k = path_key_norm(p);
+    k == r || k.starts_with(&format!("{r}\\"))
+}
+
+/// `p` 是否落在当前进程的应用安装根内（含根本身）。载荷目录 / npm 包根是
+/// 分发布局的一部分，永远不该成为用户工作区或项目：0.1.x 的更新交接
+/// spawn 不设 cwd，新进程继承旧载荷目录曾被当项目注册并写脏 `__last`
+/// （「payload 项目删了每次启动又回来」的根因），写入方统一引用本判定。
+pub fn is_app_install_path(p: &Path) -> bool {
+    current_install_root().is_some_and(|root| is_app_install_path_at(p, &root))
+}
+
 /// `~/.pi-flash/pf-auth.json` — PF 独立密钥账本（051-apikey管理.md）。
 pub fn pf_auth_file() -> Option<PathBuf> {
     file("pf-auth.json")
@@ -216,5 +280,39 @@ mod tests {
         // 幂等：再跑一次没有任何可搬的
         assert_eq!(migrate_into(&new_dir, &old_dir), 0);
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// 安装根识别：npm 布局的跨载荷目录覆盖 + 用户项目误伤面检查。
+    #[test]
+    fn install_root_covers_sibling_payload_dirs() {
+        // npm 布局：<pkg>/payload-0.1.12/ → 根 = <pkg>；旧载荷目录
+        // <pkg>/payload（交接继承 cwd 的场景）与包内其他文件一律命中
+        let pkg = Path::new("D:/softwares/node-v24.21.0-win-x64/node_modules/pi-flash");
+        let root = app_install_root(&pkg.join("payload-0.1.12").join("pi-flash.exe"));
+        assert_eq!(root, pkg);
+        assert!(is_app_install_path_at(&pkg.join("payload"), &root));
+        assert!(is_app_install_path_at(
+            &pkg.join("payload").join("vendor").join("pi"),
+            &root
+        ));
+        assert!(is_app_install_path_at(&pkg.join("bin").join("pi-flash.js"), &root));
+        assert!(!is_app_install_path_at(Path::new("D:/ai_workspace/pi-flash"), &root));
+        assert!(!is_app_install_path_at(Path::new("D:/softwares"), &root));
+        // 同一套字符串规范化：大小写 / 正反斜杠不影响判定
+        assert!(is_app_install_path_at(
+            Path::new("d:/SOFTWARES/node-v24.21.0-win-x64/node_modules/PI-FLASH/PAYLOAD"),
+            &root
+        ));
+        // 用户项目恰好叫 payload-*（父目录名不含 pi-flash）：只排除 exe
+        // 所在目录本身，不升一级
+        let root2 = app_install_root(Path::new("D:/work/payload-demo/pi-flash.exe"));
+        assert_eq!(root2, Path::new("D:/work/payload-demo"));
+        assert!(is_app_install_path_at(Path::new("D:/work/payload-demo/vendor"), &root2));
+        assert!(!is_app_install_path_at(Path::new("D:/work"), &root2));
+        // 绿色解压包：目录名不含 payload 前缀 → exe 目录即根
+        assert_eq!(
+            app_install_root(Path::new("D:/tools/pi-flash-v0.1.12/pi-flash.exe")),
+            Path::new("D:/tools/pi-flash-v0.1.12")
+        );
     }
 }
