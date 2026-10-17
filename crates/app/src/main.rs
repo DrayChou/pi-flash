@@ -182,13 +182,17 @@ fn main() {
                 // 023 fileView：编辑器里 Ctrl+S 保存（composer 等其他 Input
                 // 上下文内无人监听该 action，自然空转）
                 KeyBinding::new("ctrl-s", FileSave, Some("Input")),
-                // 082 三期视图切换：无上下文绑定 = 任意焦点命中（含终端、
-                // 中性态、预览），绑定期先于监听器 → terminal_key 吃不到
-                // 这组键，Ctrl+←/→ 永远是壳层切 tab。终端内跳词改走
-                // Ctrl+Shift+←/→（修饰符精确匹配不被本绑定拦截，
-                // input_encode 现有 m=6 编码直接出 \x1b[1;6D/C，零代码）
-                KeyBinding::new("ctrl-left", ViewLeft, None),
-                KeyBinding::new("ctrl-right", ViewRight, None),
+                // 082 四期（Zed Pane 模式，替代三期无上下文版）：双绑定锚定——
+                // Some("ContentTabs") 命中内容区任意后代焦点（终端/预览/中性
+                // 锚点，同 gpui 前缀匹配 keymap/context.rs:253）；Some("Input")
+                // 同深度后注册抢组件词移动（composer/编辑器内也切，082 二期
+                // 语义）。模态是根的子、不在 content-col 子树 → 路径无该上下
+                // 文 → 模态内词移动不受影响（天然隔离，Zed RunModal 反向可
+                // 参）。终端跳词仍走 Ctrl+Shift+←/→（修饰符精确匹配不互斥）
+                KeyBinding::new("ctrl-left", ViewLeft, Some("ContentTabs")),
+                KeyBinding::new("ctrl-left", ViewLeft, Some("Input")),
+                KeyBinding::new("ctrl-right", ViewRight, Some("ContentTabs")),
+                KeyBinding::new("ctrl-right", ViewRight, Some("Input")),
                 // 082 三期 md 预览滚动（MdPreview 上下文 = 预览容器持焦时
                 // 生效；组件未占这些键——Input/List 上下文的同名键互不干扰）
                 KeyBinding::new("up", PreviewUp, Some("MdPreview")),

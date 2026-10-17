@@ -509,11 +509,13 @@ impl Chat {
         cx.notify();
     }
 
-    /// 激活内容区 tab（鼠标点标签与 Ctrl+←/→ 共用的唯一入口）。082 三期
-    /// 用户拍板：**切 tab 不再自动聚焦内容区**（终端不再抢键盘）——只改
-    /// 状态，并在视图真变化时 `window.blur()` 截断旧焦点所有者（避免卸载
-    /// 元素的句柄残留持焦、下次回到该视图时「复活」把键入静默送进终端）。
-    /// 键入目标由内容区点击决定；Term/File 源码态焦点逐帧仲裁不回收。
+    /// 激活内容区 tab（鼠标点标签与 Ctrl+←/→ 共用的唯一入口）。082 四期
+    /// 用户拍板：**切 tab 不再自动聚焦内容区**（终端不抢键盘）——只改状
+    /// 态，并在视图真变化时把焦点收回 content-col 锚点（`layout.focus`，
+    /// track_focus 永在树上）：旧视图元素卸载后句柄悬空，必须收回一个
+    /// 在树上的所有者，否则派发路径为空、Ctrl+←/→ 无法连续切（blur()
+    /// 方案验收已证伪）。键入目标由内容区点击决定；Term/File 源码态
+    /// 焦点逐帧仲裁不回收。
     pub(crate) fn activate_content_tab(
         &mut self,
         ix: usize,
@@ -530,7 +532,9 @@ impl Chat {
         self.activate_panel_tab(ix, cx);
         self.set_content_view(view);
         if changed {
-            window.blur();
+            // 收回中性锚点（路径含 "ContentTabs"，下一键照常命中）；
+            // focus() 同值早退，重复调用无副作用
+            window.focus(&self.layout.focus);
             cx.notify();
         }
     }
@@ -576,7 +580,8 @@ impl Chat {
                 let changed = self.layout.content_view != ContentView::Chat;
                 self.set_content_view(ContentView::Chat);
                 if changed {
-                    window.blur();
+                    // 焦点收回锚点；仲裁 Chat 分支随后回 composer
+                    window.focus(&self.layout.focus);
                     cx.notify();
                 }
             }

@@ -190,10 +190,14 @@ impl Render for Chat {
                         && !self.ws.md_preview_focus.is_focused(window)
                     {
                         window.focus(&self.ws.md_preview_focus);
-                    } else if window.focused(cx).is_some() {
-                        // 中性态：blur 一次到位。blur() 无同值早退（focus()
-                        // 有），不判空会每帧 refresh → 持续空转重绘
-                        window.blur();
+                    } else {
+                        // 中性归属 = content-col 锚点（track_focus 在树上，
+                        // 路径含 "ContentTabs"）：切标签/中性态后 Ctrl+←/→
+                        // 仍可连续切。window.focus() 同值早退，逐帧空转
+                        // （曾用 blur()——它无同值早退且空焦点派发路径只
+                        // 剩 node0，on_action 够不着 = 连续切换卡死，验收
+                        // 已证伪，勿回退）
+                        window.focus(&self.layout.focus);
                     }
                 }
             }
@@ -478,6 +482,14 @@ impl Render for Chat {
         body = body.child(
             div()
                 .id("content-col")
+                // 082 四期 Zed Pane 模式：内容区容器自身可聚焦且永在树上
+                //（zed pane.rs:4433-4434 同款 key_context+track_focus）——
+                // 切标签后焦点收回这里（tabs.rs activate_content_tab），
+                // 派发路径永不为空且含 "ContentTabs" 上下文 → Ctrl+←/→
+                // （main.rs 锚定该上下文）永远可连续切。模态是对根的子、
+                // 不在子树内，词移动天然隔离
+                .key_context("ContentTabs")
+                .track_focus(&self.layout.focus)
                 .flex_1()
                 .min_w_0()
                 .flex()
@@ -562,10 +574,12 @@ impl Render for Chat {
                 this.layout.files_min = false;
                 cx.notify();
             }))
-            // 082 三期视图切换 Ctrl+←/→ 分流（绑定见 main.rs：无上下文，
-            // 任意焦点命中，终端/编辑器/输入框原键位一律截断）：仅模态/
-            // 弹层与编辑器搜索面板两处退回组件词移动（ComposerPaste 兜底
-            // 同款重派发），其余切 tab；边界 = no-op 死键（不再退回词移动）
+            // 082 四期视图切换 Ctrl+←/→ 分流（绑定见 main.rs：锚定
+            // "ContentTabs" 上下文 + Input 同深度后注册双绑定，内容区任意
+            // 焦点命中、终端/输入框原键位一律截断）：仅模态/弹层与编辑器
+            // 搜索面板两处退回组件词移动（模态不在 content-col 子树，绑定
+            // 本就不命中，guard 防未来结构变化），其余切 tab；边界 = no-op
+            // 死键（不再退回词移动）
             .on_action(cx.listener(|this, _: &ViewLeft, window, cx| {
                 if this.modal_layer_open() || this.editor_search_panel_focused(window, cx) {
                     window.dispatch_action(Box::new(gpui_component::input::MoveToPreviousWord), cx);
