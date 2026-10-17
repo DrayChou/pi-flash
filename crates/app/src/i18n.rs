@@ -382,7 +382,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("extensions.full", "full+", "full+", "full+"),
     ("tools.preset_full_desc", "full + 自定义扩展", "full + 自訂擴展", "full + custom extensions"),
     ("extensions.choose_extensions", "选择扩展", "選擇擴展", "Choose extensions"),
-    ("extensions.builtin_all_desc", "全部内置工具（不装任何扩展）", "全部內置工具（不裝任何擴展）", "All built-in tools (no extensions loaded)"),
+    ("extensions.builtin_all_desc", "全部内置工具，无扩展", "全部內置工具，无擴展", "All built-in tools ,no extensions"),
     ("extensions.list_next_turn", "扩展清单将在下一轮生效", "擴展清單將在下一輪生效", "The extension list takes effect on the next turn"),
     ("extensions.list_save_failed", "扩展清单保存失败: {e}", "擴展清單儲存失敗: {e}", "Failed to save the extension list: {e}"),
     // 034 扩展按钮 + 勾选菜单
