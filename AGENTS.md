@@ -12,27 +12,27 @@ cargo run -p app                                # 运行（bin: pi-flash）
 RUST_MIN_STACK=33554432 cargo test -p pi-link   # 协议/路径测试都在 pi-link
 ```
 
-- 环境变量：`PI_FLASH_PI_BIN` 覆盖内置 pi；`PI_FLASH_THEME` 切主题（default/dark/rose）；`PI_FLASH_RPC_LOG` 开 RPC 线缆日志；**`PI_FLASH_DIR=./pi-flash-dev` = 标准 debug/测试 home**（已进 `.gitignore`，跑 dev 与任何测试都用它，别再临时造 home）
+- 环境变量：`PI_FLASH_PI_BIN` 覆盖内置 pi；`PI_FLASH_THEME` 切主题（default/dark/rose）；`PI_FLASH_RPC_LOG` 开 RPC 线缆日志；**`PI_FLASH_DIR=./pi-flash-dev` = 标准 debug/测试 home**（已进 `.gitignore`，跑 dev 与任何测试都用）
 - UI 验证一律走 pif-ui 自动化链路，禁止抢真实屏幕
 
 # 铁律
 - **内置pi**：内置 `@earendil-works/pi-coding-agent`，vendor 进应用分发，运行时 spawn `node <app>/vendor/pi/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js --mode rpc`。**不读 PATH/系统 pi**；升级 = bump `vendor/pi/package.json` + VERSION + 跑 pi-link 符合性测试（wire 陷阱与升级复核点见 `docs/agents/pi-rpc.md`）。开发期 `PI_FLASH_PI_BIN` 可覆盖。
-- 完成任务保证编译通过后提交git，验收交给用户，禁止UI测试
-- **GitHub 推送**：origin 已直连 SSH over 443（`~/.ssh/config` 的 `Host github.com-443` 别名 → ssh.github.com:443，已配 IdentityFile），`git push`/`git fetch` 直接推拉即可。github HTTPS(443) 与 SSH(22) 间歇被墙，勿走 HTTPS 远端、勿手拼 GIT_SSH_COMMAND。gh CLI 走 api.github.com，一般不受影响。
+- 完成任务保证编译通过后提交git并push，验收交给用户，禁止UI测试
+- **GitHub 推送**：origin 已直连 SSH over 443（`~/.ssh/config` 的 `Host github.com-443` 别名 → ssh.github.com:443，已配 IdentityFile），`git push`/`git fetch` 直接推拉即可。github HTTPS(443) 与 SSH(22) 间歇被墙，勿走 HTTPS 远端、勿手拼 GIT_SSH_COMMAND。
 - UI绘制遵循 docs\UI设计\UI组件规范.md
 - **发布产物不落本机**：构建产物只留在 `target/`（如 `target/release/pi-flash.exe`），禁止复制/替换本机已安装的 `D:\softwares\...\payload\pi-flash.exe`，也不要在 payload 目录生成 `.new` 之类的暂存文件——装不装、何时装由用户自己决定
 - CHANGELOG发版驱动，平时勿碰！
 
 # 路径
-- pi-web ：`D:\github\---ai-tools---\pi-web`
-- zed ：`D:\github\zed` 
 - vendored pi：`vendor/pi`（package.json+lock 入库；node_modules 走 `npm ci` 不入库）
 - 架构设计：`docs/ARCHITECTURE.md`；复刻计划：`docs/PORT_PLAN.md`
 - 模块设计：`docs/模块设计/`（编号即模块，正文里的 0xx/vNN 引用都指这里）
 - 领域陷阱笔记：`docs/agents/`（见下方「领域笔记」节）
 - 调研归档：`docs/调研/`（外部项目调研报告，如 dsh 插件框架调研）
 - 软件分发：`docs/模块设计/080-软件分发.md`；发版唯一路径：`docs/RELEASE.md`
-- bug 追踪：`docs/bugs.md`；进度：`docs/progress.md`；截图：`tmp/屏幕截图/`
+- bug 追踪：`docs/buglist.md`；
+- 进度：`docs/progress.md`；
+- 截图：`tmp/屏幕截图/`
 
 # 架构
 - workspace：`crates/pi-link`（钉版 pi RPC 协议层，测试在此）+ `crates/app`（GPUI 界面）
