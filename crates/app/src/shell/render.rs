@@ -316,14 +316,22 @@ impl Render for Chat {
                 .child(
                     {
                         // 统一定位（用户定稿）：弹窗与按钮水平居中、底缘距
-                        // 按钮顶缘 5px（不遮按钮）；左右钳在视口内
+                        // 按钮顶缘 5px（不遮按钮）；左右钳在视口内。
+                        // 例外：tools 菜单**右对齐**——它锚在输入栏最右侧的
+                        // 胶囊上，居中会被视口右缘钳成「贴边溢」怪位，改为
+                        // 菜单右缘贴按钮右缘（标准下拉式）。
                         let vp = window.viewport_size();
                         let gap = px(5.);
                         let menu_w = px(320.);
+                        let right_align = self.dlg.pill_menu == Some(PillMenu::Tools);
                         let (anchor_bottom, anchor_left) = match self.dlg.pill_anchor {
                             Some(a) => {
                                 let bottom = (vp.height - a.top + gap).max(px(8.));
-                                let mut left = a.center_x - menu_w / 2.;
+                                let mut left = if right_align {
+                                    a.right_x - menu_w
+                                } else {
+                                    a.center_x - menu_w / 2.
+                                };
                                 if left + menu_w > vp.width - px(8.) {
                                     left = vp.width - menu_w - px(8.);
                                 }
