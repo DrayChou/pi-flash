@@ -1655,7 +1655,7 @@ statusbar 40（项目 tab + 设置钮）│</pre>
     [
       [ICON_FILEBROWSER, "在文件浏览器中打开", ""],
       [ICON_TERMINAL, "在终端中打开", ""],
-      [ICON_TRASH, "删除项目及所有会话", "danger"],
+      [ICON_TRASH, "删除所有会话移除项目", "danger"],
     ].forEach(([icon, label, cls]) => {
       const it = document.createElement("button");
       it.className = "pm-item" + (cls ? " " + cls : "");
@@ -1665,7 +1665,7 @@ statusbar 40（项目 tab + 设置钮）│</pre>
           hideMenu();
           openTerm();
           setPanel("files");
-        } else if (label === "删除项目及所有会话") {
+        } else if (label === "删除所有会话移除项目") {
           // 删除走确认卡（psp_overlays）：锚定点击点，「取消 / 确认删除」
           showDeleteConfirm(p, btn);
         } else {
