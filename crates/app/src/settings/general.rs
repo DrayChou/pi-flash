@@ -97,35 +97,6 @@ pub(crate) fn mc_general_view(
         )),
     );
 
-
-
-    // Markdown 所见即所得 switch（024 Live Preview；默认关——回车崩溃 +
-    // 标题行距未修，2026-10-13 用户定夺；关 = md 源码态普通编辑器）
-    let md_live = crate::services::workspace::md_live_preview();
-    col = col.child(set_row(
-        tr("settings.md_live_preview"),
-        tr("settings.md_live_preview_hint"),
-        switch_base(
-            "general-md-live-preview",
-            md_live,
-            false,
-            {
-                let weak = weak.clone();
-                move |on, cx| {
-                    let _ = weak.update(cx, |_c, cx| {
-                        let mut s = crate::services::workspace::app_settings();
-                        s.md_live_preview = Some(on);
-                        crate::services::workspace::save_app_settings(&s);
-                        // 开着的 md 源码 tab 下一帧经 sync_live_decorations
-                        // 幂等挂/摘 provider，无需在此遍历
-                        cx.notify();
-                    });
-                }
-            },
-        ),
-        t,
-    ));
-
     // ---- 语言：三个一排，左对齐（置底——用户定夺） ------------------------
     col = col.child(section_label(tr("settings.language")));
     col = col.child(lang_row(weak, t));

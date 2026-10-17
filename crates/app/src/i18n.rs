@@ -253,9 +253,6 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("about.note", "Pi-Flash将保持轻巧专注速度体验", "Pi-Flash將保持輕巧專注速度體驗", "The Pi-Flash kernel stays lean and focused on speed"),
     // 文件树 git 标识开关（设置-界面）
     ("settings.file_tree_git_markers", "文件树 Git 标识", "檔案樹 Git 標識", "File tree Git markers"),
-    // Markdown 所见即所得开关（设置-界面；024 默认关——回车崩溃待修）
-    ("settings.md_live_preview", "Markdown 所见即所得", "Markdown 所見即所得", "Markdown live preview"),
-    ("settings.md_live_preview_hint", "编辑 md 时隐藏语法标记，光标进入即显现（实验性）", "編輯 md 時隱藏語法標記，游標進入即顯現（實驗性）", "Hide markdown syntax marks while editing; revealed at the cursor (experimental)"),
     ("settings.git_markers_hint", "文件树显示 git 修改徽标与目录变更点", "檔案樹顯示 git 修改徽標與目錄變更點", "Show git modification badges and directory change dots in the file tree"),
     // 023 fileView（标签栏 + 菜单 / 导航栏 / 冲突横幅 / 确认弹窗）
     ("file_view.pick_in_tree", "在左侧文件树中选择一个文件", "在左側檔案樹中選擇一個檔案", "Pick a file in the tree on the left"),
