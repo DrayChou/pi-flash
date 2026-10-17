@@ -220,6 +220,9 @@ pub(crate) struct DlgUi {
     /// 删除失败持久弹层（trash Err 不再只靠状态栏一闪，用户可直接回报
     /// 具体错误）
     pub(crate) tree_del_error: Option<String>,
+    /// 删除在飞清单（trash 已下沉后台线程：Windows 回收站删大目录可达
+    /// 分钟级，不能占主线程）。用于同路径去重投递 + 完成归位。
+    pub(crate) tree_deleting: Vec<PathBuf>,
     pub(crate) status_toast: Option<(String, std::time::Instant)>,
     pub(crate) settings: Option<gpui::Entity<settings::SettingsPanel>>,
 }
@@ -611,6 +614,7 @@ impl Chat {
                 tab_menu: None,
                 tree_confirm_del: None,
                 tree_del_error: None,
+                tree_deleting: Vec::new(),
                 status_toast: None,
                 settings: None,
             },

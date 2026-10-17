@@ -657,6 +657,8 @@ fn dialogs_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
         // file.delete_confirm 两段式 op 断言开合用）+ trash 失败持久弹层
         "tree_confirm_del": opt_path(chat.dlg.tree_confirm_del.as_ref()),
         "tree_del_error": chat.dlg.tree_del_error.clone(),
+        // 删除在飞清单长度（trash 已后台化：op 断言「删除完成」可轮询归零）
+        "tree_deleting": chat.dlg.tree_deleting.len(),
         // 040 扩展页卸载确认浮层（Some=开着，值为待卸载来源）
         "pkg_confirm_remove": chat.cfg.pkg_confirm_remove.clone(),
         "renaming": opt_path(chat.dlg.renaming.as_ref()),

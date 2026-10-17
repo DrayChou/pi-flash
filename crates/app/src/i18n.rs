@@ -333,6 +333,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("file_tree.maximize", "最大化文件树", "最大化文件樹", "Maximize file tree"),
     ("file_tree.switch_project", "切换项目", "切換專案", "Switch project"),
     ("tree.delete_root_denied", "不能删除项目根目录", "不能刪除專案根目錄", "Cannot delete the project root"),
+    ("tree.deleting", "正在删除「{name}」…（大目录移入回收站可能较久）", "正在刪除「{name}」…（大目錄移至資源回收筒可能較久）", "Deleting \"{name}\"… (large folders may take a while to move to the recycle bin)"),
     ("file_tree.rename_failed", "重命名失败: {e}", "重新命名失敗: {e}", "Rename failed: {e}"),
     ("file_tree.move_failed", "移动失败: {e}", "移動失敗: {e}", "Move failed: {e}"),
     // 021 Pin 收藏夹

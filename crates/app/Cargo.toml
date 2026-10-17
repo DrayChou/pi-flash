@@ -42,7 +42,12 @@ mermaid-rs-renderer = { version = "0.3.1", default-features = false }
 ignore = "0.4"
 notify = "7"
 # 文件树右键菜单「删除至回收站」（021 设计；Windows 回收站 / macOS 废纸篓）
-trash = "5"
+# 回收站删除：必须 coinit_multithreaded——gpui 后台线程池线程的 COM 已是
+# MTA，trash 默认的 apartmentthreaded(STA) 会 RPC_E_CHANGED_MODE(0x80010106)
+# 直接 panic；且两 feature 同开时 apartmentthreaded 后执行覆盖，必须关默认。
+trash = { version = "5", default-features = false, features = [
+    "coinit_multithreaded",
+] }
 # 微信远程控制（060）：渠道层 + 界面层 + transport；app 只做接线。
 # lib crate 的 pub 项不触发 dead_code，见 §7 决策 7（2026-10-07 修订）。
 wxprobe = { path = "../wxprobe" }

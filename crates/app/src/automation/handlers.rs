@@ -398,7 +398,9 @@ pub(super) fn dispatch(
             chat.confirm_tree_delete(path, cx);
             ok()
         }
-        // 删除确认浮层的「确认」（与确认按钮同一方法）：清槽 + trash 真删
+        // 删除确认浮层的「确认」（与确认按钮同一方法）：清槽 + 投递后台
+        // trash 真删（大目录回收站搬运可达分钟级，不再阻塞主线程；完成
+        // 后由 watcher/git 刷新回灌树）
         method::FILE_DELETE_CONFIRM => {
             if chat.dlg.tree_confirm_del.is_none() {
                 return Err(bad("没有待确认的删除（tree_confirm_del 为空）"));
