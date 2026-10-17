@@ -171,7 +171,7 @@ pub const KITCHEN: Theme = Theme {
     danger_hover: 0xc85a44,
 };
 
-/// Catppuccin Latte（灰蓝移植，源自 Obsidian 主题 AnuPpuccin 的浅色底子）。
+/// Catppuccin Latte（紫罗兰，移植自 Obsidian 主题 AnuPpuccin 的浅色底子）。
 /// 中性灰阶原样取 Catppuccin Latte 官方色板——灰白底带 220° 蓝紫相（不是
 /// 纯灰），12 档灰阶均匀，正文对底 7.06:1（WCAG AAA）。强调色取用户
 /// Obsidian 自选 accent #5F5FAB（雾紫罗兰，链接对底 5.00:1、白字压底 5.66:1）。
@@ -234,7 +234,6 @@ pub const ALL: &[(&str, Theme)] = &[
     ("rose", ROSE),
     ("latte", LATTE),
     ("one-light", ONE_LIGHT),
-    ("nord-light", NORD_LIGHT),
     ("nord-dark", NORD_DARK),
     ("one-dark", ONE_DARK),
     ("pine", PINE_FOREST),
@@ -295,33 +294,6 @@ pub const ONE_LIGHT: Theme = Theme {
     nav: 0xf4f4f5,
     danger: 0xc2545c,
     danger_hover: 0xd86570,
-};
-
-/// ZED 'Nord Light' — ported from Zed nord extension nord.json.
-/// 语义校准：border/hover/selected 加深到可见（原 border 比 bg 还浅）。
-pub const NORD_LIGHT: Theme = Theme {
-    dark: false,
-    bg: 0xeceff4,
-    bg_panel: 0xf6f8fa,
-    bg_hover: 0xdfe6ed,
-    bg_selected: 0xd3dce6,
-    border: 0xc9d2dc,
-    text: 0x444d56,
-    text_muted: 0x6a737d,
-    text_dim: 0x7d8690,
-    text_soft: 0x8b97a8,
-    text_faint: 0xa4afbd,
-    accent: 0x2188ff,
-    accent_hover: 0x1a6fd4,
-    accent_contrast: 0xffffff,
-    user_bg: 0xe2e8f0,
-    assistant_bg: 0xfafbfc,
-    tool_bg: 0xe4e9f0,
-    bg_subtle: 0x0000000a,
-    chrome: 0xe2e8ef,
-    nav: 0xf0f3f8,
-    danger: 0xb5485c,
-    danger_hover: 0xc95d6f,
 };
 
 /// ZED 'Nord Dark' — ported from Zed nord extension nord.json.
@@ -388,12 +360,14 @@ pub const PINE_FOREST: Theme = Theme {
 /// everything. `PI_FLASH_THEME=<name>` overrides the persisted choice for dev.
 static THEME_IX: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
-/// Apply a theme by name; false when the name is unknown.
+/// Apply a theme by name; false when the name is unknown —— 未知名一律
+/// 回退到注册表第一个主题（持久化配置里被删除/拼错的主题名不留半悬状态）。
 pub fn set_by_name(name: &str) -> bool {
     if let Some(ix) = ALL.iter().position(|(n, _)| *n == name) {
         THEME_IX.store(ix, std::sync::atomic::Ordering::Relaxed);
         true
     } else {
+        THEME_IX.store(0, std::sync::atomic::Ordering::Relaxed);
         false
     }
 }
@@ -434,7 +408,11 @@ mod tests {
         assert_eq!(theme().bg, ROSE.bg);
         assert!(set_by_name("mist"));
         assert_eq!(theme_name(), "mist");
+        // 未知/已删除主题名 → 回退到注册表第一个（不留半悬状态）
         assert!(!set_by_name("nope"));
+        assert_eq!(theme_name(), ALL[0].0);
+        assert_eq!(theme().bg, ALL[0].1.bg);
+        assert!(set_by_name("mist"));
         assert_eq!(theme_name(), "mist");
         // all built-in themes have complete palettes (v54 layers incl.)
         for (name, t) in ALL {

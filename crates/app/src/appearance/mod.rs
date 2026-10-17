@@ -25,7 +25,7 @@ pub struct ThemeEntry {
 }
 
 /// The built-in catalog (006): pi-web 浅色雾青/蔷薇 + zed One Light/One Dark、
-/// nord light/dark。调色板源数据在 `assets/themes/`（含 LICENSE）。
+/// nord dark。调色板源数据在 `assets/themes/`（含 LICENSE）。
 ///
 /// id 清单的唯一来源是 [`theme::ALL`]（顺序即此处顺序，新增调色板自动进
 /// 注册表）；本函数只挂显示名，未收录的 id 兜底显示 id 本身。
@@ -44,10 +44,9 @@ fn theme_display_name(id: &'static str) -> &'static str {
     match id {
         "mist" => "雾青",
         "rose" => "蔷薇",
-        "latte" => "灰蓝",
+        "latte" => "紫罗兰",
         "kitchen" => "厨房笔记",
         "one-light" => "One Light",
-        "nord-light" => "Nord Light",
         "nord-dark" => "Nord Dark",
         "one-dark" => "One Dark",
         "pine" => "松林",
