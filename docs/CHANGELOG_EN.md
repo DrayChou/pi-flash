@@ -2,6 +2,36 @@
 
 All notable changes to released versions live here; see `docs/CHANGELOG规范.md` for the format.
 
+## [0.1.13] - 2026-10-17
+
+This release focuses on: a reworked startup targeting — the app opens on the "most recently active project" and no longer fabricates project state; the "update handover pollutes the project registry with the payload directory" issue exposed by real-machine testing of 0.1.12 is fixed for good; a new "latte" theme; two hard bugs fixed (project-switch crash and duplicate queued sends); file-tree and dock state now survive restarts.
+
+### Install & Update
+
+```bash
+npm install -g pi-flash@latest   # same command for first install and updates
+pi-flash
+```
+
+Requires Node.js ≥ 22.19.
+Or download the zip portable build, extract and double-click `pi-flash.exe` — no Node needed.
+Windows x64 only.
+
+**On 0.1.11 or later, the in-app updater works** (Settings → Check for updates). **If you are still on 0.1.10 or earlier, you must use the npm command above** (the old in-app updater is broken and cannot install new builds).
+
+### New
+- New "latte" theme (Catppuccin Latte port, accent aligned to the Obsidian misty-violet #5F5FAB); nord-light removed; unknown theme names now fall back to the first registry theme instead of a blank screen. (479b0d2, 606359f, e3916de)
+- File-tree state survives restarts: expand/collapse memory, Pin favorites view restored per project. (23a1f8a)
+- Dock maximized state survives restarts: a maximized file tree / session list stays maximized after reopening. (038d5dc)
+- Settings group-header master toggles get a "partially selected" intermediate state (skills / extensions / MCP). (f1ed223)
+
+### Fixes
+- Project-switch crash: Pin favorites follow the project switch, and gitignore matching no longer panics on non-prefix paths. (77aa69e)
+- Duplicate queued sends eradicated: sends now go through prompt+streamingBehavior, so a stuck queue entry is never replayed. (37919a1)
+- Startup targeting rework: the app opens on the "most recently active project" instead of the globally last session (cwd is a session attribute; the app never fabricates projects); root cause of "every startup lands in the payload directory" found during real-machine testing of 0.1.12 — the cwd inherited by the update handover polluted the project registry — is fixed. (8cb95b4, 81aff88, 0be0ae6, f02bbf8, 452c91a)
+- Two dead switches on the skills page; SKILL.md frontmatter no longer grows an extra line on every write. (5944907)
+- Skill paths no longer carry the Windows `\\?\` verbatim prefix. (8aff9a2)
+- Navigation panel: flyout panel bottom edge aligns with the input panel baseline (no longer sticks to the window bottom when dragged down); flyout card area and summary bar background now match the function panel. (516371c, 3a03336)
 ## [0.1.12] - 2026-10-17
 
 This release focuses on: the PF project registry (opened projects are registered automatically, zero-session projects show up in both panels); keyboard shortcuts fixes round 3 & 4 (consecutive Ctrl+←/→ switching, terminal no longer swallows the keys, window control buttons fixed); a batch of session bubble scroll and file-tree interaction fixes; no more stray terminal window on Windows startup.
