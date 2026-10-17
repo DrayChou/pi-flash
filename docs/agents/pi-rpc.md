@@ -14,6 +14,7 @@
 - client 不得硬编码 `--no-session`（会压掉 `--session`）。
 - `get_messages` 快照携带 bashExecution——与乐观卡并轨会出双卡。
 - **`agent_end{willRetry:true}` 不是轮末**（pi-flash-7ep）：可重试错误（429/5xx/网络断，默认 maxRetries=3、退避 2s/4s/8s 上限 60s）后 pi 在**同一轮内**退避并重发 `agent_start`。轮的真正终点是 `agent_end{willRetry:false}` + `agent_settled`；pi 语义 `isStreaming=_isAgentRunActive` 持续到 settled（`isIdle` 明列 retry 不算 idle）。伴随事件 `auto_retry_start{attempt,maxAttempts,delayMs,errorMessage}` / `auto_retry_end{success,attempt,finalError?}`（success=true 不带 finalError）。注意 `FreeUsageLimitError` 类账号限额在 pi 的 NON-RETRYABLE 名单里，不会重试（`@earendil-works/pi-ai` utils/retry.js）。1.3.0 起可重试名单扩大：gateway `Unable to forward upstream stream`、`The service is temporarily unavailable` 也会走重试。
+- **排队发送恒走 `prompt` + `streamingBehavior`，禁用裸 `follow_up`/`steer`**（2026-10-17 真机 bug：排队内容几分钟后「重复发送」）。根因：RPC `follow_up` → `session.followUp()` → `_queueUserInput` **不校验 isStreaming**，且入队前还要 `await _runInputHandlers`（扩展 handler 有 latency）——客户端猜「在跑」而 pi 恰好收尾时，消息入到**空闲 agent 的 followUpQueue**，无人消费；下一轮 `prompt` 跑完时 agent-loop 在「would stop」处 drain 队列，陈旧消息被当新轮冲出来（实证：滞留消息的落盘时间 = 下一轮 assistant 终条同一秒）。`prompt(text, {streamingBehavior:"followUp"|"steer"})` 由 pi 以自身 isStreaming **原子**判定：在跑→入队，空闲→立即开跑（失败方向安全）。pi-web parity：rpc-manager.ts 恒带 `streamingBehavior`，从不发裸 `follow_up`。配套：abort/prompt 被拒**不清 pending_echoes**（pi 的 abort 只揖当前 run 不清队列，滞留消息回显时还要靠它去重，清了就出重复气泡）。
 
 ## 方法存在性（1.0.0 / 1.1.0 / 1.2.0 / 1.3.0 实测，vendor 升级时复核）
 

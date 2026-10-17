@@ -24,6 +24,9 @@ impl SessionRuntime {
     /// steer（中断当前运行并立即注入）——**仅 pif-ui 自动化调用**（2026-10-16
     /// 用户定批：UI 发送一律排队，composer 不再走这条路）。乐观上屏与翻页和
     /// prompt/排队发送一致——发送帧气泡钉视口顶，不等回显。
+    /// 走 prompt + streamingBehavior:"steer"（pi-web onPromptWithStreamingBehavior
+    /// parity）：排队与否由 pi 原子判定；裸 steer 落在空闲 agent 的 steering
+    /// 队列里同样会滞留到下一轮中途才插话。
     pub(crate) fn steer_input(&mut self, cx: &mut Context<Self>) {
         let text = self.input.trim().to_string();
         if text.is_empty() && self.pending_images.is_empty() {
@@ -42,7 +45,13 @@ impl SessionRuntime {
             .agent
             .session
             .as_ref()
-            .map(|session| session.send(&Command::Steer { message: text.clone(), images }))
+            .map(|session| {
+                session.send(&Command::Prompt {
+                    message: text.clone(),
+                    images,
+                    streaming_behavior: Some("steer".into()),
+                })
+            })
         {
             Some(Ok(_)) => {
                 self.input.clear();
@@ -100,9 +109,9 @@ impl SessionRuntime {
         cx.notify();
     }
 
-    /// 排队消息（rpc follow_up，pi 1.0 原生携带 images）：**运行中发送的正
-    /// 路**（2026-10-16 用户定夺：composer 只有 Enter 一个发送键，运行中
-    /// 一律排队，不再有 steer 插话）。
+    /// 排队消息（**路收窄**：仅 pif-ui 自动化；composer 走 send_input）。命令
+    /// 与 send_input 同一付：prompt + streamingBehavior:"followUp"——排队与否
+    /// 由 pi 原子判定（见 protocol.rs Prompt 注释的滞留队列竞态）。
     ///
     /// 三条硬要求（上一版踩过的坑）：
     /// 1. **先上屏再发**——pi 的 `followUp` 只入队 + 发 queue_update，等到
@@ -135,7 +144,11 @@ impl SessionRuntime {
                 })
             })
             .collect();
-        match session.send(&Command::FollowUp { message: text.clone(), images }) {
+        match session.send(&Command::Prompt {
+            message: text.clone(),
+            images,
+            streaming_behavior: Some("followUp".into()),
+        }) {
             Ok(_) => {
                 if !text.is_empty() && self.history.last().map(|h| h != &text).unwrap_or(true) {
                     self.history.push(text.clone());
@@ -166,7 +179,10 @@ impl SessionRuntime {
         self.stream_started = None;
         // 中止：等待行立即收起（不等 agent_settled）
         self.phase_waiting = false;
-        self.pending_echoes.clear();
+        // **不清 pending_echoes**：pi 的 abort 只掐当前 run，不清 followUp/
+        // steering 队列——已排队未回显的消息在下一轮跑完时照常冲出来，回
+        // 显到时还要靠 pending_echoes 去重；这里清了就会多出一条重复气泡。
+        // 死信兜底由回显臂的 64 上限承担。
         // 中止即「不在跑」：状态槽转圈 / composer 停止按钮都读 agent_running，
         // 若 pi 的终止事件迟到或压根不来（进程被掐），不就地复位就会永久显示
         // 运行中——同一条「立即收起」语义
@@ -401,9 +417,12 @@ impl SessionRuntime {
             cx.notify();
             return;
         }
-        // 运行中发消息 = 排队（2026-10-16 用户定夺：统一排队，不再 steer
-        // 插话；事件驱动 agent_running 优先——快照 is_streaming 一轮内恒
-        // false，会让「排队」退化成新 prompt）
+        // pi-web parity（rpc-manager.ts:800）：统一 prompt + streamingBehavior，
+        // 排队与否由 pi 以自身 isStreaming 原子判定——PF 本地猜的 agent_running
+        // 与 pi 真实状态之间有竞态（裸 follow_up 在 pi 侧入队前还要 await 扩展
+        // handler），猜「在跑」而 pi 已收尾时消息滞留在空闲队列里、下一轮跑完
+        // 才被冲出来 = 「排队内容重复发送」bug。behavior 的失败方向是安全的：
+        // pi 空闲就直接开跑。本地猜测只用于状态行文案。
         let streaming = self.agent_running || self.state.as_ref().is_some_and(|s| s.is_streaming);
         let images: Vec<serde_json::Value> = self
             .pending_images
@@ -416,10 +435,10 @@ impl SessionRuntime {
                 })
             })
             .collect();
-        let cmd = if streaming {
-            Command::FollowUp { message: text.clone(), images: images.clone() }
-        } else {
-            Command::Prompt { message: text.clone(), images }
+        let cmd = Command::Prompt {
+            message: text.clone(),
+            images,
+            streaming_behavior: Some("followUp".into()),
         };
         match session.send(&cmd) {
             Ok(_) => {
@@ -470,13 +489,14 @@ impl SessionRuntime {
             cx.notify();
             return false;
         };
-        // 运行中 = 排队，否则 prompt（与 composer 完全一致）
+        // 运行中 = 排队，否则 prompt（与 composer 完全一致；同走 prompt +
+        // streamingBehavior，由 pi 原子判定，理由见 send_input）
         let streaming =
             self.agent_running || self.state.as_ref().is_some_and(|s| s.is_streaming);
-        let cmd = if streaming {
-            Command::FollowUp { message: text.clone(), images: Vec::new() }
-        } else {
-            Command::Prompt { message: text.clone(), images: Vec::new() }
+        let cmd = Command::Prompt {
+            message: text.clone(),
+            images: Vec::new(),
+            streaming_behavior: Some("followUp".into()),
         };
         let sent = session.send(&cmd).is_ok();
         if sent {

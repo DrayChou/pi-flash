@@ -215,7 +215,10 @@ impl SessionRuntime {
                         format!("prompt failed: {}", error.unwrap_or_default());
                     // 发送失败：等待行不能一直转下去；锚点也无从跟随
                     self.phase_waiting = false;
-                    self.pending_echoes.clear();
+                    // **不清 pending_echoes**：prompt 被拒（鉴权/无模型）时 pi
+                    // 侧队列原封不动——之前排队的消息仍会在下一轮跑完时回
+                    // 显，届时还要靠 pending_echoes 去重（清了就是「排队气泡
+                    // 几分钟后又冒出一条」的重复气泡）。
                     self.pager.release();
                     // 发送失败 = 本轮未跑成，红点
                     self.turn_error = true;

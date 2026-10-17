@@ -680,9 +680,11 @@ impl crate::Chat {
             Action::None => {}
             Action::Send(text) => self.aux.remote.send(&text),
             Action::Prompt(message) => self.send_wx(
+                // 排队安全：behavior 交给 pi 原子判定（同 send_input）
                 &Command::Prompt {
                     message,
                     images: Vec::new(),
+                    streaming_behavior: Some("followUp".into()),
                 },
                 cx,
             ),

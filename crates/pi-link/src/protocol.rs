@@ -13,6 +13,15 @@ pub enum Command {
         message: String,
         /// image contents: [{"type":"image","data":<b64>,"mimeType":...}]
         images: Vec<Value>,
+        /// pi-web parity（rpc-manager.ts:800 恒带 streamingBehavior）：排队与否
+        /// 由 pi 以自身 isStreaming **原子**判定——在跑→入队（等价旧裸
+        /// follow_up/steer），空闲→立即开跑。裸 `follow_up` RPC 命令不做这个
+        /// 判定（`_queueUserInput` 无 isStreaming 检查，且入队前还要 await
+        /// 扩展 handler）：PF 猜「在跑」而 pi 恰好收尾时，消息滞留在空闲
+        /// agent 的 followUpQueue 里，直到**下一轮跑完**才被冲出来——真机
+        /// 表现就是「agent 工作时排队的内容几分钟后重复发送」（2026-10-17
+        /// 会话 01a1498d 实证：排队消息落在下一轮 assistant 终条同一秒）。
+        streaming_behavior: Option<String>,
     },
     /// Queued while the agent is running; delivered after the current
     /// assistant turn finishes its tool calls (rpc-commands.md 「steer」).
@@ -127,10 +136,13 @@ impl Command {
             return v;
         }
         let mut v = match self {
-            Command::Prompt { message, images } => {
+            Command::Prompt { message, images, streaming_behavior } => {
                 let mut v = json!({ "type": self.kind(), "message": message });
                 if !images.is_empty() {
                     v["images"] = json!(images);
+                }
+                if let Some(b) = streaming_behavior {
+                    v["streamingBehavior"] = json!(b);
                 }
                 v
             }
@@ -974,10 +986,25 @@ mod tests {
 
     #[test]
     fn prompt_record_shape() {
-        let c = Command::Prompt { message: "hi".into(), images: vec![] };
+        let c = Command::Prompt { message: "hi".into(), images: vec![], streaming_behavior: None };
         assert_eq!(
             c.to_record("req-1"),
             json!({"id":"req-1","type":"prompt","message":"hi"})
+        );
+    }
+
+    #[test]
+    fn prompt_streaming_behavior_wire() {
+        // pi-web parity：排队发送恒走 prompt + streamingBehavior（pi 以自身
+        // isStreaming 原子判定排队/开跑，杜绝裸 follow_up 的滞留队列竞态）
+        let c = Command::Prompt {
+            message: "hi".into(),
+            images: vec![],
+            streaming_behavior: Some("followUp".into()),
+        };
+        assert_eq!(
+            c.to_record("q1"),
+            json!({"id":"q1","type":"prompt","message":"hi","streamingBehavior":"followUp"})
         );
     }
 
@@ -1250,10 +1277,10 @@ mod tests {
 
     #[test]
     fn prompt_with_images_omits_empty_and_includes_present() {
-        let c = Command::Prompt { message: "hi".into(), images: vec![] };
+        let c = Command::Prompt { message: "hi".into(), images: vec![], streaming_behavior: None };
         assert_eq!(c.to_record("a"), json!({"id":"a","type":"prompt","message":"hi"}));
         let img = json!({"type":"image","data":"QUJD","mimeType":"image/png"});
-        let c = Command::Prompt { message: "hi".into(), images: vec![img.clone()] };
+        let c = Command::Prompt { message: "hi".into(), images: vec![img.clone()], streaming_behavior: None };
         assert_eq!(
             c.to_record("b"),
             json!({"id":"b","type":"prompt","message":"hi","images":[img]})

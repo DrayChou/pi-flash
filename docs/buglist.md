@@ -1,3 +1,26 @@
+## 待验证（本轮修复）——agent 工作时排队发送的内容隔几分钟后「重复发送」
+
+用户口径：agent 在跑时排队发了「新theme叫紫罗兰」，接着又发了带补充的
+第二条；第一条直到下一轮回复结束才被重新发出去（会话尾部多出一条同文
+气泡 + 模型又答了一遍）。会话 01a1498d 实证：滞留消息落盘时间
+（12:08:08）与下一轮 assistant 终条**同一秒**。
+
+- ✅ 根因：RPC `follow_up` → `session.followUp()` → `_queueUserInput`
+  **不校验 isStreaming**，且入队前还要 `await _runInputHandlers`（扩展
+  handler 有 latency）。PF 本地猜 `agent_running` 决定发 FollowUp 还是
+  Prompt，猜「在跑」而 pi 恰好收尾时，消息入到**空闲 agent 的
+  followUpQueue**——无人消费，直到下一轮 `prompt` 跑完时 agent-loop 在
+  「would stop」处 drain 队列才被当新轮冲出来 = 重复发送。
+- ✅ 修法（pi-web parity，rpc-manager.ts 恒带 streamingBehavior）：
+  ① `Command::Prompt` 增加 `streaming_behavior`（wire 键
+  `streamingBehavior`），composer/远程/自动化全部发送改走
+  `prompt + streamingBehavior:"followUp"（或 steer）`——排队与否由 pi 以
+  自身 isStreaming **原子**判定，失败方向安全（空闲→立即开跑，不再滞留）；
+  ② `abort_stream` / prompt 被拒**不再清 `pending_echoes`**：pi 的 abort
+  只杀当前 run 不清队列，滞留消息回显时还要靠它去重（清了就是同文重复
+  气泡）。
+- 领域笔记已归档：docs/agents/pi-rpc.md「wire 字段与形态」末条。
+
 ## 待验证（本轮修复）——切项目后点项目行「＋ 新建会话」直接崩（进程消失）
 
 用户口径：从文件树切项目到 agentic-design-pattern → 打开一个 md → 点 pi-flash
