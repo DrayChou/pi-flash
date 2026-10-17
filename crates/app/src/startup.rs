@@ -191,12 +191,12 @@ pub(crate) fn load_globals() -> Globals {
     }
 }
 
-/// 装载一个项目的上下文（纯磁盘读；启动集合内逐项目跑，切项目未命中时现算）。
-pub(crate) fn load_project(cwd: &Path) -> ProjectCtx {
+/// 装载一个项目的技能表（纯磁盘读）。设置页开关写盘后也要现读一遍——
+/// `ProjectCtx` 是启动缓存，拿它当写后回读源就是「开关点了没反应」。
+pub(crate) fn load_skills(cwd: &Path) -> Vec<pi_link::skills::SkillEntry> {
     let agent_dir = pi_link::config::agent_dir();
-    let settings_path = pi_link::config::settings_path();
-    let project_settings = pi_link::config::project_settings_path(cwd);
-    let settings_value = pi_link::config::read_json(&settings_path).unwrap_or(serde_json::json!({}));
+    let settings_value =
+        pi_link::config::read_json(&pi_link::config::settings_path()).unwrap_or(serde_json::json!({}));
     let home_agents = agent_dir
         .parent()
         .map(|p| p.join("..").join(".agents").join("skills"))
@@ -204,7 +204,13 @@ pub(crate) fn load_project(cwd: &Path) -> ProjectCtx {
         // 否则会顺着 SkillEntry.path 漏进技能面板显示（Zed 同款处理）。
         .map(|p| dunce::canonicalize(&p).unwrap_or(p))
         .unwrap_or_else(|| agent_dir.clone());
-    let skills = pi_link::skills::discover_skills(cwd, &agent_dir, &home_agents, &settings_value);
+    pi_link::skills::discover_skills(cwd, &agent_dir, &home_agents, &settings_value)
+}
+
+/// 装载一个项目的上下文（纯磁盘读；启动集合内逐项目跑，切项目未命中时现算）。
+pub(crate) fn load_project(cwd: &Path) -> ProjectCtx {
+    let project_settings = pi_link::config::project_settings_path(cwd);
+    let skills = load_skills(cwd);
     let skill_commands = pi_link::catalog::skill_commands(&skills);
     ProjectCtx {
         project_scope: pi_link::config::read_enabled_models(&project_settings)

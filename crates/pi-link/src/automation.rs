@@ -139,6 +139,11 @@ pub mod method {
     /// 布局对比）。params: {project?: i64（缺省清除 hover）, collapse?:
     /// bool（切该项目 collapsed_keys）}
     pub const UI_DEBUG_HOVER: &str = "ui.debug_hover";
+    /// 调试专用：指定逻辑坐标处的 gpui hit-test 链（穿透/命中类 bug 探针）。
+    /// params: {x: f64, y: f64}（逻辑像素）→
+    /// {hover_count, chain: [{id, bounds, inter, behavior, hovered}...]}。
+    /// hovered=true = 该 hitbox 的 mouse listener 会被该点触发。
+    pub const UI_HIT_PROBE: &str = "ui.hit_probe";
 }
 
 #[derive(Debug, Clone, PartialEq)]

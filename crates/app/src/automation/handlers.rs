@@ -727,6 +727,39 @@ pub(super) fn dispatch(
         // 调试专用：直置 psp 项目行 hover/收起态（绕过鼠标合成）。project
         // 缺省 = 清除 hover；collapse = 强制该项目收起(true)/展开(false)。
         // project_card = 项目行右键详情卡直开（confirm=true 直进删除确认态）。
+        // 命中探针：报指定逻辑坐标处的 hit-test 链（穿透/命中类 bug 定位）
+        method::UI_HIT_PROBE => {
+            use gpui::px;
+            let get = |k: &str| -> Result<f32, (String, String)> {
+                params
+                    .get(k)
+                    .and_then(serde_json::Value::as_f64)
+                    .map(|v| v as f32)
+                    .ok_or_else(|| bad(format!("需要 {{\"{k}\": number}}")))
+            };
+            let (x, y) = (get("x")?, get("y")?);
+            let chain = window.debug_hit_test_chain(gpui::Point::new(px(x), px(y)));
+            let items: Vec<serde_json::Value> = chain
+                .iter()
+                .map(|(id, bounds, inter, behavior, hovered)| {
+                    serde_json::json!({
+                        "id": format!("{:?}", id),
+                        "bounds": {
+                            "x": f32::from(bounds.origin.x), "y": f32::from(bounds.origin.y),
+                            "w": f32::from(bounds.size.width), "h": f32::from(bounds.size.height),
+                        },
+                        "inter": {
+                            "x": f32::from(inter.origin.x), "y": f32::from(inter.origin.y),
+                            "w": f32::from(inter.size.width), "h": f32::from(inter.size.height),
+                        },
+                        "behavior": format!("{:?}", behavior),
+                        "hovered": hovered,
+                    })
+                })
+                .collect();
+            let hover_count = items.iter().filter(|it| it["hovered"] == serde_json::json!(true)).count();
+            Ok(serde_json::json!({ "x": x, "y": y, "hover_count": hover_count, "chain": items }))
+        }
         method::UI_DEBUG_HOVER => {
             // 会话详情卡直开（自动化复现右键详情卡路径；rename=true 直进
             // 改名态——与标题点击同一 Chat::hover_card_begin_rename 槽）。

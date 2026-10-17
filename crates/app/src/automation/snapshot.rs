@@ -602,6 +602,20 @@ fn settings_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
                     .collect::<Vec<String>>(),
                 "mc_state": format!("{:?}", chat.cfg.mc_state),
                 "mc_project_scope": chat.cfg.mc_project_scope,
+                // 技能页：列表 + 休眠态（开关断言用）
+                "skills": chat
+                    .cfg
+                    .mc_skills
+                    .iter()
+                    .map(|s| {
+                        json!({
+                            "name": s.name,
+                            "scope": format!("{:?}", s.scope),
+                            "disabled": s.disable_invocation,
+                            "path": s.path.to_string_lossy(),
+                        })
+                    })
+                    .collect::<Vec<_>>(),
                 // 043 MCP 页：列表 + 表单字段快照（列表断言 / 保存回读用）
                 "mcp_servers": chat
                     .cfg.mcp_servers

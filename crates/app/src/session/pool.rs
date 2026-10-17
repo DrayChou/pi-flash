@@ -658,8 +658,7 @@ impl Chat {
 
     /// 当前项目的上下文（010-启动.md §5）：命中启动装载的集合就直接返回，
     /// 未命中（新打开的项目）用同一个装载函数现算一次并纳入集合。
-    pub(crate) fn project_ctx_now(&mut self) -> startup::ProjectCtx {
-        // 无项目态：无项目上下文（全局设置照常，项目层为空默认）
+    pub(crate) fn project_ctx_now(&mut self) -> startup::ProjectCtx {        // 无项目态：无项目上下文（全局设置照常，项目层为空默认）
         let Some(cwd) = self.ws.cwd.clone() else {
             return startup::ProjectCtx::default();
         };
@@ -670,6 +669,25 @@ impl Chat {
         let ctx = startup::load_project(&cwd);
         self.pool.project_ctx.insert(key, ctx.clone());
         ctx
+    }
+
+    /// 技能表现读（盘上真值）并回写启动缓存。
+    ///
+    /// 设置页的启停开关**写盘后必须走这里**：`project_ctx` 是进程启动时的
+    /// 快照，直接拿它回读只能看到开关前的旧 `disable-model-invocation`，
+    /// 于是 UI 永远不翻转、开关回调又按旧状态再算一次同样的目标值——看起来
+    /// 就是「两个开关都是摆设」（本页写盘后回读的坑与 043 MCP 同源）。
+    pub(crate) fn skills_fresh(&mut self) -> Vec<pi_link::skills::SkillEntry> {
+        let Some(cwd) = self.ws.cwd.clone() else {
+            return Vec::new();
+        };
+        let skills = startup::load_skills(&cwd);
+        let commands = pi_link::catalog::skill_commands(&skills);
+        if let Some(ctx) = self.pool.project_ctx.get_mut(&cwd.to_string_lossy().to_string()) {
+            ctx.skills = skills.clone();
+            ctx.skill_commands = commands;
+        }
+        skills
     }
 
     /// 当前会话标题（topbar 会话视图展示；≤30 字截断）。优先 pi 会话名，

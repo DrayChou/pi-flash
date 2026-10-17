@@ -194,9 +194,12 @@ impl Chat {
         self.cfg.mc_default_tools = self.pool.globals.default_tools.clone();
         self.cfg.mc_pkgs_global = self.pool.globals.packages.clone();
         let ctx = self.project_ctx_now();
-        self.cfg.mc_skills = ctx.skills;
         self.cfg.mc_pkgs_project = ctx.packages;
         self.cfg.mc_project_scope = ctx.project_scope;
+        // 技能表盘上现读：project_ctx 是启动缓存，本页开关写盘后拿它回读
+        // 只会得到旧列表（“点了没反应”）。同时回写缓存，让 composer 的
+        // skill 命令跟手。
+        self.cfg.mc_skills = self.skills_fresh();
         // 043：MCP 盘上现读——project_ctx 是启动缓存，本页写盘后重读只会
         // 拷到旧列表（040 globals 内存副本同款教训）
         let (mcp_servers, mcp_errors) = pi_link::mcp::load(self.project());

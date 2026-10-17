@@ -796,6 +796,31 @@ impl Frame {
         hit_test
     }
 
+    /// pi-flash automation probe: dump the hit-test chain at `position`.
+    /// Returns every hitbox (paint order) as
+    /// (id, bounds, bounds∩content_mask, behavior, in_hover_chain).
+    /// `in_hover_chain` = this id is in hit_test.ids[..hover_hitbox_count],
+    /// i.e. its mouse listeners would fire for a click at `position`.
+    pub(crate) fn debug_hit_test_chain(
+        &self,
+        position: Point<Pixels>,
+    ) -> Vec<(HitboxId, Bounds<Pixels>, Bounds<Pixels>, HitboxBehavior, bool)> {
+        let ht = self.hit_test(position);
+        let hovered: Vec<HitboxId> = ht
+            .ids
+            .iter()
+            .take(ht.hover_hitbox_count)
+            .copied()
+            .collect();
+        self.hitboxes
+            .iter()
+            .map(|hb| {
+                let inter = hb.bounds.intersect(&hb.content_mask.bounds);
+                (hb.id, hb.bounds, inter, hb.behavior, hovered.contains(&hb.id))
+            })
+            .collect()
+    }
+
     pub(crate) fn focus_path(&self) -> SmallVec<[FocusId; 8]> {
         self.focus
             .map(|focus_id| self.dispatch_tree.focus_path(focus_id))
@@ -927,6 +952,15 @@ fn default_bounds(display_id: Option<DisplayId>, cx: &mut App) -> Bounds<Pixels>
 }
 
 impl Window {
+    /// pi-flash automation probe: dump the hit-test chain of the rendered
+    /// frame at `position`. See [`Frame::debug_hit_test_chain`].
+    pub fn debug_hit_test_chain(
+        &self,
+        position: Point<Pixels>,
+    ) -> Vec<(HitboxId, Bounds<Pixels>, Bounds<Pixels>, HitboxBehavior, bool)> {
+        self.rendered_frame.debug_hit_test_chain(position)
+    }
+
     pub(crate) fn new(
         handle: AnyWindowHandle,
         options: WindowOptions,

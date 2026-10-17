@@ -13,7 +13,12 @@ impl Chat {
 
     /// 批量启停（组头开关）：逐个写 SKILL.md，失败的保持原状并计数报错
     /// (pi-web PATCH /api/skills {filePaths[]} parity)。
-    pub(crate) fn mc_toggle_skills_bulk(&mut self, paths: Vec<String>, disable: bool, cx: &mut Context<Self>) {
+    pub(crate) fn mc_toggle_skills_bulk(
+        &mut self,
+        paths: Vec<String>,
+        disable: bool,
+        cx: &mut Context<Self>,
+    ) {
         self.mc_clear_error(cx);
         let mut failed = 0usize;
         for path in &paths {
@@ -27,7 +32,10 @@ impl Chat {
             self.mc_set_error(
                 &crate::i18n::tf(
                     "skills.failed_to_toggle_count",
-                    &[("total", paths.len().to_string()), ("count", failed.to_string())],
+                    &[
+                        ("total", paths.len().to_string()),
+                        ("count", failed.to_string()),
+                    ],
                 ),
                 cx,
             );
@@ -38,7 +46,9 @@ impl Chat {
 }
 
 /// 休眠（对模型隐藏）技能排后面。
-fn order_by_dormancy<'a>(items: &'a [&'a pi_link::skills::SkillEntry]) -> Vec<&'a &'a pi_link::skills::SkillEntry> {
+fn order_by_dormancy<'a>(
+    items: &'a [&'a pi_link::skills::SkillEntry],
+) -> Vec<&'a &'a pi_link::skills::SkillEntry> {
     let mut out: Vec<&&pi_link::skills::SkillEntry> = items.iter().collect();
     out.sort_by_key(|s| s.disable_invocation);
     out
@@ -57,8 +67,12 @@ pub(crate) fn mc_skills_view(
         (tr("scope.project"), pi_link::skills::SkillScope::Project),
         (tr("scope.global"), pi_link::skills::SkillScope::Global),
     ] {
-        let items: Vec<&pi_link::skills::SkillEntry> =
-            chat.cfg.mc_skills.iter().filter(|s| s.scope == scope).collect();
+        let items: Vec<&pi_link::skills::SkillEntry> = chat
+            .cfg
+            .mc_skills
+            .iter()
+            .filter(|s| s.scope == scope)
+            .collect();
         if items.is_empty() {
             continue;
         }
@@ -71,7 +85,14 @@ pub(crate) fn mc_skills_view(
         list = list.child(group_header(
             label,
             Some(group_switch(
-                format!("skill-bulk-{}", if scope == pi_link::skills::SkillScope::Project { "p" } else { "g" }),
+                format!(
+                    "skill-bulk-{}",
+                    if scope == pi_link::skills::SkillScope::Project {
+                        "p"
+                    } else {
+                        "g"
+                    }
+                ),
                 weak,
                 format!("{visible}/{}", items.len()),
                 all_visible,
@@ -91,7 +112,11 @@ pub(crate) fn mc_skills_view(
                         let handler = widgets::select_section(&weak_item, path.clone());
                         move |_, w, cx| handler(w, cx)
                     })
-                    .child(status_dot(if sk.disable_invocation { t.border } else { t.accent }))
+                    .child(status_dot(if sk.disable_invocation {
+                        t.border
+                    } else {
+                        t.accent
+                    }))
                     .child(
                         div()
                             .flex_1()
@@ -116,7 +141,8 @@ pub(crate) fn mc_skills_view(
     }
 
     let selected = chat
-        .cfg.mc_skills
+        .cfg
+        .mc_skills
         .iter()
         .find(|s| s.path.to_string_lossy() == section)
         .or_else(|| chat.cfg.mc_skills.first());
@@ -150,7 +176,14 @@ pub(crate) fn mc_skills_view(
                         .items_center()
                         .gap(px(8.))
                         .min_h(px(28.))
-                        .child(scope_tag(if project { tr("scope.project") } else { tr("scope.global") }, project))
+                        .child(scope_tag(
+                            if project {
+                                tr("scope.project")
+                            } else {
+                                tr("scope.global")
+                            },
+                            project,
+                        ))
                         .child(
                             div()
                                 .flex_1()
@@ -163,9 +196,13 @@ pub(crate) fn mc_skills_view(
                                 .text_ellipsis()
                                 .child(SharedString::from(sk.path.to_string_lossy().to_string())),
                         )
-                        .child(config_switch("skill-switch", weak, visible, false, move |c, cx| {
-                            c.mc_toggle_skill(sw_path.clone(), visible, cx)
-                        })),
+                        .child(config_switch(
+                            "skill-switch",
+                            weak,
+                            visible,
+                            false,
+                            move |c, cx| c.mc_toggle_skill(sw_path.clone(), visible, cx),
+                        )),
                 )
                 .child(field(&tr("field.name"), mono_text(sk.name.clone(), false)))
                 .child(field(
@@ -192,21 +229,20 @@ pub(crate) fn mc_skills_view(
                             } else {
                                 "—".to_string()
                             },
-                            crate::services::format::fmt_thousand(
-                                pi_link::skills::body_tokens(sk)
-                            ),
+                            crate::services::format::fmt_thousand(pi_link::skills::body_tokens(sk)),
                         ))),
                 ))
                 .child(note(if visible {
-                    "在模型提示词中可见；开关关闭后进入休眠（对模型隐藏，仍可手动调用）"
+                    "注入系统提示词；关闭后取消注入，靠手动调用"
                 } else {
-                    "对模型隐藏，仍可手动调用；开关打开后恢复可见"
+                    "未注入系统提示词，靠手动调用"
                 }))
                 .into_any_element()
         }
     };
     (
-        sidebar_shell("mc-sidebar").w(px(LIST_W))
+        sidebar_shell("mc-sidebar")
+            .w(px(LIST_W))
             // 列表底色压平（040：与页面同色，选中态只靠字重字色）
             .bg(rgb(t.bg))
             .child(list)

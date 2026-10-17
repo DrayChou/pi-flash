@@ -216,7 +216,10 @@ fn edit_frontmatter(text: &str, disable: bool) -> String {
         out.push_str("disable-model-invocation: true\n");
     }
     out.push_str("---");
-    out.push_str(rest);
+    // `rest` 以闭合的那个 "\n---" 起头（find 命中的就是它）：必须把它吃掉，
+    // 否则每写一次就在正文前多长一行 `---`（重复开关把 frontmatter 搓成
+    // 十几行三连杠的旧伤）。
+    out.push_str(&rest[4..]);
     out
 }
 
@@ -465,6 +468,18 @@ mod tests {
         let text = std::fs::read_to_string(&p3).unwrap();
         assert_eq!(text.matches("disable-model-invocation").count(), 1);
         assert!(text.contains("disable-model-invocation: true"));
+
+        // 反复启停不得让 frontmatter 长胖（旧伤：每写一次多一行 `---`，
+        // 用户连点几次就把 SKILL.md 搓成十几行三连杠）
+        let p4 = write_skill(&base, "zeta", Some("---\nname: zeta\ndescription: Z\n---\n\nbody\n"));
+        for disable in [true, false, true, false, true, false] {
+            set_disable_invocation(&p4, disable).unwrap();
+        }
+        let text = std::fs::read_to_string(&p4).unwrap();
+        assert_eq!(text.matches("\n---").count(), 1, "only the closing fence: {text:?}");
+        assert!(!text.contains("disable-model-invocation"));
+        assert!(text.contains("name: zeta") && text.contains("description: Z"));
+        assert!(text.contains("\n\nbody\n"), "body untouched: {text:?}");
     }
 
     #[test]
