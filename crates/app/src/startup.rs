@@ -200,7 +200,9 @@ pub(crate) fn load_project(cwd: &Path) -> ProjectCtx {
     let home_agents = agent_dir
         .parent()
         .map(|p| p.join("..").join(".agents").join("skills"))
-        .map(|p| p.canonicalize().unwrap_or(p))
+        // dunce：剥掉 std canonicalize 在 Windows 必带的 \\?\ verbatim 前缀，
+        // 否则会顺着 SkillEntry.path 漏进技能面板显示（Zed 同款处理）。
+        .map(|p| dunce::canonicalize(&p).unwrap_or(p))
         .unwrap_or_else(|| agent_dir.clone());
     let skills = pi_link::skills::discover_skills(cwd, &agent_dir, &home_agents, &settings_value);
     let skill_commands = pi_link::catalog::skill_commands(&skills);

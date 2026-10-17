@@ -134,6 +134,7 @@ dependencies = [
  "base64 0.22.1",
  "chardetng",
  "chrono",
+ "dunce",
  "ego-tree",
  "encoding_rs",
  "futures",
