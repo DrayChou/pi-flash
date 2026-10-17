@@ -2,6 +2,36 @@
 
 All notable changes to released versions live here; see `docs/CHANGELOG规范.md` for the format.
 
+## [0.1.12] - 2026-10-17
+
+This release focuses on: the PF project registry (opened projects are registered automatically, zero-session projects show up in both panels); keyboard shortcuts fixes round 3 & 4 (consecutive Ctrl+←/→ switching, terminal no longer swallows the keys, window control buttons fixed); a batch of session bubble scroll and file-tree interaction fixes; no more stray terminal window on Windows startup.
+
+### Install & Update
+
+```bash
+npm install -g pi-flash@latest   # same command for first install and updates
+pi-flash
+```
+
+Requires Node.js ≥ 22.19.
+Or download the zip portable build, extract and double-click `pi-flash.exe` — no Node needed.
+Windows x64 only.
+
+**On 0.1.11 or later, the in-app updater works** (Settings → Check for updates): the new "versioned directory extraction + startup handover" chain took over in 0.1.11, and this release is its first real-machine upgrade target. **If you are still on 0.1.10 or earlier, you must use the npm command above** (the old in-app updater is broken and cannot install new builds).
+
+### New
+- PF project registry: opened projects are registered automatically (`~/.pi-flash/projects.json`); zero-session projects now appear in the function-panel project list and the session directory — projects no longer depend on having sessions to be visible. (ee82d0c)
+
+### Fixes
+- Shortcuts (082 rounds 3/4): Ctrl+←/→ reworked to the Zed Pane model — ancestor-context anchoring + focusable anchor, so consecutive switching no longer stalls; tab switching is now shell-exclusive (the terminal no longer swallows the keys, Markdown preview is keyboard-reachable); window control buttons (minimize/maximize/close) fixed (track_focus anchor moved down to content-main). (8af1b26, 16fdfba, 47cbfcd)
+- Session scrolling batch: very tall user bubbles were unscrollable (gpui List wheel registration timing); scrolling inside a bubble to its edge no longer bleeds through and moves the session list in the same frame. (65d03ec, a238cb3)
+- File tree batch: inline create/rename caret no longer blinks off (initial focus now goes through InputState::focus); newly created entries and the committed row scroll into view. (5dbb6e8, 8e92ec1)
+- Windows startup no longer pops a stray terminal window. (3be6deb)
+- Tools capsule menu now right-anchored, right edge flush with the button. (f96ca70)
+
+### Improvements
+- Deleting large directories in the file tree moved to a background thread (trash on background_spawn) — no more main-thread stalls. (ff89733)
+- Settings → Interface: removed the "Markdown WYSIWYG" toggle. (2732556)
 ## [0.1.11] - 2026-10-17
 
 This release focuses on: a reworked in-app update staging — versioned payload directory + startup handover (powershell swap removed), fixing the root cause of the 0.1.10 endless redownload loop; two new themes ("kitchen" and "pine"); faster session open and project switching; Ctrl+L global file search on the shortcuts page.
