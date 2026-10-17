@@ -31,6 +31,16 @@ pub(crate) fn content_main(
     };
     div()
         .id("content-main")
+        // 082 四期 Zed Pane 模式锚点宿主（zed pane.rs:4433-4434 同款
+        // key_context+track_focus）：内容视图容器自身可聚焦且永在树上——
+        // 切标签后焦点收回这里（tabs.rs activate_content_tab），派发路径
+        // 永不为空且含 "ContentTabs" 上下文 → Ctrl+←/→（main.rs 锚定该
+        // 上下文）永远可连续切。模态是对根的子、不在子树内，词移动天然
+        // 隔离。**勿上移到 content-col**：topbar_r（窗口控制钮 + 拖拽区）
+        // 是 content-col 的子，track_focus 的 MouseDown 监听会 prevent_default
+        // 吞掉 Windows NC 按下 → 窗口钮/拖拽全哑（已踩，见 render.rs）
+        .key_context("ContentTabs")
+        .track_focus(&chat.layout.focus)
         .flex_1()
         .min_h_0()
         .flex()

@@ -191,12 +191,13 @@ impl Render for Chat {
                     {
                         window.focus(&self.ws.md_preview_focus);
                     } else {
-                        // 中性归属 = content-col 锚点（track_focus 在树上，
+                        // 中性归属 = content-main 锚点（track_focus 在树上，
                         // 路径含 "ContentTabs"）：切标签/中性态后 Ctrl+←/→
                         // 仍可连续切。window.focus() 同值早退，逐帧空转
-                        // （曾用 blur()——它无同值早退且空焦点派发路径只
+                        //（曾用 blur()——它无同值早退且空焦点派发路径只
                         // 剩 node0，on_action 够不着 = 连续切换卡死，验收
-                        // 已证伪，勿回退）
+                        // 已证伪，勿回退）。锚点宿主在 content.rs（勿挂
+                        // content-col：topbar_r 在其子树，会吞 NC 窗口钮）
                         window.focus(&self.layout.focus);
                     }
                 }
@@ -482,14 +483,14 @@ impl Render for Chat {
         body = body.child(
             div()
                 .id("content-col")
-                // 082 四期 Zed Pane 模式：内容区容器自身可聚焦且永在树上
-                //（zed pane.rs:4433-4434 同款 key_context+track_focus）——
-                // 切标签后焦点收回这里（tabs.rs activate_content_tab），
-                // 派发路径永不为空且含 "ContentTabs" 上下文 → Ctrl+←/→
-                // （main.rs 锚定该上下文）永远可连续切。模态是对根的子、
-                // 不在子树内，词移动天然隔离
-                .key_context("ContentTabs")
-                .track_focus(&self.layout.focus)
+                // 082 四期锚点宿主 = content-main（content.rs），**不是本容器**：
+                // track_focus 的 div 会注册「命中盒内 MouseDown → focus +
+                // prevent_default」监听（gpui div.rs paint），而 topbar_r（窗口
+                // 控制钮 + 拖拽区）是本容器的子——Windows 平台把 NC 按下伪装成
+                // 普通 MouseDown 派进 app（events.rs handle_nc_mouse_down_msg），
+                // 锚点监听一 prevent_default 就算 handled，平台不再记录
+                // nc_button_pressed → 最小化/最大化/关闭/拖拽全哑。Zed 同款
+                // 不踩坑：其 titlebar 不在 pane 子树内
                 .flex_1()
                 .min_w_0()
                 .flex()

@@ -511,10 +511,12 @@ impl Chat {
 
     /// 激活内容区 tab（鼠标点标签与 Ctrl+←/→ 共用的唯一入口）。082 四期
     /// 用户拍板：**切 tab 不再自动聚焦内容区**（终端不抢键盘）——只改状
-    /// 态，并在视图真变化时把焦点收回 content-col 锚点（`layout.focus`，
-    /// track_focus 永在树上）：旧视图元素卸载后句柄悬空，必须收回一个
-    /// 在树上的所有者，否则派发路径为空、Ctrl+←/→ 无法连续切（blur()
-    /// 方案验收已证伪）。键入目标由内容区点击决定；Term/File 源码态
+    /// 态，并在视图真变化时把焦点收回 content-main 锚点（`layout.focus`，
+    /// track_focus 永在树上，宿主在 content.rs）：旧视图元素卸载后句柄
+    /// 悬空，必须收回一个在树上的所有者，否则派发路径为空、Ctrl+←/→
+    /// 无法连续切（blur() 方案验收已证伪）。锚点不能挂 content-col：
+    /// topbar_r（窗口控制钮/拖拽区）在其子树，track_focus 监听会吞 NC
+    /// 按下致窗口钮全哑。键入目标由内容区点击决定；Term/File 源码态
     /// 焦点逐帧仲裁不回收。
     pub(crate) fn activate_content_tab(
         &mut self,
