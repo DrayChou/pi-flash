@@ -53,11 +53,17 @@ pub(crate) use shell::types::*;
 pub(crate) use ui::ComposerInput;
 pub(crate) use session::menu::slash_menu_view;
 
-/// 常规（非最大化）窗口尺寸 = 窗口最小尺寸（2026-10-29 用户定案：点击窗口
-/// 「缩小」钮还原到的尺寸就是最小尺寸）。逻辑像素（gpui 按 scale_factor 折算
-/// 后再交给 WM_GETMINMAXINFO），唯一落点在 `run()` 的建窗参数。
-pub(crate) const WINDOW_W_MIN: f32 = 1180.;
-pub(crate) const WINDOW_H_MIN: f32 = 760.;
+/// 常规（非最大化）窗口尺寸——点窗口「缩小」钮还原到的就是这一档
+/// （2026-10-29 用户定案）。逻辑像素（gpui 按 scale_factor 折算），唯一
+/// 落点在 `run()` 的建窗参数。
+pub(crate) const WINDOW_W: f32 = 1180.;
+pub(crate) const WINDOW_H: f32 = 760.;
+
+/// 窗口最小尺寸：宽 = 还原宽（「点缩小钮后多大就别想再拖更小」——再窄聊天
+/// 列会被挤到不可用）；高比还原高矮 160（2026-10-29 用户定案 600），给
+/// 1366×768 这类老屏幕留出任务栏之后的可用高度。
+pub(crate) const WINDOW_W_MIN: f32 = WINDOW_W;
+pub(crate) const WINDOW_H_MIN: f32 = 600.;
 
 // composer 覆盖动作（注册为 "Input" 上下文绑定，见 run() 里 bind_keys）：
 // ↑/↓ 在菜单态导航补全、空输入态回溯历史，非空多行重新派发组件 MoveUp/
@@ -229,23 +235,17 @@ fn main() {
             // 的 pending_zoom 补最大化——0.2.2 建窗即 Maximized 的延迟处理
             // 实测不生效，显式 zoom 是项目已验证路径（从建窗回调后移）。
             let _restored = get_window_state();
-            // 常规（非最大化）窗口尺寸 = 最小窗口尺寸（2026-10-29 用户定案：
-            // 「点击缩小窗口按钮后的尺寸就是最小窗口尺寸」）——窗口还原到的
-            // 就是这一档，用户再也没必要拖得比它更小（宽度再小聊天列会被
-            // 挤到不可用）。两个数只此一处，改尺寸改这两个常量。
-            let bounds = gpui::Bounds::centered(
-                None,
-                gpui::size(px(WINDOW_W_MIN), px(WINDOW_H_MIN)),
-                cx,
-            );
+            // 还原尺寸（WINDOW_W/H）与最小尺寸（WINDOW_W/H_MIN）分开：
+            // 宽度同值（还原宽就是最小宽），高度允许再矮 160px。
+            let bounds = gpui::Bounds::centered(None, gpui::size(px(WINDOW_W), px(WINDOW_H)), cx);
             let window_bounds = gpui::WindowBounds::Windowed(bounds);
             let automation_chat: std::sync::OnceLock<gpui::WeakEntity<Chat>> =
                 std::sync::OnceLock::new();
             let window_handle = cx.open_window(
                 WindowOptions {
                     window_bounds: Some(window_bounds),
-                    // 最小尺寸 = 还原尺寸（逻辑像素，gpui 按 scale_factor 换算后
-                    // 交给 WM_GETMINMAXINFO）
+                    // 最小尺寸（逻辑像素，gpui 按 scale_factor 换算后交给
+                    // WM_GETMINMAXINFO）：宽同还原宽、高超矮一档
                     window_min_size: Some(gpui::size(px(WINDOW_W_MIN), px(WINDOW_H_MIN))),
                     titlebar: Some(gpui::TitlebarOptions {
                         title: Some("pi-flash".into()),
