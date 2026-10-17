@@ -766,8 +766,11 @@ pub fn load_window_days() -> u64 {
 pub const TAIL_PRELOAD: usize = 10;
 
 /// v54 其他: startup restore toggle (default off).
+/// 启动恢复开关：on = 落最近活动项目并**直接加载**该项目最后会话；
+/// off = 落同一项目但停在新会话页（项目记忆与开关无关，恒生效）。
+/// 默认 on（「启动恢复最后会话」是默认体验；显式关过的用户保留其设置）。
 pub fn startup_restore() -> bool {
-    app_settings().restore.unwrap_or(false)
+    app_settings().restore.unwrap_or(true)
 }
 
 /// 其他页: 各项目默认显示的会话数量（psp 初始页大小，3-10，默认 10）。

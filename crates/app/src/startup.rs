@@ -427,6 +427,42 @@ mod tests {
         // 幂等
         assert!(!merge_commands(&mut g, &rpc));
     }
+    /// 010 落点内核：项目聚合取活动最大者 + 同项目多拼写合并 + 会话取最新。
+    #[test]
+    fn pick_recent_prefers_latest_activity_across_projects() {
+        let p = |s: &str| std::path::PathBuf::from(s);
+        let sess = |s: &str| Some((1_500, p(s)));
+
+        // 只有注册表记录（选完项目没聊过）：仍记住该项目，无会话
+        let only_record = pick_recent(vec![(p("D:/a"), 1_000, None)]);
+        assert_eq!(only_record, Some((p("D:/a"), None)));
+
+        // 项目打开很久、但在其中聊过（会话 mtime 新）→ 该项目胜出
+        let chat_later = pick_recent(vec![
+            (p("D:/old"), 9_000, None),
+            (p("D:/old"), 1_500, sess("D:/old/s1.jsonl")),
+            (p("D:/other"), 2_000, None),
+        ]);
+        assert_eq!(chat_later, Some((p("D:/old"), Some(p("D:/old/s1.jsonl")))));
+
+        // 打开过新项目但立刻退出（无会话）→ 新项目胜出，无会话可恢复
+        let opened_last = pick_recent(vec![
+            (p("D:/worked"), 1_500, sess("D:/worked/s1.jsonl")),
+            (p("D:/opened"), 9_000, None),
+        ]);
+        assert_eq!(opened_last, Some((p("D:/opened"), None)));
+
+        // 同项目不同拼写合并（大小写/斜杠）：保留首次拼写，活动取最大
+        let merged = pick_recent(vec![
+            (p("D:/A"), 1_000, None),
+            (p("d:/a"), 3_000, None),
+            (p("D:/b"), 2_000, None),
+        ]);
+        assert_eq!(merged, Some((p("D:/A"), None)));
+
+        // 无候选 = 真首次运行
+        assert_eq!(pick_recent(Vec::new()), None);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -692,43 +728,121 @@ pub(crate) enum BootTarget {
     None,
 }
 
-/// 恢复目标判定（纯盘读，后台线程跑）：
-/// - `PI_FLASH_CWD` 显式覆盖优先（开发意图）：目录存在即进，其 per-project
-///   last_open 会话照常恢复；目录不存在按 None 处理，绝不兜底乱进；
-/// - 否则 `startup_restore=on` 时取全局 recents 最新会话——「最后工作的
-///   session」，其所属项目随之成为 cwd；跳过项目目录已删 / 落在应用自有
-///   目录（历史污染会话）的条目；
-/// - 其余 → None（无项目态）。
+/// 毫秒时间戳（会话 mtime → 排序用）。
+fn ms_of(t: std::time::SystemTime) -> i64 {
+    t.duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// 最近活动项目（010 重设计）：项目「打开时刻」∪ 该项目会话最新活动，按
+/// ws_key 聚合取最大，返回 (cwd, 该项目最新会话)。
+///
+/// 这是 **cwd 的唯一来源**（除 PI_FLASH_CWD 开发覆盖）：项目记忆与
+/// `startup_restore` 开关解耦——只是「打开过项目 / 聊过天」就足以在下次
+/// 启动落回该目录；restore 开关仅决定要不要连会话一起加载。目录已删或
+/// 落在应用自有目录（历史污染）的候选跳过。
+fn recent_project() -> Option<(PathBuf, Option<PathBuf>)> {
+    let mut cands: Vec<(PathBuf, i64, Option<(i64, PathBuf)>)> = Vec::new();
+
+    // ① 项目注册表（打开项目即注册）：零会话也记住
+    for r in pi_link::projects::project_records() {
+        if !r.path.is_dir() || pi_link::paths::is_app_install_path(&r.path) {
+            continue;
+        }
+        cands.push((r.path, r.last_opened_ms, None));
+    }
+
+    // ② 会话活动（recents 前 32 条）：真正「最后工作」的证据
+    for s in pi_link::sessions::sessions_for_paths(&pi_link::recents::top_session_paths(32)) {
+        let cwd = PathBuf::from(&s.cwd);
+        if !cwd.is_dir() || pi_link::paths::is_app_install_path(&cwd) {
+            continue;
+        }
+        let at = ms_of(s.modified);
+        cands.push((cwd, at, Some((at, s.path.clone()))));
+    }
+
+    pick_recent(cands)
+}
+
+/// 纯内核（测试入口）：候选 (cwd, 活动时刻, 该项目最近会话) 按 ws_key 聚合，
+/// 取活动最大者的项目与其最新会话。None = 无候选。
+fn pick_recent(
+    cands: Vec<(PathBuf, i64, Option<(i64, PathBuf)>)>,
+) -> Option<(PathBuf, Option<PathBuf>)> {
+    use crate::services::workspace::same_ws_key;
+    let mut order: Vec<String> = Vec::new();
+    let mut agg: std::collections::HashMap<String, (PathBuf, i64, Option<(i64, PathBuf)>)> =
+        std::collections::HashMap::new();
+    for (cwd, at, session) in cands {
+        let key = same_ws_key(&cwd.to_string_lossy());
+        let e = agg.entry(key.clone()).or_insert_with(|| {
+            order.push(key.clone());
+            (cwd.clone(), i64::MIN, None)
+        });
+        e.1 = e.1.max(at);
+        if let Some((sm, sp)) = session
+            && e.2.as_ref().map(|(m, _)| sm > *m).unwrap_or(true)
+        {
+            e.2 = Some((sm, sp));
+        }
+    }
+    order
+        .into_iter()
+        .filter_map(|k| agg.remove(&k))
+        .max_by_key(|(_, at, _)| *at)
+        .map(|(cwd, _, session)| (cwd, session.map(|(_, p)| p)))
+}
+
+/// 启动落点判定（纯盘读，后台线程跑）。优先级（010 重设计）：
+///
+/// 1. `PI_FLASH_CWD` 显式覆盖（开发意图）：目录存在即进，restore=on 时附带
+///    该项目的 per-project last_open（目录不存在不兜底，直接无项目态）；
+/// 2. **restore=on：全局最后工作的会话优先**——其所属项目随之成为 cwd
+///    （即使用户之后只是"打开过"别的项目没聊，也仍回到真正在聊的那个）；
+/// 3. 落最近活动项目（[`recent_project`]）：restore=on 但无可恢复会话时，
+///    或 restore=off 时（off = 停在**新会话页**，不加载旧会话）；
+/// 4. 真的没有任何项目记录（首次运行）→ None（无项目态）。
 fn boot_target() -> BootTarget {
-    if let Ok(cwd) = std::env::var("PI_FLASH_CWD") {
-        let cwd = PathBuf::from(cwd);
+    let restore = crate::services::workspace::startup_restore();
+
+    // ① 开发覆盖
+    if let Ok(raw) = std::env::var("PI_FLASH_CWD") {
+        let cwd = PathBuf::from(raw);
         if !cwd.is_dir() {
             return BootTarget::None;
         }
-        let session = crate::services::workspace::startup_restore()
+        let session = restore
             .then(|| crate::services::workspace::get_last_open(&cwd.to_string_lossy()))
             .flatten()
             .map(PathBuf::from)
             .filter(|p| p.exists());
         return BootTarget::Project { cwd, session };
     }
-    if !crate::services::workspace::startup_restore() {
-        return BootTarget::None;
-    }
-    for path in pi_link::recents::top_session_paths(16) {
-        let Some(info) = pi_link::sessions::sessions_for_paths(std::slice::from_ref(&path))
-            .into_iter()
-            .next()
-        else {
-            continue;
-        };
-        let cwd = PathBuf::from(info.cwd);
-        if !cwd.is_dir() || pi_link::paths::is_app_install_path(&cwd) {
-            continue;
+
+    // ② restore=on：最后工作的会话优先（会话所属项目 = cwd）
+    if restore {
+        for path in pi_link::recents::top_session_paths(8) {
+            let Some(info) = pi_link::sessions::sessions_for_paths(std::slice::from_ref(&path))
+                .into_iter()
+                .next()
+            else {
+                continue;
+            };
+            let cwd = PathBuf::from(&info.cwd);
+            if !cwd.is_dir() || pi_link::paths::is_app_install_path(&cwd) {
+                continue;
+            }
+            return BootTarget::Project { cwd, session: Some(path) };
         }
-        return BootTarget::Project { cwd, session: Some(path) };
     }
-    BootTarget::None
+
+    // ③ 最近活动项目：restore=on 无会话可恢复 / restore=off → 该项目新会话页
+    match recent_project() {
+        Some((cwd, _)) => BootTarget::Project { cwd, session: None },
+        None => BootTarget::None,
+    }
 }
 
 /// 启动恢复 + 会话清单装载（010 重设计，原 spawn_session_list_load）：
@@ -761,11 +875,11 @@ pub(crate) fn spawn_boot_restore(cx: &mut gpui::Context<Chat>) {
                     chat.reload_model_defaults();
                     match session {
                         Some(path) => chat.open_session(path, false, cx),
-                        // 项目在、会话无从恢复：新草稿（进程懒 spawn，闸门
-                        // 不等附着，boot_resolved 直接放行）
+                        // 项目在、会话无从恢复（restore=off 或不存）：落新会话页。
+                        // 用 boot_new_session：启动不抹 per-project 会话记忆
                         None => {
                             chat.pool.boot_resolved = true;
-                            chat.new_session(cx);
+                            chat.boot_new_session(cx);
                         }
                     }
                 }
@@ -855,4 +969,6 @@ pub(crate) fn spawn_boot_restore(cx: &mut gpui::Context<Chat>) {
         });
     })
     .detach();
+
+
 }

@@ -246,7 +246,19 @@ impl Chat {
 }
 
 impl Chat {
+    /// 新会话草稿（用户显式新建：psp ＋、新建按钮、删会话后归位）。
+    /// `clear_last_open` 跟在这里：用户明确要空白会话 ⇒ 该项目不再恢复旧会话。
     pub(crate) fn new_session(&mut self, cx: &mut Context<Self>) {
+        self.new_session_with(cx, true);
+    }
+
+    /// 启动落草稿（restore=off / 该项目无会话）：**不清 per-project 会话
+    /// 记忆**——旧会话还在盘上，下次开 restore 仍应能直接加载（010）。
+    pub(crate) fn boot_new_session(&mut self, cx: &mut Context<Self>) {
+        self.new_session_with(cx, false);
+    }
+
+    fn new_session_with(&mut self, cx: &mut Context<Self>, clear_memory: bool) {
         // 无项目态防御：new_session 只在有项目的上下文被调（composer 发送
         // 已在 send 门处先要目录；切项目/恢复路径 cwd 已就位）
         let Some(cwd) = self.ws.cwd.clone() else { return };
@@ -262,7 +274,9 @@ impl Chat {
         });
         self.pool.runtimes.insert(key, rt.clone());
         self.subscribe_runtime(&rt, cx);
-        clear_last_open(&cwd.to_string_lossy());
+        if clear_memory {
+            clear_last_open(&cwd.to_string_lossy());
+        }
         self.dlg.renaming = None;
         self.dlg.rename_input = None;
         self.switch_to(rt, cx);
