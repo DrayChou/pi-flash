@@ -368,8 +368,14 @@ impl Render for TextInput {
         }
         if self.want_focus {
             self.want_focus = false;
-            let fh = state.read(cx).focus_handle(cx);
-            window.focus(&fh);
+            // vendor InputState::focus：句柄聚焦 + 光标 blink 同帧启动。
+            // 裸 window.focus 会踩 gpui 订阅激活时序：on_focus 监听在
+            // SubscriberSet 里以 active=false 插入、cx.defer 才激活，
+            // retain 派发跳过未激活者——「建内件当帧 focus」的首发路径
+            // 必错过同帧 Focus 相位的 focus-in，blink.visible 恒 false，
+            // 新建/改名行光标不闪、直到首个键入 pause() 强制可见
+            //（pif-ui 三连 shot 字节不变复现，键入后即刻恢复）
+            state.update(cx, |st, scx| st.focus(window, scx));
         }
 
         let t = T();
