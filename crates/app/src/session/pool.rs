@@ -321,7 +321,7 @@ impl Chat {
         let cwd = rt.read(cx).cwd.clone();
         if !same_ws(&cwd.to_string_lossy(), &self.ws.cwd.to_string_lossy()) {
             self.ws.cwd = cwd;
-            self.remount_workspace();
+            self.remount_workspace(cx);
         }
         self.switch_to(rt, cx);
     }
@@ -329,7 +329,7 @@ impl Chat {
     /// 跨项目切换的工作区重挂（cwd 已由调用方写入 self.ws.cwd）：树根/
     /// git/文件树/fs watcher/cwd 外单文件监听全套跟着新 cwd 重建。
     /// open_session 的池命中与新运行时两条路径共用。
-    pub(crate) fn remount_workspace(&mut self) {
+    pub(crate) fn remount_workspace(&mut self, cx: &mut Context<Self>) {
         self.ws.branch = read_branch(&self.ws.cwd);
         self.ws.expanded_dirs.clear();
         // 文件树：根项目行默认展开
@@ -345,9 +345,12 @@ impl Chat {
         }
         self.refresh_sessions();
         self.load_project_files();
+        // 9rk0：refresh_git 的 rebuild_tree 随数据后台换入（~150ms），这里先
+        // 用空 git 数据同步展平新 cwd 的树，否则换项目瞬间文件树残留旧项目
+        self.rebuild_tree();
         // 换工作区：git 状态/树缓存/fs watcher 全部跟着 cwd 重挂
         //（此前这里漏 refresh_git，git 面板会显示上一个项目的状态）
-        self.refresh_git();
+        self.refresh_git(cx);
         self.attach_fs_watch();
         // cwd 变了：cwd 外单文件监听面跟着重算（对齐 switch_project）
         self.retain_file_watches();
@@ -411,7 +414,7 @@ impl Chat {
         rt.update(cx, |r, cx| r.load_disk_msg_count(cx));
         if !same_ws(&cwd.to_string_lossy(), &self.ws.cwd.to_string_lossy()) {
             self.ws.cwd = cwd;
-            self.remount_workspace();
+            self.remount_workspace(cx);
         }
         set_last_open(&self.ws.cwd.to_string_lossy(), &path.to_string_lossy());
         self.dlg.renaming = None;
@@ -585,7 +588,9 @@ impl Chat {
         self.ws.expanded_dirs.clear();
         // 文件树：根项目行默认展开
         self.ws.expanded_dirs.insert(self.ws.cwd.clone());
-        self.refresh_git();
+        // 9rk0：同 remount_workspace——树先同步展平，git 标记随后台数据换入
+        self.rebuild_tree();
+        self.refresh_git(cx);
         self.load_project_files();
         self.attach_fs_watch();
         // cwd 变了：cwd 外单文件监听面跟着重算（旧 cwd 下的文件现在要单挂）

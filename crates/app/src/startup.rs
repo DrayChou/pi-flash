@@ -487,7 +487,7 @@ fn spawn_fs_watch_pump(cx: &mut gpui::Context<Chat>) {
             }
             let ok = this
                 .update(cx, |chat, cx| {
-                    chat.refresh_git();
+                    chat.refresh_git(cx);
                     // 023：同一信号顺带做打开文件的外部改动检测
                     //（无未保存修改自动重载；有修改标冲突等用户裁决）
                     chat.check_external_file_changes(cx);

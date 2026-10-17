@@ -405,6 +405,11 @@ pub(crate) struct WsUi {
     // git panel
     pub(crate) git_files: Vec<GitFile>,
     pub(crate) git_add_del: (u64, u64),
+    /// refresh_git（9rk0 后台化）的请求序号：后台结果落地时校验仍是最新
+    /// 一次请求，陈旧结果作废
+    pub(crate) git_refresh_gen: u64,
+    /// git_files 是哪个 cwd 的数据（9rk0 后台化换入窗口里防串项目）
+    pub(crate) git_files_cwd: PathBuf,
     pub(crate) git_selected: Option<PathBuf>,
     pub(crate) git_tab: function_panel::git_panel::GitTab,
     pub(crate) git_log: Vec<GitCommit>,
@@ -512,6 +517,8 @@ impl Chat {
                 git_log: Vec::new(),
                 git_error: None,
                 git_add_del: (0, 0),
+                git_refresh_gen: 0,
+                git_files_cwd: PathBuf::new(),
                 md_preview_scrollbar: gpui_component::scroll::ScrollbarState::default(),
                 md_preview_list: gpui::ListState::new(0, gpui::ListAlignment::Top, px(1000.)),
                 md_preview_list_path: None,
@@ -705,7 +712,7 @@ impl Chat {
         chat.load_project_files();
         // 文件树：根项目行默认展开
         chat.ws.expanded_dirs.insert(chat.ws.cwd.clone());
-        chat.refresh_git();
+        chat.refresh_git(cx);
 
         // settings panel CLI op pump (pi install/remove runs in background)
         let (op_tx, mut op_rx) = futures::channel::mpsc::unbounded::<String>();

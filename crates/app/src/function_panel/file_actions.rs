@@ -545,7 +545,7 @@ impl Chat {
                     self.ws.expanded_dirs.insert(p.clone());
                     anc = p.parent().map(|q| q.to_path_buf());
                 }
-                self.refresh_git();
+                self.refresh_git(cx);
                 // Zed auto_open：新建的文件随即打开（目录不打开）
                 if !is_dir {
                     self.open_file_tab(target, cx);
@@ -594,7 +594,7 @@ impl Chat {
         }
         // 打开面重映射：tab 与缓冲持旧路径的话跟上（目录改名 = 整棵前缀）
         self.remap_moved_entry(path, &target, is_dir);
-        self.refresh_git();
+        self.refresh_git(cx);
         // 改名成功静默（同新建/删除：成功不提示，失败才提示）
         cx.notify();
     }
@@ -690,7 +690,7 @@ impl Chat {
             self.ws.expanded_dirs.insert(p.clone());
             anc = p.parent().map(|q| q.to_path_buf());
         }
-        self.refresh_git();
+        self.refresh_git(cx);
         // 移动成功静默（同改名：成功不提示，失败才提示）
         cx.notify();
     }
@@ -751,7 +751,7 @@ impl Chat {
                 if self.ws.pinned.len() != pins_before {
                     self.save_pins();
                 }
-                self.refresh_git();
+                self.refresh_git(cx);
                 // 删除成功静默（同创建：成功不提示，失败才弹）
                 cx.notify();
             }

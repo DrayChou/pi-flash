@@ -96,7 +96,7 @@ impl Chat {
     /// git/fs watcher/侧栏当前项目全套跟过去，活跃会话不动（切会话仍是
     /// 显式动作，也不写 last_workspace：启动落点只跟显式切项目）；两处都
     /// 不沾（附件类游离文件）则树不动。定位复用 reveal_tree_row。
-    pub(crate) fn sync_tree_to_file(&mut self, path: &Path) {
+    pub(crate) fn sync_tree_to_file(&mut self, path: &Path, cx: &mut gpui::Context<Self>) {
         if !services::workspace::is_under(path, &self.ws.cwd) {
             let root = self
                 .psp
@@ -109,7 +109,7 @@ impl Chat {
                 return;
             };
             self.ws.cwd = root;
-            self.remount_workspace();
+            self.remount_workspace(cx);
         }
         self.ws.tree_selected = Some(path.to_path_buf());
         self.reveal_tree_row(path);
@@ -173,7 +173,7 @@ impl Chat {
             // 旧项目的选中条目不再成立（F2/高亮都按行存在性复核，残留无害，
             // 这里清掉是为了下拉切走再切回来不闪旧高亮）
             self.ws.tree_selected = None;
-            self.remount_workspace();
+            self.remount_workspace(cx);
         }
         cx.notify();
     }

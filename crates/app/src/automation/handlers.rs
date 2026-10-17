@@ -453,14 +453,14 @@ pub(super) fn dispatch(
         method::GIT_STAGE => {
             let r = git_stage_op(chat, params, true);
             chat.ws.git_error = r.err();
-            chat.refresh_git();
+            chat.refresh_git(cx);
             cx.notify();
             ok()
         }
         method::GIT_UNSTAGE => {
             let r = git_stage_op(chat, params, false);
             chat.ws.git_error = r.err();
-            chat.refresh_git();
+            chat.refresh_git(cx);
             cx.notify();
             ok()
         }
@@ -475,7 +475,7 @@ pub(super) fn dispatch(
             Ok(json!({"ok": true, "note": "推送异步进行，git 面看 error 字段"}))
         }
         method::GIT_REFRESH => {
-            chat.refresh_git();
+            chat.refresh_git(cx);
             cx.notify();
             ok()
         }

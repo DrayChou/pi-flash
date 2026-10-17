@@ -504,7 +504,7 @@ impl Chat {
         // 文件/键盘切 tab/关标签回退都经这里，语义 = 激活的文件标签就是
         // 树的当前项目）
         if let Some(crate::PanelTab::File(p)) = self.ws.panel_tabs.get(ix).cloned() {
-            self.sync_tree_to_file(&p);
+            self.sync_tree_to_file(&p, cx);
         }
         cx.notify();
     }

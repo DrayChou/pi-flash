@@ -255,7 +255,7 @@ fn changes_body(
                         .on_mouse_down(MouseButton::Left, cx.listener(
                             |this, _: &gpui::MouseDownEvent, _w, cx| {
                                 this.ws.git_error = git::git_stage_all(&this.ws.cwd).err();
-                                this.refresh_git();
+                                this.refresh_git(cx);
                                 cx.notify();
                             },
                         ))
@@ -378,7 +378,7 @@ fn changes_body(
                                         match git::git_uncommit(&this.ws.cwd) {
                                             Ok(()) => {
                                                 this.ws.git_error = None;
-                                                this.refresh_git();
+                                                this.refresh_git(cx);
                                                 this.refresh_git_log();
                                             }
                                             Err(e) => this.ws.git_error = Some(e),
@@ -639,7 +639,7 @@ impl Chat {
             git::git_stage(&self.ws.cwd, &path)
         };
         self.ws.git_error = r.err();
-        self.refresh_git();
+        self.refresh_git(cx);
         cx.notify();
     }
 
@@ -649,7 +649,7 @@ impl Chat {
             Ok(()) => {
                 self.ws.git_error = None;
                 self.ws.git_commit_input.update(cx, |ti, cx| ti.set_value(String::new(), cx));
-                self.refresh_git();
+                self.refresh_git(cx);
                 self.refresh_git_log();
             }
             Err(e) => self.ws.git_error = Some(e),
@@ -676,10 +676,39 @@ impl Chat {
 }
 
 impl Chat {
-    pub(crate) fn refresh_git(&mut self) {
-        self.ws.git_files = git_status_files(&self.ws.cwd);
-        self.ws.git_add_del = git_numstat(&self.ws.cwd);
-        self.rebuild_tree();
+    /// git status/numstat 查询（pi-flash-9rk0：git 后台化，它本来就不是
+    /// 主角）：两个同步 git 子进程（暖盘各 ~90ms）曾是切项目/启动主线程
+    /// 冻结的主体——后台跑完换入，面板数据晚 ~150ms 无感。请求序号 + cwd
+    /// 双守卫：换项目或 fs watch 合批泵又发了一次刷新时，这次的陈旧结果
+    /// 直接作废（最后一次说了算）。换项目瞬间先清旧项目的 git 面，数据
+    /// 换入前不留上一个项目的痕迹。
+    pub(crate) fn refresh_git(&mut self, cx: &mut Context<Self>) {
+        self.ws.git_refresh_gen += 1;
+        let seq = self.ws.git_refresh_gen;
+        let cwd = self.ws.cwd.clone();
+        if self.ws.git_files_cwd != cwd {
+            self.ws.git_files_cwd = cwd.clone();
+            self.ws.git_files.clear();
+            self.ws.git_add_del = (0, 0);
+        }
+        let cwd_bg = cwd.clone();
+        cx.spawn(async move |this, cx| {
+            let (files, add_del) = cx
+                .background_spawn(async move {
+                    (git_status_files(&cwd_bg), git_numstat(&cwd_bg))
+                })
+                .await;
+            let _ = this.update(cx, |chat, cx| {
+                if chat.ws.git_refresh_gen != seq || chat.ws.cwd != cwd {
+                    return;
+                }
+                chat.ws.git_files = files;
+                chat.ws.git_add_del = add_del;
+                chat.rebuild_tree();
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
 }
