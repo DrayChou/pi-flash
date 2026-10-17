@@ -261,10 +261,18 @@ pub fn get_last_open(cwd: &str) -> Option<String> {
 /// 不动。返回清除键数（0 = 干净 / 无从判定）。
 pub fn purge_app_install_memory() -> usize {
     let mut map = memory();
-    purge_app_paths_in_map(&mut map, pi_link::paths::current_install_root().as_deref())
+    let removed =
+        purge_app_paths_in_map(&mut map, pi_link::paths::current_install_root().as_deref());
+    if removed > 0 {
+        set_memory(&map);
+    }
+    removed
 }
 
-/// 纯内核（root 显式注入便于测试）：见 [`purge_app_install_memory`]。
+/// 纯内核（root 显式注入便于测试）：只改传入 map，**绝不碰全局缓存/落盘**
+/// ——落盘职责归调用方。此前 removed>0 时顺手 set_memory，purge 测试的
+/// 夹具 map 经此整表写穿真实 workspace.json（pins/布局/各项目记忆全冲掉，
+/// 裸跑 `cargo test -p app` 每次复发，2026-10-18 实锤）。
 fn purge_app_paths_in_map(
     map: &mut serde_json::Map<String, Value>,
     root: Option<&Path>,
@@ -284,11 +292,7 @@ fn purge_app_paths_in_map(
             !is_app_install_path_at(Path::new(k), root)
         }
     });
-    let removed = before - map.len();
-    if removed > 0 {
-        set_memory(map);
-    }
-    removed
+    before - map.len()
 }
 
 // ---------------------------------------------------------------------------

@@ -108,11 +108,13 @@ impl Chat {
 
     /// 文件标签激活时的树同步（PF 与 Zed 的分歧点：Zed 多 worktree 面板挂
     /// 多根，PF 单根树跟随激活标签）：文件在当前项目内只定位选中；属于已知
-    /// 其它项目（psp.projects，含当前 cwd 的 0 会话组）则改写 cwd 走
-    /// remount_workspace 重挂——switch_pool_rt 跨项目先例同款，树根/branch/
-    /// git/fs watcher/侧栏当前项目全套跟过去，活跃会话不动（切会话仍是
-    /// 显式动作，也不写 last_workspace：启动落点只跟显式切项目）；两处都
-    /// 不沾（附件类游离文件）则树不动。定位复用 reveal_tree_row。
+    /// 其它项目（psp.projects，含当前 cwd 的 0 会话组）则走 **switch_project
+    /// 完整切项目**。单一语义（2026-10-18 定案）：当前项目 ≡ 活跃会话的项目，
+    /// 树/会话列表/composer 发送目标三边恒同步——「只改 cwd 不动活跃会话」
+    /// 的旧语义已废除（实测事故：树切到 pi-flash 后发消息，会话落在启动时的
+    /// 旧项目，列表上「消失」）。内容视图保持不动：用户正看着这个文件，不能
+    /// 被 switch_to 的回 chat 前台拽走。两处都不沾（附件类游离文件）则树不
+    /// 动。定位复用 reveal_tree_row。
     pub(crate) fn sync_tree_to_file(&mut self, path: &Path, cx: &mut gpui::Context<Self>) {
         let under_current = self
             .ws
@@ -130,8 +132,11 @@ impl Chat {
             let Some(root) = root else {
                 return;
             };
-            self.ws.cwd = Some(root);
-            self.remount_workspace(cx);
+            let view = self.layout.content_view;
+            self.switch_project(root, cx);
+            if self.layout.content_view != view {
+                self.set_content_view(view);
+            }
         }
         self.ws.tree_selected = Some(path.to_path_buf());
         self.reveal_tree_row(path);
@@ -184,10 +189,12 @@ impl Chat {
         self.tree_proj_menu_pick(sel, cx);
     }
 
-    /// 点击行 / Enter 共用：切树的项目并收下拉。切换 = sync_tree_to_file
-    /// 跨项目同款（只改写 cwd 走 remount_workspace：树根/branch/git/fs
-    /// watcher/侧栏当前项目全套跟过去；活跃会话不动——切会话仍是显式
-    /// 动作，也不写 last_workspace：启动落点只跟显式切项目）。
+    /// 点击行 / Enter 共用：切树的项目并收下拉。切换 = **switch_project 完整
+    /// 切项目**（单一语义 2026-10-18：当前项目 ≡ 活跃会话的项目，该项目恢复
+    /// 上次会话或落新草稿，注意力跟过去；树根/branch/git/fs watcher/侧栏
+    /// 当前项目随之重挂）。「只改 cwd 不动活跃会话」的旧语义已废除——不然
+    /// composer 还连着旧项目的草稿，发消息会落错项目（2026-10-18 实测事故）。
+    /// 内容视图保持不动：用户可能停在终端/文件上，不被拽走。
     pub(crate) fn tree_proj_menu_pick(&mut self, ix: usize, cx: &mut gpui::Context<Self>) {
         self.dlg.tree_proj_menu = None;
         let Some(g) = self.psp.projects.get(ix) else {
@@ -200,11 +207,14 @@ impl Chat {
             .as_deref()
             .is_some_and(|cur| same_ws(&path.to_string_lossy(), &cur.to_string_lossy()));
         if !cur_same {
-            self.ws.cwd = Some(path);
+            let view = self.layout.content_view;
+            self.switch_project(path, cx);
+            if self.layout.content_view != view {
+                self.set_content_view(view);
+            }
             // 旧项目的选中条目不再成立（F2/高亮都按行存在性复核，残留无害，
             // 这里清掉是为了下拉切走再切回来不闪旧高亮）
             self.ws.tree_selected = None;
-            self.remount_workspace(cx);
         }
         cx.notify();
     }

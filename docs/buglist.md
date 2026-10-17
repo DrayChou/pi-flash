@@ -1,3 +1,46 @@
+## 待验证（本轮修复）——树/标签切项目后发消息，会话落在旧项目、列表上「消失」
+
+用户口径：打开 PF 起会话查 pin 失忆问题，会话从 pi-flash 列表里消失；观宏知微
+组里也没有。实证：会话 01a14bee 完好落在观宏知微组（header cwd=观宏知微），
+第三条消息「你是不是混乱了，我在说pf」即症状——agent 在错误目录下跑。
+
+- ✅ 根因（双语义分叉）：项目有两个真相——界面处处显示 `ws.cwd`（树根/psp
+  高亮/新会话页标签），composer 发送却跟 `pool.active_key` 的 runtime cwd。
+  `sync_tree_to_file` / 树标题下拉切项目时「只改 cwd 不动活跃会话」（注释还
+  当优点），启动时落在旧项目的草稿继续接收发送 → 新会话绑到旧项目。四个
+  去处全落空 → 列表隐形：当前组 `same_ws` 滤掉它；家组沿用启动时缓存
+  （refresh_sessions 只重扫当前 cwd）没它；active_file 兜底只在当前 cwd 扫
+  描结果里找；伪标签 FileBound 时按设计退役。
+- ✅ 修法（单一语义，用户定案「cwd 就是活跃项目，不存在两个语义」）：
+  ① `sync_tree_to_file` / `tree_proj_menu_pick` 改走完整 `switch_project`
+  （恢复该项目上次会话或落新草稿，注意力跟过去），废除「活跃会话不动」；
+  内容视图保存/恢复，用户正看的文件/终端不被拽走；② `send_input` 加不变量
+  兑底：活跃会话 cwd ≠ ws.cwd 且有内容时，按 010 send 门同款（pending_send
+  → 以当前项目落新草稿回填），理论不可达、失败方向安全。
+- ✅ 验证：app 300 + pi-link 146 测试全绿。pif-ui 隔离实例双路径断言：
+  B 中 `file.open` A 文件 → cwd=A 且活跃 draft 换成 A 的、view=file 保持；
+  树标题下拉 down+enter 切 B → cwd=B、活跃 draft=B。
+
+## 待验证（本轮修复）——pin/布局/项目记忆集体失忆（真凶：测试夹具写穿真实配置）
+
+用户口径：升版本后 pin 被清空。实证与升级无关：`~/.pi-flash/workspace.json`
+被测试夹具整表替换（只剩 `{pi_work: keep.jsonl, __window:{max}, __tree:
+temp\pi-flash-ws-test-*}`——purge 测试与 tree_state 测试夹具的联合会），
+06:29:00（agent 跑全量测试窗口正中）刚被冲过一次，文件里留着两代测试进程
+pid 指纹（9848/10420）。
+
+- ✅ 根因：`purge_app_paths_in_map` 注释写「纯内核」却在 removed>0 时调
+  **全局 `set_memory`**。不带 `PI_FLASH_DIR` 裸跑 `cargo test -p app` 时，
+  `purge_app_memory_drops_poisoned_keys_only` 的局部夹具 map 经此整表写进
+  真实 workspace.json（冲掉 `__pins`/各项目 `__last`/`__ui`/`__window`），
+  后续 `tree_state_default_is_not_stored` 的全局 `save_tree_state` 在夹具
+  上 merge——每次裸跑测试都复发。
+- ✅ 修法：内核真纯化（只改传入 map，落盘职责归调用方），
+  `purge_app_install_memory` 在 removed>0 时才 `set_memory`。
+- ✅ 验证：app 300 测试全绿（含原 purge 测试，改后不再写全局）。
+  被冲掉的 pins 无备份（原子写 tmp+rename），救不回；运行中的 PF 内存缓存
+  完好，正常退出会把布局键写回大半。
+
 ## 待验证（本轮修复）——agent 工作时排队发送的内容隔几分钟后「重复发送」
 
 用户口径：agent 在跑时排队发了「新theme叫紫罗兰」，接着又发了带补充的
