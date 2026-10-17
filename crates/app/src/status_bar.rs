@@ -7,7 +7,7 @@
 use gpui::{MouseButton, div, prelude::*, px, rgb};
 
 use crate::Chat;
-use crate::services::workspace::{save_ui_state, ui_state};
+use crate::services::workspace::{dock_max_from_min, save_ui_state, ui_state};
 use crate::appearance::theme::theme as T;
 use crate::ui::tokens::align;
 
@@ -115,6 +115,12 @@ impl Chat {
         st.tree_changes_only = self.ws.changes_only;
         // 020 项目用户排序：拖过才有序列，没拖过存空表（读回 = None）
         st.proj_order = self.psp.proj_order.clone().unwrap_or_default();
+        // 020-1 dock 最大化态（映射见 services::workspace::dock_max_from_min）
+        st.dock_max = dock_max_from_min(
+            self.layout.sess_min,
+            self.layout.files_min,
+        )
+        .to_string();
         save_ui_state(&st);
         // 文件树状态（展开集合 + Pin 视图）跟着 UI 持久化时机落盘：关窗/退出
         self.archive_tree_state();

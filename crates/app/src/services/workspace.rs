@@ -327,6 +327,9 @@ pub struct UiState {
     /// 020 项目用户排序（psp 项目组 ws_key 有序表，拖拽落位产物）；空 =
     /// 无记录（列表用首建活动序）
     pub proj_order: Vec<String>,
+    /// 020-1 dock 最大化：「none」|「files」|「sessions」——文件树/会话列表
+    /// 最大化后关闭窗口，重启要还在该子面板最大化态（用户报障 2026-10-17）
+    pub dock_max: String,
 }
 
 impl Default for UiState {
@@ -339,6 +342,7 @@ impl Default for UiState {
             sort_mode: "time".into(),
             collapsed: Vec::new(),
             tree_changes_only: false,
+            dock_max: "none".into(),
             dock_split: None,
             proj_order: Vec::new(),
         }
@@ -406,6 +410,36 @@ pub fn ui_state() -> UiState {
                     .collect()
             })
             .unwrap_or_default(),
+        dock_max: v
+            .get("dock_max")
+            .and_then(|s| s.as_str())
+            .filter(|s| matches!(*s, "files" | "sessions"))
+            .unwrap_or("none")
+            .to_string(),
+    }
+}
+
+/// dock 最大化态 ↔ layout 两标志的**唯一映射**（两端共用，防漂移）。
+///
+/// 语义陷阱：`sess_min` / `files_min` 表示该面板**最小化**（收缩成控制栏），
+/// 所以「文件树最大化」= `sess_min`。持久化字段 `dock_max` 反过来按
+/// 「哪个面板最大化」取名，更直观。
+pub fn dock_max_from_min(sess_min: bool, files_min: bool) -> &'static str {
+    if sess_min {
+        "files"
+    } else if files_min {
+        "sessions"
+    } else {
+        "none"
+    }
+}
+
+/// [`dock_max_from_min`] 的反向：`dock_max` → (sess_min, files_min)。
+pub fn min_from_dock_max(dock_max: &str) -> (bool, bool) {
+    match dock_max {
+        "files" => (true, false),
+        "sessions" => (false, true),
+        _ => (false, false),
     }
 }
 
@@ -419,6 +453,7 @@ pub fn save_ui_state(s: &UiState) {
             "tree_changes_only": s.tree_changes_only,
             "dock_split": s.dock_split,
             "proj_order": s.proj_order,
+            "dock_max": s.dock_max,
         }),
     );
     set_memory(&map);
@@ -1089,6 +1124,18 @@ mod tests {
         assert_eq!(st.expanded, vec![String::new(), "src".to_string()]);
         assert!(st.pin);
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// dock 最大化映射：`*_min` = 最小化，所以「文件树最大化」= sess_min。
+    #[test]
+    fn dock_max_mapping_roundtrips() {
+        for (sess_min, files_min) in [(false, false), (true, false), (false, true)] {
+            let dm = dock_max_from_min(sess_min, files_min);
+            assert_eq!(min_from_dock_max(dm), (sess_min, files_min), "dm={dm}");
+        }
+        assert_eq!(dock_max_from_min(true, false), "files", "文件树最大化");
+        assert_eq!(dock_max_from_min(false, true), "sessions", "会话列表最大化");
+        assert_eq!(min_from_dock_max("garbage"), (false, false), "坏值回落常态");
     }
 
     #[test]

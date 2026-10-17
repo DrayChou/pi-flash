@@ -568,11 +568,14 @@ impl Render for Chat {
             .on_action(cx.listener(|this, _: &MaximizeSessionList, _window, cx| {
                 this.layout.files_min = true;
                 this.layout.sess_min = false;
+                // 最大化态立即落盘（重启还原）
+                this.persist_ui();
                 cx.notify();
             }))
             .on_action(cx.listener(|this, _: &MaximizeFileTree, _window, cx| {
                 this.layout.sess_min = true;
                 this.layout.files_min = false;
+                this.persist_ui();
                 cx.notify();
             }))
             // 082 四期视图切换 Ctrl+←/→ 分流（绑定见 main.rs：锚定

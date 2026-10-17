@@ -672,6 +672,8 @@ fn psp_ctrl_bar(
                     let _ = w_max.update(cx, |c, cx| {
                         c.layout.files_min = true;
                         c.layout.sess_min = false;
+                        // 最大化态立即落盘（不必等关窗，防异常退出丢失）
+                        c.persist_ui();
                         cx.notify();
                     });
                 })

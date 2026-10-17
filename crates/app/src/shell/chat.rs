@@ -516,8 +516,9 @@ impl Chat {
                 slp_drag: None,
                 slp_hover: false,
                 dock_split: ui.dock_split.unwrap_or(0.5),
-                sess_min: false,
-                files_min: false,
+                // dock_max = 哪个子面板最大化（映射见 workspace::min_from_dock_max）
+                sess_min: crate::services::workspace::min_from_dock_max(&ui.dock_max).0,
+                files_min: crate::services::workspace::min_from_dock_max(&ui.dock_max).1,
                 split_drag: false,
                 dock_bounds: std::rc::Rc::new(std::cell::RefCell::new(None)),
                 ft_title_bounds: std::rc::Rc::new(std::cell::RefCell::new(None)),

@@ -1083,6 +1083,8 @@ fn action_bar(
                             // 020-1 单最大化钮：本面板填满，会话列表收起到控制栏
                             c.layout.sess_min = true;
                             c.layout.files_min = false;
+                            // 最大化态立即落盘（用户报障：最大化后关闭重启丢失）
+                            c.persist_ui();
                             cx.notify();
                         });
                     },
