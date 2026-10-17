@@ -12,11 +12,13 @@
   （refresh_sessions 只重扫当前 cwd）没它；active_file 兜底只在当前 cwd 扫
   描结果里找；伪标签 FileBound 时按设计退役。
 - ✅ 修法（单一语义，用户定案「cwd 就是活跃项目，不存在两个语义」）：
-  ① `sync_tree_to_file` / `tree_proj_menu_pick` 改走完整 `switch_project`
+  `sync_tree_to_file` / `tree_proj_menu_pick` 改走完整 `switch_project`
   （恢复该项目上次会话或落新草稿，注意力跟过去），废除「活跃会话不动」；
-  内容视图保存/恢复，用户正看的文件/终端不被拽走；② `send_input` 加不变量
-  兑底：活跃会话 cwd ≠ ws.cwd 且有内容时，按 010 send 门同款（pending_send
-  → 以当前项目落新草稿回填），理论不可达、失败方向安全。
+  内容视图保存/恢复，用户正看的文件/终端不被拽走。曾加过 send 门「cwd 不
+  一致则重落草稿」的兑底判断，随后核查全部 ws.cwd 写入点（switch_project/
+  open_session/switch_pool_rt/树侧两处）与注意力写入点（三者 + 空闲回收
+  跳过 active + 远程控制不切注意力）确认分叉不可达——判断本身即第二语义
+  残渣，已删：发送只认活跃会话，零第二判断。
 - ✅ 验证：app 300 + pi-link 146 测试全绿。pif-ui 隔离实例双路径断言：
   B 中 `file.open` A 文件 → cwd=A 且活跃 draft 换成 A 的、view=file 保持；
   树标题下拉 down+enter 切 B → cwd=B、活跃 draft=B。

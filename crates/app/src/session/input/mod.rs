@@ -153,24 +153,11 @@ impl Chat {
             self.open_project_picker(true, cx);
             return;
         }
-        // 单语义不变量兑底（2026-10-18 会话落错项目事故）：当前项目 ≡ 活跃
-        // 会话的项目。树/标签侧切换已改为完整 switch_project，这里理论不可
-        // 达；真被打破时宁可以当前项目落新草稿把话说出去，也绝不把消息
-        // 悄悄发进别的项目——错投比新开一个会话严重得多。
-        let rt_cwd = self.rt().read(cx).cwd.clone();
-        let has_content = !self.composer.input.trim().is_empty()
-            || !self.composer.pending_images.is_empty();
-        if has_content
-            && let Some(cur) = self.ws.cwd.clone()
-            && !services::workspace::same_path(&rt_cwd, &cur)
-        {
-            if self.dlg.pending_send.is_none() {
-                self.dlg.pending_send = Some(self.composer.input.clone());
-            }
-            self.new_session(cx);
-            self.flush_pending_send(cx);
-            return;
-        }
+        // 单一语义（2026-10-18 定案）：当前项目 ≡ 活跃会话的项目——全部
+        // ws.cwd 写入点（switch_project / open_session / switch_pool_rt /
+        // 树侧两处）都同步移动注意力，发送只认活跃会话，没有第二个判断
+        // 依据（曾加过「cwd 不一致则重落草稿」的兑底判断，核查全部路径后
+        // 确认分叉不可达，判断本身即第二语义残渣，已删）。
         self.with_active_editor(cx, |r, cx| r.send_input(cx));
     }
 
