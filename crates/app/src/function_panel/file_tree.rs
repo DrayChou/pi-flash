@@ -17,7 +17,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use gpui::{MouseButton, SharedString, UniformListDecoration, div, prelude::*, px, rgb};
+use gpui::{SharedString, UniformListDecoration, div, prelude::*, px, rgb};
 
 use crate::{Chat, i18n::tr, same_path};
 use crate::services::file_icons;
@@ -28,6 +28,7 @@ use crate::ui::{VListHeight, WithTip, icon_path, vlist};
 use crate::*;
 
 use super::file_tree_edit::{edit_chrome, edit_input_slot, tree_edit_row, validation_note};
+use super::file_tree_pins::pin_list_view;
 use super::file_tree_sticky::StickyAncestors;
 
 /// 行高（pi-web FileExplorer 24px 行）。
@@ -41,8 +42,6 @@ pub(crate) const CONTENT_PAD: f32 = 6.;
 const GUIDE_X: f32 = 13.;
 /// 文件树 vlist 的元素 id——sticky 点击「滚到目录」按同一 id 取句柄。
 pub(crate) const FILE_TREE_LIST_ID: &str = "file-tree";
-/// Pin 收藏夹视图 vlist 的元素 id（独立句柄，滚动位不与主树共享）。
-const PIN_LIST_ID: &str = "file-pins";
 
 impl Chat {
     /// 行内改名前置（Zed project_panel 语义）：沿途展开祖先目录 + 把改名
@@ -303,117 +302,6 @@ pub(crate) fn files_view(
     col.into_any_element()
 }
 
-/// Pin 收藏夹列表体（021 三改：与「只看变更」同级的独立面板，本质是
-/// 文件树过滤器）——收藏条目按名称字母序为根行（名称前置、路径淡化
-/// 后置），展开的目录下钻完整子树，行操作与文件树一致。几何与树分支
-/// 同款（pt4/px6/pb6 + scroll-wrap + 贴边滚动条），vlist 换独立 id
-/// 不与树共享滚动位；无 sticky 祖先链（收藏根 depth 0 无祖先）。
-fn pin_list_view(
-    chat: &Chat,
-    rows: Arc<Vec<TreeRow>>,
-    weak: &gpui::WeakEntity<Chat>,
-    cx: &mut gpui::Context<Chat>,
-) -> gpui::AnyElement {
-    let weak = weak.clone();
-    let weak_c = weak.clone();
-    let weak_bg = weak.clone();
-    let cwd_bg = chat.ws.cwd.clone();
-    let cwd_rows = chat.ws.cwd.clone();
-    let editing = chat.dlg.tree_edit.clone();
-    let selected = chat.ws.tree_selected.clone();
-    div()
-        .flex_1()
-        .min_h_0()
-        .flex()
-        .flex_col()
-        .overflow_hidden()
-        .pt(px(4.))
-        .px(px(6.))
-        .pb(px(6.))
-        // 空白处右键 = 根目录菜单（同树/变更分支兜底）
-        .on_mouse_down(gpui::MouseButton::Right,
-            move |ev: &gpui::MouseDownEvent, _, cx| {
-                cx.stop_propagation();
-                let Some(cwd_bg) = cwd_bg.clone() else { return };
-                let _ = weak_bg.update(cx, |c, cx| {
-                    c.dlg.tree_menu = Some(crate::function_panel::TreeMenu::Dir {
-                        path: cwd_bg,
-                        x: f32::from(ev.position.x),
-                        y: f32::from(ev.position.y),
-                    });
-                    cx.notify();
-                });
-            },
-        )
-        .child(
-            div()
-                .id("pins-scroll-wrap")
-                .relative()
-                .flex_1()
-                .min_h_0()
-                .w_full()
-                // gpui div 默认 block：不显式 flex 列，内层 vlist 的
-                // flex_1 失效、absolute 列表不撑高 → 高度塌 0 整树不可见
-                .flex()
-                .flex_col()
-                .on_hover(cx.listener(|this, hovered: &bool, _w, cx| {
-                    this.ws.tree_sb_state.set_parent_hovered(*hovered);
-                    cx.notify();
-                }))
-                .child(vlist(
-                    PIN_LIST_ID,
-                    rows.len(),
-                    ROW_H,
-                    VListHeight::Fill,
-                    false,
-                    false,
-                    tr("file_tree.no_pins_view"),
-                    None,
-                    move |ix, _window, _cx| {
-                        let Some(row) = rows.get(ix) else {
-                            return div().into_any_element();
-                        };
-                        let prev_depth = if ix == 0 { None } else { rows.get(ix - 1).map(|r| r.depth) };
-                        let next_depth = rows.get(ix + 1).map(|r| r.depth);
-                        if row.depth == 0 {
-                            // 收藏根行：rel 去掉尾部名称 = 淡化路径段
-                            //（pin 项目根本身时 rel 短于名称，置空）
-                            let rel = row
-                                .path
-                                .strip_prefix(cwd_rows.as_deref().unwrap_or(Path::new("")))
-                                .unwrap_or(&row.path)
-                                .to_string_lossy()
-                                .replace('\\', "/");
-                            let name_len = row.name.len();
-                            let dim_dir = if rel.len() > name_len {
-                                rel[..rel.len() - name_len].to_string()
-                            } else {
-                                String::new()
-                            };
-                            pin_root_row(
-                                row.clone(),
-                                dim_dir,
-                                editing.clone(),
-                                selected.as_ref().is_some_and(|p| same_path(p, &row.path)),
-                                weak_c.clone(),
-                            )
-                        } else {
-                            tree_row(
-                                row.clone(),
-                                prev_depth,
-                                next_depth,
-                                editing.clone(),
-                                selected.as_ref().is_some_and(|p| same_path(p, &row.path)),
-                                weak_c.clone(),
-                            )
-                        }
-                    },
-                ))
-                .child(tree_scrollbar(chat, PIN_LIST_ID, 6.)),
-        )
-        .into_any_element()
-}
-
 /// 「只看变更」列表体：容器 + vlist（行头由 files_view 构建，这里只管
 /// 滚动列表）。会话列表同款滚动条挂法（psp-scroll-wrap 镜像）：vlist
 /// 自带的 menu_scrollbar 关掉，改 relative 包裹 + 右缘 absolute 条；变更
@@ -635,7 +523,7 @@ fn tree_list_view(
 /// 包裹的外扩量，抵消所在容器的水平内边距让条带右缘齐 dock 右缘（树列表
 /// 容器 px(6) → 6；变更容器无边距 → 0）；thumb 右缘最终 = dock 右 − 4，
 /// 与会话列表逐像素同位。
-fn tree_scrollbar(chat: &Chat, list_id: &'static str, right_ext: f32) -> gpui::AnyElement {
+pub(crate) fn tree_scrollbar(chat: &Chat, list_id: &'static str, right_ext: f32) -> gpui::AnyElement {
     div()
         .absolute()
         .top(px(0.))
@@ -739,140 +627,6 @@ fn changes_row(
     }
     el.child(tree_right_click(&weak, &row))
         .into_any_element()
-}
-
-/// Pin 收藏夹视图的收藏根行（021 三改）：类型图标 + 名称前置恒可见 + 路
-/// 径段后置淡化；目录点击展开/折叠（expanded_dirs 与主树共享），文件点击
-/// 打开 tab；右键 = 文件树同款菜单（取消固定走菜单「Pin/取消固定」项）、
-/// 拖拽接线同树行——「操作和文件树一样」。行内改名态（F2/菜单）原地换
-/// 输入框。`dim_dir` = 相对 cwd 的目录段（可空，淡化展示）。
-fn pin_root_row(
-    row: crate::services::file_tree::TreeRow,
-    dim_dir: String,
-    editing: Option<crate::function_panel::TreeEdit>,
-    selected: bool,
-    weak: gpui::WeakEntity<Chat>,
-) -> gpui::AnyElement {
-    let t = theme::theme();
-    // 接线句柄先分身（点击闭包会把 weak 吃掉，同 tree_row）
-    let weak_menu = weak.clone();
-    let weak_drag = weak.clone();
-    // 本行处于行内改名：内容整体换输入框（Zed EditState 命中该行）
-    let editing = editing.filter(|e| {
-        matches!(&e.kind, crate::function_panel::TreeEditKind::Rename { path } if same_path(path, &row.path))
-    });
-    let selected = selected && editing.is_none();
-    let sel_bg = gpui::rgba((t.text << 8) | 0x1a);
-    let mut el = div()
-        .id(SharedString::from(format!("pin-root-{}", row.path.display())))
-        .w_full()
-        .h(px(ROW_H))
-        .flex()
-        .items_center()
-        .overflow_hidden()
-        .pr(px(8.))
-        .rounded(px(4.))
-        .text_size(crate::appearance::ui_size(11.))
-        .text_color(rgb(if row.ignored { t.text_faint } else { t.text }))
-        .cursor_pointer()
-        // 行框几何同 tree_row（border_1 恒挂只换色，防 1px 抖动）
-        .border_1()
-        .border_color(gpui::transparent_black())
-        .when(selected, |d| d.bg(sel_bg).hover(move |s| s.bg(sel_bg)))
-        .when(!selected, |d| {
-            d.hover(|s| s.bg(rgb(t.bg_hover)).border_color(rgb(t.bg_hover)))
-        });
-
-    // depth 0 无缩进无引导线；px6 内容列同 Zed ListItem
-    let mut inner = div()
-        .flex_1()
-        .min_w_0()
-        .flex()
-        .items_center()
-        .overflow_hidden()
-        .px(px(CONTENT_PAD));
-
-    if let Some(e) = editing {
-        let (border, message) = edit_chrome(&e, t);
-        el = el.border_color(rgb(border));
-        let icon = if row.is_dir {
-            file_icons::get_generic_folder_icon(false)
-        } else {
-            file_icons::get_icon(&row.path)
-        };
-        inner = inner
-            .child(div().flex_shrink_0().child(icon_path(icon, 14., t.text_dim)))
-            .child(edit_input_slot(e.input.clone()));
-        el = el.child(inner).children(message.map(|m| validation_note(m, border)));
-        return el.into_any_element();
-    }
-
-    let icon = if row.is_dir {
-        file_icons::get_generic_folder_icon(row.expanded)
-    } else {
-        file_icons::get_icon(&row.path)
-    };
-    inner = inner.child(div().flex_shrink_0().child(icon_path(icon, 14., t.text_dim)));
-    // 名称前置恒可见 + 路径段后置淡化（changes_row 同款双段布局）
-    inner = inner.child(
-        div()
-            .flex_shrink_0()
-            .overflow_hidden()
-            .whitespace_nowrap()
-            .text_ellipsis()
-            .child(SharedString::from(row.name.clone())),
-    );
-    inner = inner.child(
-        div()
-            .flex_shrink()
-            .min_w_0()
-            .overflow_hidden()
-            .whitespace_nowrap()
-            .text_ellipsis()
-            .text_color(rgb(t.text_faint))
-            .child(SharedString::from(dim_dir)),
-    );
-    inner = inner.child(div().flex_1());
-    el = el.child(inner);
-
-    if row.is_dir {
-        let dir_path = row.path.clone();
-        // on_click 同树行（mouse-up，让位拖拽起手）；展开集合与主树共享
-        el = el.on_click(move |_, _, cx| {
-            let _ = weak.update(cx, |c, cx| {
-                c.ws.tree_selected = Some(dir_path.clone());
-                if !c.ws.expanded_dirs.remove(&dir_path) {
-                    c.ws.expanded_dirs.insert(dir_path.clone());
-                }
-                c.rebuild_tree();
-                cx.notify();
-            });
-        });
-        if row.changed_dot && crate::services::workspace::git_markers() {
-            el = el.child(changed_dot());
-        }
-    } else {
-        let fp = row.path.clone();
-        el = el.on_click(move |_, _, cx| {
-            let _ = weak.update(cx, |c, cx| {
-                c.ws.tree_selected = Some(fp.clone());
-                c.open_file_tab(fp.clone(), cx);
-            });
-        });
-        // git 徽标同树行（023 默认关）
-        if let Some(st) = row.git.filter(|_| crate::services::workspace::git_markers()) {
-            el = el.child(
-                div()
-                    .flex_shrink_0()
-                    .text_size(crate::appearance::ui_size(11.))
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .text_color(rgb(st.color()))
-                    .child(st.badge()),
-            );
-        }
-    }
-    el = el.child(tree_right_click(&weak_menu, &row));
-    tree_drag_wiring(el, &row, &weak_drag).into_any_element()
 }
 
 /// 021 操作栏（020-1 起 38px、无下 border，与 psp 控制栏同规）：左侧
@@ -1131,7 +885,7 @@ fn bar_btn(
 
 /// One flattened row: indent guides + chevron + type icon + name + git badge.
 /// `selected` = 082 选中条目（常驻薄纱底，F2 改名对象；编辑态行不叠）。
-fn tree_row(
+pub(crate) fn tree_row(
     row: TreeRow,
     prev_depth: Option<usize>,
     next_depth: Option<usize>,
@@ -1287,7 +1041,7 @@ fn tree_row(
 /// 被 gpui 抑制，亮色即落点指示）、`on_drop` 提交移动。拖到文件行 = 移到
 /// 其父目录（语义在 [`drag_move_target`]，drop 与高亮同源）。行内改名态
 /// 不接线（tree_row 提前 return）。
-fn tree_drag_wiring<E>(mut el: E, row: &TreeRow, weak: &gpui::WeakEntity<Chat>) -> E
+pub(crate) fn tree_drag_wiring<E>(mut el: E, row: &TreeRow, weak: &gpui::WeakEntity<Chat>) -> E
 where
     E: gpui::InteractiveElement + gpui::StatefulInteractiveElement,
 {

@@ -6,6 +6,7 @@
 pub(crate) mod file_tree;
 pub(crate) mod file_tree_drag;
 pub(crate) mod file_tree_edit;
+pub(crate) mod file_tree_pins;
 pub(crate) mod file_tree_sticky;
 pub(crate) mod file_actions;
 pub(crate) mod psp_actions;
