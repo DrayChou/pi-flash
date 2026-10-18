@@ -83,6 +83,10 @@
    powershell / node）时，子进程默认新建控制台 → 又一个 WT 窗口。已带 flag 的：
    `pi-link/{client,vendor,registry}.rs`、`services/token_probe.rs`；
    本轮补上：`services/git.rs`（新增 `git_cmd()` 统一口径）、`services/file_index.rs`。
+   **测试代码也不例外**：updater.rs 测试里的 powershell（Compress-Archive 造
+   zip 夹具）漏 flag，每跑一轮 `cargo test -p app updater::` 就弹一个带进度条
+   的 PS 窗抢屏幕（2026-10-18 实锤，agent 代跑测试时尤甚）——已加
+   `hidden_powershell()` 帮手统一口径。
 3. 读 PE Subsystem 别手撸偏移——本地 python 按 `pe+24+68` 读 debug exe 得出 2、
    release 得出 3，与实测行为矛盾；**以「进程树里有没有 conhost / 探针
    attached」为准**，别信自己算的字段。
@@ -103,3 +107,4 @@ TABLE（行 trim 后以 `(` 开头 + 拆出 4 列），表行**必须一行一�
 格式化自己改的文件，**不要**对 app 包跑整包 `cargo fmt`（包里就有
 i18n.rs 这颗雷）。误伤后恢复：`git checkout HEAD -- crates/app/src/i18n.rs`
 再重插新增表行（表行统一 `, ` 分隔单行格式）。
+误中洪泛用 `scripts/fmt-flood-clean.sh` 一键封存；pre-commit hook 会拦大批量提交（绕过用 `--no-verify`）

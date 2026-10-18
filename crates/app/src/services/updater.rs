@@ -1163,6 +1163,20 @@ fn open_url(url: &str) {
 mod tests {
     use super::*;
 
+    /// 测试 spawn powershell 必须 CREATE_NO_WINDOW——否则每跑一轮 cargo test
+    /// 就弹一个 PowerShell 控制台窗抢屏幕（Compress-Archive 有进度条输出，
+    /// 控制台会实体化成可见窗口；agent 代跑测试时尤甚）。
+    fn hidden_powershell() -> std::process::Command {
+        let mut cmd = std::process::Command::new("powershell.exe");
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+        cmd
+    }
+
     /// 独立临时目录（测试进程共用 target/，不能污染真安装根）。
     fn temp_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
@@ -1326,7 +1340,7 @@ mod tests {
         // 占用者：share-none 打开 live 内的文件，抓住后写哨兵文件（测试侧靠它
         // 同步，不靠碰运气的 sleep）
         let sentinel = root.join("holding.txt");
-        let mut holder = std::process::Command::new("powershell.exe")
+        let mut holder = hidden_powershell()
             .args([
                 "-NoProfile",
                 "-Command",
@@ -1573,7 +1587,7 @@ mod tests {
             pkg.display(),
             zip.display()
         );
-        let out = std::process::Command::new("powershell.exe")
+        let out = hidden_powershell()
             .args(["-NoProfile", "-Command", &ps])
             .output()
             .unwrap();
@@ -1788,7 +1802,7 @@ mod tests {
             src.display(),
             zip_path.display()
         );
-        let out = std::process::Command::new("powershell.exe")
+        let out = hidden_powershell()
             .args(["-NoProfile", "-Command", &ps])
             .output()
             .unwrap();
