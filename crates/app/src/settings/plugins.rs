@@ -585,7 +585,8 @@ fn pl_update_all_button(
 }
 
 /// 082 详情【更新】按钮（删除 icon 左侧）：UI 规范按钮（config_button，
-/// small 与垃圾桶 28px 对齐）；更新本包时显示「更新中…」禁用，任一 op
+/// small 与垃圾桶 28px 对齐）。仅该包检测为「有可用更新」时显示（验收
+/// 定稿：没有更新的包不显示）；更新本包时显示「更新中…」禁用，任一 op
 /// 进行中禁用。
 fn pl_update_button(
     chat: &Chat,
@@ -597,6 +598,12 @@ fn pl_update_button(
         chat.cfg.pkg_op.as_ref(),
         Some(crate::settings::plugins::PkgOp::Update(Some(s))) if *s == src
     );
+    if !updating_this
+        && chat.aux.plugin_updates.state_of(src)
+            != Some(crate::services::plugin_updates::PkgUpdateState::UpdateAvailable)
+    {
+        return None;
+    }
     let label = if updating_this {
         tr("extensions.updating_all").to_string()
     } else {
