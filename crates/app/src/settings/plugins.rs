@@ -614,17 +614,23 @@ fn pl_update_button(
     );
     let mut b = div()
         .id("pkg-update")
-        .size(px(28.))
+        .h(px(28.))
+        .px(px(10.))
         .flex()
         .items_center()
         .justify_center()
+        .gap(px(5.))
         .rounded(px(5.))
         .border_1()
-        .border_color(rgb(t.border));
+        .border_color(rgb(t.border))
+        .text_size(crate::appearance::ui_size(11.))
+        .text_color(rgb(t.text_muted));
     if updating_this {
-        b = b.child(crate::ui::spinner(12., t.accent));
+        b = b
+            .child(crate::ui::spinner(11., t.accent))
+            .child(tr("extensions.update"));
     } else {
-        b = b.child(crate::ui::icon("arrow-up", 14., t.accent));
+        b = b.child(tr("extensions.update"));
     }
     if chat.cfg.pkg_op.is_some() {
         b = b.opacity(0.5);
