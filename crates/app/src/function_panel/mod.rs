@@ -43,9 +43,9 @@ pub(crate) enum PspRow {
     /// 仅作分组视觉。组内会话行用 [`PspRow::PinnedSession`]（元素 id 与
     /// 原组行区分，防 gpui id 冲突）。
     PinnedHeader,
-    /// 置顶组内的会话行（p/s = 原项目组下标的**副本引用**，会话本体不动）：
-    /// 不参与项目块避让平移（前置头行之前无 Project 行，shift 恒 0），
-    /// 元素 id 用 ps-pin- 前缀。
+    /// 置顶组内的会话行（p/s = 原项目组下标；**移入语义**——置顶会话只在
+    /// 置顶组显示，原项目组已按 pin 清单过滤，不重复出现）：
+    /// 不参与项目块避让平移（前置头行之前无 Project 行，shift 恒 0）。
     PinnedSession {
         p: usize,
         s: usize,
@@ -89,8 +89,9 @@ pub(crate) fn psp_rows(chat: &Chat) -> Vec<PspRow> {
     match chat.psp.list_mode {
         ListMode::Grouped => {
             // 置顶组（会话 pin）：列表最顶；内容为空不建组（空置顶组永不
-            // 显示）。会话本体留在原项目组（置顶组是副本视图），组内按
-            // pin 序（后置顶的总在最上面）。
+            // 显示）。**zcode 同款「移入」语义**：置顶会话只在置顶组出现，
+            // 原项目组按 pin 清单过滤（见下方 visible），不重复显示；
+            // 组内按 pin 序（后置顶的总在最上面）。
             let pinned = pinned_rows(chat);
             if !pinned.is_empty() {
                 rows.push(PspRow::PinnedHeader);
@@ -113,7 +114,13 @@ pub(crate) fn psp_rows(chat: &Chat) -> Vec<PspRow> {
                 if drag_collapsed || chat.psp.collapsed_keys.contains(&key) {
                     continue;
                 }
-                if g.sessions.is_empty() {
+                // 置顶会话已被「移入」置顶组，原项目组不再重复显示（zcode
+                // parity）：按 pin 清单过滤；分页计数用过滤后的可见条数，
+                // 否则会留下空组还挂「显示更多」的死行
+                let visible: Vec<usize> = (0..g.sessions.len())
+                    .filter(|si| !chat.session_pinned(&g.sessions[*si].path))
+                    .collect();
+                if visible.is_empty() {
                     rows.push(PspRow::Empty);
                 } else {
                     let shown = chat
@@ -122,11 +129,11 @@ pub(crate) fn psp_rows(chat: &Chat) -> Vec<PspRow> {
                         .get(&key)
                         .copied()
                         .unwrap_or_else(psp_page)
-                        .min(g.sessions.len());
-                    for si in 0..shown {
-                        rows.push(PspRow::Session { p: pi, s: si });
+                        .min(visible.len());
+                    for si in visible.iter().take(shown) {
+                        rows.push(PspRow::Session { p: pi, s: *si });
                     }
-                    if g.sessions.len() > shown {
+                    if visible.len() > shown {
                         rows.push(PspRow::More { key });
                     }
                 }
@@ -476,7 +483,7 @@ pub(crate) fn psp_view(
                     None
                 }
                 // 置顶组行不参与项目块避让平移（头行在所有 Project 之前，
-                // 会话副本引用的是别组的项目块）
+                // 置顶组引用的是别组的项目块）
                 PspRow::PinnedHeader | PspRow::PinnedSession { .. } => None,
                 PspRow::Session { p, .. } => Some(*p),
                 _ => last_pi,
