@@ -40,9 +40,6 @@ const HEADING_BAND: f32 = 0.74;
 const CONTENT_BAND: f32 = 0.88;
 /// 操作栏高度（012：固定 40px）。
 const ACTION_BAR_H: f32 = 40.;
-/// 082 通知带：顶对齐 63% 视口——内容簇 action_bar 底 ≈60%，留 3% 空隙；
-/// 不进内容簇 flex 流，原三带（logo/欢迎语/inputpanel）定位零改动。
-const NOTICE_BAND_TOP: f32 = 0.63;
 
 /// 新会话页整页。占满聊天区（`flex_1`），内部两层：背景 logo（绝对、装饰）
 /// 与内容簇（绝对、可交互）。
@@ -316,11 +313,12 @@ fn action_bar(
     bar.into_any_element()
 }
 
-/// 082 Pi 扩展更新通知（独立绝对带）：锚在内容簇下方空白区，不参与原三
-/// 带布局；宽 = 上方内容列 80%（验收定稿），列表上限 300px 超长滚动；
-/// 标题行右侧【更新全部(n)】= UI 规范按钮（与设置·扩展页统一
-/// config_button）。安静原则：检查中不显示、n=0 不渲染；点击列表行暂无
-/// 动作（v1 仅展示，入口在设置·扩展页详情）。
+/// 082 Pi 扩展更新通知（独立绝对带，**贴视口底**向上生长——验收返工：
+/// 百分比锚定在矮视口下会与 action_bar 重叠，贴底永不重叠；不参与原三
+/// 带布局）：宽 = 上方内容列 80%，卡片式（圆角边框同 composer 呼应），
+/// 标题行下分隔线，列表上限 300px 超长滚动；标题行右侧【更新全部(n)】=
+/// UI 规范按钮（与设置·扩展页统一 config_button）。安静原则：检查中不
+/// 显示、n=0 不渲染；点击列表行暂无动作（v1 仅展示，入口在设置·扩展页）。
 fn plugin_update_notice(
     chat: &Chat,
     weak: &gpui::WeakEntity<Chat>,
@@ -363,14 +361,18 @@ fn plugin_update_notice(
         .overflow_y_scroll()
         .flex()
         .flex_col();
-    for r in rows {
+    for (ix, r) in rows.iter().enumerate() {
         list = list.child(
             div()
+                .id(SharedString::from(format!("ns-pkg-row-{ix}")))
                 .flex()
                 .items_center()
                 .gap(px(6.))
-                .py(px(2.))
+                .px(px(6.))
+                .py(px(3.))
+                .rounded(px(4.))
                 .text_size(crate::appearance::ui_size(12.))
+                .hover(|h| h.bg(rgb(t.bg_hover)))
                 .child(
                     div()
                         .flex_1()
@@ -384,31 +386,41 @@ fn plugin_update_notice(
                 .child(crate::ui::icon("arrow-up", 10., t.accent)),
         );
     }
-    // 独立绝对带：顶 63% 视口（内容簇底 ≈60%，留 3% 空隙），水平内距与
-    // 消息列一致，内容列 80% 宽居中，贴带顶（紧贴 action_bar 下方）
+    // 独立绝对带：**贴视口底**向上生长（验收返工：百分比锚定在矮视口下会
+    // 与 action_bar 重叠；贴底永不重叠），水平内距与消息列一致，内容列
+    // 80% 宽居中；卡片 = 圆角边框同 composer 呼应，标题行与列表间分隔线
     Some(
         div()
             .absolute()
-            .top(relative(NOTICE_BAND_TOP))
             .bottom_0()
             .left_0()
             .right_0()
             .px(px(15.))
+            .pb(px(24.))
             .flex()
             .justify_center()
-            .items_start()
+            .items_end()
             .child(
                 div()
                     .w_full()
                     .max_w(px(crate::services::workspace::chat_content_width() * 0.8))
                     .flex()
                     .flex_col()
-                    .gap(px(4.))
+                    .gap(px(6.))
+                    .rounded(px(8.))
+                    .border_1()
+                    .border_color(rgb(t.border))
+                    .bg(rgb(t.bg))
+                    .p(px(10.))
                     .child(
                         div()
                             .flex()
                             .items_center()
                             .gap(px(6.))
+                            .pb(px(6.))
+                            // 标题行下分隔线（验收：原有的分隔线要加）
+                            .border_b_1()
+                            .border_color(rgb(t.border))
                             .child(
                                 div()
                                     .flex_1()
