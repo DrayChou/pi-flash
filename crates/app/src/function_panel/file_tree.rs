@@ -19,13 +19,15 @@ use std::sync::Arc;
 
 use gpui::{SharedString, UniformListDecoration, div, prelude::*, px, rgb};
 
-use crate::{Chat, i18n::tr, same_path};
+use crate::appearance::theme;
+use crate::function_panel::file_tree_drag::{
+    DRAG_EXPAND_DELAY, TreeDrag, TreeDragGhost, drag_move_target,
+};
 use crate::services::file_icons;
 use crate::services::file_tree::TreeRow;
-use crate::function_panel::file_tree_drag::{TreeDrag, TreeDragGhost, drag_move_target, DRAG_EXPAND_DELAY};
-use crate::appearance::theme;
 use crate::ui::{VListHeight, WithTip, icon_path, vlist};
 use crate::*;
+use crate::{Chat, i18n::tr, same_path};
 
 use super::file_tree_edit::{edit_chrome, edit_input_slot, tree_edit_row, validation_note};
 use super::file_tree_pins::pin_list_view;
@@ -48,7 +50,9 @@ impl Chat {
     /// 行滚进视口。树右键菜单入口行本就可见（幂等）；编辑区右键菜单入口
     /// 可能该行还没展开/滚出视口，不做这些就没有输入框可编辑。
     pub(crate) fn reveal_tree_row(&mut self, path: &Path) {
-        let Some(cwd) = self.ws.cwd.clone() else { return };
+        let Some(cwd) = self.ws.cwd.clone() else {
+            return;
+        };
         let mut anc = path.parent().map(|p| p.to_path_buf());
         let mut opened = false;
         while let Some(p) = anc {
@@ -78,7 +82,8 @@ impl Chat {
         // gpui 偏移向下滚为负，此前手写正 y 的 set_offset 被夹回 0，长树
         // 永不跳转。
         let Some(ix) = self
-            .ws.tree_rows
+            .ws
+            .tree_rows
             .iter()
             .position(|r| same_path(&r.path, path))
         else {
@@ -95,10 +100,16 @@ impl Chat {
     /// 沿途展开）兜底排表尾。渲染落点（tree_list_view edit_slot）与打开编辑
     /// 行时的自动滚动共用本公式，两处永不漂移。
     pub(crate) fn tree_new_edit_slot(&self, dir: &Path) -> (usize, usize) {
-        if self.ws.cwd.as_deref().is_some_and(|cur| same_path(dir, cur)) {
+        if self
+            .ws
+            .cwd
+            .as_deref()
+            .is_some_and(|cur| same_path(dir, cur))
+        {
             return (0, 0);
         }
-        self.ws.tree_rows
+        self.ws
+            .tree_rows
             .iter()
             .position(|r| r.is_dir && same_path(&r.path, dir))
             .map_or((self.ws.tree_rows.len(), 1), |ix| {
@@ -338,7 +349,8 @@ fn changes_list_view(
         // 空白处右键 = 根目录菜单（021 四改：根行已移除，根下的
         // 新建/改名等入口由这里兜底；行内右键自己 stop_propagation
         // 不会漏到这层）
-        .on_mouse_down(gpui::MouseButton::Right,
+        .on_mouse_down(
+            gpui::MouseButton::Right,
             move |ev: &gpui::MouseDownEvent, _, cx| {
                 cx.stop_propagation();
                 let Some(cwd_bg) = cwd_bg.clone() else { return };
@@ -421,7 +433,10 @@ fn tree_list_view(
         .as_ref()
         .map(|e| e.input.read(cx).value().to_string())
         .unwrap_or_default();
-    let sticky = Box::new(StickyAncestors { weak: weak.clone(), edit_ix }) as Box<dyn UniformListDecoration>;
+    let sticky = Box::new(StickyAncestors {
+        weak: weak.clone(),
+        edit_ix,
+    }) as Box<dyn UniformListDecoration>;
     div()
         .flex_1()
         .min_h_0()
@@ -434,7 +449,8 @@ fn tree_list_view(
         .px(px(6.))
         .pb(px(6.))
         // 空白处右键 = 根目录菜单（同变更分支，根行入口兜底）
-        .on_mouse_down(gpui::MouseButton::Right,
+        .on_mouse_down(
+            gpui::MouseButton::Right,
             move |ev: &gpui::MouseDownEvent, _, cx| {
                 cx.stop_propagation();
                 let Some(cwd_bg) = cwd_bg.clone() else { return };
@@ -484,7 +500,9 @@ fn tree_list_view(
                     move |ix, _window, _cx| {
                         // 行内新建：该输出位渲染编辑行，其余行做索引平移
                         if edit_slot.is_some_and(|(eix, _)| ix == eix) {
-                            let Some((_, depth)) = edit_slot else { return div().into_any_element() };
+                            let Some((_, depth)) = edit_slot else {
+                                return div().into_any_element();
+                            };
                             return tree_edit_row(
                                 edit.clone().expect("slot checked"),
                                 depth,
@@ -495,7 +513,9 @@ fn tree_list_view(
                             Some(eix) if ix > eix => ix - 1,
                             _ => ix,
                         };
-                        let Some(row) = rows.get(row_ix) else { return div().into_any_element() };
+                        let Some(row) = rows.get(row_ix) else {
+                            return div().into_any_element();
+                        };
                         // 邻行深度决定各段引导线的首尾裁剪（整段只在首行留上
                         // 4px、尾行留下 4px，段中连续成一条线）；编辑行占位时
                         // 邻行深度取编辑行的深度
@@ -533,7 +553,11 @@ fn tree_list_view(
 /// 包裹的外扩量，抵消所在容器的水平内边距让条带右缘齐 dock 右缘（树列表
 /// 容器 px(6) → 6；变更容器无边距 → 0）；thumb 右缘最终 = dock 右 − 4，
 /// 与会话列表逐像素同位。
-pub(crate) fn tree_scrollbar(chat: &Chat, list_id: &'static str, right_ext: f32) -> gpui::AnyElement {
+pub(crate) fn tree_scrollbar(
+    chat: &Chat,
+    list_id: &'static str,
+    right_ext: f32,
+) -> gpui::AnyElement {
     div()
         .absolute()
         .top(px(0.))
@@ -635,8 +659,7 @@ fn changes_row(
             });
         });
     }
-    el.child(tree_right_click(&weak, &row))
-        .into_any_element()
+    el.child(tree_right_click(&weak, &row)).into_any_element()
 }
 
 /// 021 操作栏（020-1 起 38px、无下 border，与 psp 控制栏同规）：左侧
@@ -719,16 +742,15 @@ fn action_bar(
                         .child(project),
                 )
                 // 开合指示：下拉开着时翻向上
-                .child(
-                    div()
-                        .flex_shrink_0()
-                        .ml(px(4.))
-                        .child(crate::ui::icon(
-                            if proj_open { "chevron-up" } else { "chevron-down" },
-                            12.,
-                            t.accent,
-                        )),
-                )
+                .child(div().flex_shrink_0().ml(px(4.)).child(crate::ui::icon(
+                    if proj_open {
+                        "chevron-up"
+                    } else {
+                        "chevron-down"
+                    },
+                    12.,
+                    t.accent,
+                )))
                 // 标题 paint 期 bounds 捕获（dock_bounds 同款 canvas，无交互
                 // 不挡命中）：项目下拉的锚点
                 .child(
@@ -739,10 +761,13 @@ fn action_bar(
                     .absolute()
                     .inset_0(),
                 )
-                .on_mouse_down(gpui::MouseButton::Right,
+                .on_mouse_down(
+                    gpui::MouseButton::Right,
                     move |ev: &gpui::MouseDownEvent, _, cx| {
                         cx.stop_propagation();
-                        let Some(cwd_menu) = cwd_menu.clone() else { return };
+                        let Some(cwd_menu) = cwd_menu.clone() else {
+                            return;
+                        };
                         let _ = w_menu.update(cx, |c, cx| {
                             c.dlg.tree_menu = Some(crate::function_panel::TreeMenu::Dir {
                                 path: cwd_menu,
@@ -782,7 +807,11 @@ fn action_bar(
                 .child(bar_btn(
                     "ft-toggle-changes",
                     // 同上：树视图 = 变更 icon；变更视图 = 目录树 icon
-                    if changes_only { "folder-tree" } else { "git-commit-horizontal" },
+                    if changes_only {
+                        "folder-tree"
+                    } else {
+                        "git-commit-horizontal"
+                    },
                     if changes_only {
                         tr("file_tree.back_to_tree")
                     } else {
@@ -830,9 +859,7 @@ fn action_bar(
                     move |_, window, cx| {
                         // 无项目态：没有可打开终端的目录，按钮 no-op
                         let Some(cwd) = cwd_term.clone() else { return };
-                        let _ = w_term.update(cx, |c, cx| {
-                            c.open_terminal_in(cwd, window, cx)
-                        });
+                        let _ = w_term.update(cx, |c, cx| c.open_terminal_in(cwd, window, cx));
                     },
                 ))
                 .child(bar_btn(
@@ -970,9 +997,15 @@ pub(crate) fn tree_row(
             file_icons::get_icon(&row.path)
         };
         inner = inner
-            .child(div().flex_shrink_0().child(icon_path(icon, 14., t.text_dim)))
+            .child(
+                div()
+                    .flex_shrink_0()
+                    .child(icon_path(icon, 14., t.text_dim)),
+            )
             .child(edit_input_slot(e.input.clone()));
-        el = el.child(inner).children(message.map(|m| validation_note(m, border)));
+        el = el
+            .child(inner)
+            .children(message.map(|m| validation_note(m, border)));
         return el.into_any_element();
     }
 
@@ -1031,7 +1064,10 @@ pub(crate) fn tree_row(
         });
         el = el.child(tree_right_click(&weak_menu, &row));
         // git badge on files（pi-web 徽标语义：M/A/D/R/U/C；023 默认关）
-        if let Some(st) = row.git.filter(|_| crate::services::workspace::git_markers()) {
+        if let Some(st) = row
+            .git
+            .filter(|_| crate::services::workspace::git_markers())
+        {
             el = el.child(
                 div()
                     .flex_shrink_0()
@@ -1056,7 +1092,10 @@ where
     E: gpui::InteractiveElement + gpui::StatefulInteractiveElement,
 {
     let t = theme::theme();
-    let drag = TreeDrag { path: row.path.clone(), is_dir: row.is_dir };
+    let drag = TreeDrag {
+        path: row.path.clone(),
+        is_dir: row.is_dir,
+    };
     let ghost_path = row.path.clone();
     let ghost_name = row.name.clone();
     let ghost_is_dir = row.is_dir;
@@ -1065,31 +1104,30 @@ where
     let drop_path = row.path.clone();
     let drop_is_dir = row.is_dir;
     let weak_drop = weak.clone();
-    el = el.on_drag(
-        drag,
-        move |_, _, _, cx| {
+    el = el
+        .on_drag(drag, move |_, _, _, cx| {
             cx.new(|_| TreeDragGhost {
                 path: ghost_path.clone(),
                 name: ghost_name.clone(),
                 is_dir: ghost_is_dir,
             })
-        },
-    )
-    .drag_over::<TreeDrag>(move |style, drag, _, _| {
-        if drag_move_target(&drag.path, drag.is_dir, &hl_path, hl_is_dir).is_some() {
-            style.bg(rgb(t.bg_hover))
-        } else {
-            style
-        }
-    })
-    .on_drop::<TreeDrag>(move |drag, _, cx| {
-        let Some(dst) = drag_move_target(&drag.path, drag.is_dir, &drop_path, drop_is_dir) else {
-            return;
-        };
-        let _ = weak_drop.update(cx, |c, cx| {
-            c.tree_move_commit(&drag.path, drag.is_dir, &dst, cx);
+        })
+        .drag_over::<TreeDrag>(move |style, drag, _, _| {
+            if drag_move_target(&drag.path, drag.is_dir, &hl_path, hl_is_dir).is_some() {
+                style.bg(rgb(t.bg_hover))
+            } else {
+                style
+            }
+        })
+        .on_drop::<TreeDrag>(move |drag, _, cx| {
+            let Some(dst) = drag_move_target(&drag.path, drag.is_dir, &drop_path, drop_is_dir)
+            else {
+                return;
+            };
+            let _ = weak_drop.update(cx, |c, cx| {
+                c.tree_move_commit(&drag.path, drag.is_dir, &dst, cx);
+            });
         });
-    });
 
     // 悬停自动展开（Zed hover_expand_task 500ms）：只挂折叠目录行。任何
     // 一次 mouse-move 会派发给**所有**在册行的 on_drag_move（capture 相、
@@ -1106,10 +1144,11 @@ where
             let (src, src_is_dir) = (drag.path.clone(), drag.is_dir);
             let _ = weak_exp.update(cx, |c, cx| {
                 let pending =
-                    c.ws.tree_drag_expand.as_ref().is_some_and(|p| same_path(p, &exp_path));
+                    c.ws.tree_drag_expand
+                        .as_ref()
+                        .is_some_and(|p| same_path(p, &exp_path));
                 if inside {
-                    let valid =
-                        drag_move_target(&src, src_is_dir, &exp_path, exp_is_dir).is_some();
+                    let valid = drag_move_target(&src, src_is_dir, &exp_path, exp_is_dir).is_some();
                     if valid && !pending {
                         c.ws.tree_drag_expand = Some(exp_path.clone());
                         let target = exp_path.clone();
@@ -1117,7 +1156,11 @@ where
                             cx.background_executor().timer(DRAG_EXPAND_DELAY).await;
                             let _ = weak.update(cx, |c, cx| {
                                 // 目标未变（未被离开清除、未被别行覆盖）才展开
-                                if c.ws.tree_drag_expand.as_ref().is_some_and(|p| same_path(p, &target)) {
+                                if c.ws
+                                    .tree_drag_expand
+                                    .as_ref()
+                                    .is_some_and(|p| same_path(p, &target))
+                                {
                                     c.ws.tree_drag_expand = None;
                                     c.ws.expanded_dirs.insert(target);
                                     c.rebuild_tree();
@@ -1160,8 +1203,16 @@ pub(crate) fn guide_lines(
     color: u32,
 ) -> impl Iterator<Item = gpui::AnyElement> {
     (0..depth).map(move |level| {
-        let top = if prev.is_none_or(|d| d <= level) { 4. } else { 0. };
-        let bottom = if next.is_none_or(|d| d <= level) { 4. } else { 0. };
+        let top = if prev.is_none_or(|d| d <= level) {
+            4.
+        } else {
+            0.
+        };
+        let bottom = if next.is_none_or(|d| d <= level) {
+            4.
+        } else {
+            0.
+        };
         div()
             .absolute()
             .left(px(level as f32 * INDENT + GUIDE_X))
@@ -1195,27 +1246,30 @@ pub(crate) fn tree_right_click(weak: &gpui::WeakEntity<Chat>, row: &TreeRow) -> 
         .size_full()
         .top_0()
         .left_0()
-        .on_mouse_down(MouseButton::Right, move |ev: &gpui::MouseDownEvent, _, cx| {
-            cx.stop_propagation();
-            let path = path.clone();
-            let _ = weak.update(cx, |c, cx| {
-                c.ws.tree_selected = Some(path.clone());
-                c.dlg.tree_menu = Some(if is_dir {
-                    crate::function_panel::TreeMenu::Dir {
-                        path,
-                        x: f32::from(ev.position.x),
-                        y: f32::from(ev.position.y),
-                    }
-                } else {
-                    crate::function_panel::TreeMenu::File {
-                        path,
-                        x: f32::from(ev.position.x),
-                        y: f32::from(ev.position.y),
-                    }
+        .on_mouse_down(
+            MouseButton::Right,
+            move |ev: &gpui::MouseDownEvent, _, cx| {
+                cx.stop_propagation();
+                let path = path.clone();
+                let _ = weak.update(cx, |c, cx| {
+                    c.ws.tree_selected = Some(path.clone());
+                    c.dlg.tree_menu = Some(if is_dir {
+                        crate::function_panel::TreeMenu::Dir {
+                            path,
+                            x: f32::from(ev.position.x),
+                            y: f32::from(ev.position.y),
+                        }
+                    } else {
+                        crate::function_panel::TreeMenu::File {
+                            path,
+                            x: f32::from(ev.position.x),
+                            y: f32::from(ev.position.y),
+                        }
+                    });
+                    cx.notify();
                 });
-                cx.notify();
-            });
-        })
+            },
+        )
         .into_any_element()
 }
 
@@ -1228,7 +1282,9 @@ impl Chat {
     /// （`__tree`）。调用点：切项目（remount 开头）、保存 UI 状态（关窗/退出）、
     /// Pin 视图开关。展开/折叠本身不即时落盘（高频动作，靠这些时机兜住）。
     pub(crate) fn archive_tree_state(&mut self) {
-        let Some((key, cwd)) = self.ws.tree_owner.clone() else { return };
+        let Some((key, cwd)) = self.ws.tree_owner.clone() else {
+            return;
+        };
         let mem = crate::TreeMemory {
             expanded: self.ws.expanded_dirs.clone(),
             pin: self.ws.pin_view,
@@ -1350,5 +1406,4 @@ impl Chat {
         };
         self.ws.project_files = walk_files(&cwd, 3, 400);
     }
-
 }

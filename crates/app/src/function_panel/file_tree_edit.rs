@@ -17,8 +17,13 @@ pub(crate) fn edit_chrome(
     t: &'static crate::appearance::theme::Theme,
 ) -> (u32, Option<SharedString>) {
     match &e.validation {
-        crate::function_panel::TreeValidation::Error(m) => (t.danger, Some(SharedString::from(m.clone()))),
-        crate::function_panel::TreeValidation::Warning(m) => (crate::appearance::theme::WARN, Some(SharedString::from(m.clone()))),
+        crate::function_panel::TreeValidation::Error(m) => {
+            (t.danger, Some(SharedString::from(m.clone())))
+        }
+        crate::function_panel::TreeValidation::Warning(m) => (
+            crate::appearance::theme::WARN,
+            Some(SharedString::from(m.clone())),
+        ),
         crate::function_panel::TreeValidation::None => (t.accent, None),
     }
 }
@@ -98,7 +103,11 @@ pub(crate) fn tree_edit_row(
         .overflow_hidden()
         .ml(px(depth as f32 * INDENT))
         .px(px(CONTENT_PAD))
-        .child(div().flex_shrink_0().child(icon_path(icon, 14., t.text_dim)))
+        .child(
+            div()
+                .flex_shrink_0()
+                .child(icon_path(icon, 14., t.text_dim)),
+        )
         .child(edit_input_slot(edit.input.clone()));
     el.child(inner)
         .children(message.map(|m| validation_note(m, border)))

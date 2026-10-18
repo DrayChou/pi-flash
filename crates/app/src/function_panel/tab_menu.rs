@@ -9,8 +9,8 @@
 use gpui::{MouseButton, SharedString, div, prelude::*, px, rgb};
 
 use crate::Chat;
-use crate::i18n::tr;
 use crate::appearance::theme::{Theme, theme as T};
+use crate::i18n::tr;
 use crate::ui::popup::PopupEdges;
 
 /// 标签菜单层：条目启停按 panel_tabs 现状算，禁用 = 灰字不接点击。样式
@@ -51,7 +51,13 @@ pub(crate) fn layer(
                     },
                 ))
                 .child(super::psp_overlays::menu_sep())
-                .child(item(&weak, "tbm-left", tr("tab.close_left"), false, |_, _| {}))
+                .child(item(
+                    &weak,
+                    "tbm-left",
+                    tr("tab.close_left"),
+                    false,
+                    |_, _| {},
+                ))
                 .child(item(
                     &weak,
                     "tbm-right",
@@ -149,7 +155,11 @@ fn item(
         .py(px(7.))
         .rounded(px(6.))
         .text_size(crate::appearance::ui_size(12.))
-        .text_color(if enabled { rgb(t.text) } else { rgb(t.text_faint) })
+        .text_color(if enabled {
+            rgb(t.text)
+        } else {
+            rgb(t.text_faint)
+        })
         .when(enabled, |d| {
             d.cursor_pointer()
                 .hover(|s| s.bg(rgb(t.bg_hover)))

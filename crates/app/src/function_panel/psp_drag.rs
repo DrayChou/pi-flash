@@ -83,13 +83,10 @@ pub(crate) fn shift_delta(target: Option<usize>, active: usize, block: usize) ->
 /// 渲染期统一入口：第 `block` 块当前应画的位移（含 200ms 插值）。无拖拽
 /// = 0。
 pub(crate) fn row_shift(chat: &Chat, block: usize) -> f32 {
-    let Some(d) = &chat.psp.proj_drag else { return 0. };
-    let Some(active) = chat
-        .psp
-        .projects
-        .iter()
-        .position(|g| group_key(g) == d.key)
-    else {
+    let Some(d) = &chat.psp.proj_drag else {
+        return 0.;
+    };
+    let Some(active) = chat.psp.projects.iter().position(|g| group_key(g) == d.key) else {
         return 0.;
     };
     match &chat.psp.proj_shift {
@@ -115,7 +112,10 @@ pub(crate) fn sync_drag(chat: &mut Chat, key: String, inside: bool, cx: &mut gpu
             // 重建点：状态缺失（上轮取消后再入，看门狗重新起一个）或键
             // 不符（新一轮拖拽，旧看门狗仍在轮询会自然接手/退出）
             let fresh = chat.psp.proj_drag.is_none();
-            chat.psp.proj_drag = Some(ProjDragState { key, at: Instant::now() });
+            chat.psp.proj_drag = Some(ProjDragState {
+                key,
+                at: Instant::now(),
+            });
             chat.psp.proj_drop_ix = None;
             chat.psp.proj_shift = None;
             if fresh {
@@ -141,7 +141,11 @@ pub(crate) fn set_drop_target(chat: &mut Chat, new: Option<usize>, cx: &mut gpui
         return;
     }
     let from = chat.psp.proj_drop_ix;
-    let shift = ProjShift { from, to: new, start: Instant::now() };
+    let shift = ProjShift {
+        from,
+        to: new,
+        start: Instant::now(),
+    };
     chat.psp.proj_drop_ix = new;
     chat.psp.proj_shift = Some(shift.clone());
     spawn_shift_driver(shift.start, cx);
@@ -224,7 +228,9 @@ fn spawn_shift_driver(start: Instant, cx: &mut gpui::Context<Chat>) {
             cx.background_executor().timer(SHIFT_TICK).await;
             let keep = this
                 .update(cx, |chat, cx| {
-                    let Some(s) = &chat.psp.proj_shift else { return false };
+                    let Some(s) = &chat.psp.proj_shift else {
+                        return false;
+                    };
                     if s.start != start {
                         return false;
                     }
@@ -256,7 +262,11 @@ pub(crate) struct ProjDragGhost {
 }
 
 impl gpui::Render for ProjDragGhost {
-    fn render(&mut self, window: &mut gpui::Window, _cx: &mut gpui::Context<Self>) -> impl IntoElement {
+    fn render(
+        &mut self,
+        window: &mut gpui::Window,
+        _cx: &mut gpui::Context<Self>,
+    ) -> impl IntoElement {
         let t = theme::theme();
         // 锁 x（ZCode restrictVerticalDragWithinContainer 同款）：gpui 把
         // 幽灵放在 mouse − cursor_offset，横向随鼠标漂移；这里反向补偿，

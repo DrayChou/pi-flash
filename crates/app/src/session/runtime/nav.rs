@@ -2,9 +2,7 @@
 //! 追加检测（023 外部改动）。
 
 use gpui::Context;
-use pi_link::protocol::{
-    Block, Command,
-};
+use pi_link::protocol::{Block, Command};
 
 use crate::session::messages::{Role, msgs_from_tail};
 use pi_link::sessions::read_leaf_messages;
@@ -12,7 +10,6 @@ use pi_link::sessions::read_leaf_messages;
 use super::*;
 
 impl SessionRuntime {
-
     /// 绑定对账：pi 报告过的 sessionFile（state 里）若已落盘就跟随绑定
     /// （FileBound → Chat 迁移 pool key + 摘伪标签换真身）。返回 false =
     /// 报过但确定没落盘（调用方据此撤伪标签）。state 还空着时发一条
@@ -71,7 +68,9 @@ impl SessionRuntime {
             return;
         }
         let Some(f) = self.file.clone() else { return };
-        let Ok(meta) = std::fs::metadata(&f) else { return };
+        let Ok(meta) = std::fs::metadata(&f) else {
+            return;
+        };
         let len = meta.len();
         if len == self.disk_file_len || len == 0 {
             return;
@@ -233,7 +232,12 @@ impl SessionRuntime {
     /// by payload timestamp, falling back to the first message containing the
     /// needle. Returns false when messages aren't loaded yet (caller parks a
     /// pending_locate for the reconcile to apply).
-    pub fn locate_message(&mut self, ts: Option<i64>, needle: &str, _cx: &mut Context<Self>) -> bool {
+    pub fn locate_message(
+        &mut self,
+        ts: Option<i64>,
+        needle: &str,
+        _cx: &mut Context<Self>,
+    ) -> bool {
         if self.messages.is_empty() {
             self.pending_locate = Some((ts, needle.to_string()));
             return false;
@@ -361,5 +365,4 @@ impl SessionRuntime {
             tool_calls,
         }
     }
-
 }

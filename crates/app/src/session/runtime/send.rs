@@ -2,11 +2,9 @@
 //! 模型/思考/压缩/工具预设。
 
 use gpui::Context;
-use pi_link::protocol::{
-    Block, Command,
-};
+use pi_link::protocol::{Block, Command};
 
-use crate::i18n::{tr, tf};
+use crate::i18n::{tf, tr};
 use crate::session::messages::{BashInfo, Msg, Role};
 
 use super::*;
@@ -56,18 +54,13 @@ impl SessionRuntime {
                 })
             })
             .collect();
-        match self
-            .agent
-            .session
-            .as_ref()
-            .map(|session| {
-                session.send(&Command::Prompt {
-                    message: text.clone(),
-                    images,
-                    streaming_behavior: Some("steer".into()),
-                })
+        match self.agent.session.as_ref().map(|session| {
+            session.send(&Command::Prompt {
+                message: text.clone(),
+                images,
+                streaming_behavior: Some("steer".into()),
             })
-        {
+        }) {
             Some(Ok(_)) => {
                 self.input.clear();
                 self.pending_images.clear();
@@ -102,7 +95,10 @@ impl SessionRuntime {
         self.messages.push(Msg {
             role: Role::User,
             bash: None,
-            blocks: vec![Block::Text { content_index: 0, text }],
+            blocks: vec![Block::Text {
+                content_index: 0,
+                text,
+            }],
             usage: None,
             entry_id: None,
             ts: Some(crate::services::format::now_ms()),
@@ -307,7 +303,11 @@ impl SessionRuntime {
 
     /// bash response 回填终态（pi BashResult）。乐观卡片按 pending_bash 定位，
     /// 索引失效（快照重建/换档重读）时补一张独立完成卡。
-    pub(super) fn finalize_bash(&mut self, result: pi_link::protocol::BashResult, cx: &mut Context<Self>) {
+    pub(super) fn finalize_bash(
+        &mut self,
+        result: pi_link::protocol::BashResult,
+        cx: &mut Context<Self>,
+    ) {
         self.bash_running = false;
         let end_ts = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -483,7 +483,6 @@ impl SessionRuntime {
         cx.notify();
     }
 
-
     /// 远程（微信）来的一条文本 —— 与 [`send_input`] **同口径**，但不碰
     /// `self.input` / `pending_images`（那两个是 composer 专属的）。
     ///
@@ -506,8 +505,7 @@ impl SessionRuntime {
         };
         // 运行中 = 排队，否则 prompt（与 composer 完全一致；同走 prompt +
         // streamingBehavior，由 pi 原子判定，理由见 send_input）
-        let streaming =
-            self.agent_running || self.state.as_ref().is_some_and(|s| s.is_streaming);
+        let streaming = self.agent_running || self.state.as_ref().is_some_and(|s| s.is_streaming);
         let cmd = Command::Prompt {
             message: text.clone(),
             images: Vec::new(),
@@ -565,14 +563,19 @@ impl SessionRuntime {
         }
         self.thinking_override = Some(level.to_string());
         if let Some(session) = &self.agent.session {
-            let _ = session.send(&Command::SetThinkingLevel { level: level.to_string() });
+            let _ = session.send(&Command::SetThinkingLevel {
+                level: level.to_string(),
+            });
         }
         cx.notify();
     }
 
     pub(crate) fn select_model(&mut self, provider: String, id: String, cx: &mut Context<Self>) {
         if let Some(session) = &self.agent.session {
-            let _ = session.send(&Command::SetModel { provider, model: id });
+            let _ = session.send(&Command::SetModel {
+                provider,
+                model: id,
+            });
         } else {
             // draft with no process: remember the pick, spawn carries it as
             // --model (pi-web newSessionModel parity)
@@ -598,7 +601,12 @@ impl SessionRuntime {
         if !self.can_compact() {
             return;
         }
-        match self.agent.session.as_ref().map(|s| s.send(&Command::Compact)) {
+        match self
+            .agent
+            .session
+            .as_ref()
+            .map(|s| s.send(&Command::Compact))
+        {
             Some(Ok(_)) => {
                 self.compacting = true;
                 self.status = tr("status.compacting").into();
@@ -625,5 +633,4 @@ impl SessionRuntime {
         }
         key.to_string()
     }
-
 }

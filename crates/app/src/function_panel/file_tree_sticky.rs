@@ -10,10 +10,10 @@ use gpui::{
 };
 
 use crate::Chat;
+use crate::appearance::theme;
+use crate::function_panel::file_tree_drag::{TreeDrag, drag_move_target};
 use crate::services::file_icons;
 use crate::services::file_tree::TreeRow;
-use crate::function_panel::file_tree_drag::{TreeDrag, drag_move_target};
-use crate::appearance::theme;
 use crate::ui::icon_path;
 
 use super::file_tree::{
@@ -48,7 +48,9 @@ impl UniformListDecoration for StickyAncestors {
             return div().into_any_element();
         }
         self.weak
-            .update(cx, |chat, _| self.render_stack(chat, visible_range, scroll_offset))
+            .update(cx, |chat, _| {
+                self.render_stack(chat, visible_range, scroll_offset)
+            })
             .unwrap_or_else(|_| div().into_any_element())
     }
 }
@@ -94,10 +96,17 @@ impl StickyAncestors {
         let mut stack = div().relative().w_full();
         for (k, &row_ix) in chain.iter().enumerate() {
             let y = px(k as f32 * ROW_H + if k == last { drift } else { 0. } + compensation);
-            let prev_depth = if k == 0 { None } else { Some(rows[chain[k - 1]].depth) };
+            let prev_depth = if k == 0 {
+                None
+            } else {
+                Some(rows[chain[k - 1]].depth)
+            };
             // 末行引导线向锚点行续（不封底），与列表里的行无缝相接
-            let next_depth =
-                if k == last { Some(rows[anchor_ix].depth) } else { Some(rows[chain[k + 1]].depth) };
+            let next_depth = if k == last {
+                Some(rows[anchor_ix].depth)
+            } else {
+                Some(rows[chain[k + 1]].depth)
+            };
             stack = stack.child(sticky_dir_row(
                 &rows[row_ix],
                 prev_depth,
@@ -168,7 +177,11 @@ fn sticky_dir_row(
         .overflow_hidden()
         .ml(px(row.depth as f32 * INDENT))
         .px(px(CONTENT_PAD))
-        .child(div().flex_shrink_0().child(icon_path(folder, 14., t.text_dim)))
+        .child(
+            div()
+                .flex_shrink_0()
+                .child(icon_path(folder, 14., t.text_dim)),
+        )
         .child(name_label(&row.name));
     el = el.child(inner);
     if row.changed_dot && crate::services::workspace::git_markers() {
@@ -187,7 +200,11 @@ fn sticky_dir_row(
     let weak_drop = weak.clone();
     el.on_mouse_down(MouseButton::Left, move |_, _, cx| {
         let handle = crate::ui::vlist::scroll_handle(FILE_TREE_LIST_ID);
-        handle.0.borrow().base_handle.set_offset(point(px(0.), target_y));
+        handle
+            .0
+            .borrow()
+            .base_handle
+            .set_offset(point(px(0.), target_y));
         let _ = weak.update(cx, |_, cx| cx.notify());
         cx.stop_propagation();
     })

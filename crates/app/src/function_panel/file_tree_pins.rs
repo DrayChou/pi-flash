@@ -8,17 +8,17 @@ use std::sync::Arc;
 use gpui::{SharedString, div, prelude::*, px, rgb};
 
 use crate::Chat;
+use crate::appearance::theme;
 use crate::i18n::tr;
 use crate::same_path;
 use crate::services::file_icons;
 use crate::services::file_tree::TreeRow;
-use crate::appearance::theme;
 use crate::ui::{VListHeight, icon_path, vlist};
 
-use super::file_tree_edit::{edit_chrome, edit_input_slot, validation_note};
 use super::file_tree::{
     CONTENT_PAD, ROW_H, changed_dot, tree_drag_wiring, tree_right_click, tree_row, tree_scrollbar,
 };
+use super::file_tree_edit::{edit_chrome, edit_input_slot, validation_note};
 
 /// Pin 收藏夹视图 vlist 的元素 id（独立句柄，滚动位不与主树共享）。
 const PIN_LIST_ID: &str = "file-pins";
@@ -51,7 +51,8 @@ pub(crate) fn pin_list_view(
         .px(px(6.))
         .pb(px(6.))
         // 空白处右键 = 根目录菜单（同树/变更分支兜底）
-        .on_mouse_down(gpui::MouseButton::Right,
+        .on_mouse_down(
+            gpui::MouseButton::Right,
             move |ev: &gpui::MouseDownEvent, _, cx| {
                 cx.stop_propagation();
                 let Some(cwd_bg) = cwd_bg.clone() else { return };
@@ -93,7 +94,11 @@ pub(crate) fn pin_list_view(
                         let Some(row) = rows.get(ix) else {
                             return div().into_any_element();
                         };
-                        let prev_depth = if ix == 0 { None } else { rows.get(ix - 1).map(|r| r.depth) };
+                        let prev_depth = if ix == 0 {
+                            None
+                        } else {
+                            rows.get(ix - 1).map(|r| r.depth)
+                        };
                         let next_depth = rows.get(ix + 1).map(|r| r.depth);
                         if row.depth == 0 {
                             // 收藏根行：rel 去掉尾部名称 = 淡化路径段
@@ -157,7 +162,10 @@ fn pin_root_row(
     let selected = selected && editing.is_none();
     let sel_bg = gpui::rgba((t.text << 8) | 0x1a);
     let mut el = div()
-        .id(SharedString::from(format!("pin-root-{}", row.path.display())))
+        .id(SharedString::from(format!(
+            "pin-root-{}",
+            row.path.display()
+        )))
         .w_full()
         .h(px(ROW_H))
         .flex()
@@ -194,9 +202,15 @@ fn pin_root_row(
             file_icons::get_icon(&row.path)
         };
         inner = inner
-            .child(div().flex_shrink_0().child(icon_path(icon, 14., t.text_dim)))
+            .child(
+                div()
+                    .flex_shrink_0()
+                    .child(icon_path(icon, 14., t.text_dim)),
+            )
             .child(edit_input_slot(e.input.clone()));
-        el = el.child(inner).children(message.map(|m| validation_note(m, border)));
+        el = el
+            .child(inner)
+            .children(message.map(|m| validation_note(m, border)));
         return el.into_any_element();
     }
 
@@ -205,7 +219,11 @@ fn pin_root_row(
     } else {
         file_icons::get_icon(&row.path)
     };
-    inner = inner.child(div().flex_shrink_0().child(icon_path(icon, 14., t.text_dim)));
+    inner = inner.child(
+        div()
+            .flex_shrink_0()
+            .child(icon_path(icon, 14., t.text_dim)),
+    );
     // 名称前置恒可见 + 路径段后置淡化（changes_row 同款双段布局）
     inner = inner.child(
         div()
@@ -253,7 +271,10 @@ fn pin_root_row(
             });
         });
         // git 徽标同树行（023 默认关）
-        if let Some(st) = row.git.filter(|_| crate::services::workspace::git_markers()) {
+        if let Some(st) = row
+            .git
+            .filter(|_| crate::services::workspace::git_markers())
+        {
             el = el.child(
                 div()
                     .flex_shrink_0()

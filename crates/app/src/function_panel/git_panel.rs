@@ -8,9 +8,9 @@ use std::path::PathBuf;
 use gpui::{MouseButton, SharedString, div, prelude::*, px, relative, rgb};
 
 use crate::Chat;
+use crate::appearance::theme::{Theme, theme as T};
 use crate::i18n::tr;
 use crate::services::git;
-use crate::appearance::theme::{Theme, theme as T};
 use crate::ui::{icon, icon_hover};
 use crate::*;
 
@@ -68,8 +68,22 @@ pub(crate) fn view(
                 )
                 .child(div().flex_1())
                 .child(
-                    div().flex().child(git_tab(GitTab::Changes, &changes_label, chat.ws.git_tab, weak.clone(), cx))
-                        .child(git_tab(GitTab::History, "History", chat.ws.git_tab, weak.clone(), cx)),
+                    div()
+                        .flex()
+                        .child(git_tab(
+                            GitTab::Changes,
+                            &changes_label,
+                            chat.ws.git_tab,
+                            weak.clone(),
+                            cx,
+                        ))
+                        .child(git_tab(
+                            GitTab::History,
+                            "History",
+                            chat.ws.git_tab,
+                            weak.clone(),
+                            cx,
+                        )),
                 ),
         );
 
@@ -122,7 +136,8 @@ fn git_tab(
                 .font_weight(gpui::FontWeight::SEMIBOLD)
         })
         .when(!active, |d| {
-            d.text_color(rgb(t.text_muted)).hover(|s| s.text_color(rgb(t.text)))
+            d.text_color(rgb(t.text_muted))
+                .hover(|s| s.text_color(rgb(t.text)))
         })
         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
             let _ = weak.update(cx, |c, cx| c.git_set_tab(tab, cx));
@@ -133,14 +148,20 @@ fn git_tab(
 /// 变更树节点（目录嵌套 + 文件复选）。
 #[derive(Debug, Clone)]
 enum GitNode {
-    Dir { name: String, children: Vec<GitNode> },
-    File { ix: usize },
+    Dir {
+        name: String,
+        children: Vec<GitNode>,
+    },
+    File {
+        ix: usize,
+    },
 }
 
 fn build_git_tree(chat: &Chat) -> Vec<GitNode> {
     // stable copy with indices into chat.ws.git_files
     let mut files: Vec<(PathBuf, usize)> = chat
-        .ws.git_files
+        .ws
+        .git_files
         .iter()
         .enumerate()
         .map(|(ix, f)| (f.path.clone(), ix))
@@ -193,7 +214,12 @@ fn changes_body(
     } else {
         chat.ws.branch.clone().into()
     };
-    let ahead = chat.ws.cwd.as_deref().map(git::git_ahead_count).unwrap_or(0);
+    let ahead = chat
+        .ws
+        .cwd
+        .as_deref()
+        .map(git::git_ahead_count)
+        .unwrap_or(0);
     let last_commit = chat.ws.git_log.first().cloned();
 
     div()
@@ -224,11 +250,13 @@ fn changes_body(
                         .text_color(rgb(t.text_muted))
                         .cursor_pointer()
                         .hover(|s| s.bg(rgb(t.bg_hover)).text_color(rgb(t.text)))
-                        .on_mouse_down(MouseButton::Left, cx.listener(
-                            |this, _: &gpui::MouseDownEvent, _w, cx| {
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|this, _: &gpui::MouseDownEvent, _w, cx| {
                                 // 选中行优先，否则第一个变更
                                 let target = this
-                                    .ws.git_files
+                                    .ws
+                                    .git_files
                                     .iter()
                                     .find(|f| Some(&f.path) == this.ws.git_selected.as_ref())
                                     .or_else(|| this.ws.git_files.first())
@@ -236,8 +264,8 @@ fn changes_body(
                                 if let Some(p) = target {
                                     this.open_git_diff(p, cx);
                                 }
-                            },
-                        ))
+                            }),
+                        )
                         .child(icon_hover("icon-viewdiff", 13., t.text_muted))
                         .child(SharedString::from(tr("git.view_diff"))),
                 )
@@ -248,20 +276,23 @@ fn changes_body(
                         crate::ui::BtnSize::Sm,
                         crate::ui::BtnVariant::Secondary,
                     )
-                        .flex()
-                        .items_center()
-                        .gap(px(5.))
-                        .on_mouse_down(MouseButton::Left, cx.listener(
-                            |this, _: &gpui::MouseDownEvent, _w, cx| {
-                                // 无项目态：没有可暂存的仓库，no-op
-                                let Some(cwd) = this.ws.cwd.clone() else { return };
-                                this.ws.git_error = git::git_stage_all(&cwd).err();
-                                this.refresh_git(cx);
-                                cx.notify();
-                            },
-                        ))
-                        .child(SharedString::from(tr("git.stage_all")))
-                        .child(icon("chevron-down", 10., t.text_dim)),
+                    .flex()
+                    .items_center()
+                    .gap(px(5.))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _: &gpui::MouseDownEvent, _w, cx| {
+                            // 无项目态：没有可暂存的仓库，no-op
+                            let Some(cwd) = this.ws.cwd.clone() else {
+                                return;
+                            };
+                            this.ws.git_error = git::git_stage_all(&cwd).err();
+                            this.refresh_git(cx);
+                            cx.notify();
+                        }),
+                    )
+                    .child(SharedString::from(tr("git.stage_all")))
+                    .child(icon("chevron-down", 10., t.text_dim)),
                 ),
         )
         // 变更树
@@ -302,45 +333,47 @@ fn changes_body(
                                 crate::ui::BtnSize::Sm,
                                 crate::ui::BtnVariant::Secondary,
                             )
-                                .ml_auto()
-                                .flex()
-                                .items_center()
-                                .gap(px(5.))
-                                .on_mouse_down(MouseButton::Left, cx.listener(
-                                    |this, _: &gpui::MouseDownEvent, _w, cx| {
-                                        this.git_push_branch(cx);
-                                    },
-                                ))
-                                .child(icon_hover("arrow-up", 12., t.text))
-                                .child(SharedString::from(format!("{ahead} Push")))
-                                .child(icon("chevron-down", 10., t.text_dim)),
+                            .ml_auto()
+                            .flex()
+                            .items_center()
+                            .gap(px(5.))
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _: &gpui::MouseDownEvent, _w, cx| {
+                                    this.git_push_branch(cx);
+                                }),
+                            )
+                            .child(icon_hover("arrow-up", 12., t.text))
+                            .child(SharedString::from(format!("{ahead} Push")))
+                            .child(icon(
+                                "chevron-down",
+                                10.,
+                                t.text_dim,
+                            )),
                         ),
                 )
                 // 融入式 commit message 大区（无边框）
                 .child(chat.ws.git_commit_input.clone())
                 .child(
-                    div()
+                    div().flex().items_center().gap(px(8.)).child(
+                        crate::ui::button_base(
+                            "git-commit-btn",
+                            crate::ui::BtnSize::Sm,
+                            crate::ui::BtnVariant::Secondary,
+                        )
+                        .ml_auto()
                         .flex()
                         .items_center()
-                        .gap(px(8.))
-                        .child(
-                            crate::ui::button_base(
-                                "git-commit-btn",
-                                crate::ui::BtnSize::Sm,
-                                crate::ui::BtnVariant::Secondary,
-                            )
-                                .ml_auto()
-                                .flex()
-                                .items_center()
-                                .gap(px(5.))
-                                .on_mouse_down(MouseButton::Left, cx.listener(
-                                    |this, _: &gpui::MouseDownEvent, _w, cx| {
-                                        this.git_commit_staged(cx);
-                                    },
-                                ))
-                                .child(SharedString::from(tr("git.staged")))
-                                .child(icon("chevron-down", 10., t.text_dim)),
-                        ),
+                        .gap(px(5.))
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|this, _: &gpui::MouseDownEvent, _w, cx| {
+                                this.git_commit_staged(cx);
+                            }),
+                        )
+                        .child(SharedString::from(tr("git.staged")))
+                        .child(icon("chevron-down", 10., t.text_dim)),
+                    ),
                 )
                 // 最近提交条 + uncommit
                 .children(last_commit.map(|c| {
@@ -374,10 +407,13 @@ fn changes_body(
                                 .text_color(rgb(t.text_muted))
                                 .cursor_pointer()
                                 .hover(|s| s.bg(rgb(t.bg_hover)).text_color(rgb(t.text)))
-                                .on_mouse_down(MouseButton::Left, cx.listener(
-                                    |this, _: &gpui::MouseDownEvent, _w, cx| {
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(|this, _: &gpui::MouseDownEvent, _w, cx| {
                                         // 无项目态：没有可撤销提交的仓库，no-op
-                                        let Some(cwd) = this.ws.cwd.clone() else { return };
+                                        let Some(cwd) = this.ws.cwd.clone() else {
+                                            return;
+                                        };
                                         match git::git_uncommit(&cwd) {
                                             Ok(()) => {
                                                 this.ws.git_error = None;
@@ -387,8 +423,8 @@ fn changes_body(
                                             Err(e) => this.ws.git_error = Some(e),
                                         }
                                         cx.notify();
-                                    },
-                                ))
+                                    }),
+                                )
                                 .child(icon_hover("refresh", 13., t.text_muted)),
                         )
                 })),
@@ -464,9 +500,7 @@ fn collect_rows(
                         .text_size(crate::appearance::ui_size(11.))
                         .cursor_pointer()
                         .when(selected, |d| {
-                            d.bg(rgb(t.bg_hover))
-                                .border_1()
-                                .border_color(rgb(t.accent))
+                            d.bg(rgb(t.bg_hover)).border_1().border_color(rgb(t.accent))
                         })
                         .when(!selected, |d| d.hover(|s| s.bg(rgb(t.bg_hover))))
                         // 行点击 = 选中（View Diff 目标）
@@ -608,7 +642,14 @@ fn history_body(
                         .pl(px(2.))
                         .text_size(crate::appearance::ui_size(11.))
                         .text_color(rgb(t.text_dim))
-                        .child(div().size(px(12.)).rounded_full().border_1().border_color(rgb(t.border)).bg(rgb(t.bg)))
+                        .child(
+                            div()
+                                .size(px(12.))
+                                .rounded_full()
+                                .border_1()
+                                .border_color(rgb(t.border))
+                                .bg(rgb(t.bg)),
+                        )
                         .child(meta),
                 ),
         );
@@ -631,13 +672,19 @@ impl Chat {
 
     pub(crate) fn refresh_git_log(&mut self) {
         // 无项目态：无提交历史可言
-        let Some(cwd) = self.ws.cwd.clone() else { return };
+        let Some(cwd) = self.ws.cwd.clone() else {
+            return;
+        };
         self.ws.git_log = git::git_log(&cwd, 50);
     }
 
     fn git_toggle_stage(&mut self, ix: usize, cx: &mut gpui::Context<Self>) {
-        let Some(cwd) = self.ws.cwd.clone() else { return };
-        let Some(f) = self.ws.git_files.get(ix) else { return };
+        let Some(cwd) = self.ws.cwd.clone() else {
+            return;
+        };
+        let Some(f) = self.ws.git_files.get(ix) else {
+            return;
+        };
         let (path, staged) = (f.path.clone(), f.staged);
         let r = if staged {
             git::git_unstage(&cwd, &path)
@@ -650,12 +697,16 @@ impl Chat {
     }
 
     pub(crate) fn git_commit_staged(&mut self, cx: &mut gpui::Context<Self>) {
-        let Some(cwd) = self.ws.cwd.clone() else { return };
+        let Some(cwd) = self.ws.cwd.clone() else {
+            return;
+        };
         let msg = self.ws.git_commit_input.read(cx).value().to_string();
         match git::git_commit(&cwd, &msg) {
             Ok(()) => {
                 self.ws.git_error = None;
-                self.ws.git_commit_input.update(cx, |ti, cx| ti.set_value(String::new(), cx));
+                self.ws
+                    .git_commit_input
+                    .update(cx, |ti, cx| ti.set_value(String::new(), cx));
                 self.refresh_git(cx);
                 self.refresh_git_log();
             }
@@ -667,7 +718,9 @@ impl Chat {
     pub(crate) fn git_push_branch(&mut self, cx: &mut Context<Self>) {
         self.ws.git_error = Some(tr("git.pushing").to_string());
         cx.notify();
-        let Some(cwd) = self.ws.cwd.clone() else { return };
+        let Some(cwd) = self.ws.cwd.clone() else {
+            return;
+        };
         cx.spawn(async move |this, cx| {
             // push is network-bound: keep it off the frame path
             let r = cx
@@ -710,14 +763,10 @@ impl Chat {
         let cwd_bg = cwd.clone();
         cx.spawn(async move |this, cx| {
             let (files, add_del) = cx
-                .background_spawn(async move {
-                    (git_status_files(&cwd_bg), git_numstat(&cwd_bg))
-                })
+                .background_spawn(async move { (git_status_files(&cwd_bg), git_numstat(&cwd_bg)) })
                 .await;
             let _ = this.update(cx, |chat, cx| {
-                if chat.ws.git_refresh_gen != seq
-                    || chat.ws.cwd.as_deref() != Some(cwd.as_path())
-                {
+                if chat.ws.git_refresh_gen != seq || chat.ws.cwd.as_deref() != Some(cwd.as_path()) {
                     return;
                 }
                 chat.ws.git_files = files;
@@ -728,5 +777,4 @@ impl Chat {
         })
         .detach();
     }
-
 }

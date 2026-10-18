@@ -5,8 +5,8 @@
 use gpui::{MouseButton, SharedString, prelude::*};
 
 use crate::Chat;
-use crate::i18n::tr;
 use crate::appearance::theme::Theme;
+use crate::i18n::tr;
 use crate::ui::popup::PopupEdges;
 
 use super::psp_overlays::{menu_card, menu_item, menu_sep};
@@ -29,10 +29,7 @@ pub(crate) fn editor_menu_layer(
             cx.notify();
         });
     });
-    let ed = chat
-        .ws.file_cache
-        .get(&path)
-        .and_then(|f| f.editor.clone());
+    let ed = chat.ws.file_cache.get(&path).and_then(|f| f.editor.clone());
     let mut card = menu_card(edges, t);
     card = card
         .child(editor_edit_item(
@@ -268,19 +265,25 @@ fn composer_edit_item(
     make: fn() -> Box<dyn gpui::Action>,
 ) -> gpui::Stateful<gpui::Div> {
     let weak = weak.clone();
-    menu_item(SharedString::from(id.to_string()), icon_name, label, false, false)
-        .on_mouse_down(MouseButton::Left, move |_, window, cx| {
-            cx.stop_propagation();
-            let _ = weak.update(cx, |c, cx| {
-                if let Some(comp) = &c.composer.composer {
-                    let handle = comp.read(cx).focus_handle_in(cx);
-                    window.focus(&handle);
-                    window.dispatch_action(make(), cx);
-                }
-                c.dlg.input_menu = None;
-                cx.notify();
-            });
-        })
+    menu_item(
+        SharedString::from(id.to_string()),
+        icon_name,
+        label,
+        false,
+        false,
+    )
+    .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+        cx.stop_propagation();
+        let _ = weak.update(cx, |c, cx| {
+            if let Some(comp) = &c.composer.composer {
+                let handle = comp.read(cx).focus_handle_in(cx);
+                window.focus(&handle);
+                window.dispatch_action(make(), cx);
+            }
+            c.dlg.input_menu = None;
+            cx.notify();
+        });
+    })
 }
 
 /// 输入菜单「粘贴」项：派发 app 的 ComposerPaste 而非组件 Paste——
@@ -322,15 +325,21 @@ fn editor_item(
     apply: impl Fn(&mut Chat, &mut gpui::Context<Chat>) + 'static,
 ) -> gpui::Stateful<gpui::Div> {
     let weak = weak.clone();
-    menu_item(SharedString::from(id.to_string()), icon_name, label, danger, false)
-        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-            cx.stop_propagation();
-            let _ = weak.update(cx, |c, cx| {
-                apply(c, cx);
-                c.dlg.editor_menu = None;
-                cx.notify();
-            });
-        })
+    menu_item(
+        SharedString::from(id.to_string()),
+        icon_name,
+        label,
+        danger,
+        false,
+    )
+    .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+        cx.stop_propagation();
+        let _ = weak.update(cx, |c, cx| {
+            apply(c, cx);
+            c.dlg.editor_menu = None;
+            cx.notify();
+        });
+    })
 }
 
 /// 编辑动作项（复制/粘贴/剪切/全选）：先归位焦点再派发 Input 动作。
@@ -344,18 +353,24 @@ fn editor_edit_item(
 ) -> gpui::Stateful<gpui::Div> {
     let weak = weak.clone();
     let ed = ed.clone();
-    menu_item(SharedString::from(id.to_string()), icon_name, label, false, false)
-        .on_mouse_down(MouseButton::Left, move |_, window, cx| {
-            cx.stop_propagation();
-            let _ = weak.update(cx, |c, cx| {
-                if let Some(ed) = &ed {
-                    ed.update(cx, |st, scx| st.focus(window, scx));
-                    window.dispatch_action(make(), cx);
-                }
-                c.dlg.editor_menu = None;
-                cx.notify();
-            });
-        })
+    menu_item(
+        SharedString::from(id.to_string()),
+        icon_name,
+        label,
+        false,
+        false,
+    )
+    .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+        cx.stop_propagation();
+        let _ = weak.update(cx, |c, cx| {
+            if let Some(ed) = &ed {
+                ed.update(cx, |st, scx| st.focus(window, scx));
+                window.dispatch_action(make(), cx);
+            }
+            c.dlg.editor_menu = None;
+            cx.notify();
+        });
+    })
 }
 
 /// 「在终端中打开」：文件 = 其所在目录（同文件树菜单语义）。

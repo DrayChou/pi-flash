@@ -39,7 +39,13 @@ fn cached_listing(cwd: &Path) -> std::sync::Arc<Vec<String>> {
         if cache.len() >= MAX_PROJECTS {
             cache.clear();
         }
-        cache.insert(key, ListingEntry { files: files.clone(), built: std::time::Instant::now() });
+        cache.insert(
+            key,
+            ListingEntry {
+                files: files.clone(),
+                built: std::time::Instant::now(),
+            },
+        );
     }
     files
 }
@@ -151,7 +157,9 @@ impl Chat {
     /// 10MB/二进制闸同样生效）。
     pub(crate) fn open_file_search_hit(&mut self, rel: &str, cx: &mut Context<Self>) {
         // 无项目态：命中清单本就不可能存在，防御
-        let Some(cwd) = self.ws.cwd.clone() else { return };
+        let Some(cwd) = self.ws.cwd.clone() else {
+            return;
+        };
         self.dlg.dialog = None;
         self.open_file_tab(cwd.join(rel), cx);
     }
@@ -166,8 +174,14 @@ impl Chat {
     /// cwd 下——收藏清单一律存绝对路径（flatten/gitignore 匹配/改名跟随
     /// 都按绝对路径工作）。
     pub(crate) fn tree_pin_toggle(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        let Some(cwd) = self.ws.cwd.clone() else { return };
-        let path = if path.is_relative() { cwd.join(path) } else { path };
+        let Some(cwd) = self.ws.cwd.clone() else {
+            return;
+        };
+        let path = if path.is_relative() {
+            cwd.join(path)
+        } else {
+            path
+        };
         match self.ws.pinned.iter().position(|p| same_path(p, &path)) {
             Some(ix) => {
                 self.ws.pinned.remove(ix);
@@ -284,8 +298,10 @@ impl Chat {
             self.layout.dock_panel = DockPanel::Files;
             self.reveal_tree_row(&path);
         }
-        let name =
-            path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
         // Zed rename_impl 选区：目录无扩展名选全名，文件选 stem
         let sel_end = if is_dir {
             name.len()
@@ -375,7 +391,9 @@ impl Chat {
         value: &str,
         cx: &mut Context<Self>,
     ) {
-        let Some(mut edit) = self.dlg.tree_edit.clone() else { return };
+        let Some(mut edit) = self.dlg.tree_edit.clone() else {
+            return;
+        };
         let mut filename = value.to_string();
         // Zed confirm_edit：Windows 下尾随点被文件系统忽略，剥掉防错位
         #[cfg(windows)]
@@ -457,7 +475,9 @@ impl Chat {
     /// 键入即校验（Zed populate_validation_error 移植）：首尾空白 = 警告，
     /// 目标已存在 = 错误（同名自身除外），其余清空。`value` 随回调传入。
     pub(crate) fn tree_edit_validate(&mut self, value: &str, cx: &mut Context<Self>) {
-        let Some(edit) = self.dlg.tree_edit.as_mut() else { return };
+        let Some(edit) = self.dlg.tree_edit.as_mut() else {
+            return;
+        };
         let filename = value.to_string();
         edit.validation = if filename.trim().is_empty() {
             TreeValidation::None
@@ -497,7 +517,9 @@ impl Chat {
     /// 自身的点击在 edit_input_slot 已 stop_propagation，绝无派发中的
     /// 输入框租借（与快照读同类）。
     pub(crate) fn tree_edit_confirm_from_click(&mut self, cx: &mut Context<Self>) {
-        let Some(edit) = self.dlg.tree_edit.clone() else { return };
+        let Some(edit) = self.dlg.tree_edit.clone() else {
+            return;
+        };
         let value = edit.input.read(cx).value().to_string();
         self.tree_edit_confirm(TreeEditVia::Dismiss, &value, cx);
     }
@@ -612,18 +634,27 @@ impl Chat {
             return;
         }
         if target.exists() {
-            self.set_status(format!("{}：{}", tr("file_tree.already_exists"), target.display()), cx);
+            self.set_status(
+                format!("{}：{}", tr("file_tree.already_exists"), target.display()),
+                cx,
+            );
             return;
         }
         // 子目录段改名：缺失的中间目录随建（Zed rename_entry 同语义）
         if target.parent().is_some_and(|p| !p.exists())
             && let Err(e) = std::fs::create_dir_all(target.parent().unwrap())
         {
-            self.set_status(crate::i18n::tf("file_tree.rename_failed", &[("e", e.to_string())]), cx);
+            self.set_status(
+                crate::i18n::tf("file_tree.rename_failed", &[("e", e.to_string())]),
+                cx,
+            );
             return;
         }
         if let Err(e) = std::fs::rename(path, &target) {
-            self.set_status(crate::i18n::tf("file_tree.rename_failed", &[("e", e.to_string())]), cx);
+            self.set_status(
+                crate::i18n::tf("file_tree.rename_failed", &[("e", e.to_string())]),
+                cx,
+            );
             return;
         }
         // 打开面重映射：tab 与缓冲持旧路径的话跟上（目录改名 = 整棵前缀）
@@ -655,16 +686,17 @@ impl Chat {
                 *p = remap(p);
             }
         }
-        self.ws.file_cache = self.ws.file_cache.drain().map(|(k, v)| (remap(&k), v)).collect();
+        self.ws.file_cache = self
+            .ws
+            .file_cache
+            .drain()
+            .map(|(k, v)| (remap(&k), v))
+            .collect();
         if let Some(f) = self.ws.pending_focus_file.as_mut() {
             *f = remap(f);
         }
         if is_dir {
-            self.ws.expanded_dirs = self
-                .ws.expanded_dirs
-                .iter()
-                .map(remap)
-                .collect();
+            self.ws.expanded_dirs = self.ws.expanded_dirs.iter().map(remap).collect();
         }
         // 082 选中条目跟随（改名/移动后选中态不悬空，F2 仍指向新路径）
         if let Some(sel) = self.ws.tree_selected.as_mut() {
@@ -690,10 +722,11 @@ impl Chat {
         cx: &mut Context<Self>,
     ) {
         // 护栏：源与目标都必须在项目根内，根本身不可移动（无项目态无树可动）
-        let Some(cwd) = self.ws.cwd.clone() else { return };
-        let in_root = |p: &Path| {
-            same_path(p, &cwd) || crate::services::workspace::is_under(p, &cwd)
+        let Some(cwd) = self.ws.cwd.clone() else {
+            return;
         };
+        let in_root =
+            |p: &Path| same_path(p, &cwd) || crate::services::workspace::is_under(p, &cwd);
         if same_path(src, &cwd) || !in_root(src) || !in_root(dst_dir) {
             return;
         }
@@ -711,7 +744,10 @@ impl Chat {
             return;
         }
         if let Err(e) = std::fs::rename(src, &target) {
-            self.set_status(crate::i18n::tf("file_tree.move_failed", &[("e", e.to_string())]), cx);
+            self.set_status(
+                crate::i18n::tf("file_tree.move_failed", &[("e", e.to_string())]),
+                cx,
+            );
             return;
         }
         self.remap_moved_entry(src, &target, src_is_dir);
@@ -744,7 +780,9 @@ impl Chat {
     /// 杜绝「回调先清槽、commit 再 take 取到空」的时序（文件树删除从未
     /// 生效过的根因）。
     pub(crate) fn tree_delete_confirm_commit(&mut self, cx: &mut Context<Self>) {
-        let Some(path) = self.dlg.tree_confirm_del.clone() else { return };
+        let Some(path) = self.dlg.tree_confirm_del.clone() else {
+            return;
+        };
         self.dlg.tree_confirm_del = None;
         self.tree_delete_commit(&path, cx);
     }
@@ -759,7 +797,12 @@ impl Chat {
     pub(crate) fn tree_delete_commit(&mut self, path: &Path, cx: &mut Context<Self>) {
         // 兜底护栏：项目根不可删（操作栏右键菜单已豁免该入口，这里防
         // 其他调用路径误投递）
-        if self.ws.cwd.as_deref().is_some_and(|cur| same_path(path, cur)) {
+        if self
+            .ws
+            .cwd
+            .as_deref()
+            .is_some_and(|cur| same_path(path, cur))
+        {
             self.set_status(tr("tree.delete_root_denied").to_string(), cx);
             cx.notify();
             return;
@@ -818,12 +861,11 @@ impl Chat {
     /// 语义不变）。成功静默（同创建：成功不提示，失败才弹）。
     fn tree_delete_applied(&mut self, path: &Path, cx: &mut Context<Self>) {
         let stale: Vec<PathBuf> = self
-            .ws.panel_tabs
+            .ws
+            .panel_tabs
             .iter()
             .filter_map(|t| match t {
-                PanelTab::File(p) if same_path(p, path) || p.starts_with(path) => {
-                    Some(p.clone())
-                }
+                PanelTab::File(p) if same_path(p, path) || p.starts_with(path) => Some(p.clone()),
                 _ => None,
             })
             .collect();
@@ -832,12 +874,16 @@ impl Chat {
         }
         // 兜底：file_cache 可能残留无 tab 的 FileTab（历史关闭路径
         // 只摘 tab 没清缓存），按路径一并清，防编辑器还渲染已删文件
-        self.ws.file_cache
+        self.ws
+            .file_cache
             .retain(|k, _| !(same_path(k, path) || k.starts_with(path)));
-        self.ws.expanded_dirs.retain(|d| !(same_path(d, path) || d.starts_with(path)));
+        self.ws
+            .expanded_dirs
+            .retain(|d| !(same_path(d, path) || d.starts_with(path)));
         // 021 Pin 收藏清理：被删条目（目录连子树）出收藏夹
         let pins_before = self.ws.pinned.len();
-        self.ws.pinned
+        self.ws
+            .pinned
             .retain(|p| !(same_path(p, path) || p.starts_with(path)));
         if self.ws.pinned.len() != pins_before {
             self.save_pins();
@@ -908,9 +954,7 @@ fn wire_tree_edit(
             let weak = weak_submit.clone();
             let v = v.to_string();
             cx.defer(move |cx| {
-                let _ = weak.update(cx, |c, cx| {
-                    c.tree_edit_confirm(TreeEditVia::Enter, &v, cx)
-                });
+                let _ = weak.update(cx, |c, cx| c.tree_edit_confirm(TreeEditVia::Enter, &v, cx));
             });
         }));
         let weak_esc = weak.clone();
@@ -939,7 +983,6 @@ fn wire_tree_edit(
     });
 }
 
-
 /// 文件名子串过滤 + 排序：名字前缀命中 > 名字包含 >（带 `/` 的查询）
 /// 整路径包含；同档路径短者先。上限 [`FILE_SEARCH_LIMIT`]。
 fn filter_file_names(files: &[String], needle: &str) -> Vec<String> {
@@ -958,7 +1001,11 @@ fn filter_file_names(files: &[String], needle: &str) -> Vec<String> {
         })
         .map(|f| {
             let name = f.rsplit(['/']).next().unwrap_or(f);
-            let rank = if name.to_lowercase().starts_with(&n) { 0u8 } else { 1u8 };
+            let rank = if name.to_lowercase().starts_with(&n) {
+                0u8
+            } else {
+                1u8
+            };
             (rank, f.clone())
         })
         .collect();

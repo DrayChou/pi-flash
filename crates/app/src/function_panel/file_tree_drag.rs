@@ -63,7 +63,11 @@ pub(crate) struct TreeDragGhost {
 }
 
 impl gpui::Render for TreeDragGhost {
-    fn render(&mut self, _window: &mut gpui::Window, _cx: &mut gpui::Context<Self>) -> impl IntoElement {
+    fn render(
+        &mut self,
+        _window: &mut gpui::Window,
+        _cx: &mut gpui::Context<Self>,
+    ) -> impl IntoElement {
         let t = theme::theme();
         let icon = if self.is_dir {
             file_icons::get_generic_folder_icon(false)
@@ -121,10 +125,22 @@ mod tests {
         // 拖到自己身上；拖回所在目录（目录行与兄弟文件行两条路）；拖到
         // 自己子孙目录里——全部 None
         assert_eq!(drag_move_target(&p("r/a"), true, &p("r/a"), true), None);
-        assert_eq!(drag_move_target(&p("r/sub/x.txt"), false, &p("r/sub"), true), None);
-        assert_eq!(drag_move_target(&p("r/sub/x.txt"), false, &p("r/sub/y.txt"), false), None);
-        assert_eq!(drag_move_target(&p("r/dir"), true, &p("r/dir/inner"), true), None);
-        assert_eq!(drag_move_target(&p("r/dir"), true, &p("r/dir/inner/f.txt"), false), None);
+        assert_eq!(
+            drag_move_target(&p("r/sub/x.txt"), false, &p("r/sub"), true),
+            None
+        );
+        assert_eq!(
+            drag_move_target(&p("r/sub/x.txt"), false, &p("r/sub/y.txt"), false),
+            None
+        );
+        assert_eq!(
+            drag_move_target(&p("r/dir"), true, &p("r/dir/inner"), true),
+            None
+        );
+        assert_eq!(
+            drag_move_target(&p("r/dir"), true, &p("r/dir/inner/f.txt"), false),
+            None
+        );
     }
 
     #[test]

@@ -2,16 +2,13 @@
 //! 写入点，事件臂共用）。
 
 use gpui::Context;
-use pi_link::protocol::{
-    Block, Usage,
-};
+use pi_link::protocol::{Block, Usage};
 
 use crate::session::messages::{BashInfo, Msg, Role, UsageLine, merge_tool_result, result_payload};
 
 use super::*;
 
 impl SessionRuntime {
-
     /// Convert one wire message (get_messages snapshot shape) into render
     /// state. Mirrors msgs_from_tail semantics exactly: user/assistant push,
     /// toolResult merges into the paired tool call, other roles skipped.
@@ -129,22 +126,21 @@ impl SessionRuntime {
 
     fn last_assistant(&mut self) -> &mut Msg {
         if !matches!(self.messages.last(), Some(m) if m.role == Role::Assistant) {
-            self.messages
-                .push(Msg {
-                    role: Role::Assistant,
-                    bash: None,
-                    blocks: Vec::new(),
-                    usage: None,
-                    entry_id: None,
-                    ts: None,
-                    end_ts: None,
-                    stop_reason: None,
-                    error_message: None,
-                    custom_type: None,
-                    custom_display: true,
-                    details: None,
-                    model: None,
-                });
+            self.messages.push(Msg {
+                role: Role::Assistant,
+                bash: None,
+                blocks: Vec::new(),
+                usage: None,
+                entry_id: None,
+                ts: None,
+                end_ts: None,
+                stop_reason: None,
+                error_message: None,
+                custom_type: None,
+                custom_display: true,
+                details: None,
+                model: None,
+            });
         }
         self.messages.last_mut().expect("just pushed")
     }
@@ -153,7 +149,10 @@ impl SessionRuntime {
         let msg = self.last_assistant();
         while msg.blocks.len() <= content_index {
             let pad = msg.blocks.len();
-            msg.blocks.push(Block::Text { content_index: pad, text: String::new() });
+            msg.blocks.push(Block::Text {
+                content_index: pad,
+                text: String::new(),
+            });
         }
         let same_kind = match (&msg.blocks[content_index], &fresh) {
             (Block::Text { .. }, Block::Text { .. })
@@ -166,5 +165,4 @@ impl SessionRuntime {
         }
         &mut msg.blocks[content_index]
     }
-
 }
