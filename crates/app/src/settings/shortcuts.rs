@@ -1,13 +1,12 @@
-//! 设置「快捷键」页（082）：内容整体水平+垂直居中的索引版式——无页标题
-//! （弹窗头已有页名），组标题带条数（细线延伸），行内纯文字 + 点线引导，
-//! 键帽为平面样式
+//! 设置「快捷键」页（082）：居中索引版式——无页标题（弹窗头已有页名），
+//! 组标题带条数（细线延伸），行内纯文字 + 点线引导，键帽为平面样式
 //! （细边框 + 底部厚边，修饰键浅一档灰）。组标题与行文案的左缘都落在
 //! 原数字列起点（行内 px(2) 内边距处），去掉编号后不额外缩进。键帽来源
 //! 分两类：
-//! - 有 action 的项：keymap 反查（`highest_precedence_binding_for_action`
+//! - 有 action 的五项：keymap 反查（`highest_precedence_binding_for_action`
 //!   首键，单一事实源，与按钮 tooltip 键位 chip 同源，改绑定自动跟随）；
-//! - Ctrl+←/→（082 三期起已有 action，反查命中）；F2 与终端跳词两键走
-//!   渲染根按键兜底/PTY 直发，**无 action**，键串静态解析。
+//! - Ctrl+←/→ 与 F2：走渲染根按键兜底、**故意没有 action**（None-context
+//!   绑定会把输入框词移动抢掉，见 shell/render.rs），键串静态解析。
 
 use super::*;
 use gpui::{Action, AsKeystroke, FontWeight, Keystroke, Window};
@@ -47,12 +46,12 @@ pub(crate) fn mc_shortcuts_view(window: &Window) -> gpui::AnyElement {
         (
             tr("shortcuts.view_left"),
             tr("shortcuts.view_left_hint"),
-            action_key(&crate::ViewLeft, window),
+            Some(bare_key("ctrl-left")),
         ),
         (
             tr("shortcuts.view_right"),
             tr("shortcuts.view_right_hint"),
-            action_key(&crate::ViewRight, window),
+            Some(bare_key("ctrl-right")),
         ),
     ];
     let file_tree: Vec<(&str, &str, Option<Keystroke>)> = vec![(
@@ -60,31 +59,9 @@ pub(crate) fn mc_shortcuts_view(window: &Window) -> gpui::AnyElement {
         tr("shortcuts.rename_hint"),
         Some(bare_key("f2")),
     )];
-    // 终端：跳词两键直发 PTY（无 action，静态解析）；键盘直通语义已在
-    // 跳词 hint 里说明（Ctrl+←/→ 留给切标签）
-    let terminal: Vec<(&str, &str, Option<Keystroke>)> = vec![
-        (
-            tr("shortcuts.term_word_jump_left"),
-            tr("shortcuts.term_word_jump_hint"),
-            Some(bare_key("ctrl-shift-left")),
-        ),
-        (
-            tr("shortcuts.term_word_jump_right"),
-            tr("shortcuts.term_word_jump_hint"),
-            Some(bare_key("ctrl-shift-right")),
-        ),
-    ];
-    // md 预览：六个滚动键无独立 action 展示价值，合一行（desc 列出全键）
-    let markdown: Vec<(&str, &str, Option<Keystroke>)> = vec![(
-        tr("shortcuts.md_scroll"),
-        tr("shortcuts.md_scroll_hint"),
-        None,
-    )];
 
-    // 弹窗 body 是 block 容器（taffy block 不解析流内auto margin），水平
-    // 居中走 items_center + max_w；上下居中由宿主 mc-body 转纵排 flex 的
-    // justify_center 完成（block 容器里子元素百分比 min_h 不解析，pane 自
-    // 身撑不出高度，见 settings/mod.rs）
+    // 弹窗 body 是 block 容器（taffy block 不解析流内auto margin），居中
+    // 走 items_center + max_w
     let mut root = div().w_full().flex().flex_col().items_center();
     let mut col = div().w_full().max_w(px(COL_W)).flex().flex_col();
 
@@ -92,8 +69,6 @@ pub(crate) fn mc_shortcuts_view(window: &Window) -> gpui::AnyElement {
     let groups = vec![
         (tr("shortcuts.group_global"), global),
         (tr("shortcuts.group_file_tree"), file_tree),
-        (tr("shortcuts.group_terminal"), terminal),
-        (tr("shortcuts.group_markdown"), markdown),
     ];
     let mut row_ix = 0usize;
     for (gi, (name, entries)) in groups.into_iter().enumerate() {
@@ -286,7 +261,7 @@ fn plus_sep() -> gpui::AnyElement {
         .font_family(crate::editor::markdown::MONO_FAMILY)
         .text_size(crate::appearance::ui_size(11.))
         .text_color(rgb(T().text_faint))
-        .child(tr("shortcuts.plus"))
+        .child("+")
         .into_any_element()
 }
 

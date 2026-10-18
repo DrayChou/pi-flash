@@ -488,8 +488,8 @@ fn nav_items(tab: u8, weak_close: gpui::WeakEntity<Chat>) -> Vec<gpui::AnyElemen
         (TAB_PLUGINS, tr("settings.tab.extensions"), "plug"),
         (TAB_MCP, tr("settings.tab.mcp"), "server"),
         (TAB_MISC, tr("settings.tab.misc"), "ellipsis"),
-        (TAB_SHORTCUTS, tr("settings.tab.shortcuts"), "keyboard"),
         (TAB_ABOUT, tr("settings.tab.about"), "info"),
+        (TAB_SHORTCUTS, tr("settings.tab.shortcuts"), "keyboard"),
     ];
     items
     .iter()
