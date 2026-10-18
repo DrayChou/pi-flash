@@ -91,3 +91,15 @@
 `conhost.exe 0x4` + `GetConsoleProcessList` 在 `main` 第一行就 `attached=true`；
 修复后同一探针 `attached=false`、进程树只剩 `node.exe`（pi 侧车）与 `git.exe`
 （都 CREATE_NO_WINDOW），无 conhost、无 WT 新进程。
+
+## cargo fmt 会打断 i18n_audit（i18n.rs 禁止整包 fmt）
+
+`i18n_audit::keys_and_translations_are_complete` 按行解析 `i18n.rs` 的
+TABLE（行 trim 后以 `(` 开头 + 拆出 4 列），表行**必须一行一条**。对
+`crates/app` 跑 `cargo fmt` 会把超宽表行折成多行 → audit 只解析到零头
+（实测 552 → 233）直接 panic「TABLE 解析异常」。2026-10-18 实踩两回。
+
+**规矩**：改完代码要格式化时，用 `rustfmt --edition 2024 <具体文件>` 点名
+格式化自己改的文件，**不要**对 app 包跑整包 `cargo fmt`（包里就有
+i18n.rs 这颗雷）。误伤后恢复：`git checkout HEAD -- crates/app/src/i18n.rs`
+再重插新增表行（表行统一 `, ` 分隔单行格式）。
