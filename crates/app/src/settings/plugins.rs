@@ -314,7 +314,7 @@ fn pl_sidebar(
                     .text_color(rgb(t.text_dim))
                     .child(tr("extensions.global_defaults")),
             )
-            // 082：【更新全部(n)】——无可更新且非更新中不渲染（安静原则）
+            // 082：【更新全部(n)】——恒渲染，无可更新时禁用灰态
             .children(pl_update_all_button(chat, weak, t))
             // 计数 + 总开关合成一个组头三态开关（与技能页同一画法）：
             // 部分启用时轨道减淡、knob 停在开位，不装成全关也不同于全选。
@@ -555,8 +555,8 @@ fn pl_detail(
         .into_any_element()
 }
 
-/// 082 列表 title 行的【更新全部(n)】：无可更新且非更新中不渲染（安静
-/// 原则）；更新全部转圈，其他 op 进行中禁用。
+/// 082 列表 title 行的【更新全部(n)】：**恒渲染**（用户 2026-10-31 验收定
+/// 稿：无可更新也是禁用灰态，不隐藏）；更新全部转圈，其他 op 进行中禁用。
 fn pl_update_all_button(
     chat: &Chat,
     weak: &gpui::WeakEntity<Chat>,
@@ -568,9 +568,6 @@ fn pl_update_all_button(
     );
     let updating_any = chat.cfg.pkg_op.is_some();
     let n = chat.aux.plugin_updates.available();
-    if n == 0 && !updating_all {
-        return None;
-    }
     let label = SharedString::from(format!("{}({n})", tr("extensions.update_all")));
     let mut b = div()
         .id("pkg-update-all")
@@ -586,8 +583,8 @@ fn pl_update_all_button(
             .text_color(rgb(t.text_dim))
             .child(crate::ui::spinner(10., t.text_dim))
             .child(tr("extensions.updating_all"));
-    } else if updating_any {
-        // 装/卸等其他 op 进行中：禁用态
+    } else if updating_any || n == 0 {
+        // 装/卸等其他 op 进行中，或尚无可更新项：禁用灰态
         b = b.opacity(0.5).text_color(rgb(t.text_dim)).child(label);
     } else {
         let w = weak.clone();

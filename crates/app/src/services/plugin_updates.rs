@@ -307,29 +307,50 @@ fn has_git_ref(source: &str) -> bool {
 // ---------------------------------------------------------------------------
 
 /// npm 调用（pi-web node-cli 同款）：定位 `<node 目录>/node_modules/npm/bin/
-/// npm-cli.js` 用 PF 自带 node 直跑；找不到退裸 `npm`。
+/// npm-cli.js` 用 PF 自带 node 直跑。PATH 上的 `npm` 在 Windows 实为
+/// `npm.cmd`，直接 spawn 会被拒（CVE-2024-27980，实测报 `program not
+/// found`）；全兜底落空退裸 `npm`（仅 Unix 可用）。
 fn npm_invocation(args: &[&str]) -> Result<Command, String> {
-    let node = pi_link::vendor::node_bin();
-    let node_path = Path::new(&node);
-    let npm_cli = node_path
-        .is_absolute()
-        .then(|| {
-            node_path
-                .parent()
-                .map(|d| d.join("node_modules/npm/bin/npm-cli.js"))
-        })
-        .flatten()
+    let node = resolve_node_path();
+    let npm_cli = node
+        .as_ref()
+        .and_then(|n| n.parent())
+        .map(|d| d.join("node_modules/npm/bin/npm-cli.js"))
         .filter(|p| p.is_file());
-    let mut cmd = match npm_cli {
-        Some(script) => {
+    let mut cmd = match (node, npm_cli) {
+        (Some(node), Some(script)) => {
             let mut c = Command::new(&node);
             c.arg(script);
             c
         }
-        None => Command::new("npm"),
+        _ => Command::new("npm"),
     };
     cmd.args(args);
     Ok(cmd)
+}
+
+/// node 可执行绝对路径：vendored 规则给的已是路径直接用；裸 `"node"`
+/// （PATH 兑底）时扫 PATH 找 node.exe——否则定位不了同目录的 npm-cli.js。
+fn resolve_node_path() -> Option<PathBuf> {
+    let node = pi_link::vendor::node_bin();
+    let p = Path::new(&node);
+    if p.is_absolute() {
+        return Some(p.to_path_buf());
+    }
+    #[cfg(windows)]
+    let candidates = ["node.exe"];
+    #[cfg(not(windows))]
+    let candidates = ["node"];
+    let path_var = std::env::var("PATH").ok()?;
+    for dir in std::env::split_paths(&path_var) {
+        for name in candidates {
+            let cand = dir.join(name);
+            if cand.is_file() {
+                return Some(cand);
+            }
+        }
+    }
+    None
 }
 
 /// 带超时的子进程执行：输出小（版本串/hash），管道不会写满，轮询 try_wait
