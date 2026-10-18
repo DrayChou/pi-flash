@@ -2,6 +2,40 @@
 
 All notable changes to released versions live here; see `docs/CHANGELOG规范.md` for the format.
 
+## [0.2.0] - 2026-10-18
+
+This release focuses on: performance — the giant-session lag is fixed at its root (a 688-message session drops from O(turns) to O(viewport) per frame, composer typing no longer repaints the whole window per keystroke, and the send freeze is gone); three major features — session pinning, Pi extension update detection, and session auto-cleanup; free tab drag & drop on the topbar (Zed-style); and mid-session RPC stops are no longer silent.
+
+### Install & Update
+
+```bash
+npm install -g pi-flash@latest   # same command for first install and updates
+pi-flash
+```
+
+Requires Node.js ≥ 22.19.
+Or download the zip portable build, extract and double-click `pi-flash.exe` — no Node needed.
+Windows x64 only.
+
+**On 0.1.11 or later, the in-app updater works** (Settings → Check for updates). **If you are still on 0.1.10 or earlier, you must use the npm command above** (the old in-app updater is broken and cannot install new builds).
+
+### New
+- Session pinning (020): hover a session row for the pin slot, or use the pin button on the right-click card; pinned sessions form a group at the top (folder-bookmark header); the original project group filters by the pin list so entries never show twice. (c1f811f, d68112d, 42eaaf9, f652ad0)
+- Pi extension update detection & updates (082): the extensions page detects available updates and updates all in one click; the detail card's [Update] button only appears when an update exists. (4fe2aeb, f3e860c, 02bb266)
+- Session auto-cleanup (052): a day-based stepper in Settings → Other (0/5/…/100, default 0 = off); a background task moves expired sessions to the recycle bin. (609924e, d5451eb, 15799c7)
+- Adjustable session content width: one content column for the message list and the composer capsule (capped at 1200 / step 20). (041bdee, a258cd0)
+- Free tab drag & drop on the topbar (Zed pane parity): file tabs reorder freely (the pinned session-tab segment stays fixed); the tab strip follows the active tab; the tab area stretches to 20px left of the minimize button; drag ghosts carry file-type icons and grab-hand cursors. (4b6596a, 46497cc, ac3b2ef, b2a5996, 801db0a, c5a394d)
+- Panic logs written to disk (diag): crashes leave evidence behind. (e06c777)
+- All UI strings moved into the i18n tables: zero hardcoded strings across 26 files. (1702292)
+
+### Fixes
+- Giant-session lag fixed at the root: a 688-message session drops from O(turns) to O(viewport) per frame; composer typing removes the per-keystroke O(n) passes and redundant per-frame work and no longer repaints the whole window, with the input crash fixed; the send freeze (two O(session-size) scans on the main thread) is gone; input history capped. (89ac76e, 3b326ec, e06c777, 3540725)
+- RPC: stopping a session mid-run is no longer silent — EOF now completes turn-final semantics and session events are parsed in full. (775150e)
+- Single-semantics regression: current project ≡ the active session's project; removed a vestigial send-gate check. (ff29615, 12544df)
+- Registered projects with zero sessions no longer create empty groups — no "no sessions" placeholder projects in the panel. (2d1a5c0)
+- Root cause of "sticky" tab drags: non-unique tab element ids (ported from zed pane.rs). (258185a, bf58439)
+- Shortcuts page restored to the centered index layout (2 groups, 9 entries) with its tab moved after "About"; a batch of acceptance rework on the new-session page (notification strip bottom-anchoring, divider, card layout, zero-width extension card deformation, etc.). (f85eb3a, 928763d, b8f962b, 3eef399, 4a3ef19, 294a712)
+- Minimum window height relaxed to 600 (restore size and minimum size split into four constants). (1cfbd1b)
 ## [0.1.13] - 2026-10-17
 
 This release focuses on: a reworked startup targeting — the app opens on the "most recently active project" and no longer fabricates project state; the "update handover pollutes the project registry with the payload directory" issue exposed by real-machine testing of 0.1.12 is fixed for good; a new "latte" theme; two hard bugs fixed (project-switch crash and duplicate queued sends); file-tree and dock state now survive restarts.
