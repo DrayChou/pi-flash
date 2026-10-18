@@ -218,8 +218,10 @@ impl Chat {
     /// 版排序：用户排序 > 首建默认序（当前项目钉顶 + 活动倒序，仅一次）>
     /// 运行期保序；组内会话恒按活动倒序——详见下方实现注释）。
     pub(crate) fn rebuild_projects(&mut self, all: Vec<pi_link::sessions::SessionInfo>) {
-        // PF 项目注册表（打开项目即注册）：注册表里的项目即使零会话也有组
-        // （见下方空组兑底），打开时刻参与 newest() 排序兑底
+        // PF 项目注册表（打开项目即注册）：打开时刻参与 newest() 排序兑底。
+        // 注册项目**零会话不建组**（用户 2026-10-18 定案，推翻 10-16 空组
+        // 并集口径）——psp 只显示装载窗口内有会话的项目 + 当前项目空组；
+        // 全部注册项仍在「打开项目」弹窗可寻
         let records = pi_link::projects::project_records();
         let opened: std::collections::HashMap<String, i64> = records
             .iter()
@@ -265,27 +267,6 @@ impl Chat {
                 path: cwd.clone(),
                 sessions: Vec::new(),
                 opened_ms: opened_ms(&cwd),
-            });
-        }
-        // 注册表兑底：PF 打开过（注册）但零会话、也非当前项目的项目建空组
-        // ——打开后同时出现在 psp 分组与打开项目弹窗（用户 2026-10-16 定案）；
-        // 目录已删的注册项不再出现
-        for r in &records {
-            if !r.path.is_dir() {
-                continue;
-            }
-            let key = same_ws_key(&r.path.to_string_lossy());
-            if groups
-                .iter()
-                .any(|g| same_ws_key(&g.path.to_string_lossy()) == key)
-            {
-                continue;
-            }
-            groups.push(crate::ProjectGroup {
-                name: crate::services::workspace::project_name(&r.path),
-                path: r.path.clone(),
-                sessions: Vec::new(),
-                opened_ms: r.last_opened_ms,
             });
         }
         // 组内会话恒按活动倒序（020）：项目排序走哪条路都不影响组内

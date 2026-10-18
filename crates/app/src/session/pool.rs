@@ -655,8 +655,8 @@ impl Chat {
         // 「进入项目」唯一显式入口：cwd 只在这里 / 恢复路径 / open_session
         // 跨项目三处被写入，全部源自用户动作（010 重设计：应用永不搢造）
         self.ws.cwd = Some(cwd.clone());
-        // 打开项目即注册（PF 项目注册表）：零会话也活跃，psp 分组与
-        // 打开项目弹窗两面板并集口径（用户 2026-10-16 定案）
+        // 打开项目即注册（PF 项目注册表）：供「打开项目」弹窗枚举与 newest()
+        // 排序兑底；psp 分组侧零会话项目不建组（用户 2026-10-18 定案）
         pi_link::projects::register_project(&cwd);
         self.dlg.dialog = None;
         // 全套跟着新 cwd 重挂（Pin 收藏夹/树/git/fs watcher/项目文件索引/
