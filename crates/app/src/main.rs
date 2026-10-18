@@ -108,9 +108,46 @@ static PERF: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(
 /// further matches are reachable by typing to filter.
 pub(crate) const MODEL_PICKER_ROWS: usize = 12;
 
+/// 崩溃落盘（诊断地基）：gpui 主线程 panic 在无控制台的 GUI 进程里表现为
+/// 「窗口没了/卡死」，日志里什么都没有——用户只能看到“崩了”，开发者连
+/// 哪个文件哪一行都拿不到（2026-10-18 实际踩过：一次输入路径的借用 panic
+/// 耗掉整轮排查）。把 panic 消息 + 位置 + backtrace 写进
+/// `<PF 目录>/logs/crash-<ts>.log`，下次启动就能直接读。
+///
+/// 所有失败一律返回 None：本函数也跑在 panic 处理路径上，不能自己再抛。
+pub(crate) fn write_crash_log(info_text: &str) -> Option<PathBuf> {
+    let dir = pi_link::paths::ensure_dir()?.join("logs");
+    std::fs::create_dir_all(&dir).ok()?;
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let path = dir.join(format!("crash-{ts}.log"));
+    let body = format!(
+        "pi-flash crash\ntime: {ts}\npid: {}\n\n{info_text}\n\nbacktrace:\n{}\n",
+        std::process::id(),
+        std::backtrace::Backtrace::force_capture(),
+    );
+    std::fs::write(&path, body).ok()?;
+    Some(path)
+}
+
+fn install_crash_hook() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        // 先写盘；catch_unwind 兼作最后一道保险（hook 里再 panic 会丢原信息）
+        let info_text = info.to_string();
+        if let Ok(Some(p)) = std::panic::catch_unwind(move || write_crash_log(&info_text)) {
+            eprintln!("[crash] 已写入 {}", p.display());
+        }
+        default_hook(info);
+    }));
+}
+
 
 fn main() {
     let _ = T0.set(std::time::Instant::now());
+    install_crash_hook();
     // 081 启动交接：双击/快捷方式直启 exe 也认新版本。开窗之前若安装根下
     // 已有「版本更高的完整载荷目录」（应用内更新只解压不 rename），就 spawn
     // 它的 exe 并让位——用户只感觉这次启动慢半拍；拉不起来则照常启动旧版
@@ -296,4 +333,22 @@ fn main() {
             }
             cx.activate(true);
         });
+}
+
+#[cfg(test)]
+mod crash_log_tests {
+    use super::write_crash_log;
+
+    /// 崩溃落盘契约（诊断地基）：正文必须含 panic 消息与 backtrace 段，
+    /// 且路径落在 <PF 目录>/logs/crash-*.log。回归锁防「hook 在但写不出」。
+    #[test]
+    fn crash_log_written_with_message_and_backtrace() {
+        let path = write_crash_log("boom: 输入路径重入借用").expect("写盘失败");
+        assert!(path.to_string_lossy().contains("logs"));
+        assert!(path.file_name().unwrap().to_string_lossy().starts_with("crash-"));
+        let body = std::fs::read_to_string(&path).expect("读回失败");
+        assert!(body.contains("boom: 输入路径重入借用"), "缺 panic 消息: {body}");
+        assert!(body.contains("backtrace:"), "缺 backtrace 段: {body}");
+        std::fs::remove_file(&path).ok();
+    }
 }

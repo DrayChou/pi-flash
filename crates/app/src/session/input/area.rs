@@ -507,6 +507,11 @@ fn ensure_composer(
         f.set_on_change(Rc::new(move |v, cx| {
             let _ = weak_change.update(cx, |chat, cx| {
                 if chat.composer.input != v {
+                    // 赋值前快照旧值的派生界面态（**纯字符串**，不碰任何实体）
+                    let had_text = !chat.composer.input.is_empty();
+                    let was_bang = chat.composer.input.trim_start().starts_with('!');
+                    let had_menu_chars =
+                        chat.composer.input.contains('/') || chat.composer.input.contains('@');
                     // enter() 污染签名（原文尾追 \n）：组件 Enter 先插换行
                     // 触发本次 Change，随即 PressEnter → on_submit 用剥 \n 的
                     // 值覆盖回来。此间过滤集未变，不能复位 menu_ix——否则
@@ -524,7 +529,33 @@ fn ensure_composer(
                         chat.composer.menu_scroll
                             .set_offset(gpui::point(px(0.), px(0.)));
                     }
-                    cx.notify();
+                    // **派生界面态不变就不 notify**：正文中间打字/删字（绝大
+                    // 多数键）只改组件自己的内容，它自绘自己；此前每键一次
+                    // Chat 整窗重绘，长会话里就是「input panel 输入迟缓」。
+                    //
+                    // 判定只许用**纯字符串比较**：本回调由 ComposerInput 自身
+                    // 的 update 触发，此刻该实体正被可变借用——任何
+                    // `composer.composer.read(cx)`（如 active_menu → at_token）
+                    // 都是重入借用，gpui 直接 panic（2026-10-18 实际踩过：
+                    // 每敲一个键就崩）。
+                    //
+                    // 整窗重绘的消费者只有三样：发送钮可用态（空↔非空）、
+                    // `!` shell 边框（前导 ! 态）、slash/@ 菜单及其过滤（菜单
+                    // 列表由 Chat 渲）。宁可多 notify，不可漏。
+                    let has_text = !chat.composer.input.is_empty();
+                    let is_bang = chat.composer.input.trim_start().starts_with('!');
+                    let has_menu_chars = chat
+                        .composer
+                        .input
+                        .contains('/')
+                        || chat.composer.input.contains('@');
+                    if had_text != has_text
+                        || was_bang != is_bang
+                        || had_menu_chars
+                        || has_menu_chars
+                    {
+                        cx.notify();
+                    }
                 }
             });
         }));
