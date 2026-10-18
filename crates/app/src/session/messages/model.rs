@@ -165,6 +165,19 @@ impl Msg {
         }
     }
 
+    /// 文本总字节数（Text 块长度和）：回显去重的廉价预筛——先比长度再
+    /// 全量 plain_text，避免在几百条消息上逐条全量拼 String（大粘贴会话
+    /// 里这是发送路径上秒级的主线程冻结源）。
+    pub(crate) fn text_len(&self) -> usize {
+        self.blocks
+            .iter()
+            .map(|b| match b {
+                Block::Text { text, .. } => text.len(),
+                _ => 0,
+            })
+            .sum()
+    }
+
     /// 文本前缀（导航面板摘要专用）：拼够 max_chars 个字符即停，避免为
     /// 截断摘要把整条长回复全量拼接一遍（nav 每帧都取，长程任务会话里
     /// 全量 join 的成本随回复长度线性涨）。换行拍平成空格：摘要靠

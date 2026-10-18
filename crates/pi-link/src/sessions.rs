@@ -104,6 +104,10 @@ struct IndexEntry {
     preview: String,
     name: Option<String>,
     message_count: u64,
+    /// 计数已覆盖的字节前缀（pi 会话文件只追加）：增量计数从此字节续读。
+    /// 旧版索引文件无此字段 → 0（下次指纹失效时全量重数一次后落盘）。
+    #[serde(default)]
+    count_bytes: u64,
 }
 
 impl IndexEntry {
@@ -297,7 +301,11 @@ impl Scanner {
                 return Some(entry.to_session_info(path, *mtime));
             }
         }
-        let entry = scan_file(path, *mtime, size)?;
+        // 活跃会话文件每轮都在变（用户每发一条消息 ListDirty 就重扫
+        // 一次），把旧条目传下去让计数只读新增后缀——全量流读几百 MB
+        // 的会话文件发生在主线程就是「发送一条消息窗口就冻死」的实绩。
+        let prev = self.entries.get(path).cloned();
+        let entry = scan_file(path, *mtime, size, prev.as_ref())?;
         self.scans += 1;
         self.dirty = true;
         self.entries.insert(path.to_path_buf(), entry.clone());
@@ -363,24 +371,40 @@ fn read_tail(path: &Path, bytes: u64) -> String {
 }
 
 /// Streaming message count — one pass, no whole-file allocation.
-fn count_messages(path: &Path) -> u64 {
-    use std::io::BufRead;
-    let Ok(f) = std::fs::File::open(path) else { return 0 };
+fn count_messages(path: &Path, start_byte: u64, base: u64) -> (u64, u64) {
+    // 返回 (总数, 已覆盖字节)。只统计 '\n' 结尾的完整行；文件尾未落盘完
+    // 的半行不计、不推进——半行既可能漏 needle 也可能把 needle 拆在边界，
+    // 留给下次扫描重数。start_byte 之前的字节默认已计过（pi 会话文件只
+    // 追加）：活跃会话每轮重扫从全量流读退化为 O(新增量)。
+    use std::io::{BufRead, Seek, SeekFrom};
+    let Ok(mut f) = std::fs::File::open(path) else {
+        return (base, start_byte);
+    };
+    let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+    let start = start_byte.min(len);
+    if f.seek(SeekFrom::Start(start)).is_err() {
+        return (base, start);
+    }
     let mut reader = std::io::BufReader::with_capacity(128 * 1024, f);
     let mut line = String::new();
-    let mut count = 0u64;
+    let mut count = base;
+    let mut consumed = start;
     loop {
         line.clear();
         match reader.read_line(&mut line) {
             Ok(0) | Err(_) => break,
-            Ok(_) => {
+            Ok(n) => {
+                if !line.ends_with('\n') {
+                    break; // 尾部半行：留给下次
+                }
+                consumed += n as u64;
                 if line.contains(NEEDLE_MESSAGE) {
                     count += 1;
                 }
             }
         }
     }
-    count
+    (count, consumed)
 }
 
 /// Upper bound for the session_info tail search. A rename record sits at
@@ -471,7 +495,12 @@ fn preview_from_partial_line(line: &str) -> Option<String> {
 /// One bounded scan of a session file: header + preview from the prefix,
 /// name from the tail, count streamed. Never reads the whole file into
 /// memory at once.
-fn scan_file(path: &Path, modified: SystemTime, size: u64) -> Option<IndexEntry> {    let prefix = read_prefix(path, PREFIX_BYTES);
+///
+/// `prev` = 旧索引条目（指纹失效前的版本）：pi 会话文件只追加，计数从
+/// `count_bytes` 续读新增后缀即可；文件缩水（外部改写，非 pi 行为）才
+/// 全量重数。活跃会话文件每轮都在变，这里的增量化直接决定发送消息时
+/// 主线程重扫的卡顿。
+fn scan_file(path: &Path, modified: SystemTime, size: u64, prev: Option<&IndexEntry>) -> Option<IndexEntry> {    let prefix = read_prefix(path, PREFIX_BYTES);
     let mut id = String::new();
     let mut cwd = String::new();
     let mut preview = String::new();
@@ -531,6 +560,16 @@ fn scan_file(path: &Path, modified: SystemTime, size: u64) -> Option<IndexEntry>
     }
     preview = preview.replace('\n', " ");
     let dur = modified.duration_since(UNIX_EPOCH).unwrap_or_default();
+    let (message_count, count_bytes) = match prev {
+        // 只追加：从旧计数终点续读。count_bytes == 0 的旧版索引条目不算——
+        // 那时的 message_count 是旧文件的全量计数，从 0 续读会把旧行重复
+        // 计入，必须全量重数一次后落盘
+        Some(p) if p.count_bytes > 0 && size >= p.count_bytes => {
+            count_messages(path, p.count_bytes, p.message_count)
+        }
+        // 文件缩水 / 无可靠基线 = 外部改写，全量重数
+        _ => count_messages(path, 0, 0),
+    };
     Some(IndexEntry {
         mtime_sec: dur.as_secs(),
         mtime_nsec: dur.subsec_nanos(),
@@ -539,7 +578,8 @@ fn scan_file(path: &Path, modified: SystemTime, size: u64) -> Option<IndexEntry>
         cwd,
         preview,
         name,
-        message_count: count_messages(path),
+        message_count,
+        count_bytes,
     })
 }
 
@@ -1120,7 +1160,7 @@ mod tests {
         let root = temp_root("scan");
         let path = write_session(&root, "D:\\proj", "abc", BODY);
         let mtime = std::fs::metadata(&path).unwrap().modified().unwrap();
-        let e = scan_file(&path, mtime, 42).expect("scan ok");
+        let e = scan_file(&path, mtime, 42, None).expect("scan ok");
         assert_eq!(e.id, "abc");
         assert_eq!(e.cwd, "D:\\proj");
         assert_eq!(e.preview, "hello 世界");
@@ -1148,7 +1188,7 @@ mod tests {
         );
         let path = write_session(&root, "D:\\proj-trunc", "trunc1", &body);
         let mtime = std::fs::metadata(&path).unwrap().modified().unwrap();
-        let e = scan_file(&path, mtime, body.len() as u64).expect("scan ok");
+        let e = scan_file(&path, mtime, body.len() as u64, None).expect("scan ok");
         let want: String = "甲".repeat(PARTIAL_PREVIEW_CHARS.min(40)); // 50 chars = 150B > 120B display cap → re-truncated with …
         assert_eq!(e.preview, format!("{want}…"));
         let _ = std::fs::remove_dir_all(&root);
@@ -1207,6 +1247,56 @@ mod tests {
         let infos = s.list(10);
         assert_eq!(s.scans, 2, "appended line invalidates the entry");
         assert_eq!(infos[0].message_count, 4);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn incremental_count_survives_append_and_partial_tail() {
+        // 052 后活跃会话文件每轮重扫（用户每发一条消息 ListDirty 一次），
+        // 计数必须只读新增后缀——全量流读几百 MB 会话文件发生在主线程就是
+        // 「发送一条消息窗口就冻死」的实绩。半行（pi 正在写）不计、不推进。
+        use std::io::Write as _;
+        let root = temp_root("inccount");
+        let path = write_session(&root, r"D:\proj", "ic1", BODY);
+        let mut s = Scanner::open(&root);
+        let first = s.list(10);
+        let base_count = first[0].message_count;
+        let base_bytes = s.entries.get(&path).unwrap().count_bytes;
+        assert_eq!(base_count, 3);
+        assert!(base_bytes > 0, "首扫即记录计数终点");
+
+        // 追加 2 条 + 一条未写完的半行（无换行结尾）
+        let mut full = String::new();
+        for i in 0..2 {
+            full.push_str(&format!(
+                "{{\"type\":\"message\",\"message\":{{\"role\":\"user\",\"content\":\"m{i}\"}}}}
+"
+            ));
+        }
+        let partial = "{\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":\"half";
+        let app = format!("{full}{partial}");
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap()
+            .write_all(app.as_bytes())
+            .unwrap();
+
+        let second = s.list(10);
+        assert_eq!(second[0].message_count, base_count + 2, "完整行计入，半行不计");
+        let mid_bytes = s.entries.get(&path).unwrap().count_bytes;
+        assert_eq!(mid_bytes, base_bytes + full.len() as u64, "计数终点停在半行之前");
+
+        // 半行写完 → 下次扫描补计这一条
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap()
+            .write_all("\"}}
+".as_bytes())
+            .unwrap();
+        let third = s.list(10);
+        assert_eq!(third[0].message_count, base_count + 3, "补齐的行下次补计");
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -1340,7 +1430,7 @@ mod name_tests {
             eprintln!("file missing, skipping");
             return;
         };
-        let e = scan_file(&p, meta.modified().unwrap(), meta.len()).expect("session parsed");
+        let e = scan_file(&p, meta.modified().unwrap(), meta.len(), None).expect("session parsed");
         eprintln!("parsed name={:?} preview={} count={}", e.name, e.preview, e.message_count);
         assert!(e.name.is_some(), "session_info name must be parsed");
     }

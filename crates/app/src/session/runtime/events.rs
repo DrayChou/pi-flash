@@ -286,11 +286,13 @@ impl SessionRuntime {
                             while self.pending_echoes.len() > 64 {
                                 self.pending_echoes.remove(0);
                             }
-                            if let Some(ix) = self
-                                .messages
-                                .iter()
-                                .rposition(|m| m.role == Role::User && m.plain_text().as_ref() == echo_text)
-                            {
+                            if let Some(ix) = self.messages.iter().rposition(|m| {
+                                // 长度预筛：全量 plain_text 只留给等长候选
+                                //（大粘贴会话里全量拼几百条 = 秒级冻结）
+                                m.role == Role::User
+                                    && m.text_len() == echo_text.len()
+                                    && m.plain_text().as_ref() == echo_text
+                            }) {
                                 let m = &mut self.messages[ix];
                                 m.blocks = blocks;
                             }
