@@ -55,6 +55,11 @@ terminal打开也在这里
   - tab 激活挂 on_click（mouse-up）而非 on_mouse_down：起手拖拽会清
     clicked_state，拖一个未激活 tab 不会把它顶成激活态（zed `Tab::on_click`
     同式）。
+  - **悬停/拖拽光标 = 抓取手型**（不是一指禅 pointer）：可拖拽的自由
+    tab `.cursor(CursorStyle::OpenHand)`，拖拽中由 tabs_host 的
+    `on_drag_move::<TabDrag>` 覆写 ClosedHand——与 020 项目行拖拽同一
+    口径（Windows 无掌形系统光标，OpenHand/ClosedHand 由 vendored gpui
+    自绘 SVG）。会话 tab 不可拖，仍 pointer。
   - **激活跟随滚动**（zed `update_active_tab` 同式，2026-10-18）：自由
     标签区挂 `track_scroll(&chat.layout.tabs_scroll)`，`activate_panel_tab`
     末尾一句 `scroll_to_item(ix)`（最小滚动，已可见不动）——Ctrl+←/→ 切到

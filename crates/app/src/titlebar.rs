@@ -254,7 +254,12 @@ fn tab_strip(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyElement 
         .flex()
         .items_end()
         .overflow_x_scroll()
-        .track_scroll(&chat.layout.tabs_scroll);
+        .track_scroll(&chat.layout.tabs_scroll)
+        // 拖拽全程握紧手（020 项目行同款）：AnyDrag.cursor_style 取源行样式
+        //（OpenHand），这里覆写成 ClosedHand
+        .on_drag_move::<TabDrag>(move |_, window, cx| {
+            cx.set_active_drag_cursor_style(gpui::CursorStyle::ClosedHand, window);
+        });
     for (ix, tab) in chat.ws.panel_tabs.iter().enumerate() {
         let (label, path, is_file, tab_icon, tab_view): (
             SharedString,
@@ -503,6 +508,9 @@ fn content_tab(
         badge,
         strike,
     )
+    // 抓取手型（020 项目行同款）：可拖拽 = OpenHand，不用一指禅的
+    // pointer；拖拽中由 tabs_host 的 on_drag_move 覆写成 ClosedHand
+    .cursor(gpui::CursorStyle::OpenHand)
     .on_mouse_down(MouseButton::Right, ctx_menu)
     .on_drag(drag, move |_, _, _, cx| {
         cx.new(|_| TabDragGhost {
