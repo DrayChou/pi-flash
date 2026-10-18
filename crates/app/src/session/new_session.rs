@@ -396,6 +396,10 @@ fn plugin_update_notice(
     Some(
         div()
             .h(px(0.))
+            // w_full 必须显式写：父列是 items_center，子项按内容收缩，
+            // 缺宽度锚点会塌成 0 宽，absolute 卡片 left_0/right_0 跟着变
+            // 0 宽 → 标题一字一行竖排、按钮溢出（2026-02 变形实录）
+            .w_full()
             .relative()
             .child(
                 div()
