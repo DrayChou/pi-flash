@@ -555,96 +555,63 @@ fn pl_detail(
         .into_any_element()
 }
 
-/// 082 列表 title 行的【更新全部(n)】：**恒渲染**（用户 2026-10-31 验收定
-/// 稿：无可更新也是禁用灰态，不隐藏）；更新全部转圈，其他 op 进行中禁用。
+/// 082 列表 title 行的【更新全部(n)】：UI 规范按钮（config_button，与新
+/// 会话页通知统一，验收定稿）；恒渲染：无可更新/任一 op 进行中为禁用，
+/// 更新全部进行中显示「更新中…」。
 fn pl_update_all_button(
     chat: &Chat,
     weak: &gpui::WeakEntity<Chat>,
-    t: &crate::appearance::theme::Theme,
+    _t: &crate::appearance::theme::Theme,
 ) -> Option<gpui::AnyElement> {
     let updating_all = matches!(
         chat.cfg.pkg_op.as_ref(),
         Some(crate::settings::plugins::PkgOp::Update(None))
     );
-    let updating_any = chat.cfg.pkg_op.is_some();
     let n = chat.aux.plugin_updates.available();
-    let label = SharedString::from(format!("{}({n})", tr("extensions.update_all")));
-    let mut b = div()
-        .id("pkg-update-all")
-        .h(px(20.))
-        .px(px(6.))
-        .flex()
-        .items_center()
-        .gap(px(4.))
-        .rounded(px(4.))
-        .text_size(crate::appearance::ui_size(11.));
-    if updating_all {
-        b = b
-            .text_color(rgb(t.text_dim))
-            .child(crate::ui::spinner(10., t.text_dim))
-            .child(tr("extensions.updating_all"));
-    } else if updating_any || n == 0 {
-        // 装/卸等其他 op 进行中，或尚无可更新项：禁用灰态
-        b = b.opacity(0.5).text_color(rgb(t.text_dim)).child(label);
+    let label = if updating_all {
+        tr("extensions.updating_all").to_string()
     } else {
-        let w = weak.clone();
-        b = b
-            .cursor_pointer()
-            .text_color(rgb(t.accent))
-            .hover(|h| h.bg(rgb(t.bg_hover)))
-            .child(label)
-            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                let _ = w.update(cx, |c, cx| c.mc_update_all_packages(cx));
-            });
-    }
-    Some(b.into_any_element())
+        format!("{}({n})", tr("extensions.update_all"))
+    };
+    Some(config_button(
+        "pkg-update-all",
+        weak,
+        &label,
+        Btn::Secondary,
+        true,
+        updating_all || chat.cfg.pkg_op.is_some() || n == 0,
+        |c, cx| c.mc_update_all_packages(cx),
+    ))
 }
 
-/// 082 详情【更新】按钮（删除 icon 左侧，同 28px 方格）：更新本包转圈，
-/// 任一 op 进行中禁用。
+/// 082 详情【更新】按钮（删除 icon 左侧）：UI 规范按钮（config_button，
+/// small 与垃圾桶 28px 对齐）；更新本包时显示「更新中…」禁用，任一 op
+/// 进行中禁用。
 fn pl_update_button(
     chat: &Chat,
     weak: &gpui::WeakEntity<Chat>,
     src: &str,
-    t: &crate::appearance::theme::Theme,
+    _t: &crate::appearance::theme::Theme,
 ) -> Option<gpui::AnyElement> {
     let updating_this = matches!(
         chat.cfg.pkg_op.as_ref(),
         Some(crate::settings::plugins::PkgOp::Update(Some(s))) if *s == src
     );
-    let mut b = div()
-        .id("pkg-update")
-        .h(px(28.))
-        .px(px(10.))
-        .flex()
-        .items_center()
-        .justify_center()
-        .gap(px(5.))
-        .rounded(px(5.))
-        .border_1()
-        .border_color(rgb(t.border))
-        .text_size(crate::appearance::ui_size(11.))
-        .text_color(rgb(t.text_muted));
-    if updating_this {
-        b = b
-            .child(crate::ui::spinner(11., t.accent))
-            .child(tr("extensions.update"));
+    let label = if updating_this {
+        tr("extensions.updating_all").to_string()
     } else {
-        b = b.child(tr("extensions.update"));
-    }
-    if chat.cfg.pkg_op.is_some() {
-        b = b.opacity(0.5);
-    } else {
-        let w = weak.clone();
-        let s = src.to_string();
-        b = b
-            .cursor_pointer()
-            .hover(|h| h.bg(rgb(t.bg_hover)))
-            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                let _ = w.update(cx, |c, cx| c.mc_update_package(s.clone(), cx));
-            });
-    }
-    Some(b.into_any_element())
+        tr("extensions.update").to_string()
+    };
+    let s = src.to_string();
+    Some(config_button(
+        "pkg-update",
+        weak,
+        &label,
+        Btn::Secondary,
+        true,
+        chat.cfg.pkg_op.is_some(),
+        move |c, cx| c.mc_update_package(s.clone(), cx),
+    ))
 }
 
 /// 长路径折行（040）：分隔符后插零宽空格，让无空格的路径也能断行。

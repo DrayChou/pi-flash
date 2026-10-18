@@ -40,6 +40,9 @@ const HEADING_BAND: f32 = 0.74;
 const CONTENT_BAND: f32 = 0.88;
 /// 操作栏高度（012：固定 40px）。
 const ACTION_BAR_H: f32 = 40.;
+/// 082 通知带：顶对齐 63% 视口——内容簇 action_bar 底 ≈60%，留 3% 空隙；
+/// 不进内容簇 flex 流，原三带（logo/欢迎语/inputpanel）定位零改动。
+const NOTICE_BAND_TOP: f32 = 0.63;
 
 /// 新会话页整页。占满聊天区（`flex_1`），内部两层：背景 logo（绝对、装饰）
 /// 与内容簇（绝对、可交互）。
@@ -114,11 +117,12 @@ pub(crate) fn page(
                             true,
                             cx,
                         ))
-                        .child(action_bar(chat, weak, t))
-                        // 082：Pi 扩展更新通知（选择项目栏下方；无可更新不渲染）
-                        .children(plugin_update_notice(chat, weak, t)),
+                        .child(action_bar(chat, weak, t)),
                 ),
         )
+        // 082：Pi 扩展更新通知 = 独立绝对带（验收定稿：不进内容簇 flex 流，
+        // 不挤压欢迎语/inputpanel 的原定位），锚在内容簇下方空白区
+        .children(plugin_update_notice(chat, weak, t))
         .into_any_element()
 }
 
@@ -312,9 +316,11 @@ fn action_bar(
     bar.into_any_element()
 }
 
-/// 082 Pi 扩展更新通知：选择项目栏下方——分隔线 + 可更新列表（名字 + ↑）
-/// + 标题行右侧【更新全部(n)】。安静原则：检查中不显示、n=0 不渲染；
-/// 点击列表行暂无动作（v1 仅展示，入口在设置·扩展页详情）。
+/// 082 Pi 扩展更新通知（独立绝对带）：锚在内容簇下方空白区，不参与原三
+/// 带布局；宽 = 上方内容列 80%（验收定稿），列表上限 300px 超长滚动；
+/// 标题行右侧【更新全部(n)】= UI 规范按钮（与设置·扩展页统一
+/// config_button）。安静原则：检查中不显示、n=0 不渲染；点击列表行暂无
+/// 动作（v1 仅展示，入口在设置·扩展页详情）。
 fn plugin_update_notice(
     chat: &Chat,
     weak: &gpui::WeakEntity<Chat>,
@@ -328,7 +334,6 @@ fn plugin_update_notice(
         chat.cfg.pkg_op.as_ref(),
         Some(crate::settings::plugins::PkgOp::Update(None))
     );
-    let busy = chat.cfg.pkg_op.is_some();
     let rows: Vec<&crate::services::plugin_updates::PkgUpdateResult> = chat
         .aux
         .plugin_updates
@@ -336,69 +341,36 @@ fn plugin_update_notice(
         .iter()
         .filter(|r| r.state == crate::services::plugin_updates::PkgUpdateState::UpdateAvailable)
         .collect();
-    let w_upd = weak.clone();
-    let label = SharedString::from(format!("{}({n})", tr("extensions.update_all")));
-    let mut btn = div()
-        .id("ns-pkg-update-all")
-        .h(px(24.))
-        .px(px(9.))
-        .flex()
-        .items_center()
-        .gap(px(5.))
-        .rounded(px(5.))
-        .text_size(crate::appearance::ui_size(11.));
-    if updating_all {
-        btn = btn
-            .text_color(rgb(t.text_dim))
-            .child(crate::ui::spinner(11., t.text_dim))
-            .child(tr("extensions.updating_all"));
-    } else if busy {
-        btn = btn.opacity(0.5).text_color(rgb(t.text_dim)).child(label);
+    // 更新全部按钮：与设置·扩展页同一 config_button（ui::button 规范件）
+    let label = if updating_all {
+        tr("extensions.updating_all").to_string()
     } else {
-        btn = btn
-            .cursor_pointer()
-            .border_1()
-            .border_color(rgb(t.border))
-            .text_color(rgb(t.text_muted))
-            .hover(|h| h.text_color(rgb(t.accent)).border_color(rgb(t.accent)))
-            .child(label)
-            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                cx.stop_propagation();
-                let _ = w_upd.update(cx, |c, cx| c.mc_update_all_packages(cx));
-            });
-    }
-    let mut notice = div()
+        format!("{}({n})", tr("extensions.update_all"))
+    };
+    let btn = crate::settings::widgets::config_button(
+        "ns-pkg-update-all",
+        weak,
+        &label,
+        crate::settings::widgets::Btn::Secondary,
+        true,
+        chat.cfg.pkg_op.is_some(),
+        |c, cx| c.mc_update_all_packages(cx),
+    );
+    let mut list = div()
+        .id("ns-pkg-list")
         .w_full()
-        .mt(px(2.))
-        .pt(px(10.))
-        .border_t_1()
-        .border_color(rgb(t.border))
+        .max_h(px(300.))
+        .overflow_y_scroll()
         .flex()
-        .flex_col()
-        .gap(px(2.))
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(6.))
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .text_size(crate::appearance::ui_size(11.))
-                        .font_weight(gpui::FontWeight::SEMIBOLD)
-                        .text_color(rgb(t.text_dim))
-                        .child(tr("new_session.plugin_updates")),
-                )
-                .child(btn),
-        );
+        .flex_col();
     for r in rows {
-        notice = notice.child(
+        list = list.child(
             div()
                 .flex()
                 .items_center()
                 .gap(px(6.))
-                .text_size(crate::appearance::ui_size(11.))
+                .py(px(2.))
+                .text_size(crate::appearance::ui_size(12.))
                 .child(
                     div()
                         .flex_1()
@@ -412,5 +384,44 @@ fn plugin_update_notice(
                 .child(crate::ui::icon("arrow-up", 10., t.accent)),
         );
     }
-    Some(notice.into_any_element())
+    // 独立绝对带：顶 63% 视口（内容簇底 ≈60%，留 3% 空隙），水平内距与
+    // 消息列一致，内容列 80% 宽居中，贴带顶（紧贴 action_bar 下方）
+    Some(
+        div()
+            .absolute()
+            .top(relative(NOTICE_BAND_TOP))
+            .bottom_0()
+            .left_0()
+            .right_0()
+            .px(px(15.))
+            .flex()
+            .justify_center()
+            .items_start()
+            .child(
+                div()
+                    .w_full()
+                    .max_w(px(crate::services::workspace::chat_content_width() * 0.8))
+                    .flex()
+                    .flex_col()
+                    .gap(px(4.))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(6.))
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .text_size(crate::appearance::ui_size(11.))
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .text_color(rgb(t.text_dim))
+                                    .child(tr("new_session.plugin_updates")),
+                            )
+                            .child(btn),
+                    )
+                    .child(list),
+            )
+            .into_any_element(),
+    )
 }
