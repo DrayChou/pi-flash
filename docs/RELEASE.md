@@ -8,7 +8,7 @@
 
 ## 0. 版本纪律（铁律）
 
-1. **版本号唯一决定人 = 仓库所有者。任何人（含 agent）不得擅自变更版本号，也不得提出版本号建议。**
+1. **版本号唯一决定人 = 仓库所有者。**
 2. **版本号唯一写入入口 = `scripts/release.sh`**：入参 → `crates/app/Cargo.toml` +
    `npm/package.json` + `Cargo.lock` 三处单点同步。禁止手工改版本字段。
 3. **已发布版本永不复用**：npm 不允许重发同版本，git tag 不动。同一版本号发布后即封存。
@@ -18,14 +18,13 @@
 
 ## 1. 产物与通道
 
-> **平台范围：只发 Windows x64。不发布 macOS 版本**（2026-10-12 所有者定）——仓库里的
-> `release-macos.yml` 已 `disabled_manually`，不做 darwin 资产，npm 薄壳在 macOS 上会报
-> 「暂无发布资产」；需要 macOS 的用户请在 Windows 上用，或等后续版本另行定夺。
+  **平台范围：只发 Windows x64。不发布 macOS 版本**
+`release-macos.yml` 已 `disabled_manually`，不做 darwin 资产，npm 薄壳在 macOS 上会报「暂无发布资产」。
 
 | 产物 | 通道 | 产生方式 | 备注 |
 |---|---|---|---|
 | `pi-flash-<v>-win32-x64.zip` + `.sha256` + `SHA256SUMS` | GitHub Release | 本地 `scripts/release.sh` | ≈86MB；解压 299MB（esbuild 已裁非宿主平台） |
-| ~~`pi-flash-<v>-darwin-arm64.zip`~~ | — | **不发布** | macOS 不在支持范围（见上方定夺）；薄壳代码仍保留 darwin 分支，只是不出资产 |
+| ~~`pi-flash-<v>-darwin-arm64.zip`~~ | — | **不发布** | macOS 不在支持范围；薄壳代码仍保留 darwin 分支，只是不出资产 |
 | `pi-flash` npm 薄壳（7.4kB，仅 bin/） | npm 官方源 | **首发手动一次（0.1.0 已完成）→ 此后 `publish-npm.yml` OIDC 自动** | 薄壳安装时从 Release 拉载荷并 SHA-256 校验 |
 | `docs/CHANGELOG.md` + `docs/CHANGELOG_EN.md` 新版本段 | 仓库 | release.sh 5/8：说明文件中文段收编中文版、`<!-- EN -->` 后英文段收编英文版 | 说明文件全文（双语）作 GitHub Release 正文，同一 tag 下中英同页 |
 | provenance 签名 | npm 包页 | OIDC 发布自动生成 | 供应链徽章，免配置 |
@@ -34,19 +33,17 @@
 
 ## 2. 前置条件（checklist）
 
-- [ ] 所有者已拍板本次版本号（见 §0，唯一来源）
+- [ ] 所有者已拍板本次版本号
 - [ ] git 工作区干净（release.sh 门禁拒绝 tracked 改动；**并行会话的活必须先由其本人提交**，
       勿 stash、勿代提交；若按规范流程**预写**了 CHANGELOG 新版本段，同样要先提交——
       收编幂等，内容一致则零改动）
+- [ ] CHANGELOG写完交所有者审批，审批通过方可继续
 - [ ] 门禁测试全绿：`cargo check --workspace`、`cargo test -p pi-link`、`node npm/test/e2e.js`（19 项）
 - [ ] 架构守卫 PASS：`scripts/check_arch.sh`（行数红线按**非测试行数**计；超线 = 先拆分或口径复核再发版）
 - [ ] `pi-flash.exe` 未运行（烟测会 `taskkill` 全部实例；且 debug 实例正在运行会让 debug 构建撞 exe 锁）
 - [ ] 发布说明就绪：`tmp/release-notes-<v>.md`（安装/更新命令 + 本版要点；**双语**：中文段在上、
       单独一行 `<!-- EN -->`、下接英文段，见 `docs/CHANGELOG规范.md`；中文段收编 CHANGELOG.md、
       英文段收编 CHANGELOG_EN.md、全文作 Release 正文。纯中文可发版，英文后补走 `gh release edit`）
-- [ ] 跨过 0.1.10 的过渡：0.1.10 里是旧落位代码（自更新有缺陷），用户侧
-      更新须走 `npm install -g pi-flash@latest`（薄壳整目录落位）；0.1.11 起
-      才由新的「解压新目录 + 启动交接」链路接管（081 §8）
 - [ ] 网络：github.com 可达（推送 + 资产上传）；npm 已登录（**仅首发/回退需要**）
 - [ ] Trusted Publisher 若已配置：确认本次发版落在其 **2 天绑定窗口**内（见 §4）
 - [ ] 说明文件在 `tmp/` 下（untracked，不触门禁）
@@ -130,7 +127,7 @@ tag 推送后 `publish-npm.yml` 自动 OIDC 发薄壳（分钟级），无需干
       `cargo build && scripts/upd-e2e.sh`
       （081 §7 的夹具：真 release zip + 本地假 API/镜像，隔离目录 + pif-ui 驱动，
       不碰真实安装、不改版本号；github 直连/镜像与 release 构建需有网环境另验）
-- [ ] macOS：不在支持范围，**无 darwin 资产可验**（§1 定夺）
+- [ ] macOS：不在支持范围，**无 darwin 资产可验**
 - [ ] 通知测试者；镜像站（npmmirror）同步有延迟，**首装带 `--registry` 官方源**
 
 ## 6. 异常处置
