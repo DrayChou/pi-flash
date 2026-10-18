@@ -300,15 +300,15 @@ pub(crate) fn mj_provider_editor(
             div().w(px(320.)).child(mj_name.clone()),
         ))
         .child(field(
-            "Base URL",
+            tr("custom_models.base_url"),
             div().w(px(420.)).child(mj_base.clone()),
         ))
         .child(field(
-            "API Key",
+            tr("custom_models.api_key"),
             div().w(px(420.)).child(mj_key.clone()),
         ))
-        .child(field("API", api_options_row(weak, mj_api)))
-        .child(note("留空 Base URL 使用 pi 内置端点；API Key 支持 ENV 变量名、!shell-command 或明文；点【保存】写入 ~/.pi/agent/models.json"));
+        .child(field(tr("custom_models.api"), api_options_row(weak, mj_api)))
+        .child(note(tr("custom_models.base_url_hint")));
 
     // 模型清单（原侧栏嵌套行内收进来；点行进模型编辑器）
     let models = pi_link::models_json::provider_entry(&chat.cfg.mc_models_json, name)
@@ -355,7 +355,7 @@ pub(crate) fn mj_provider_editor(
                         .bg(widgets::indigo_bg())
                         .text_size(crate::appearance::ui_size(9.))
                         .text_color(widgets::indigo_fg())
-                        .child("T")
+                        .child(tr("custom_models.reasoning_letter"))
                 })),
         );
     }
@@ -477,10 +477,10 @@ pub(crate) fn mj_add_panel(
         .p(px(15.))
         .child(section_title(&tr("custom_models.add")))
         .child(field(&tr("field.name"), div().w(px(320.)).child(mj_name.clone())))
-        .child(field("Base URL", div().w(px(420.)).child(mj_base.clone())))
-        .child(field("API Key", div().w(px(420.)).child(mj_key.clone())))
-        .child(field("API", api_options_row(weak, mj_api)))
-        .child(note("OpenAI / Anthropic 兼容端点；留空 Base URL 使用 pi 内置端点"))
+        .child(field(tr("custom_models.base_url"), div().w(px(420.)).child(mj_base.clone())))
+        .child(field(tr("custom_models.api_key"), div().w(px(420.)).child(mj_key.clone())))
+        .child(field(tr("custom_models.api"), api_options_row(weak, mj_api)))
+        .child(note(tr("custom_models.endpoint_hint")))
         .child(
             div()
                 .pt(px(4.))

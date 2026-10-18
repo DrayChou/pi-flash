@@ -529,7 +529,7 @@ fn render_provider_picker(chat: &Chat, weak: &gpui::WeakEntity<Chat>, input: &gp
         body = body.child(grid);
     }
     if !oauth_cards.is_empty() {
-        body = body.child(group_header("订阅服务", 14.));
+        body = body.child(group_header(tr("dialogs.subscription_services"), 14.));
         let mut grid = div().flex().flex_wrap().justify_center().gap(px(10.));
         for (p, name) in &oauth_cards {
             let weak_card = weak.clone();
@@ -917,7 +917,7 @@ fn render_session_search(
     } else if chat.psp.search_hits.is_empty() {
         tr("session_search.no_match").into()
     } else {
-        format!("{} 条结果", chat.psp.search_hits.len()).into()
+        tr("dialogs.search_results").replace("{}", &chat.psp.search_hits.len().to_string()).into()
     };
     let mut results = div().flex().flex_col();
     let mut last_session: Option<PathBuf> = None;

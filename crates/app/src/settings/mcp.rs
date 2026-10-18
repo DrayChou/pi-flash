@@ -95,7 +95,7 @@ impl Chat {
         };
         self.mc_clear_error(cx);
         if text.is_empty() {
-            return self.mc_set_error("粘贴 JSON、URL 或命令行", cx);
+            return self.mc_set_error(tr("mcp.form_placeholder"), cx);
         }
         let (name, config) = match pi_link::mcp::parse_server_input(&text) {
             Ok((suggested, config, _)) => {

@@ -26,6 +26,7 @@ use std::hash::Hasher;
 use std::ops::Range;
 
 use crate::appearance::theme::Theme;
+use crate::i18n::tr;
 use crate::ui::ScrollAxisExt;
 #[cfg(test)] mod real_file_tests;
 #[cfg(test)] mod tests;
@@ -970,7 +971,7 @@ fn render_block(b: &MdBlock, depth: usize, t: &Theme, streaming: bool, color: u3
                                         .text_size(px(crate::ui::tokens::fixed::MD_CHECK_GLYPH))
                                         .font_weight(FontWeight::BOLD)
                                         .text_color(rgb(t.accent))
-                                        .child(SharedString::from("✓")),
+                                        .child(SharedString::from(tr("action.confirm_mark"))),
                                 )
                             }),
                     )

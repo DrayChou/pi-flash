@@ -613,7 +613,7 @@ fn font_popup_card(
         VListHeight::Fill,
         false,
         false,
-        "无匹配字体",
+        tr("settings.no_matching_fonts"),
         None,
         move |ix, _window, _cx| {
             let cat = crate::appearance::font_catalog();

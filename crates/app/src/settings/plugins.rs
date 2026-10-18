@@ -248,7 +248,7 @@ fn pl_install_bar(
                 .items_center()
                 .text_size(crate::appearance::ui_size(11.))
                 .text_color(rgb(t.text_dim))
-                .child("从 ")
+                .child(format!("{} ", tr("plugins.from")))
                 .child(
                     div()
                         .id("pkg-pi-dev-link")
@@ -262,7 +262,7 @@ fn pl_install_bar(
                         })
                         .child("https://pi.dev/packages"),
                 )
-                .child(" 复制安装命令，做全局安装"),
+                .child(format!(" {}", tr("plugins.copy_install"))),
         )
         .children(error.as_ref().map(|e| error_note(e)))
         .into_any_element()

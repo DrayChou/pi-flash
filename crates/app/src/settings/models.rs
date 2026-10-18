@@ -638,7 +638,7 @@ fn mc_models_sidebar(
         VListHeight::Fill,
         false,
         true,
-        "没有已登记的 Provider",
+        tr("model.no_provider_match"),
         None,
         move |ix, _window, _cx| match &rows[ix] {
             SbRow::Prov(pr) => {
@@ -1048,9 +1048,7 @@ fn mc_enabled_section(
             }),
     );
     if chat.cfg.mc_project_scope {
-        section = section.child(note(
-            "当前项目的 .pi/settings.json 设置了 enabledModels 并覆盖全局配置，此处只读",
-        ));
+        section = section.child(note(tr("models.project_override_dotpi")));
     }
 
     // 筛选（>8 个模型时出现；值经快照传入）。「只看free」开着时在用户
@@ -1093,7 +1091,7 @@ fn mc_enabled_section(
         VListHeight::Capped(360.),
         true,
         true,
-        "没有匹配的模型",
+        tr("models.no_matching_models"),
         None,
         move |ix, _window, _cx| {
             let m = &shown[ix];

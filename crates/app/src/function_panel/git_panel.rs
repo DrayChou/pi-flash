@@ -239,7 +239,7 @@ fn changes_body(
                             },
                         ))
                         .child(icon_hover("icon-viewdiff", 13., t.text_muted))
-                        .child(SharedString::from("View Diff")),
+                        .child(SharedString::from(tr("git.view_diff"))),
                 )
                 .child(div().flex_1())
                 .child(

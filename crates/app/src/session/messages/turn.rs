@@ -111,7 +111,7 @@ pub(crate) fn render_block(
                         .whitespace_nowrap()
                         .text_ellipsis()
                         .child(if preview.is_empty() {
-                            SharedString::from("...").into_any_element()
+                            SharedString::from(tr("loading.ellipsis")).into_any_element()
                         } else {
                             SharedString::from(preview).into_any_element()
                         })

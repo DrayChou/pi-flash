@@ -627,7 +627,7 @@ fn ask_tab_bar(
                     .text_color(rgb(t.text_faint))
                     .cursor_pointer()
                     .hover(|s| s.bg(rgb(t.bg_hover)).text_color(rgb(t.text)))
-                    .child("×")
+                    .child(tr("action.close"))
                     .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                         let _ = weak_close.update(cx, |c, cx| c.ask_cancel(cx));
                     }),
@@ -914,7 +914,7 @@ fn option_mark(multi: bool, sel: bool, t: &crate::appearance::theme::Theme) -> g
                     d.text_color(rgb(t.accent_contrast))
                         .text_size(crate::appearance::ui_size(9.5))
                         .font_weight(FontWeight::BOLD)
-                        .child("✓")
+                        .child(tr("action.confirm_mark"))
                 } else {
                     d.child(div().size(px(6.)).rounded_full().bg(rgb(t.accent_contrast)))
                 }

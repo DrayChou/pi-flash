@@ -240,7 +240,7 @@ pub(crate) fn slash_menu_view(
                         .font_family(crate::editor::markdown::MONO_FAMILY)
                         .text_size(crate::appearance::ui_size(13.))
                         .text_color(rgb(t.text_dim))
-                        .child("/"),
+                        .child(tr("session.slash_prefix")),
                 )
             })
             .when(!desc.is_empty(), |d| {

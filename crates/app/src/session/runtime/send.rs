@@ -6,6 +6,7 @@ use pi_link::protocol::{
     Block, Command,
 };
 
+use crate::i18n::{tr, tf};
 use crate::session::messages::{BashInfo, Msg, Role};
 
 use super::*;
@@ -280,9 +281,9 @@ impl SessionRuntime {
                 });
                 self.bash_running = true;
                 self.status = if excluded {
-                    "shell（输出仅本地）".into()
+                    tr("composer.shell_local_only").into()
                 } else {
-                    "shell（输出发给模型）".into()
+                    tr("composer.shell_to_model").into()
                 };
                 self.notify_list(cx);
             }
@@ -342,12 +343,12 @@ impl SessionRuntime {
             });
         }
         self.status = if result.cancelled {
-            "shell 中止".into()
+            tr("send.shell_aborted").into()
         } else {
             match result.exit_code {
-                Some(0) => "shell 完成".into(),
-                Some(c) => format!("shell 退出码 {c}"),
-                None => "shell 完成".into(),
+                Some(0) => tr("send.shell_done").into(),
+                Some(c) => tf("send.shell_exit", &[("code", c.to_string())]),
+                None => tr("send.shell_done").into(),
             }
         };
         self.notify_list(cx);

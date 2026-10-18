@@ -13,6 +13,7 @@ pub mod theme;
 
 use gpui::App;
 
+use crate::i18n::tr;
 use crate::services::workspace::{self, AppSettings, FontSpec};
 use theme::Theme;
 
@@ -42,14 +43,14 @@ pub fn registry() -> &'static [ThemeEntry] {
 
 fn theme_display_name(id: &'static str) -> &'static str {
     match id {
-        "mist" => "雾青",
-        "rose" => "蔷薇",
-        "latte" => "紫罗兰",
-        "kitchen" => "厨房笔记",
+        "mist" => tr("theme.mist"),
+        "rose" => tr("theme.rose"),
+        "latte" => tr("theme.latte"),
+        "kitchen" => tr("theme.kitchen"),
         "one-light" => "One Light",
         "nord-dark" => "Nord Dark",
         "one-dark" => "One Dark",
-        "pine" => "松林",
+        "pine" => tr("theme.pine"),
         _ => id,
     }
 }

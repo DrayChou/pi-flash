@@ -641,7 +641,7 @@ fn render_compaction_card(
             );
 
         if open {
-            for (title, files) in [("修改文件", &modified_files), ("读取文件", &read_files)] {
+            for (title, files) in [(tr("compaction.modified_files"), &modified_files), (tr("compaction.read_files"), &read_files)] {
                 if files.is_empty() {
                     continue;
                 }

@@ -286,7 +286,7 @@ fn plus_sep() -> gpui::AnyElement {
         .font_family(crate::editor::markdown::MONO_FAMILY)
         .text_size(crate::appearance::ui_size(11.))
         .text_color(rgb(T().text_faint))
-        .child("+")
+        .child(tr("shortcuts.plus"))
         .into_any_element()
 }
 

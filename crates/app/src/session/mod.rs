@@ -277,7 +277,7 @@ fn fn_bar_sep(t: &'static crate::appearance::theme::Theme) -> gpui::AnyElement {
     div()
         .text_size(crate::appearance::ui_size(11.))
         .text_color(rgb(t.text_faint))
-        .child(SharedString::from("|"))
+        .child(SharedString::from(tr("session.separator")))
         .into_any_element()
 }
 
@@ -990,7 +990,7 @@ fn nav_card(
                         .text_size(crate::appearance::ui_size(10.))
                         .line_height(relative(1.7))
                         .text_color(rgb(t.text_dim))
-                        .child("A"),
+                        .child(SharedString::from(tr("session.shortcut_a"))),
                 )
                 .child(
                     div()

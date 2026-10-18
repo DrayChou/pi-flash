@@ -28,14 +28,14 @@ pub(crate) fn mono_lines(lines: Vec<String>, size: f32, dim: bool) -> gpui::AnyE
 fn qr_panel(chat: &mut Chat, weak: &gpui::WeakEntity<Chat>) -> Vec<gpui::AnyElement> {
     let t = T();
     let mut out: Vec<gpui::AnyElement> = Vec::new();
-    out.push(section_title("扫码绑定"));
+    out.push(section_title(tr("remote.dlg_title")));
     match chat.aux.remote.qr.clone() {
         QrState::Idle => {
-            out.push(note("用手机微信扫码，把当前聊天绑定到这台机器的 pi-flash。"));
+            out.push(note(tr("remote.qr_desc")));
             out.push(config_button(
                 "wx-qr-begin",
                 weak,
-                "获取二维码",
+                tr("remote.qr_begin"),
                 Btn::Secondary,
                 false,
                 false,
@@ -45,19 +45,19 @@ fn qr_panel(chat: &mut Chat, weak: &gpui::WeakEntity<Chat>) -> Vec<gpui::AnyElem
                 },
             ));
         }
-        QrState::Loading => out.push(note("正在获取二维码…")),
+        QrState::Loading => out.push(note(tr("remote.qr_loading"))),
         QrState::Ready { url } => {
             match wxprobe::qr::qr_block_text(&url, 2) {
                 Ok(art) => {
                     out.push(mono_lines(art.lines().map(str::to_string).collect(), 14., false));
-                    out.push(note("用手机微信「扫一扫」对屏扫码；约 2 分钟后过期。"));
+                    out.push(note(tr("remote.qr_hint")));
                 }
                 Err(e) => out.push(error_note(&e)),
             }
             out.push(config_button(
                 "wx-qr-refresh",
                 weak,
-                "重新获取",
+                tr("remote.qr_refresh"),
                 Btn::Secondary,
                 false,
                 false,
@@ -67,21 +67,21 @@ fn qr_panel(chat: &mut Chat, weak: &gpui::WeakEntity<Chat>) -> Vec<gpui::AnyElem
                 },
             ));
         }
-        QrState::Scanned => out.push(note("已扫码，请在手机上确认…")),
+        QrState::Scanned => out.push(note(tr("remote.qr_scanned"))),
         QrState::Done { bot_id } => {
-            let mut lines = vec!["✅ 绑定成功".to_string()];
+            let mut lines = vec![tr("remote.qr_done").to_string()];
             if let Some(b) = bot_id {
                 lines.push(format!("bot_id = {b}"));
             }
-            lines.push("发送 /帮助 查看可用命令。".into());
+            lines.push(tr("remote.qr_help").into());
             out.push(mono_lines(lines, 12., false));
         }
         QrState::Expired => {
-            out.push(error_note("二维码已过期，请重新获取。"));
+            out.push(error_note(tr("remote.qr_expired")));
             out.push(config_button(
                 "wx-qr-again",
                 weak,
-                "获取二维码",
+                tr("remote.qr_begin"),
                 Btn::Secondary,
                 false,
                 false,
@@ -107,16 +107,14 @@ pub(crate) fn mc_remote_view(chat: &mut Chat, weak: &gpui::WeakEntity<Chat>) -> 
 
     // ── 开关：关停即停线程（P4 验收项） ──────────────────────────────
     col = col.child(field(
-        "启用远程控制",
+        tr("remote.enable"),
         config_switch("wx-enable", weak, chat.aux.remote.is_running(), false, |c, cx| {
             let on = !c.aux.remote.is_running();
             c.aux.remote.set_enabled(on);
             cx.notify();
         }),
     ));
-    col = col.child(note(
-        "关停会立刻停掉长轮询线程并释放轮询锁（无悬挂线程）。",
-    ));
+    col = col.child(note(tr("remote.enable_hint")));
 
     // ── 渠道状态 ────────────────────────────────────────────────────
     let running = chat.aux.remote.is_running();
@@ -125,33 +123,40 @@ pub(crate) fn mc_remote_view(chat: &mut Chat, weak: &gpui::WeakEntity<Chat>) -> 
     let bot_id = wxprobe::state::get_str(&token, "bot_id").unwrap_or_default();
     let status_lines = vec![
         format!(
-            "渠道：{}",
-            if running { "运行中" } else if has_token { "已停止（有 token）" } else { "未启动" }
-        ),
+            "{}",
+            tr("remote.channel"),
+        )
+        .replace("{status}", match running {
+            true => tr("remote.status_running"),
+            false if has_token => tr("remote.status_stopped"),
+            _ => tr("remote.status_not_started"),
+        }),
         format!(
-            "绑定：{}",
-            if has_token {
+            "{}",
+            tr("remote.binding"),
+        )
+        .replace("{status}", match has_token {
+            true => {
                 if bot_id.is_empty() {
-                    "已扫码".to_string()
+                    tr("remote.bound_scanned")
                 } else {
-                    bot_id
+                    &bot_id
                 }
-            } else {
-                "未扫码".to_string()
-            },
-        ),
+            }
+            false => tr("remote.bound_not_scanned"),
+        }),
     ];
-    col = col.child(field("状态", mono_lines(status_lines, 11., true)));
+    col = col.child(field(tr("remote.field_status"), mono_lines(status_lines, 11., true)));
 
     // ── 绑定码：设置页展示，用户在微信里 `/bind <code>` 回填 ──────────
     let active = chat.pool.active_key.clone();
     let code = chat.aux.remote.bind_code(&active);
-    let mut bind_lines = vec![format!("绑定码：{code}")];
+    let mut bind_lines = vec![tr("remote.bind_code").replace("{code}", &code)];
     match chat.aux.remote.bound.as_deref() {
-        Some(k) => bind_lines.push(format!("已绑定会话：{k}")),
-        None => bind_lines.push("未绑定 —— 在微信里发 /bind 上面这串数字".into()),
+        Some(k) => bind_lines.push(tr("remote.bound_session").replace("{k}", k)),
+        None => bind_lines.push(tr("remote.bound_unbound").into()),
     }
-    col = col.child(field("绑定", mono_lines(bind_lines, 11., true)));
+    col = col.child(field(tr("remote.field_binding"), mono_lines(bind_lines, 11., true)));
 
     // ── 扫码面板 ────────────────────────────────────────────────────
     for el in qr_panel(chat, weak) {

@@ -222,22 +222,24 @@ pub(crate) fn mc_skills_view(
                         .font_family(crate::editor::markdown::MONO_FAMILY)
                         .text_size(crate::appearance::ui_size(11.))
                         .text_color(rgb(t.text_dim))
-                        .child(SharedString::from(format!(
-                            "描述：{} · 正文：{} tokens",
-                            if visible {
+                        .child(SharedString::from(crate::i18n::tf(
+                        "skills.description_tokens",
+                        &[
+                            ("desc", if visible {
                                 crate::services::format::fmt_thousand(
                                     pi_link::skills::prompt_tokens(sk),
                                 )
                             } else {
                                 "—".to_string()
-                            },
-                            crate::services::format::fmt_thousand(pi_link::skills::body_tokens(sk)),
-                        ))),
+                            }),
+                            ("tokens", crate::services::format::fmt_thousand(pi_link::skills::body_tokens(sk))),
+                        ],
+                    ))),
                 ))
                 .child(note(if visible {
-                    "注入系统提示词；关闭后取消注入，靠手动调用"
+                    tr("skills.injected")
                 } else {
-                    "未注入系统提示词，靠手动调用"
+                    tr("skills.not_injected")
                 }))
                 .into_any_element()
         }

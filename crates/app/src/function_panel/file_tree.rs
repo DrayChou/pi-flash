@@ -479,7 +479,7 @@ fn tree_list_view(
                     VListHeight::Fill,
                     false,
                     false,
-                    "暂无文件",
+                    tr("file_tree.no_files"),
                     Some(sticky),
                     move |ix, _window, _cx| {
                         // 行内新建：该输出位渲染编辑行，其余行做索引平移

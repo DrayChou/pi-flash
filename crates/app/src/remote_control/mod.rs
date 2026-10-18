@@ -28,6 +28,7 @@ use wxprobe::extui::{self, ExtUiReply};
 use wxprobe::format::messages::{t, Lang};
 
 use crate::appearance::theme;
+use crate::i18n::{tr, tf};
 
 /// 档 1 尚未接入的命令回执 —— ZCode 文案表里的现成句子，不新造。
 const CMD_NOT_ENABLED: &str = "当前 bot 未启用这个命令。";
@@ -997,7 +998,7 @@ pub(crate) fn render_wx_qr(
         const DARK: u32 = 0x111827;
         let grid = match wxprobe::qr::qr_grid(url, 4) {
             Ok(g) => g,
-            Err(e) => return body_text(format!("二维码生成失败：{e}"), false),
+            Err(e) => return body_text(tf("remote.qr_gen_failed", &[("e", e.to_string())]), false),
         };
         let side = grid.size as f32 * MOD;
         let mut canvas = div()
@@ -1036,46 +1037,37 @@ pub(crate) fn render_wx_qr(
         .items_center()
         .gap(px(12.))
         .py(px(8.))
-        .child(body_text("远程控制 · 微信".into(), true));
+        .child(body_text(tr("remote.dlg_title").into(), true));
 
     match &chat.aux.remote.qr {
         QrState::Idle => {
-            body = body.child(body_text(
-                "点下面的按钮取二维码，用手机微信扫一扫。".into(),
-                true,
-            ));
-            body = body.child(action_btn("wx-qr-begin", "获取二维码", true, true));
+            body = body.child(body_text(tr("remote.dlg_idle_hint").into(), true));
+            body = body.child(action_btn("wx-qr-begin", tr("remote.dlg_qr_begin"), true, true));
         }
-        QrState::Loading => body = body.child(body_text("正在获取二维码…".into(), true)),
+        QrState::Loading => body = body.child(body_text(tr("remote.qr_loading").into(), true)),
         QrState::Ready { url } => {
             body = body.child(qr_grid(url));
-            body = body.child(body_text(
-                "用手机微信「扫一扫」对屏扫码；二维码约 2 分钟后过期。".into(),
-                true,
-            ));
-            body = body.child(action_btn("wx-qr-refresh", "重新获取", false, true));
+            body = body.child(body_text(tr("remote.dlg_qr_hint").into(), true));
+            body = body.child(action_btn("wx-qr-refresh", tr("remote.dlg_qr_refresh"), false, true));
         }
-        QrState::Scanned => body = body.child(body_text("已扫码，请在手机上确认…".into(), true)),
+        QrState::Scanned => body = body.child(body_text(tr("remote.qr_scanned").into(), true)),
         QrState::Done { bot_id } => {
-            let mut lines = vec!["✅ 绑定成功".to_string()];
+            let mut lines = vec![tr("remote.qr_done").to_string()];
             if let Some(b) = bot_id {
                 lines.push(format!("bot_id = {b}"));
             }
             body = body.child(
                 div().flex().justify_center().child(mono_lines(lines, 12., false)).into_any_element(),
             );
-            body = body.child(body_text(
-                "接下来在微信里发 /task 选一个会话，即可开始聊天。".into(),
-                true,
-            ));
+            body = body.child(body_text(tr("remote.dlg_done_hint").into(), true));
         }
         QrState::Expired => {
-            body = body.child(body_text("二维码已过期，请重新获取。".into(), false));
-            body = body.child(action_btn("wx-qr-again", "获取二维码", true, true));
+            body = body.child(body_text(tr("remote.qr_expired").into(), false));
+            body = body.child(action_btn("wx-qr-again", tr("remote.qr_begin"), true, true));
         }
         QrState::Error(m) => {
-            body = body.child(body_text(format!("状态接口：{m}"), false));
-            body = body.child(action_btn("wx-qr-retry", "重试", false, true));
+            body = body.child(body_text(format!("{}", tr("remote.dlg_error")).replace("{m}", m), false));
+            body = body.child(action_btn("wx-qr-retry", tr("remote.dlg_retry"), false, true));
         }
     }
 
@@ -1084,11 +1076,11 @@ pub(crate) fn render_wx_qr(
     // 上面的「绑定成功」说的是**渠道**（扫码授权）；这里说的是 `/bind`，
     // 两者别混 —— 用户被「已绑定/未绑定」并排显示搞糊涂过
     let bind_line = match chat.aux.remote.bound.as_deref() {
-        Some(k) => format!("/bind 已确认 · 当前会话 {k}"),
-        None => format!("可选：微信里发 /bind {code} 确认授权（不影响选会话）"),
+        Some(k) => tr("remote.dlg_bind_confirmed").replace("{k}", k),
+        None => tr("remote.dlg_bind_optional").replace("{code}", &code),
     };
     body = body.child(body_text(bind_line, true));
-    body = body.child(action_btn("wx-qr-close", "关闭", false, false));
+    body = body.child(action_btn("wx-qr-close", tr("remote.dlg_close"), false, false));
 
     let weak_dismiss = weak.clone();
     let dismiss = move |_w: &mut gpui::Window, cx: &mut gpui::App| {

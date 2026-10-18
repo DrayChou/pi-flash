@@ -141,8 +141,8 @@ impl SettingsPanel {
             section: String::new(),
             key_input: cx.new(|cx| TextInput::new(cx).masked(true)),
             key_visible: false,
-            model_filter: panel_live_input("筛选模型…", cx),
-            enabled_filter: panel_live_input("筛选启用的模型…", cx),
+            model_filter: panel_live_input(tr("settings.filter_models"), cx),
+            enabled_filter: panel_live_input(tr("settings.filter_enabled"), cx),
             model_free_only: false,
             mj_name: panel_input("provider-name", cx),
             mj_base: panel_input("https://api.example.com/v1", cx),
@@ -152,7 +152,7 @@ impl SettingsPanel {
                     .placeholder(tr("custom_models.key_hint"))
             }),
             mj_id: panel_input("model-id", cx),
-            mj_mname: panel_input("显示名（可选）", cx),
+            mj_mname: panel_input(tr("settings.model_display_name"), cx),
             mj_ctx: cx.new(|cx| TextInput::new(cx).numeric(true)),
             mj_api: 0,
             mj_reasoning: false,
@@ -172,7 +172,7 @@ impl SettingsPanel {
                         .multiline()
                 })
             },
-            mcp_name: panel_live_input("MCP名称", cx),
+            mcp_name: panel_live_input(tr("mcp.field_name"), cx),
             error: None,
             font_popup: None,
             font_dd: cx.new(|_| DropdownState::new()),
@@ -480,19 +480,22 @@ fn two_pane(sidebar: gpui::AnyElement, detail: gpui::AnyElement) -> gpui::AnyEle
 /// `(TAB_REMOTE, "远程控制", "message-square")`。
 fn nav_items(tab: u8, weak_close: gpui::WeakEntity<Chat>) -> Vec<gpui::AnyElement> {
     let t = T();
-    [
-        (TAB_GENERAL, "界面", "monitor"),
-        (TAB_MODELS, "模型", "cpu"),
-        (TAB_SKILLS, "技能", "layers"),
-        (TAB_PLUGINS, "扩展", "plug"),
-        (TAB_MCP, "MCP", "server"),
-        (TAB_MISC, "其他", "ellipsis"),
-        (TAB_SHORTCUTS, "快捷键", "keyboard"),
-        (TAB_ABOUT, "关于", "info"),
-    ]
+    // tr() 传 &'static 键返回 &'static；显式标注避免数组被推断成临时生命周期
+    let items: [(u8, &'static str, &'static str); 8] = [
+        (TAB_GENERAL, tr("settings.tab.appearance"), "monitor"),
+        (TAB_MODELS, tr("settings.tab.models"), "cpu"),
+        (TAB_SKILLS, tr("settings.tab.skills"), "layers"),
+        (TAB_PLUGINS, tr("settings.tab.extensions"), "plug"),
+        (TAB_MCP, tr("settings.tab.mcp"), "server"),
+        (TAB_MISC, tr("settings.tab.misc"), "ellipsis"),
+        (TAB_SHORTCUTS, tr("settings.tab.shortcuts"), "keyboard"),
+        (TAB_ABOUT, tr("settings.tab.about"), "info"),
+    ];
+    items
     .iter()
     .map(|(ix, label, icon_name)| {
-        let active = tab == *ix;
+        let ix = *ix; // 值捕获：数组无 const promotion，闭包不能带栈引用
+        let active = tab == ix;
         let weak_tab = weak_close.clone();
         div()
             .id(SharedString::from(format!("mc-nav-{ix}")))
@@ -512,11 +515,11 @@ fn nav_items(tab: u8, weak_close: gpui::WeakEntity<Chat>) -> Vec<gpui::AnyElemen
             .hover(|s| s.bg(rgb(t.bg_hover)).text_color(rgb(t.text)))
             .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                 let _ = weak_tab.update(cx, |c, cx| {
-                    let next_section = SettingsPanel::prefill_section(c, *ix);
-                    let is_mcp = *ix == TAB_MCP;
+                    let next_section = SettingsPanel::prefill_section(c, ix);
+                    let is_mcp = ix == TAB_MCP;
                     if let Some(st) = c.dlg.settings.clone() {
                         st.update(cx, |s, cx| {
-                            s.tab = *ix;
+                            s.tab = ix;
                             s.error = None;
                             // MCP 页 section 连带回填走 mcp_select（下同）
                             if !is_mcp {

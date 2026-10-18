@@ -221,7 +221,7 @@ fn tab_strip(
                         .text_size(crate::appearance::ui_size(11.))
                         .font_weight(gpui::FontWeight::BOLD)
                         .text_color(rgb(0xf87171))
-                        .child("!")
+                        .child(tr("status.alert"))
                 } else if f.dirty {
                     div().size(px(7.)).rounded_full().flex_shrink_0().bg(rgb(0xe0a562))
                 } else {

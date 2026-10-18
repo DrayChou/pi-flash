@@ -18,13 +18,15 @@ use chrono::{DateTime, Local};
 use gpui::{Image, ImageFormat};
 use gpui_component::input::ImagePasteHook;
 
+use crate::i18n::tr;
+
 /// 目标目录：`<md同级>/assets/<md文件名去扩展>/`（各目录各自归档，
 /// 不上浮到根——拍板，搬运文章时图随文走）。
 pub(crate) fn target_dir(md_path: &Path) -> PathBuf {
     let stem = md_path
         .file_stem()
         .and_then(|s| s.to_str())
-        .unwrap_or("未命名");
+        .unwrap_or(tr("markdown.unnamed"));
     md_path
         .parent()
         .unwrap_or_else(|| Path::new("."))

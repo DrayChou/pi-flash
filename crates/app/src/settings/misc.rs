@@ -154,14 +154,19 @@ fn window_row(
     weak: &gpui::WeakEntity<Chat>,
     t: &'static crate::appearance::theme::Theme,
 ) -> gpui::AnyElement {
-    const CHOICES: [(u64, &str); 3] = [(7, "7 天"), (14, "14 天"), (30, "30 天")];
+    const CHOICES: [(u64, &str); 3] = [
+        (7, "misc.window_7d"),
+        (14, "misc.window_14d"),
+        (30, "misc.window_30d"),
+    ];
     div()
         .flex()
         .gap(px(8.))
-        .children(CHOICES.iter().map(|(v, label)| {
+        .children(CHOICES.iter().map(|(v, key)| {
             let active = days == *v;
             let weak_item = weak.clone();
             let value = *v;
+            let label = tr(*key);
             div()
                 .id(SharedString::from(format!("misc-window-{v}")))
                 .w(px(72.))
@@ -206,12 +211,17 @@ fn collapse_row(
     weak: &gpui::WeakEntity<Chat>,
     t: &'static crate::appearance::theme::Theme,
 ) -> gpui::AnyElement {
-    const CHOICES: [(u64, &str); 3] = [(24, "1 天"), (72, "3 天"), (168, "7 天")];
+    const CHOICES: [(u64, &str); 3] = [
+        (24, "misc.collapse_1d"),
+        (72, "misc.collapse_3d"),
+        (168, "misc.collapse_7d"),
+    ];
     div()
         .flex()
         .gap(px(8.))
-        .children(CHOICES.iter().map(|(v, label)| {
+        .children(CHOICES.iter().map(|(v, key)| {
             let active = hours == *v;
+            let label = tr(*key);
             let weak_item = weak.clone();
             let value = *v;
             div()
