@@ -114,12 +114,13 @@ pub(crate) fn page(
                             true,
                             cx,
                         ))
-                        .child(action_bar(chat, weak, t)),
+                        .child(action_bar(chat, weak, t))
+                        // 082：Pi 扩展更新通知 = 零高锚点（不占流空间），卡片
+                        // absolute 下移固定 20px（验收定稿），欢迎语/inputpanel
+                        // 定位零改动
+                        .children(plugin_update_notice(chat, weak, t)),
                 ),
         )
-        // 082：Pi 扩展更新通知 = 独立绝对带（验收定稿：不进内容簇 flex 流，
-        // 不挤压欢迎语/inputpanel 的原定位），锚在内容簇下方空白区
-        .children(plugin_update_notice(chat, weak, t))
         .into_any_element()
 }
 
@@ -313,12 +314,13 @@ fn action_bar(
     bar.into_any_element()
 }
 
-/// 082 Pi 扩展更新通知（独立绝对带，**贴视口底**向上生长——验收返工：
-/// 百分比锚定在矮视口下会与 action_bar 重叠，贴底永不重叠；不参与原三
-/// 带布局）：宽 = 上方内容列 80%，卡片式（圆角边框同 composer 呼应），
-/// 标题行下分隔线，列表上限 300px 超长滚动；标题行右侧【更新全部(n)】=
-/// UI 规范按钮（与设置·扩展页统一 config_button）。安静原则：检查中不
-/// 显示、n=0 不渲染；点击列表行暂无动作（v1 仅展示，入口在设置·扩展页）。
+/// 082 Pi 扩展更新通知（零高锚点 + absolute 卡片）：锚点紧跟 action_bar
+/// 流内不占高度，卡片固定下移 20px（验收定稿：与项目选择操作栏固定 20px
+/// 间距，欢迎语/inputpanel 定位零改动）；宽 = 上方内容列 80%，卡片式（圆
+/// 角边框同 composer 呼应），标题行下分隔线，列表上限 300px 超长滚动；
+/// 标题行右侧【更新全部(n)】= UI 规范按钮（与设置·扩展页统一
+/// config_button）。安静原则：检查中不显示、n=0 不渲染；点击列表行暂无
+/// 动作（v1 仅展示，入口在设置·扩展页）。
 fn plugin_update_notice(
     chat: &Chat,
     weak: &gpui::WeakEntity<Chat>,
@@ -386,53 +388,57 @@ fn plugin_update_notice(
                 .child(crate::ui::icon("arrow-up", 10., t.accent)),
         );
     }
-    // 独立绝对带：**贴视口底**向上生长（验收返工：百分比锚定在矮视口下会
-    // 与 action_bar 重叠；贴底永不重叠），水平内距与消息列一致，内容列
-    // 80% 宽居中；卡片 = 圆角边框同 composer 呼应，标题行与列表间分隔线
+    // 零高锚点：紧跟 action_bar（流内不占高度，欢迎语/inputpanel 定位零
+    // 改动），卡片 absolute 下移固定 20px（验收定稿：与项目选择操作栏固定
+    // 20px 间距），水平居中、内容列 80% 宽；卡片式圆角边框同 composer 呼
+    // 应，标题行下分隔线，列表上限 300px 超长滚动。安静原则：检查中不显
+    // 示、n=0 不渲染；点击列表行暂无动作（v1 仅展示，入口在设置·扩展页）。
     Some(
         div()
-            .absolute()
-            .bottom_0()
-            .left_0()
-            .right_0()
-            .px(px(15.))
-            .pb(px(24.))
-            .flex()
-            .justify_center()
-            .items_end()
+            .h(px(0.))
+            .relative()
             .child(
                 div()
-                    .w_full()
-                    .max_w(px(crate::services::workspace::chat_content_width() * 0.8))
+                    .absolute()
+                    .top(px(20.))
+                    .left_0()
+                    .right_0()
                     .flex()
-                    .flex_col()
-                    .gap(px(6.))
-                    .rounded(px(8.))
-                    .border_1()
-                    .border_color(rgb(t.border))
-                    .bg(rgb(t.bg))
-                    .p(px(10.))
+                    .justify_center()
                     .child(
                         div()
+                            .w_full()
+                            .max_w(px(crate::services::workspace::chat_content_width() * 0.8))
                             .flex()
-                            .items_center()
+                            .flex_col()
                             .gap(px(6.))
-                            .pb(px(6.))
-                            // 标题行下分隔线（验收：原有的分隔线要加）
-                            .border_b_1()
+                            .rounded(px(8.))
+                            .border_1()
                             .border_color(rgb(t.border))
+                            .bg(rgb(t.bg))
+                            .p(px(10.))
                             .child(
                                 div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .text_size(crate::appearance::ui_size(11.))
-                                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                                    .text_color(rgb(t.text_dim))
-                                    .child(tr("new_session.plugin_updates")),
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(6.))
+                                    .pb(px(6.))
+                                    // 标题行下分隔线（验收：原有的分隔线要加）
+                                    .border_b_1()
+                                    .border_color(rgb(t.border))
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .text_size(crate::appearance::ui_size(11.))
+                                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                                            .text_color(rgb(t.text_dim))
+                                            .child(tr("new_session.plugin_updates")),
+                                    )
+                                    .child(btn),
                             )
-                            .child(btn),
-                    )
-                    .child(list),
+                            .child(list),
+                    ),
             )
             .into_any_element(),
     )
