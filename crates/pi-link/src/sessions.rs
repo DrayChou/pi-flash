@@ -739,6 +739,33 @@ pub fn list_sessions_for_cwd(cwd: &str, max: usize) -> Vec<SessionInfo> {
     with_scanner(|s| s.list_for_cwd(cwd, max))
 }
 
+/// 052 会话自动清理候选：root 下所有 `<group>/*.jsonl` 里 mtime 早于
+/// `cutoff` 的文件路径（最后活动 = mtime，与 recents/load window 同一口径）。
+/// 只 read_dir + stat，不解析内容——清理是后排任务，不走 Scanner 那套
+/// 头尾解析/计数重活。root 不存在（无 sessions 目录）→ 空。
+pub fn stale_session_files(root: &Path, cutoff: SystemTime) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let Ok(groups) = std::fs::read_dir(root) else {
+        return out;
+    };
+    for group in groups.flatten() {
+        let Ok(files) = std::fs::read_dir(group.path()) else {
+            continue;
+        };
+        for f in files.flatten() {
+            let p = f.path();
+            if p.extension().is_none_or(|e| e != "jsonl") {
+                continue;
+            }
+            let Ok(md) = f.metadata() else { continue };
+            if md.is_file() && md.modified().is_ok_and(|m| m < cutoff) {
+                out.push(p);
+            }
+        }
+    }
+    out
+}
+
 /// Process-wide scanner diagnostics: `(files scanned, index rows)`.
 /// Startup measurements read this after the first list (ARCHITECTURE.md
 /// startup budget).
@@ -1051,6 +1078,41 @@ mod tests {
             "--D--ai_workspace-pi-flash--"
         );
         assert_eq!(group_name_for_cwd("/home/u/x"), "---home-u-x--");
+    }
+
+    #[test]
+    fn stale_session_files_picks_old_jsonl_only() {
+        // 052：只按 mtime 挑超期候选——老 jsonl 入选，新会话 / 非 jsonl /
+        // 直接落在 root 的散文件都不入选
+        let root = temp_root("stale");
+        let old = write_session(&root, "D:\\proj-a", "old1", BODY);
+        let fresh = write_session(&root, "D:\\proj-a", "new1", BODY);
+        let past = std::time::SystemTime::now() - std::time::Duration::from_secs(10 * 86_400);
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&old)
+            .unwrap()
+            .set_modified(past)
+            .unwrap();
+        let cutoff = std::time::SystemTime::now() - std::time::Duration::from_secs(3 * 86_400);
+        let hits = stale_session_files(&root, cutoff);
+        assert!(
+            hits.iter().any(|p| p == &old),
+            "mtime 早于 cutoff 的会话入选"
+        );
+        assert!(!hits.iter().any(|p| p == &fresh), "新会话不入选");
+        let group = root.join(group_name_for_cwd("D:\\proj-a"));
+        std::fs::write(group.join("notes.txt"), "x").unwrap();
+        std::fs::write(root.join("loose.jsonl"), "{}").unwrap();
+        let hits2 = stale_session_files(&root, cutoff);
+        assert_eq!(hits2.len(), hits.len(), "散文件/非 jsonl 不入选");
+        assert!(
+            hits2
+                .iter()
+                .all(|p| p.extension().is_some_and(|e| e == "jsonl")),
+            "结果全是 jsonl"
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

@@ -725,6 +725,9 @@ fn spawn_splash_gate(cx: &mut gpui::Context<Chat>) {
             // 082 延迟加载：Pi 扩展更新检测（只读 + 网络，零写入；结果进
             // aux.plugin_updates，新会话页通知与设置·扩展页消费）
             c.spawn_plugin_updates_check(cx);
+            // 052 延迟加载：会话自动清理（后排任务——扫描+回收站搬运全在
+            // 后台线程，主线程只做状态摘除；0 天 = 关闭）
+            c.spawn_session_auto_clean(cx);
             if crate::PERF.load(std::sync::atomic::Ordering::Relaxed) {
                 eprintln!("[perf] splash reveal: {:?}", t0.elapsed());
             }

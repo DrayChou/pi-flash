@@ -723,6 +723,9 @@ pub struct AppSettings {
     pub removed_providers: Option<Vec<String>>,
     /// 081 其他页: 自动更新（默认 on——off 时只提示新版本号 ↑ 不下载）
     pub auto_update: Option<bool>,
+    /// 052 其他页: 会话自动清理天数——最后活动超出该天数的非置顶会话
+    /// 启动时移入回收站。默认 3，0 = 关闭，钳制 [0,100]。
+    pub auto_clean_days: Option<u64>,
     /// 界面页: Markdown 所见即所得（024 Live Preview 装饰；默认关——
     /// 已知回车崩溃与标题行距问题未修，用户显式开启才挂装饰）
     pub md_live_preview: Option<bool>,
@@ -811,6 +814,10 @@ pub fn app_settings() -> AppSettings {
                         )
                     }),
                     auto_update: map.get("auto_update").and_then(|v| v.as_bool()),
+                    auto_clean_days: map
+                        .get("auto_clean_days")
+                        .and_then(|v| v.as_u64())
+                        .map(|v| v.min(100)),
                     md_live_preview: map.get("md_live_preview").and_then(|v| v.as_bool()),
                     chat_content_width: map.get("chat_content_width").and_then(|v| v.as_u64()),
                 }
@@ -891,6 +898,9 @@ pub fn save_app_settings(s: &AppSettings) {
     }
     if let Some(v) = s.auto_update {
         obj.insert("auto_update".into(), Value::Bool(v));
+    }
+    if let Some(v) = s.auto_clean_days {
+        obj.insert("auto_clean_days".into(), Value::Number(v.into()));
     }
     if let Some(v) = s.md_live_preview {
         obj.insert("md_live_preview".into(), Value::Bool(v));
@@ -1005,6 +1015,12 @@ pub fn git_markers() -> bool {
 /// 081 其他页: 自动更新开关（默认 on）。
 pub fn auto_update() -> bool {
     app_settings().auto_update.unwrap_or(true)
+}
+
+/// 052 其他页: 会话自动清理天数（默认 3，0 = 关闭；读入口统一鐘制 [0,100]，
+/// 存量脏值也在这里被拦住）。
+pub fn auto_clean_days() -> u64 {
+    app_settings().auto_clean_days.unwrap_or(3).min(100)
 }
 
 /// 界面页: Markdown 所见即所得（024 Live Preview 装饰；默认关 = md 源码态

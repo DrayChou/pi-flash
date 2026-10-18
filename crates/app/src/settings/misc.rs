@@ -65,7 +65,30 @@ pub(crate) fn mc_misc_view(
     col = col.child(set_row(
         tr("settings.session_display_count"),
         tr("settings.session_count_hint"),
-        stepper(sess_n, 3, 10, weak, t),
+        stepper(
+            "misc-sess",
+            sess_n,
+            3,
+            10,
+            |v| v.to_string(),
+            || crate::services::workspace::session_display_count() as u64,
+            |v| {
+                let mut s = crate::services::workspace::app_settings();
+                s.session_display_count = Some(v);
+                crate::services::workspace::save_app_settings(&s);
+            },
+            weak,
+            t,
+        ),
+        t,
+    ));
+
+    // 自动清理会话（052）：−/值/+ 步进，范围 [0,100]，默认 3；0 = 关闭；
+    // 最后活动超出天数的非置顶会话启动时移入回收站。置于「提示音」前（052 定）
+    col = col.child(set_row(
+        tr("settings.auto_clean_title"),
+        tr("settings.auto_clean_hint"),
+        clean_stepper(weak, t),
         t,
     ));
 
@@ -261,12 +284,18 @@ fn collapse_row(
         .into_any_element()
 }
 
-/// 会话显示数 +/- 控件：两个 24px 档位按钮夹居中数值，到边界后对应按钮
-/// 置灰禁点。
+/// 步进控件（通用版）：−/+ 两个 24px 档位按钮夹居中数值，到边界后对应按钮
+/// 置灰禁点。`render` 生成中间显示（"10" / "3 天" / "关闭"），`cur` 在点击
+/// 时重读当前值（不吃渲染快照陈值），夹回 [min, max] 后交 `apply` 落盘。
+/// 现用于会话显示数（3-10）与自动清理天数（0-100，052）。
 fn stepper(
+    id_prefix: &'static str,
     value: u64,
     min: u64,
     max: u64,
+    render: impl Fn(u64) -> String + 'static,
+    cur: impl Fn() -> u64 + Clone + 'static,
+    apply: impl Fn(u64) + Clone + 'static,
     weak: &gpui::WeakEntity<Chat>,
     t: &'static crate::appearance::theme::Theme,
 ) -> gpui::AnyElement {
@@ -275,12 +304,14 @@ fn stepper(
         .items_center()
         .gap(px(8.))
         .child(step_btn(
-            "misc-sess-dec",
+            format!("{id_prefix}-dec"),
             "−",
             value > min,
             -1,
             min,
             max,
+            cur.clone(),
+            apply.clone(),
             weak,
             t,
         ))
@@ -293,35 +324,67 @@ fn stepper(
                 .font_weight(gpui::FontWeight::SEMIBOLD)
                 // §5.4：与页内其他文字同色，层级只由加粗表达
                 .text_color(rgb(t.text_muted))
-                .child(SharedString::from(value.to_string())),
+                .child(SharedString::from(render(value))),
         )
         .child(step_btn(
-            "misc-sess-inc",
+            format!("{id_prefix}-inc"),
             "+",
             value < max,
             1,
             min,
             max,
+            cur,
+            apply,
             weak,
             t,
         ))
         .into_any_element()
 }
 
-/// 步进按钮：enabled=false 时置灰且不挂点击；点击把当前值 + delta 后
-/// 夹回 [min, max] 存盘。
+/// 052 自动清理天数步进：[0,100]，默认 3；0 显示「关闭」（= 不自动清理）。
+fn clean_stepper(
+    weak: &gpui::WeakEntity<Chat>,
+    t: &'static crate::appearance::theme::Theme,
+) -> gpui::AnyElement {
+    stepper(
+        "misc-clean",
+        crate::services::workspace::auto_clean_days(),
+        0,
+        100,
+        |v| {
+            if v == 0 {
+                tr("misc.auto_clean_off").to_string()
+            } else {
+                crate::i18n::tf("misc.auto_clean_days", &[("n", v.to_string())])
+            }
+        },
+        crate::services::workspace::auto_clean_days,
+        |v| {
+            let mut s = crate::services::workspace::app_settings();
+            s.auto_clean_days = Some(v);
+            crate::services::workspace::save_app_settings(&s);
+        },
+        weak,
+        t,
+    )
+}
+
+/// 步进按钮：enabled=false 时置灰且不挂点击；点击把 cur() + delta 夹回
+/// [min, max] 后交 apply 落盘（weak.update 只为拿 Chat 的 notify）。
 fn step_btn(
-    id: &'static str,
+    id: String,
     label: &str,
     enabled: bool,
     delta: i64,
     min: u64,
     max: u64,
+    cur: impl Fn() -> u64 + 'static,
+    apply: impl Fn(u64) + 'static,
     weak: &gpui::WeakEntity<Chat>,
     t: &'static crate::appearance::theme::Theme,
 ) -> gpui::AnyElement {
     let base = div()
-        .id(id)
+        .id(SharedString::from(id))
         .size(px(24.))
         .rounded(px(5.))
         .border_1()
@@ -340,11 +403,7 @@ fn step_btn(
             .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                 cx.stop_propagation();
                 let _ = weak_click.update(cx, |_c, cx| {
-                    let mut s = crate::services::workspace::app_settings();
-                    let cur = s.session_display_count.unwrap_or(10) as i64;
-                    s.session_display_count =
-                        Some((cur + delta).clamp(min as i64, max as i64) as u64);
-                    crate::services::workspace::save_app_settings(&s);
+                    apply(((cur() as i64) + delta).clamp(min as i64, max as i64) as u64);
                     cx.notify();
                 });
             })

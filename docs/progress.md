@@ -332,3 +332,8 @@
   三轮失败定案绕行）；主题持久化只写 app_settings.json；模型弹窗短名/思考
   off = 预期（非推理模型）；新会话页判据 = isEmptyNew。
 
+- **052 会话自动清理**：其他页「提示音」前新增【自动清理会话】（−/值/+ 步进，
+  [0,100] 默认 3，0 = 关闭）；揭幕后后排任务扫 mtime 超期会话移入回收站（trash，
+  铁律删除进回收站），置顶 + 本进程 runtime 持有的会话永不清理；主线程收尾只做
+  状态摘除（与 delete_session 同一清单）。stale 扫描落在 pi-link
+  `sessions::stale_session_files`（带测试）。
