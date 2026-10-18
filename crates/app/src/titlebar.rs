@@ -9,7 +9,7 @@
 //! 命中盒，三个窗口钮注册 Min/Max/Close 命中盒（zed platform_title_bar
 //! parity）。收起态面板全隐，收放钮跳到右段起点（竖线镜像位）。
 
-use gpui::{MouseButton, SharedString, Window, div, prelude::*, px, relative, rgb};
+use gpui::{MouseButton, SharedString, Window, div, prelude::*, px, rgb};
 use std::path::PathBuf;
 use gpui::WindowControlArea;
 
@@ -97,9 +97,12 @@ pub(crate) fn topbar_r(
     // 卡片融底（Obsidian 式，条上不画横线）
     bar = bar.child(tab_strip(chat, cx));
 
+    // 标签区右缘到最小化钮左缘固定 20px（016 2026-10-14 定案），仍是
+    // 窗口拖拽命中区
     bar = bar.child(
         div()
-            .flex_1()
+            .w(px(20.))
+            .flex_shrink_0()
             .h_full()
             .window_control_area(WindowControlArea::Drag),
     );
@@ -148,15 +151,16 @@ fn icon_btn(
 /// 中段标签栏（016）：置顶会话 tab（第一位，距条左缘 10px）+ 自由标签区
 /// （终端/文件，023 规则：脏点/冲突标记在 tab 行尾）。
 ///
-/// 标签区限宽 topbar 的 75%，超出横向滑动、不侵吞右段窗口钮（对齐 Zed
-/// tab bar）；左缘 10px、右走流内 20px spacer（滚到底也有留白）。
+/// 标签区伸展到最小化钮左侧 20px（flex_1 + min_w_0；016 2026-10-14 定案
+/// 撤 75% 限宽，回 023 的 Zed parity），超出横向滑动；左缘 10px、右走
+/// 流内 20px spacer（滚到底也有留白，不贴右边界）。
 fn tab_strip(
     chat: &mut Chat,
     cx: &mut gpui::Context<Chat>,
 ) -> gpui::Stateful<gpui::Div> {
     let mut tabs_host = div()
         .id("topbar-tabs")
-        .w(relative(0.75))
+        .flex_1()
         .min_w_0()
         .pl(px(10.))
         .h_full()
