@@ -205,7 +205,9 @@ fn probe(pkgs: &[ProbePkg]) -> HashMap<String, StaticResult> {
     }
     let out = spawn_node(&script, &[input_path.to_string_lossy().into_owned()]);
     let _ = std::fs::remove_file(&input_path);
-    let map = out.ok().and_then(|o| parse_probe_output(Some(&o.stdout), pkgs));
+    let map = out
+        .ok()
+        .and_then(|o| parse_probe_output(Some(&o.stdout), pkgs));
     map.unwrap_or_default()
 }
 
@@ -278,15 +280,22 @@ fn dump_decls(lazy: &[(String, Vec<PathBuf>, PathBuf)]) -> HashMap<String, i64> 
     }
     args.push("-e".into());
     args.push(dump.to_string_lossy().into_owned());
-    let child = std::process::Command::new(pi_link::vendor::node_bin())
-        .arg(&cli)
+    let mut cmd = std::process::Command::new(pi_link::vendor::node_bin());
+    cmd.arg(&cli)
         .args(&args)
         .current_dir(&workdir)
         .env("CONTEXT_DUMP_FILE", &dump_file)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn();
+        .stderr(std::process::Stdio::null());
+    // Windows：不弹 pi 控制台窗（082 验收发现，同 git.rs 同款处理）
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let child = cmd.spawn();
     let Ok(mut child) = child else {
         return HashMap::new();
     };
@@ -303,9 +312,8 @@ fn dump_decls(lazy: &[(String, Vec<PathBuf>, PathBuf)]) -> HashMap<String, i64> 
     let Some(raw) = raw else {
         return HashMap::new();
     };
-    let Ok(json) = serde_json::from_str::<serde_json::Value>(
-        String::from_utf8_lossy(&raw).trim(),
-    ) else {
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(String::from_utf8_lossy(&raw).trim())
+    else {
         return HashMap::new();
     };
     let Some(tools) = json.get("tools").and_then(|v| v.as_array()) else {
@@ -410,7 +418,12 @@ impl Chat {
     pub(crate) fn spawn_token_probe(&mut self, cx: &mut gpui::Context<Self>) {
         let mut targets: Vec<ProbePkg> = Vec::new();
         let mut seen = std::collections::HashSet::new();
-        for v in self.cfg.mc_pkgs_global.iter().chain(self.cfg.mc_pkgs_project.iter()) {
+        for v in self
+            .cfg
+            .mc_pkgs_global
+            .iter()
+            .chain(self.cfg.mc_pkgs_project.iter())
+        {
             let src = pi_link::skills::entry_source(v);
             if src.is_empty() || !seen.insert(src.clone()) {
                 continue;
@@ -420,10 +433,19 @@ impl Chat {
                 continue;
             }
             let mtime = package_mtime(&dir);
-            if self.pool.ext_tokens.get(&src).is_some_and(|e| e.mtime == mtime) {
+            if self
+                .pool
+                .ext_tokens
+                .get(&src)
+                .is_some_and(|e| e.mtime == mtime)
+            {
                 continue;
             }
-            targets.push(ProbePkg { source: src, dir, mtime });
+            targets.push(ProbePkg {
+                source: src,
+                dir,
+                mtime,
+            });
         }
         if targets.is_empty() {
             return;
