@@ -419,7 +419,7 @@ pub(crate) fn render_msg(
             (h, st)
         };
 
-        let bottom = user_action_bar(msg_ix, weak, &text, m.ts, bar_revealed, copied, t);
+        let bottom = user_action_bar(msg_ix, weak, m.ts, bar_revealed, copied, t);
         // 纯图片消息（空文本）不渲染空泡；缩略图行在气泡上方
         let has_text = !text.trim().is_empty();
         let mut row = bar_hover_wired(
@@ -707,6 +707,13 @@ fn model_label_div(label: &str, est: Option<u64>, tps: Option<f32>, t: &theme::T
     row
 }
 
+/// 流式平铺（pi-web `isLiveTail`）条数上限。长自主跑的单轮可达数百条
+/// assistant 消息，而**整轮是一个 List 条目**——平铺全部意味着每帧 O(轮)
+/// 地建元素、排版、命中测试（几百张工具卡还要逐帧 serde 解析 args），流式
+/// 每 delta 一帧，打字/滚轮全被拖死（688 条消息会话实测明显卡顿）。视口
+/// 本来只装得下尾部几条；更早的内容轮末整形后进「工作详情」组照样可展开。
+const LIVE_TAIL_MAX_MSGS: usize = 12;
+
 /// pi-web `isLiveTail` 的平铺渲染：运行中的这一轮**不分组、不折叠**——每条
 /// assistant 消息一个模型名行 + 全部块（thinking/toolCall/text 就地展开），
 /// 流式那条的模型名行带 ↓token 估算 + t/s 徽章。
@@ -725,7 +732,23 @@ fn live_turn_body(
     tps: Option<f32>,
 ) -> gpui::Div {
     let mut body = div().flex().flex_col();
-    for (i, (m, &gix)) in turn.iter().zip(turn_ixs).enumerate() {
+    // 巨轮限流：只平铺尾部 LIVE_TAIL_MAX_MSGS 条，前面补一行占位说明
+    //（点击定位走右缘导航刻度；展开回看等轮末「工作详情」）
+    let total = turn.len();
+    let skip = total.saturating_sub(LIVE_TAIL_MAX_MSGS);
+    if skip > 0 {
+        body = body.child(
+            div()
+                .mb(px(8.))
+                .text_size(crate::appearance::sess_size(-1.))
+                .text_color(rgb(t.text_faint))
+                .child(SharedString::from(crate::i18n::tf(
+                    "nav.live_tail_skipped",
+                    &[("n", skip.to_string())],
+                ))),
+        );
+    }
+    for (i, (m, &gix)) in turn[skip..].iter().zip(&turn_ixs[skip..]).enumerate() {
         if m.role != Role::Assistant {
             continue;
         }
@@ -734,7 +757,7 @@ fn live_turn_body(
             continue;
         }
         // 轮内最后一条 = 正在流式输出/干活的那条（徽章与 streaming 态挂它）
-        let streaming = i == turn.len() - 1;
+        let streaming = skip + i == total - 1;
         let mut item = div().mb(px(16.)).flex().flex_col().gap(px(8.));
         item = item.child(model_label_div(
             m.model.as_deref().unwrap_or(model_label),
@@ -811,20 +834,29 @@ pub(crate) fn render_assistant_turn(
     let final_truncated = final_msg.stop_reason.as_deref() == Some("length");
     let has_final_answer = answer_len > 0 || final_error || final_truncated;
 
-    // 复制整轮文本（hover 操作栏，自定义保留）
-    let mut turn_text = String::new();
-    for m in turn {
-        for b in &m.blocks {
-            if let Block::Text { text, .. } = b {
-                if !text.trim().is_empty() {
-                    if !turn_text.is_empty() {
-                        turn_text.push_str("\n\n");
+    // 复制整轮文本（hover 操作栏，自定义保留）。**按需构建**：巨轮（数百条
+    // assistant）的全量拼接随轮内文本线性涨，若每帧都拼，打字/流式期间每帧
+    // 都是 MB 级 memcpy。操作栏只在 hover/复制反馈/分支在飞时可见，隐藏帧
+    // 传空串（栏 opacity 0，copy pill 也被 isEmpty 门掉，语义不变）。
+    let forking = fork.as_ref().is_some_and(|f| f.forking);
+    let turn_text = if bar_revealed || copied || forking {
+        let mut s = String::new();
+        for m in turn {
+            for b in &m.blocks {
+                if let Block::Text { text, .. } = b {
+                    if !text.trim().is_empty() {
+                        if !s.is_empty() {
+                            s.push_str("\n\n");
+                        }
+                        s.push_str(text);
                     }
-                    turn_text.push_str(text);
                 }
             }
         }
-    }
+        s
+    } else {
+        String::new()
+    };
 
     // ---- 运行中：pi-web `isLiveTail` 平铺渲染（不分组、不折叠）----
     // pi-web ChatWindow：`isLiveTail = (sessionBusy || isStreaming) &&
@@ -845,48 +877,33 @@ pub(crate) fn render_assistant_turn(
 
     // ---- 「工作详情」组：全部 assistant 消息的 thinking/toolCall，最终
     // 消息只贡献 answer 连续段之前的前置块（pi-web processViews parity）----
-    let mut group_body = div().mt(px(8.)).flex().flex_col();
+    // 折叠判定前置：**折叠帧一个块元素都不建**。此前组体无条件全量构建、
+    // 只是最后不挂上树——巨轮（数百条 assistant）每帧照付几百次
+    // render_block（内含 serde/markdown 实打实的解析工作），收起状态照样
+    // 卡（688 条消息会话实测）。展开帧（用户点开）才付全款。
+    let key = (start_ix, usize::MAX);
+    let default_open = is_working || !has_final_answer;
+    let open = collapsed.get(&key).copied().unwrap_or(default_open);
 
-    let mut n_views = 0usize;
-    let mut n_tools = 0usize;
-    for (i, (m, &gix)) in turn.iter().zip(turn_ixs).enumerate().take(final_pos + 1) {
+    // 条目/工具计数零成本扫描（标签文案用，不建元素）
+    let (mut n_views, mut n_tools) = (0usize, 0usize);
+    for (i, (m, _)) in turn.iter().zip(turn_ixs).enumerate().take(final_pos + 1) {
         if m.role != Role::Assistant {
             continue;
         }
         let end = if i == final_pos { answer_start } else { m.blocks.len() };
-        let disp: Vec<&Block> = m.blocks[..end].iter().filter(|b| block_displayable(b)).collect();
-        if disp.is_empty() {
+        if !m.blocks[..end].iter().any(|b| block_displayable(b)) {
             continue;
         }
         n_views += 1;
-        // 块容器 gap 8（pi-web AssistantMessageView：label 下方 flexDirection
-        // column + gap 8）；label 自带 mb 4 → label→首块 12px，与 pi-web 一致
-        let mut item = div().mb(px(16.)).flex().flex_col().gap(px(8.));
-        // 每条 assistant 消息自带模型名标签（pi-web AssistantMessageView）
-        item = item.child(model_label_div(
-            m.model.as_deref().unwrap_or(model_label),
-            None,
-            None,
-            t,
-        ));
-        // pi-web thinkingDurationFromFile：该消息的生成时长挂到 thinking 块
-        let msg_think_dur = m.end_ts.zip(m.ts).map(|(e, s)| (e - s).max(0) / 1000);
-        for b in disp {
-            if matches!(b, Block::ToolCall { .. }) {
-                n_tools += 1;
-            }
-            let streaming = is_working && i == turn.len() - 1;
-            item = item.child(render_block(b, gix, weak, collapsed, t, streaming, msg_think_dur));
-        }
-        group_body = group_body.child(item);
+        n_tools += m
+            .blocks[..end]
+            .iter()
+            .filter(|b| matches!(b, Block::ToolCall { .. }))
+            .count();
     }
 
     if n_views > 0 {
-        // 折叠状态：显式覆盖 > 每态默认（流式中/无最终回答 = 展开，
-        // 有最终回答 = 折叠；pi-web defaultExpanded={!finalAnswerMessage}）
-        let key = (start_ix, usize::MAX);
-        let default_open = is_working || !has_final_answer;
-        let open = collapsed.get(&key).copied().unwrap_or(default_open);
         let label = crate::i18n::tf(
             "nav.work_details",
             &[("m", n_views.to_string()), ("t", n_tools.to_string())],
@@ -924,6 +941,35 @@ pub(crate) fn render_assistant_turn(
             .child(SharedString::from(label));
         col = col.child(fold_row);
         if open {
+            // 块容器 gap 8（pi-web AssistantMessageView：label 下方 flexDirection
+            // column + gap 8）；label 自带 mb 4 → label→首块 12px，与 pi-web 一致
+            let mut group_body = div().mt(px(8.)).flex().flex_col();
+            for (i, (m, &gix)) in turn.iter().zip(turn_ixs).enumerate().take(final_pos + 1) {
+                if m.role != Role::Assistant {
+                    continue;
+                }
+                let end = if i == final_pos { answer_start } else { m.blocks.len() };
+                let disp: Vec<&Block> =
+                    m.blocks[..end].iter().filter(|b| block_displayable(b)).collect();
+                if disp.is_empty() {
+                    continue;
+                }
+                let mut item = div().mb(px(16.)).flex().flex_col().gap(px(8.));
+                // 每条 assistant 消息自带模型名标签（pi-web AssistantMessageView）
+                item = item.child(model_label_div(
+                    m.model.as_deref().unwrap_or(model_label),
+                    None,
+                    None,
+                    t,
+                ));
+                // pi-web thinkingDurationFromFile：该消息的生成时长挂到 thinking 块
+                let msg_think_dur = m.end_ts.zip(m.ts).map(|(e, s)| (e - s).max(0) / 1000);
+                for b in disp {
+                    let streaming = is_working && i == turn.len() - 1;
+                    item = item.child(render_block(b, gix, weak, collapsed, t, streaming, msg_think_dur));
+                }
+                group_body = group_body.child(item);
+            }
             col = col.child(group_body);
         }
     }

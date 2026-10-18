@@ -12,6 +12,20 @@ use crate::session::messages::{BashInfo, Msg, Role};
 use super::*;
 
 impl SessionRuntime {
+    /// 发送后进 ↑ 历史：**上限截断**。此前无上限——长会话里每次发送的全文
+    /// （含粘贴的大段日志）都永久留底，内存随消息条数线性涨，且
+    /// `with_active_editor` 每次收发还要整体 clone 两份（per-send O(历史)）。
+    /// 100 条足够 ↑ 回溯；完整记录在会话文件里，这里只是输入历史。
+    /// 去重/空文本判定由调用方负责（各发送路径口径不同）。
+    fn remember_input(&mut self, text: String) {
+        const INPUT_HISTORY_CAP: usize = 100;
+        self.history.push(text);
+        if self.history.len() > INPUT_HISTORY_CAP {
+            let excess = self.history.len() - INPUT_HISTORY_CAP;
+            self.history.drain(..excess);
+        }
+    }
+
     /// RPC 门面：session/runtime/ 域外的文件一律经此发送，不直摸
     /// `agent.session`——进程在场与否、wire 细节都收在 runtime 内部。
     /// 返回 false = 无进程（草稿/已断），调用方按需降级。
@@ -152,7 +166,7 @@ impl SessionRuntime {
         }) {
             Ok(_) => {
                 if !text.is_empty() && self.history.last().map(|h| h != &text).unwrap_or(true) {
-                    self.history.push(text.clone());
+                    self.remember_input(text.clone());
                 }
                 self.history_ix = None;
                 self.input.clear();
@@ -410,7 +424,7 @@ impl SessionRuntime {
             if self.bash_running {
                 // 与普通消息同口径：进 ↑ 历史、清输入
                 if self.history.last().map(|h| h != &text).unwrap_or(true) {
-                    self.history.push(text.clone());
+                    self.remember_input(text.clone());
                 }
                 self.history_ix = None;
                 self.input.clear();
@@ -446,7 +460,7 @@ impl SessionRuntime {
                 // 纯图片发送不进历史、不做乐观回显（空文本气泡无内容可显，
                 // 等 RPC 回显带图的完整用户消息）
                 if !text.is_empty() && self.history.last().map(|h| h != &text).unwrap_or(true) {
-                    self.history.push(text.clone());
+                    self.remember_input(text.clone());
                 }
                 self.history_ix = None;
                 self.input.clear();
@@ -502,7 +516,7 @@ impl SessionRuntime {
         let sent = session.send(&cmd).is_ok();
         if sent {
             if self.history.last().map(|h| h != &text).unwrap_or(true) {
-                self.history.push(text.clone());
+                self.remember_input(text.clone());
             }
             self.history_ix = None;
             self.status = if streaming {

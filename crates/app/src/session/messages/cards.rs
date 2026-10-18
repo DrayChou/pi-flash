@@ -17,7 +17,39 @@ use crate::ui::icon;
 
 /// pi-web getToolPreview：command/path/file_path/pattern/query 键序取值
 /// 截 120 字符，都没有取首个键的值。
+///
+/// 结果带线程局部 LRU 缓存（key = 源文哈希 + 长度，命中全等校验防碰撞）：
+/// List 每帧重建元素树，折叠卡也会每帧重算预览，而 serde 解析整段 args
+/// （write/edit 的 args 内嵌整个文件内容，几十 KB 起）是巨轮会话打字延迟
+/// 的大头——缓存后折叠帧只剩一次哈希扫描。
 fn tool_preview(args: &str) -> String {
+    thread_local! {
+        static CACHE: std::cell::RefCell<
+            std::collections::VecDeque<((u64, usize), (String, String))>,
+        > = const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
+    }
+    const CAP: usize = 256;
+    let key = (crate::editor::markdown::hash_str(args), args.len());
+    CACHE.with(|cell| {
+        let mut cache = cell.borrow_mut();
+        if let Some(pos) = cache.iter().rposition(|(k, _)| *k == key) {
+            let entry = cache.remove(pos).expect("pos 来自刚才的迭代");
+            if entry.1 .0.as_str() == args {
+                let out = entry.1 .1.clone();
+                cache.push_back(entry); // 刷新到队尾（LRU）
+                return out;
+            }
+        }
+        let out = tool_preview_uncached(args);
+        cache.push_back((key, (args.to_string(), out.clone())));
+        if cache.len() > CAP {
+            cache.pop_front();
+        }
+        out
+    })
+}
+
+fn tool_preview_uncached(args: &str) -> String {
     const KEYS: &[&str] = &["command", "path", "file_path", "pattern", "query"];
     let Ok(v) = serde_json::from_str::<serde_json::Value>(args) else {
         return String::new();
@@ -96,12 +128,15 @@ pub(super) fn render_tool_card(
     let is_edit = crate::session::diff::is_edit_tool_name(name);
 
     // c10: diff 视图数据 —— apply_patch 优先解析输入 V4A 文档，失败退
-    // details.preview；write/edit 取 details.patch/.diff（统一 diff）
-    let input_text = serde_json::from_str::<serde_json::Value>(args)
-        .ok()
-        .and_then(|v| v.get("input").and_then(|x| x.as_str()).map(str::to_string))
-        .unwrap_or_else(|| args.to_string());
-    let patch_files = if is_patch {
+    // details.preview；write/edit 取 details.patch/.diff（统一 diff）。
+    // **只在展开时才解析**：折叠卡每帧重建，这些 serde/V4A 解析若无条件
+    // 执行，巨轮里每帧都是成百次全量 parse——折叠帧界面上一个像素都不画，
+    // 没人为它付费的理由
+    let patch_files = if expanded && is_patch {
+        let input_text = serde_json::from_str::<serde_json::Value>(args)
+            .ok()
+            .and_then(|v| v.get("input").and_then(|x| x.as_str()).map(str::to_string))
+            .unwrap_or_else(|| args.to_string());
         crate::session::diff::parse_apply_patch_input(&input_text)
             .or_else(|| {
                 if is_error {
@@ -116,7 +151,7 @@ pub(super) fn render_tool_card(
     } else {
         None
     };
-    let result_diff = if result_arrived && !is_error {
+    let result_diff = if expanded && result_arrived && !is_error {
         details.as_ref().and_then(|d| {
             d.get("patch")
                 .or_else(|| d.get("diff"))
@@ -701,12 +736,38 @@ fn is_file_writing_tool(name: &str) -> bool {
 }
 
 fn read_tool_path(args: &str) -> Option<String> {
-    let v: serde_json::Value = serde_json::from_str(args).ok()?;
-    v.get("file_path")
-        .or_else(|| v.get("path"))
-        .and_then(|x| x.as_str())
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
+    // 带线程局部 LRU（同 tool_preview 的理由）：turn_written_files 每帧
+    // 扫整轮文件写入工具，write/edit 的 args 内嵌整个文件内容
+    thread_local! {
+        static CACHE: std::cell::RefCell<
+            std::collections::VecDeque<((u64, usize), (String, Option<String>))>,
+        > = const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
+    }
+    const CAP: usize = 256;
+    let key = (crate::editor::markdown::hash_str(args), args.len());
+    CACHE.with(|cell| {
+        let mut cache = cell.borrow_mut();
+        if let Some(pos) = cache.iter().rposition(|(k, _)| *k == key) {
+            let entry = cache.remove(pos).expect("pos 来自刚才的迭代");
+            if entry.1 .0.as_str() == args {
+                let out = entry.1 .1.clone();
+                cache.push_back(entry);
+                return out;
+            }
+        }
+        let v: serde_json::Value = serde_json::from_str(args).ok()?;
+        let out = v
+            .get("file_path")
+            .or_else(|| v.get("path"))
+            .and_then(|x| x.as_str())
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        cache.push_back((key, (args.to_string(), out.clone())));
+        if cache.len() > CAP {
+            cache.pop_front();
+        }
+        out
+    })
 }
 
 /// pi-web readApplyPatchPaths parity：appliedFiles > preview > 输入解析，

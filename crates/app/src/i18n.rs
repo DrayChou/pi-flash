@@ -406,6 +406,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("tokens.prompt_size", "说明大小", "說明大小", "Prompt size"),
     ("tokens.sum", "合计：", "合計：", "Total:"),
     ("nav.work_details", "工作详情 · {m} 条消息 · {t} 次工具调用", "工作詳情 · {m} 條消息 · {t} 次工具調用", "Work details · {m} messages · {t} tool calls"),
+    ("nav.live_tail_skipped", "…本回合还有 {n} 条消息（轮末在工作详情展开）", "…本回合還有 {n} 條消息（輪末在工作詳情展開）", "…{n} more messages this turn (expand in work details when done)"),
     ("mcp.enabled_count", "已开启 {n}/{total}", "已開啟 {n}/{total}", "{n}/{total} enabled"),
     ("models.registry_read_failed", "读取 Provider 注册表失败：{e}", "讀取 Provider 註冊表失敗：{e}", "Failed to read Provider registry: {e}"),
     ("models.available_count", "可用模型 {enabled}/{total}", "可用模型 {enabled}/{total}", "Available models {enabled}/{total}"),

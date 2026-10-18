@@ -254,6 +254,9 @@ fn decode_image_data(data: &str) -> Result<Vec<u8>, ()> {
 // 解码缓存：List 每帧重建元素树，同一张 base64 图每帧重走 base64 解码 +
 // `Image::from_bytes` 的内容哈希（几百 KB 数据 = ms 级），滚动/流式时纯浪费。
 // key = (哈希, 长度, 格式)，命中全等校验防碰撞；线程局部 VecDeque 当 LRU。
+// 预算按字节计（源串 + 解码后字节）：条目数上限只防碎片，真正封顶的是
+// 字节预算——大图会话里 64 张 × 几 MB 的 base64 原文 + 解码位图曾可达
+// 数百 MB（内存泄漏观感的元凶之一）。
 thread_local! {
     static IMAGE_DECODE_CACHE: std::cell::RefCell<
         std::collections::VecDeque<
@@ -262,6 +265,8 @@ thread_local! {
     > = const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
 }
 const IMAGE_DECODE_CACHE_CAP: usize = 64;
+/// 字节预算（128MB）：大图工具结果场景的合理上限；超预算从头驱逐（LRU）
+const IMAGE_DECODE_CACHE_BUDGET_BYTES: usize = 128 * 1024 * 1024;
 
 /// base64 → [`gpui::Image`]（带每进程缓存；Err 结果同样入缓存，坏数据不反复重试）
 pub(crate) fn decode_image_cached(
@@ -282,8 +287,13 @@ pub(crate) fn decode_image_cached(
         let decoded = decode_image_data(data)
             .map(|bytes| std::sync::Arc::new(gpui::Image::from_bytes(format, bytes)));
         cache.push_back((key, (data.to_string(), decoded.clone())));
-        if cache.len() > IMAGE_DECODE_CACHE_CAP {
-            cache.pop_front();
+        while cache.len() > IMAGE_DECODE_CACHE_CAP
+            || cache.iter().map(|(_, v)| v.0.len() + v.1.as_ref().map(|i| i.bytes.len()).unwrap_or(0)).sum::<usize>()
+                > IMAGE_DECODE_CACHE_BUDGET_BYTES
+        {
+            if cache.pop_front().is_none() {
+                break;
+            }
         }
         decoded
     })

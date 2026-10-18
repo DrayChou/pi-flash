@@ -145,15 +145,24 @@ pub(crate) fn merge_tool_result(
 }
 
 impl Msg {
-    pub(crate) fn plain_text(&self) -> String {
-        self.blocks
-            .iter()
-            .map(|b| match b {
-                Block::Text { text, .. } => text.as_str(),
-                _ => "",
-            })
-            .collect::<Vec<_>>()
-            .join("")
+    /// 返回 Cow：单文本块（绝大多数用户消息）零拷贝借用。每帧每个可见
+    /// 用户行都要调（气泡 markdown/技能折叠判定），长粘贴消息的全量 String
+    /// 拷贝是白付的打字延迟。
+    pub(crate) fn plain_text(&self) -> std::borrow::Cow<'_, str> {
+        match self.blocks.as_slice() {
+            [Block::Text { text, .. }] => std::borrow::Cow::Borrowed(text.as_str()),
+            blocks => {
+                let joined = blocks
+                    .iter()
+                    .map(|b| match b {
+                        Block::Text { text, .. } => text.as_str(),
+                        _ => "",
+                    })
+                    .collect::<Vec<_>>()
+                    .join("");
+                std::borrow::Cow::Owned(joined)
+            }
+        }
     }
 
     /// 文本前缀（导航面板摘要专用）：拼够 max_chars 个字符即停，避免为

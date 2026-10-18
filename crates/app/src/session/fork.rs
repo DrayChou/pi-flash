@@ -123,7 +123,7 @@ impl SessionRuntime {
                 self.messages
                     .iter()
                     .find(|m| m.role == Role::User)
-                    .map(|m| m.plain_text())
+                    .map(|m| m.plain_text().into_owned())
             })
             .map(|v| v.trim().chars().take(50).collect::<String>())
             .unwrap_or_default()

@@ -20,10 +20,13 @@ use crate::session::fork::ForkAnchor;
 /// - 显影 = `hovered`（状态驱动：行 on_hover → Chat.bar_hover）
 /// - pi-web 的「新会话」按钮在用户消息上（branch before = 丢弃这条用户消息），
 ///   本项目按用户定案移到 agent 轮操作栏（见 `fork_pill`）
+///
+/// 文本不预先克隆进闭包：栏每帧重建（隐藏时也在建），巨大的用户消息
+/// （粘贴的长日志）过去每帧白付两次全量 String 拷贝；点击时从 runtime
+/// 按索引现读，语义不变（同一条消息）。
 pub(crate) fn user_action_bar(
     msg_ix: usize,
     weak: &gpui::WeakEntity<Chat>,
-    text: &str,
     ts: Option<i64>,
     bar_revealed: bool,
     copied: bool,
@@ -31,8 +34,6 @@ pub(crate) fn user_action_bar(
 ) -> gpui::Div {
     let weak_copy = weak.clone();
     let weak_edit = weak.clone();
-    let copy_text = text.to_string();
-    let edit_text = text.to_string();
     // 操作栏 act（主界面UI设计-2.html .msg-actions）：图标 12 + 文字
     // gap 4。图标用 icon()（工具卡同款 gpui::svg+显式色，唯一被证明
     // 在列表内稳定渲染的路径；svg 上的 group_hover 会让 copy.svg 丢失）
@@ -82,9 +83,15 @@ pub(crate) fn user_action_bar(
         )
     }
     .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-        let text = copy_text.clone();
         let _ = weak_copy.update(cx, |c, cx| {
-            cx.write_to_clipboard(gpui::ClipboardItem::new_string(text.clone()));
+            let text = c
+                .rt()
+                .read(cx)
+                .messages
+                .get(msg_ix)
+                .map(|m| m.plain_text().into_owned())
+                .unwrap_or_default();
+            cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
             c.rt().update(cx, |r, cx| {
                 r.copy_flash = Some((msg_ix, std::time::Instant::now()));
                 r.spawn_flash_clear(cx);
@@ -102,7 +109,14 @@ pub(crate) fn user_action_bar(
         )
             .on_mouse_down(MouseButton::Left, move |_, window, cx| {
                 let _ = weak_edit.update(cx, |c, cx| {
-                    c.with_active_editor(cx, |r, _| r.input = edit_text.clone());
+                    let text = c
+                        .rt()
+                        .read(cx)
+                        .messages
+                        .get(msg_ix)
+                        .map(|m| m.plain_text().into_owned())
+                        .unwrap_or_default();
+                    c.with_active_editor(cx, |r, _| r.input = text);
                     let focus = c.layout.focus.clone();
                     window.focus(&focus);
                 });
