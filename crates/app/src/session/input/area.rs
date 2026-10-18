@@ -15,6 +15,12 @@ use crate::appearance::theme::theme as T;
 use crate::ui::icon;
 use super::*;
 
+/// `/` `@` 是否出现在输入中（菜单/过滤相关的廉价判定）。
+/// 单次字节扫描（memchr 级），不跑两遍 `contains`。
+fn has_menu_trigger(s: &str) -> bool {
+    s.as_bytes().iter().any(|&b| b == b'/' || b == b'@')
+}
+
 /// `hero` = 012 新会话页模式：胶囊走正常流（由新会话页内容簇摆位），
 /// 不再 0 高 + 绝对定位贴聊天区底。
 pub(crate) fn input_area(
@@ -87,19 +93,30 @@ pub(crate) fn input_area(
     } else {
         tr("composer.hint_shortcuts").into()
     };
-    composer.update(cx, |f, _| f.set_placeholder(Some(ph)));
-    // 压缩锁：编辑器组件整块不挂载（无焦点/IME/粘贴），显示 placeholder
-    // 样式的压缩提示；草稿保留在 chat.composer.input，解锁即恢复
-    composer.update(cx, |f, fcx| f.set_read_only(compacting, fcx));
-    // 镜像只传借用：长草稿（粘贴的大段日志）下每键一帧的全量 String 拷贝
-    // 就是打字延迟
-    composer.update(cx, |f, fcx| f.set_value(&chat.composer.input, fcx));
-    // 命令名同步给组件：仅 '/' 前缀输入时需要（chip 派生只消费 '/' 前缀），
-    // 普通打字每键不再克隆整张命令表；会话进程答案优先，否则启动装载的
-    //（项目 skill + 扩展缓存）
-    if chat.composer.input.starts_with('/') {
-        let names: Vec<String> = chat.slash_commands(cx).iter().map(|c| c.name.clone()).collect();
-        composer.update(cx, |f, fcx| f.set_command_names(names, fcx));
+    // 一次实体 update 搞定全部镜像（P4）：四次 update = 四次租借 +
+    // 四次可能的重绘标记，而它们本属于同一帧的同一件事。
+    // set_value 只传借用切片（长草稿不全文拷贝，同值短路零分配）。
+    //
+    // 命令名同步只在 '/' 前缀时算（chip 派生只消费 '/' 前缀），普通打字
+    // 每键不碰命令表；会话进程答案优先，否则启动装载的（项目 skill + 扩展
+    // 缓存）。names 在 update 外先算好，避与 chat 的借用嵌套。
+    let names: Option<Vec<String>> = if chat.composer.input.starts_with('/') {
+        Some(chat.slash_commands(cx).iter().map(|c| c.name.clone()).collect())
+    } else {
+        None
+    };
+    {
+        let input = &chat.composer.input;
+        composer.update(cx, |f, fcx| {
+            f.set_placeholder(Some(ph));
+            // 压缩锁：编辑器组件整块不挂载（无焦点/IME/粘贴），显示
+            // placeholder 样式的压缩提示；草稿保留，解锁即恢复
+            f.set_read_only(compacting, fcx);
+            f.set_value(input, fcx);
+            if let Some(names) = names {
+                f.set_command_names(names, fcx);
+            }
+        });
     }
 
     // ---- 胶囊 ----
@@ -510,16 +527,22 @@ fn ensure_composer(
                     // 赋值前快照旧值的派生界面态（**纯字符串**，不碰任何实体）
                     let had_text = !chat.composer.input.is_empty();
                     let was_bang = chat.composer.input.trim_start().starts_with('!');
-                    let had_menu_chars =
-                        chat.composer.input.contains('/') || chat.composer.input.contains('@');
+                    let had_menu_chars = has_menu_trigger(&chat.composer.input);
                     // enter() 污染签名（原文尾追 \n）：组件 Enter 先插换行
                     // 触发本次 Change，随即 PressEnter → on_submit 用剥 \n 的
                     // 值覆盖回来。此间过滤集未变，不能复位 menu_ix——否则
                     // ↑/↓/悬停选中的条目在 on_submit 读到的恒是 0，Enter 永远
                     // 接受第 0 项（@ 提及表现为「回车插的还是裸查询文本」）
-                    let enter_pollution =
-                        v.ends_with('\n') && &v[..v.len() - 1] == chat.composer.input;
-                    chat.composer.input = v.to_string();
+                    //
+                    // 先比长度再全串比：只有「旧值 + 1 字节 \n」才可能命中，
+                    // 否则立即短路（每键一次全串比较对长草稿是白付的 O(n)）
+                    let enter_pollution = v.len() == chat.composer.input.len() + 1
+                        && v.ends_with('\n')
+                        && &v[..v.len() - 1] == chat.composer.input;
+                    // 写入镜像：**复用已有容量**，不每键分配一个新 String
+                    // （长草稿每键一次全量分配 + 释放，是打字延迟的来源之一）
+                    chat.composer.input.clear();
+                    chat.composer.input.push_str(v);
                     if !enter_pollution {
                         // 输入再次变化 = 解除点外/Esc 收起（active_menu 门控的
                         // 声明语义；打字不走 set_input，必须在此复位）
@@ -544,11 +567,7 @@ fn ensure_composer(
                     // 列表由 Chat 渲）。宁可多 notify，不可漏。
                     let has_text = !chat.composer.input.is_empty();
                     let is_bang = chat.composer.input.trim_start().starts_with('!');
-                    let has_menu_chars = chat
-                        .composer
-                        .input
-                        .contains('/')
-                        || chat.composer.input.contains('@');
+                    let has_menu_chars = has_menu_trigger(&chat.composer.input);
                     if had_text != has_text
                         || was_bang != is_bang
                         || had_menu_chars

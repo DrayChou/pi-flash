@@ -132,8 +132,12 @@ impl ComposerInput {
     /// 外部写入（草稿切换/历史/清空/菜单接受）。与镜像同值时跳过，避免回环。
     /// 收 &str：调用方（input_area 每帧镜像 chat.composer.input）不必先克隆全文，
     /// 同值跳过路径零分配。
+    ///
+    /// 短路只看 value：`token` 是 value × commands 的纯派生量，render 每帧
+    /// 重算（见 Render 里 split_token），不必在此再算一遍——那曾是**每帧一次
+    /// 全串扫描 + find(' ')**，哪怕什么都没变。
     pub fn set_value(&mut self, v: &str, cx: &mut Context<Self>) {
-        if self.value == v && self.token == split_token(v, &self.commands) {
+        if self.value == v {
             return;
         }
         let s = v.to_string();
