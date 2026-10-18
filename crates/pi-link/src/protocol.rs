@@ -41,12 +41,19 @@ pub enum Command {
     GetState,
     GetMessages,
     GetSessionStats,
-    SetModel { provider: String, model: String },
-    SetSessionName { name: String },
+    SetModel {
+        provider: String,
+        model: String,
+    },
+    SetSessionName {
+        name: String,
+    },
     GetCommands,
     GetAvailableModels,
     ExportHtml,
-    SetThinkingLevel { level: String },
+    SetThinkingLevel {
+        level: String,
+    },
     /// Full session tree with branch structure
     GetTree,
     /// Flat entry list + leafId (rpc get_entries). The tree-shaped sibling of
@@ -62,7 +69,9 @@ pub enum Command {
     /// Fork a new session branching before the given user-message entry
     /// (rpc `fork`; pi only accepts position "before" here, so the entry must
     /// be a user message and IT IS NOT carried over to the branch)
-    Fork { entry_id: String },
+    Fork {
+        entry_id: String,
+    },
     /// Clone the whole current session into a new branch file (rpc `clone` =
     /// `runtimeHost.fork(leafId, {position:"at"})`). This is the only wire
     /// command that can branch *at* an entry, so "keep everything up to and
@@ -122,7 +131,13 @@ impl Command {
     pub fn to_record(&self, id: &str) -> Value {
         // extension_ui_response is correlated by the REQUEST id at pi's
         // raw-line reader — no cmd sequence id
-        if let Command::ExtensionUiResponse { id, value, confirmed, cancelled } = self {
+        if let Command::ExtensionUiResponse {
+            id,
+            value,
+            confirmed,
+            cancelled,
+        } = self
+        {
             let mut v = json!({ "type": "extension_ui_response", "id": id });
             if let Some(value) = value {
                 v["value"] = json!(value);
@@ -136,7 +151,11 @@ impl Command {
             return v;
         }
         let mut v = match self {
-            Command::Prompt { message, images, streaming_behavior } => {
+            Command::Prompt {
+                message,
+                images,
+                streaming_behavior,
+            } => {
                 let mut v = json!({ "type": self.kind(), "message": message });
                 if !images.is_empty() {
                     v["images"] = json!(images);
@@ -216,8 +235,14 @@ impl Command {
 /// `image` (v56: tool results and user messages may carry images).
 #[derive(Debug, Clone, PartialEq)]
 pub enum Block {
-    Text { content_index: usize, text: String },
-    Thinking { content_index: usize, text: String },
+    Text {
+        content_index: usize,
+        text: String,
+    },
+    Thinking {
+        content_index: usize,
+        text: String,
+    },
     ToolCall {
         content_index: usize,
         id: String,
@@ -269,7 +294,10 @@ impl Block {
 /// (string form is treated as a single text block).
 pub fn content_blocks(content: &Value) -> Vec<Block> {
     match content {
-        Value::String(s) => vec![Block::Text { content_index: 0, text: s.clone() }],
+        Value::String(s) => vec![Block::Text {
+            content_index: 0,
+            text: s.clone(),
+        }],
         Value::Array(items) => items
             .iter()
             .enumerate()
@@ -333,14 +361,38 @@ pub fn content_blocks(content: &Value) -> Vec<Block> {
 /// streamed reconstruction.
 #[derive(Debug, Clone, PartialEq)]
 pub enum AssistantEvent {
-    TextDelta { content_index: usize, delta: String },
-    TextEnd { content_index: usize, content: String },
-    ThinkingStart { content_index: usize },
-    ThinkingDelta { content_index: usize, delta: String },
-    ThinkingEnd { content_index: usize, content: String },
-    ToolCallStart { content_index: usize, id: String, tool_name: String },
-    ToolCallDelta { content_index: usize, delta: String },
-    ToolCallEnd { content_index: usize, tool_call: Value },
+    TextDelta {
+        content_index: usize,
+        delta: String,
+    },
+    TextEnd {
+        content_index: usize,
+        content: String,
+    },
+    ThinkingStart {
+        content_index: usize,
+    },
+    ThinkingDelta {
+        content_index: usize,
+        delta: String,
+    },
+    ThinkingEnd {
+        content_index: usize,
+        content: String,
+    },
+    ToolCallStart {
+        content_index: usize,
+        id: String,
+        tool_name: String,
+    },
+    ToolCallDelta {
+        content_index: usize,
+        delta: String,
+    },
+    ToolCallEnd {
+        content_index: usize,
+        tool_call: Value,
+    },
     Other(Value),
 }
 
@@ -356,7 +408,9 @@ impl AssistantEvent {
                 content_index: idx(),
                 content: v["content"].as_str().unwrap_or("").to_string(),
             },
-            Some("thinking_start") => AssistantEvent::ThinkingStart { content_index: idx() },
+            Some("thinking_start") => AssistantEvent::ThinkingStart {
+                content_index: idx(),
+            },
             Some("thinking_delta") => AssistantEvent::ThinkingDelta {
                 content_index: idx(),
                 delta: v["delta"].as_str().unwrap_or("").to_string(),
@@ -400,7 +454,10 @@ impl Usage {
             output: v["output"].as_u64()?,
             cache_read: v["cacheRead"].as_u64().unwrap_or(0),
             cache_write: v["cacheWrite"].as_u64().unwrap_or(0),
-            cost: v["cost"]["total"].as_f64().or_else(|| v["cost"].as_f64()).unwrap_or(0.0),
+            cost: v["cost"]["total"]
+                .as_f64()
+                .or_else(|| v["cost"].as_f64())
+                .unwrap_or(0.0),
         })
     }
 }
@@ -440,20 +497,42 @@ pub struct ExtensionUiRequest {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ExtUiMethod {
-    Select { title: String, options: Vec<String> },
-    Confirm { title: String, message: String },
-    Input { title: String, placeholder: Option<String> },
-    Editor { title: String, prefill: Option<String> },
-    Notify { message: String, notify_type: Option<String> },
-    SetStatus { status_key: String, status_text: Option<String> },
+    Select {
+        title: String,
+        options: Vec<String>,
+    },
+    Confirm {
+        title: String,
+        message: String,
+    },
+    Input {
+        title: String,
+        placeholder: Option<String>,
+    },
+    Editor {
+        title: String,
+        prefill: Option<String>,
+    },
+    Notify {
+        message: String,
+        notify_type: Option<String>,
+    },
+    SetStatus {
+        status_key: String,
+        status_text: Option<String>,
+    },
     SetWidget {
         widget_key: String,
         widget_lines: Option<Vec<String>>,
         /// "aboveEditor" | "belowEditor" (None -> pi-web default aboveEditor)
         placement: Option<String>,
     },
-    SetTitle { title: String },
-    SetEditorText { text: String },
+    SetTitle {
+        title: String,
+    },
+    SetEditorText {
+        text: String,
+    },
 }
 
 impl ExtensionUiRequest {
@@ -464,7 +543,11 @@ impl ExtensionUiRequest {
                 title: v["title"].as_str().unwrap_or("").to_string(),
                 options: v["options"]
                     .as_array()
-                    .map(|a| a.iter().filter_map(|o| o.as_str().map(str::to_string)).collect())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|o| o.as_str().map(str::to_string))
+                            .collect()
+                    })
                     .unwrap_or_default(),
             },
             "confirm" => ExtUiMethod::Confirm {
@@ -490,7 +573,9 @@ impl ExtensionUiRequest {
             "setWidget" => ExtUiMethod::SetWidget {
                 widget_key: v["widgetKey"].as_str().unwrap_or("").to_string(),
                 widget_lines: v["widgetLines"].as_array().map(|a| {
-                    a.iter().filter_map(|l| l.as_str().map(str::to_string)).collect()
+                    a.iter()
+                        .filter_map(|l| l.as_str().map(str::to_string))
+                        .collect()
                 }),
                 placement: v["widgetPlacement"].as_str().map(str::to_string),
             },
@@ -562,7 +647,9 @@ pub enum Event {
         model: Option<String>,
     },
     AgentStart,
-    AgentEnd { will_retry: bool },
+    AgentEnd {
+        will_retry: bool,
+    },
     /// pi will not continue automatically (retries/queue drained).
     AgentSettled,
     /// `auto_retry_start`：可重试错误（429/5xx/网络断）后 pi 计划自动重试，
@@ -589,6 +676,52 @@ pub enum Event {
     },
     /// Extension UI protocol records (dialogs/widgets/status/notify).
     ExtensionUi(ExtensionUiRequest),
+    /// pi-link 合成事件（**非 pi wire**）：侧车进程退出，waiter 线程 reap 到
+    /// 的退出码。进程轮中死亡时 app 据此补全轮终语义（此前 EOF 只会让
+    /// 事件通道静默关闭，界面无任何轮终通知）。
+    ProcessExited {
+        code: Option<i64>,
+    },
+    /// `compaction_start`：上下文自动压缩开始（manual|threshold|overflow）。
+    /// 此前落 Unparsed——轮中自动压缩时界面毫无说明地「卡住」。
+    CompactionStart {
+        reason: Option<String>,
+    },
+    /// `compaction_end`：压缩收尾。失败原因在 `error_message`（此前看不见）。
+    CompactionEnd {
+        reason: Option<String>,
+        aborted: bool,
+        will_retry: bool,
+        error_message: Option<String>,
+    },
+    /// `summarization_retry_scheduled`：上下文溢出后的摘要重试退避（与
+    /// auto_retry 同构——退避窗口内轮未结束，isStreaming 持续）。
+    SummarizationRetryScheduled {
+        attempt: u32,
+        max_attempts: u32,
+        delay_ms: u64,
+        error_message: Option<String>,
+    },
+    /// `summarization_retry_attempt_start`：一次摘要重试尝试开始。
+    SummarizationRetryAttemptStart {
+        source: Option<String>,
+    },
+    /// `summarization_retry_finished`：摘要重试序列收尾。
+    SummarizationRetryFinished,
+    /// `extension_error`（rpc-mode 对扩展装载/运行错误的输出）。扩展崩溃
+    /// 不终止轮，但此前被静默丢弃，状态行毫无痕迹。
+    ExtensionError {
+        extension_path: Option<String>,
+        event_name: Option<String>,
+        error: Option<String>,
+    },
+    /// pi 会话事件中 app 暂不消费的杂项（tool_execution_* / queue_update /
+    /// entry_appended / session_info_changed / thinking_level_changed）：
+    /// 解析出 type 免落 [`Event::Unparsed`] 噪声，字段留原 Value。
+    WireEvent {
+        kind: String,
+        value: Value,
+    },
     Unparsed(Value),
 }
 
@@ -683,7 +816,6 @@ pub fn parse_tree(data: &Value) -> (Vec<TreeNode>, Option<String>) {
     let leaf_id = data["leafId"].as_str().map(str::to_string);
     (tree, leaf_id)
 }
-
 
 /// Final result of the rpc `bash` command (pi `BashResult`, bash-executor.d.ts).
 /// Streaming deltas arrive earlier as [`Event::BashExecutionUpdate`].
@@ -923,7 +1055,9 @@ pub fn parse_record(v: &Value) -> Event {
             tool_call_id: v["message"]["toolCallId"].as_str().map(str::to_string),
             custom_type: v["message"]["customType"].as_str().map(str::to_string),
             custom_display: v["message"]["display"].as_bool().unwrap_or(true),
-            details: v["message"]["details"].as_object().map(|_| v["message"]["details"].clone()),
+            details: v["message"]["details"]
+                .as_object()
+                .map(|_| v["message"]["details"].clone()),
             raw_system: (v["message"]["role"].as_str() == Some("system"))
                 .then(|| v["message"].clone()),
         },
@@ -963,6 +1097,43 @@ pub fn parse_record(v: &Value) -> Event {
             id: v["id"].as_str().map(str::to_string),
             delta: v["delta"].as_str().unwrap_or("").to_string(),
         },
+        Some("compaction_start") => Event::CompactionStart {
+            reason: v["reason"].as_str().map(str::to_string),
+        },
+        Some("compaction_end") => Event::CompactionEnd {
+            reason: v["reason"].as_str().map(str::to_string),
+            aborted: v["aborted"].as_bool().unwrap_or(false),
+            will_retry: v["willRetry"].as_bool().unwrap_or(false),
+            error_message: v["errorMessage"].as_str().map(str::to_string),
+        },
+        Some("summarization_retry_scheduled") => Event::SummarizationRetryScheduled {
+            attempt: v["attempt"].as_u64().unwrap_or(0) as u32,
+            max_attempts: v["maxAttempts"].as_u64().unwrap_or(0) as u32,
+            delay_ms: v["delayMs"].as_u64().unwrap_or(0),
+            error_message: v["errorMessage"].as_str().map(str::to_string),
+        },
+        Some("summarization_retry_attempt_start") => Event::SummarizationRetryAttemptStart {
+            source: v["source"].as_str().map(str::to_string),
+        },
+        Some("summarization_retry_finished") => Event::SummarizationRetryFinished,
+        Some("extension_error") => Event::ExtensionError {
+            extension_path: v["extensionPath"].as_str().map(str::to_string),
+            event_name: v["event"].as_str().map(str::to_string),
+            error: v["error"].as_str().map(str::to_string),
+        },
+        // app 暂不消费的会话事件：按 type 归类为 WireEvent，别落 Unparsed
+        Some(
+            "tool_execution_start"
+            | "tool_execution_update"
+            | "tool_execution_end"
+            | "queue_update"
+            | "entry_appended"
+            | "session_info_changed"
+            | "thinking_level_changed",
+        ) => Event::WireEvent {
+            kind: v["type"].as_str().unwrap_or("").to_string(),
+            value: v.clone(),
+        },
         Some("extension_ui_request") => {
             Event::ExtensionUi(ExtensionUiRequest::parse(v).unwrap_or(ExtensionUiRequest {
                 id: String::new(),
@@ -976,8 +1147,6 @@ pub fn parse_record(v: &Value) -> Event {
     }
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -986,7 +1155,11 @@ mod tests {
 
     #[test]
     fn prompt_record_shape() {
-        let c = Command::Prompt { message: "hi".into(), images: vec![], streaming_behavior: None };
+        let c = Command::Prompt {
+            message: "hi".into(),
+            images: vec![],
+            streaming_behavior: None,
+        };
         assert_eq!(
             c.to_record("req-1"),
             json!({"id":"req-1","type":"prompt","message":"hi"})
@@ -1010,7 +1183,10 @@ mod tests {
 
     #[test]
     fn set_model_record_shape() {
-        let c = Command::SetModel { provider: "glm".into(), model: "glm-5.3-flash".into() };
+        let c = Command::SetModel {
+            provider: "glm".into(),
+            model: "glm-5.3-flash".into(),
+        };
         assert_eq!(
             c.to_record("m1"),
             json!({"id":"m1","type":"set_model","provider":"glm","modelId":"glm-5.3-flash"})
@@ -1019,11 +1195,24 @@ mod tests {
 
     #[test]
     fn response_success() {
-        let e = parse_line(r#"{"id":"1","type":"response","command":"prompt","success":true}"#).unwrap();
+        let e = parse_line(r#"{"id":"1","type":"response","command":"prompt","success":true}"#)
+            .unwrap();
         match e {
-            Event::Response { id, command, success, error, data } => {
+            Event::Response {
+                id,
+                command,
+                success,
+                error,
+                data,
+            } => {
                 assert_eq!(
-                    (id.as_str(), command.as_str(), success, error.is_none(), data.is_none()),
+                    (
+                        id.as_str(),
+                        command.as_str(),
+                        success,
+                        error.is_none(),
+                        data.is_none()
+                    ),
                     ("1", "prompt", true, true, true)
                 );
             }
@@ -1055,10 +1244,21 @@ mod tests {
         )
         .unwrap();
         match e {
-            Event::MessageStart { role, blocks, timestamp, .. } => {
+            Event::MessageStart {
+                role,
+                blocks,
+                timestamp,
+                ..
+            } => {
                 assert_eq!(role, "user");
                 assert_eq!(timestamp, Some(1790206311858));
-                assert_eq!(blocks, vec![Block::Text { content_index: 0, text: "say OK".into() }]);
+                assert_eq!(
+                    blocks,
+                    vec![Block::Text {
+                        content_index: 0,
+                        text: "say OK".into()
+                    }]
+                );
             }
             other => panic!("wrong event: {other:?}"),
         }
@@ -1071,7 +1271,10 @@ mod tests {
         )
         .unwrap();
         match e {
-            Event::MessageUpdate(AssistantEvent::TextDelta { content_index, delta }) => {
+            Event::MessageUpdate(AssistantEvent::TextDelta {
+                content_index,
+                delta,
+            }) => {
                 assert_eq!(content_index, 0);
                 assert_eq!(delta, "Hello ");
             }
@@ -1096,7 +1299,10 @@ mod tests {
         )
         .unwrap();
         match end {
-            Event::MessageUpdate(AssistantEvent::ToolCallEnd { content_index, tool_call }) => {
+            Event::MessageUpdate(AssistantEvent::ToolCallEnd {
+                content_index,
+                tool_call,
+            }) => {
                 assert_eq!(content_index, 1);
                 assert_eq!(tool_call["name"], "bash");
             }
@@ -1127,9 +1333,15 @@ mod tests {
             Event::MessageEnd { role, blocks, .. } => {
                 assert_eq!(role, "assistant");
                 assert_eq!(blocks.len(), 3);
-                assert!(matches!(&blocks[0], Block::Thinking { content_index: 0, text } if text.is_empty()));
-                assert!(matches!(&blocks[1], Block::ToolCall { content_index: 1, name, .. } if name == "read"));
-                assert!(matches!(&blocks[2], Block::Text { content_index: 2, text } if text == "done"));
+                assert!(
+                    matches!(&blocks[0], Block::Thinking { content_index: 0, text } if text.is_empty())
+                );
+                assert!(
+                    matches!(&blocks[1], Block::ToolCall { content_index: 1, name, .. } if name == "read")
+                );
+                assert!(
+                    matches!(&blocks[2], Block::Text { content_index: 2, text } if text == "done")
+                );
             }
             other => panic!("wrong event: {other:?}"),
         }
@@ -1142,7 +1354,11 @@ mod tests {
         )
         .unwrap();
         match e {
-            Event::MessageEnd { stop_reason, error_message, .. } => {
+            Event::MessageEnd {
+                stop_reason,
+                error_message,
+                ..
+            } => {
                 assert_eq!(stop_reason.as_deref(), Some("error"));
                 assert_eq!(error_message.as_deref(), Some("boom"));
             }
@@ -1154,7 +1370,11 @@ mod tests {
         )
         .unwrap();
         match e {
-            Event::MessageEnd { stop_reason, error_message, .. } => {
+            Event::MessageEnd {
+                stop_reason,
+                error_message,
+                ..
+            } => {
                 assert_eq!(stop_reason.as_deref(), Some("stop"));
                 assert!(error_message.is_none());
             }
@@ -1171,7 +1391,9 @@ mod tests {
         match e {
             Event::MessageStart { blocks, .. } => {
                 assert_eq!(blocks.len(), 2);
-                assert!(matches!(&blocks[1], Block::Image { mime, data, .. } if mime == "image/png" && data == "QUJD"));
+                assert!(
+                    matches!(&blocks[1], Block::Image { mime, data, .. } if mime == "image/png" && data == "QUJD")
+                );
             }
             other => panic!("wrong event: {other:?}"),
         }
@@ -1184,11 +1406,23 @@ mod tests {
         )
         .unwrap();
         match e {
-            Event::MessageStart { role, blocks, custom_type, custom_display, .. } => {
+            Event::MessageStart {
+                role,
+                blocks,
+                custom_type,
+                custom_display,
+                ..
+            } => {
                 assert_eq!(role, "custom");
                 assert_eq!(custom_type.as_deref(), Some("compaction"));
                 assert!(custom_display);
-                assert_eq!(blocks, vec![Block::Text { content_index: 0, text: "summary text".into() }]);
+                assert_eq!(
+                    blocks,
+                    vec![Block::Text {
+                        content_index: 0,
+                        text: "summary text".into()
+                    }]
+                );
             }
             other => panic!("wrong event: {other:?}"),
         }
@@ -1201,7 +1435,11 @@ mod tests {
         )
         .unwrap();
         match e {
-            Event::MessageStart { is_error, tool_call_id, .. } => {
+            Event::MessageStart {
+                is_error,
+                tool_call_id,
+                ..
+            } => {
                 assert!(is_error);
                 assert_eq!(tool_call_id.as_deref(), Some("tc_1"));
             }
@@ -1219,7 +1457,9 @@ mod tests {
         match e {
             Event::MessageStart { role, blocks, .. } => {
                 assert_eq!(role, "assistant");
-                assert!(matches!(&blocks[0], Block::ToolCall { name, args, .. } if name == "bash" && args.is_empty()));
+                assert!(
+                    matches!(&blocks[0], Block::ToolCall { name, args, .. } if name == "bash" && args.is_empty())
+                );
             }
             other => panic!("wrong event: {other:?}"),
         }
@@ -1271,16 +1511,33 @@ mod tests {
 
     #[test]
     fn steer_record_shape() {
-        let c = Command::Steer { message: "stop".into(), images: vec![] };
-        assert_eq!(c.to_record("s1"), json!({"id":"s1","type":"steer","message":"stop"}));
+        let c = Command::Steer {
+            message: "stop".into(),
+            images: vec![],
+        };
+        assert_eq!(
+            c.to_record("s1"),
+            json!({"id":"s1","type":"steer","message":"stop"})
+        );
     }
 
     #[test]
     fn prompt_with_images_omits_empty_and_includes_present() {
-        let c = Command::Prompt { message: "hi".into(), images: vec![], streaming_behavior: None };
-        assert_eq!(c.to_record("a"), json!({"id":"a","type":"prompt","message":"hi"}));
+        let c = Command::Prompt {
+            message: "hi".into(),
+            images: vec![],
+            streaming_behavior: None,
+        };
+        assert_eq!(
+            c.to_record("a"),
+            json!({"id":"a","type":"prompt","message":"hi"})
+        );
         let img = json!({"type":"image","data":"QUJD","mimeType":"image/png"});
-        let c = Command::Prompt { message: "hi".into(), images: vec![img.clone()], streaming_behavior: None };
+        let c = Command::Prompt {
+            message: "hi".into(),
+            images: vec![img.clone()],
+            streaming_behavior: None,
+        };
         assert_eq!(
             c.to_record("b"),
             json!({"id":"b","type":"prompt","message":"hi","images":[img]})
@@ -1289,17 +1546,31 @@ mod tests {
 
     #[test]
     fn set_session_name_record_shape() {
-        let c = Command::SetSessionName { name: "my-feature".into() };
-        assert_eq!(c.to_record("n1"), json!({"id":"n1","type":"set_session_name","name":"my-feature"}));
+        let c = Command::SetSessionName {
+            name: "my-feature".into(),
+        };
+        assert_eq!(
+            c.to_record("n1"),
+            json!({"id":"n1","type":"set_session_name","name":"my-feature"})
+        );
     }
 
     #[test]
     fn follow_up_record_shape_with_images() {
         // pi 1.0 rpc-mode: session.followUp(command.message, command.images)
-        let c = Command::FollowUp { message: "queued".into(), images: vec![] };
-        assert_eq!(c.to_record("u1"), json!({"id":"u1","type":"follow_up","message":"queued"}));
+        let c = Command::FollowUp {
+            message: "queued".into(),
+            images: vec![],
+        };
+        assert_eq!(
+            c.to_record("u1"),
+            json!({"id":"u1","type":"follow_up","message":"queued"})
+        );
         let img = json!({"type":"image","data":"QUJD","mimeType":"image/png"});
-        let c = Command::FollowUp { message: "queued".into(), images: vec![img.clone()] };
+        let c = Command::FollowUp {
+            message: "queued".into(),
+            images: vec![img.clone()],
+        };
         assert_eq!(
             c.to_record("u2"),
             json!({"id":"u2","type":"follow_up","message":"queued","images":[img]})
@@ -1309,10 +1580,21 @@ mod tests {
     #[test]
     fn fork_record_shape() {
         // wire field is entryId (rpc-types.d.ts fork command)
-        let c = Command::Fork { entry_id: "e-42".into() };
-        assert_eq!(c.to_record("f1"), json!({"id":"f1","type":"fork","entryId":"e-42"}));
-        assert_eq!(Command::GetTree.to_record("t1"), json!({"id":"t1","type":"get_tree"}));
-        assert_eq!(Command::Clone.to_record("c1"), json!({"id":"c1","type":"clone"}));
+        let c = Command::Fork {
+            entry_id: "e-42".into(),
+        };
+        assert_eq!(
+            c.to_record("f1"),
+            json!({"id":"f1","type":"fork","entryId":"e-42"})
+        );
+        assert_eq!(
+            Command::GetTree.to_record("t1"),
+            json!({"id":"t1","type":"get_tree"})
+        );
+        assert_eq!(
+            Command::Clone.to_record("c1"),
+            json!({"id":"c1","type":"clone"})
+        );
     }
 
     #[test]
@@ -1354,7 +1636,6 @@ mod tests {
         assert_eq!(root.forkable_entry_id(), Some("a1"));
     }
 
-
     /// 回归锁：pi get_tree 的会话树按 children 逐层嵌套（每层 entry+children
     /// ≈ 4~5 层 JSON）。85 条消息的实测树深 95 → 整行超过 serde_json 默认
     /// 128 层上限 → 整条 get_tree 响应被丢弃 → 所有用户消息拿不到 entry id
@@ -1375,7 +1656,9 @@ mod tests {
     fn deep_tree_body() {
         // 从叶子往根拼：node -> {entry, children:[node]}
         let depth = 400;
-        let mut node = String::from(r#"{"entry":{"id":"n0","parentId":null,"type":"message","message":{"role":"user","content":"hi"}},"children":[]}"#);
+        let mut node = String::from(
+            r#"{"entry":{"id":"n0","parentId":null,"type":"message","message":{"role":"user","content":"hi"}},"children":[]}"#,
+        );
         for i in 1..depth {
             node = format!(
                 r#"{{"entry":{{"id":"n{i}","parentId":"n{}","type":"message","message":{{"role":"assistant","content":"a{i}"}}}},"children":[{node}]}}"#,
@@ -1391,10 +1674,7 @@ mod tests {
             serde_json::from_str::<Value>(&line).is_err(),
             "fixture no longer exceeds the default recursion limit"
         );
-        let Some(Event::Response {
-            command, data, ..
-        }) = crate::protocol::parse_line(&line)
-        else {
+        let Some(Event::Response { command, data, .. }) = crate::protocol::parse_line(&line) else {
             panic!("deep get_tree line was dropped by parse_line");
         };
         assert_eq!(command, "get_tree");
@@ -1409,7 +1689,6 @@ mod tests {
         assert_eq!(n, depth - 1, "full chain survived the parse");
         assert_eq!(cur.role.as_deref(), Some("user"));
     }
-
 
     /// get_entries → active chain 的 user 锚点。这是「新分支」fork 的输入，
     /// 必须与 pi-web sliceActiveBranch 同语义：沿 parentId 从 leaf 回溯，
@@ -1430,7 +1709,10 @@ mod tests {
         });
         let (entries, leaf) = parse_entries(&data);
         assert_eq!(leaf.as_deref(), Some("c2"));
-        assert_eq!(active_user_entry_ids(&entries, leaf.as_deref()), vec!["a1", "c1"]);
+        assert_eq!(
+            active_user_entry_ids(&entries, leaf.as_deref()),
+            vec!["a1", "c1"]
+        );
         // no leaf → nothing is forkable (empty session)
         assert!(active_user_entry_ids(&entries, None).is_empty());
         // unknown leaf → nothing (not a panic)
@@ -1451,7 +1733,6 @@ mod tests {
         let ids = active_user_entry_ids(&entries, leaf.as_deref());
         assert!(ids.len() <= entries.len());
     }
-
 
     #[test]
     fn slash_commands_parse_list() {
@@ -1474,18 +1755,29 @@ mod tests {
         let models = parse_model_list(&data);
         assert_eq!(models.len(), 2);
         assert_eq!(models[0].provider, "glm");
-        let c = Command::SetThinkingLevel { level: "high".into() };
-        assert_eq!(c.to_record("t1"), json!({"id":"t1","type":"set_thinking_level","level":"high"}));
+        let c = Command::SetThinkingLevel {
+            level: "high".into(),
+        };
+        assert_eq!(
+            c.to_record("t1"),
+            json!({"id":"t1","type":"set_thinking_level","level":"high"})
+        );
     }
 
     #[test]
     fn agent_lifecycle() {
-        assert!(matches!(parse_line(r#"{"type":"agent_start"}"#), Some(Event::AgentStart)));
+        assert!(matches!(
+            parse_line(r#"{"type":"agent_start"}"#),
+            Some(Event::AgentStart)
+        ));
         assert!(matches!(
             parse_line(r#"{"type":"agent_end","messages":[],"willRetry":false}"#),
             Some(Event::AgentEnd { will_retry: false })
         ));
-        assert!(matches!(parse_line(r#"{"type":"agent_settled"}"#), Some(Event::AgentSettled)));
+        assert!(matches!(
+            parse_line(r#"{"type":"agent_settled"}"#),
+            Some(Event::AgentSettled)
+        ));
     }
 
     #[test]
@@ -1507,7 +1799,11 @@ mod tests {
         let e = parse_line(r#"{"type":"auto_retry_end","success":true,"attempt":1}"#).unwrap();
         assert_eq!(
             e,
-            Event::AutoRetryEnd { success: true, attempt: 1, final_error: None }
+            Event::AutoRetryEnd {
+                success: true,
+                attempt: 1,
+                final_error: None
+            }
         );
         let e = parse_line(
             r#"{"type":"auto_retry_end","success":false,"attempt":3,"finalError":"Retry cancelled"}"#,
@@ -1524,13 +1820,106 @@ mod tests {
     }
 
     #[test]
+    fn compaction_and_summarization_retry_events_are_typed() {
+        // compaction_start/end（agent-session.d.ts 形态；end 带失败原因）
+        let e = parse_line(r#"{"type":"compaction_start","reason":"overflow"}"#).unwrap();
+        assert_eq!(
+            e,
+            Event::CompactionStart {
+                reason: Some("overflow".into())
+            }
+        );
+        let e = parse_line(
+            r#"{"type":"compaction_end","reason":"threshold","aborted":false,"willRetry":true,"errorMessage":"boom"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            e,
+            Event::CompactionEnd {
+                reason: Some("threshold".into()),
+                aborted: false,
+                will_retry: true,
+                error_message: Some("boom".into()),
+            }
+        );
+        // summarization_retry_*（与 auto_retry 同构的退避窗口）
+        let e = parse_line(
+            r#"{"type":"summarization_retry_scheduled","attempt":1,"maxAttempts":3,"delayMs":2000,"errorMessage":"ctx overflow"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            e,
+            Event::SummarizationRetryScheduled {
+                attempt: 1,
+                max_attempts: 3,
+                delay_ms: 2000,
+                error_message: Some("ctx overflow".into()),
+            }
+        );
+        assert!(matches!(
+            parse_line(r#"{"type":"summarization_retry_attempt_start","source":"compaction"}"#),
+            Some(Event::SummarizationRetryAttemptStart { .. })
+        ));
+        assert!(matches!(
+            parse_line(r#"{"type":"summarization_retry_finished"}"#),
+            Some(Event::SummarizationRetryFinished)
+        ));
+    }
+
+    #[test]
+    fn extension_error_and_misc_wire_events_are_typed() {
+        // rpc-mode 对扩展错误的输出（error 可能是任意 JSON，这里按 string）
+        let e = parse_line(
+            r#"{"type":"extension_error","extensionPath":"/x/e.ts","event":"session_start","error":"boom"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            e,
+            Event::ExtensionError {
+                extension_path: Some("/x/e.ts".into()),
+                event_name: Some("session_start".into()),
+                error: Some("boom".into()),
+            }
+        );
+        // app 暂不消费的杂项：解析出 type，不落 Unparsed
+        let e =
+            parse_line(r#"{"type":"tool_execution_start","id":"t1","toolName":"bash"}"#).unwrap();
+        let Event::WireEvent { kind, .. } = e else {
+            panic!("not wire event")
+        };
+        assert_eq!(kind, "tool_execution_start");
+        for kind in [
+            "tool_execution_update",
+            "tool_execution_end",
+            "queue_update",
+            "entry_appended",
+            "session_info_changed",
+            "thinking_level_changed",
+        ] {
+            let line = format!(r#"{{"type":"{kind}"}}"#);
+            let e = parse_line(&line).unwrap();
+            let Event::WireEvent { kind: k, .. } = e else {
+                panic!("not wire event")
+            };
+            assert_eq!(k, kind);
+        }
+        // 真正未知的 type 仍落 Unparsed
+        assert!(matches!(
+            parse_line(r#"{"type":"wat"}"#),
+            Some(Event::Unparsed(_))
+        ));
+    }
+
+    #[test]
     fn extension_ui_requests_are_typed() {
         // select
         let e = parse_line(
             r#"{"type":"extension_ui_request","id":"r1","method":"select","title":"Pick","options":["a","b"],"timeout":5000}"#,
         )
         .unwrap();
-        let Event::ExtensionUi(req) = e else { panic!("not extension ui") };
+        let Event::ExtensionUi(req) = e else {
+            panic!("not extension ui")
+        };
         assert_eq!(req.id, "r1");
         match req.method {
             ExtUiMethod::Select { title, options } => {
@@ -1579,7 +1968,10 @@ mod tests {
         .unwrap();
         assert!(matches!(
             e,
-            Event::ExtensionUi(ExtensionUiRequest { method: ExtUiMethod::Input { .. }, .. })
+            Event::ExtensionUi(ExtensionUiRequest {
+                method: ExtUiMethod::Input { .. },
+                ..
+            })
         ));
         let e = parse_line(
             r#"{"type":"extension_ui_request","id":"r6","method":"confirm","title":"Sure?","message":"go"}"#,
@@ -1587,7 +1979,10 @@ mod tests {
         .unwrap();
         assert!(matches!(
             e,
-            Event::ExtensionUi(ExtensionUiRequest { method: ExtUiMethod::Confirm { .. }, .. })
+            Event::ExtensionUi(ExtensionUiRequest {
+                method: ExtUiMethod::Confirm { .. },
+                ..
+            })
         ));
         let e = parse_line(
             r#"{"type":"extension_ui_request","id":"r7","method":"set_editor_text","text":"hi"}"#,
@@ -1595,7 +1990,10 @@ mod tests {
         .unwrap();
         assert!(matches!(
             e,
-            Event::ExtensionUi(ExtensionUiRequest { method: ExtUiMethod::SetEditorText { .. }, .. })
+            Event::ExtensionUi(ExtensionUiRequest {
+                method: ExtUiMethod::SetEditorText { .. },
+                ..
+            })
         ));
     }
 
@@ -1641,7 +2039,9 @@ mod tests {
         )
         .unwrap();
         match e {
-            Event::MessageStart { role, raw_system, .. } => {
+            Event::MessageStart {
+                role, raw_system, ..
+            } => {
                 assert_eq!(role, "system");
                 let raw = raw_system.expect("system start carries raw message");
                 assert_eq!(raw["sections"]["rules"], "R2");
@@ -1655,7 +2055,9 @@ mod tests {
         )
         .unwrap();
         match e {
-            Event::MessageStart { role, raw_system, .. } => {
+            Event::MessageStart {
+                role, raw_system, ..
+            } => {
                 assert_eq!(role, "user");
                 assert!(raw_system.is_none());
             }
@@ -1671,14 +2073,26 @@ mod tests {
     // rpc `bash`：excludeFromContext=true 才带字段（pi 侧 ?? false 默认）
     #[test]
     fn bash_record_shape() {
-        let c = Command::Bash { command: "ls -la".into(), exclude_from_context: false };
-        assert_eq!(c.to_record("b1"), json!({"id":"b1","type":"bash","command":"ls -la"}));
-        let c = Command::Bash { command: "ls".into(), exclude_from_context: true };
+        let c = Command::Bash {
+            command: "ls -la".into(),
+            exclude_from_context: false,
+        };
+        assert_eq!(
+            c.to_record("b1"),
+            json!({"id":"b1","type":"bash","command":"ls -la"})
+        );
+        let c = Command::Bash {
+            command: "ls".into(),
+            exclude_from_context: true,
+        };
         assert_eq!(
             c.to_record("b2"),
             json!({"id":"b2","type":"bash","command":"ls","excludeFromContext":true})
         );
-        assert_eq!(Command::AbortBash.to_record("b3"), json!({"id":"b3","type":"abort_bash"}));
+        assert_eq!(
+            Command::AbortBash.to_record("b3"),
+            json!({"id":"b3","type":"abort_bash"})
+        );
     }
 
     // bash response data = BashResult（rpc-commands.md bash 节实测形态）
@@ -1717,10 +2131,8 @@ mod tests {
     // 执行中的流式输出增量（agent_session._emit 原样转发，json-event 不改写）
     #[test]
     fn bash_execution_update_event() {
-        let e = parse_line(
-            r#"{"type":"bash_execution_update","id":"req-9","delta":"hello "}"#,
-        )
-        .unwrap();
+        let e = parse_line(r#"{"type":"bash_execution_update","id":"req-9","delta":"hello "}"#)
+            .unwrap();
         match e {
             Event::BashExecutionUpdate { id, delta } => {
                 assert_eq!(id.as_deref(), Some("req-9"));

@@ -20,11 +20,9 @@ fn probe_vendored_pi_handshake() {
             std::process::exit(1);
         }
     };
-    eprintln!("spawned pi pid={}", session.id());
+    eprintln!("spawned pi pid={}", session.id().unwrap_or(0));
 
-    session
-        .send(&pi_link::protocol::Command::GetState)
-        .unwrap();
+    session.send(&pi_link::protocol::Command::GetState).unwrap();
     session
         .send(&pi_link::protocol::Command::GetAvailableModels)
         .unwrap();
@@ -48,11 +46,15 @@ fn probe_vendored_pi_handshake() {
                 seen += 1;
                 quiet = 0;
                 match &e {
-                    pi_link::protocol::Event::Response { command, success, data, .. } => {
+                    pi_link::protocol::Event::Response {
+                        command,
+                        success,
+                        data,
+                        ..
+                    } => {
                         eprintln!(
                             "[{seen}] Response command={command} success={success} data={}",
-                            data
-                                .as_ref()
+                            data.as_ref()
                                 .map(|d| d.to_string())
                                 .unwrap_or_default()
                                 .chars()

@@ -3,7 +3,8 @@
 
 use gpui::Context;
 use pi_link::protocol::{
-    AssistantEvent, Block, Command, Event, SessionState, SessionStats, SlashCommand, Usage, content_blocks, parse_tree,
+    AssistantEvent, Block, Command, Event, SessionState, SessionStats, SlashCommand, Usage,
+    content_blocks, parse_tree,
 };
 
 use crate::i18n::tr;
@@ -11,14 +12,52 @@ use crate::session::messages::{Msg, Role, UsageLine, merge_tool_result, result_p
 
 use super::*;
 
-impl SessionRuntime {
+/// 长错误文本截成单行状态条（按 chars 计，超长加省略号）
+fn truncate_line(s: &str, cap: usize) -> String {
+    let total = s.chars().count();
+    let mut out: String = s.chars().take(cap).collect();
+    if total > cap {
+        out.push('…');
+    }
+    out
+}
 
+impl SessionRuntime {
     /// 轮末提示音（「其他」页开关）。`stream_started` 兼作「本轮在飞」的闩：
     /// AgentSettled 与 AgentEnd 是同一轮的两个终止事件、都会到达，所以在这里
     /// take 掉它就恰好响一次；abort_stream() 会清掉闩，用户中止的一轮静音。
-    fn settle_turn(&mut self) {
+    pub(super) fn settle_turn(&mut self) {
         if self.stream_started.take().is_some() && self.sound_on {
             crate::services::workspace::play_notify_sound();
+        }
+    }
+
+    /// 进程死亡收尾：最后一条 assistant 消息里未回结果的工具卡就地落
+    /// 错误态（红框 + 中断文案），不再永远转圈。其余块不动。
+    pub(super) fn fail_dangling_tool_calls(&mut self) {
+        let text = tr("messages.tool_interrupted").to_string();
+        if let Some(m) = self.messages.last_mut() {
+            if m.role == Role::Assistant {
+                for b in m.blocks.iter_mut() {
+                    if let Block::ToolCall {
+                        result,
+                        is_error,
+                        args_partial,
+                        result_arrived,
+                        ..
+                    } = b
+                    {
+                        if !*result_arrived {
+                            *result_arrived = true;
+                            *is_error = true;
+                            *args_partial = false;
+                            if result.is_empty() {
+                                *result = text.clone();
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -42,7 +81,13 @@ impl SessionRuntime {
         // MessageStart(user) 置位翻页锚点（见函数尾 page_turn）
         let mut user_arrived = false;
         match event {
-            Event::Response { command, success, error, data, .. } => {
+            Event::Response {
+                command,
+                success,
+                error,
+                data,
+                ..
+            } => {
                 if command == "get_state" && success {
                     if let Some(data) = &data {
                         let st = SessionState::parse(data);
@@ -106,7 +151,9 @@ impl SessionRuntime {
                 } else if command == "get_available_models" && success {
                     if let Some(data) = &data {
                         // project-level shared catalog: forward, don't store
-                        cx.emit(SessionEvent::Models(pi_link::protocol::parse_model_list(data)));
+                        cx.emit(SessionEvent::Models(pi_link::protocol::parse_model_list(
+                            data,
+                        )));
                     }
                 } else if command == "set_model" && success {
                     // pi 1.0 swaps the model asynchronously — a get_state sent
@@ -190,8 +237,7 @@ impl SessionRuntime {
                             let _ = s.send(&Command::GetMessages);
                         }
                     } else {
-                        self.status =
-                            format!("compact failed: {}", error.unwrap_or_default());
+                        self.status = format!("compact failed: {}", error.unwrap_or_default());
                     }
                 } else if command == "bash" {
                     // `!` shell 命令最终结果（流式增量已就地追加；这里回填
@@ -211,8 +257,7 @@ impl SessionRuntime {
                 } else if success {
                     self.status = format!("{command} ok");
                 } else if command == "prompt" {
-                    self.status =
-                        format!("prompt failed: {}", error.unwrap_or_default());
+                    self.status = format!("prompt failed: {}", error.unwrap_or_default());
                     // 发送失败：等待行不能一直转下去；锚点也无从跟随
                     self.phase_waiting = false;
                     // **不清 pending_echoes**：prompt 被拒（鉴权/无模型）时 pi
@@ -238,11 +283,20 @@ impl SessionRuntime {
                         error.unwrap_or_else(|| "—".into())
                     );
                 } else {
-                    self.status =
-                        format!("{command} failed: {}", error.unwrap_or_default());
+                    self.status = format!("{command} failed: {}", error.unwrap_or_default());
                 }
             }
-            Event::MessageStart { role, blocks, timestamp, is_error, tool_call_id, custom_type: _, custom_display: _, details, raw_system } => {
+            Event::MessageStart {
+                role,
+                blocks,
+                timestamp,
+                is_error,
+                tool_call_id,
+                custom_type: _,
+                custom_display: _,
+                details,
+                raw_system,
+            } => {
                 // is_error 只出现在 toolResult 上（协议口径：非 toolResult 恒
                 // false），而工具报错是 agent 工作过程的一部分——它经常一边
                 // 试错一边把事情做完（grep 未命中、命令非零退出…），**不是**
@@ -393,122 +447,168 @@ impl SessionRuntime {
                 // flush（ZCode assistantReplyBuffer 语义，§6 坑1 边界不按 chunk）
                 cx.emit(SessionEvent::Assistant(assistant_event.clone()));
                 match assistant_event {
-                AssistantEvent::TextDelta { content_index, delta } => {
-                    if let Block::Text { text, .. } = self.assistant_slot(
+                    AssistantEvent::TextDelta {
                         content_index,
-                        Block::Text { content_index, text: String::new() },
-                    ) {
-                        text.push_str(&delta);
-                    }
-                }
-                AssistantEvent::TextEnd { content_index, content } => {
-                    if let Block::Text { text, .. } = self.assistant_slot(
-                        content_index,
-                        Block::Text { content_index, text: String::new() },
-                    ) {
-                        *text = content;
-                    }
-                }
-                AssistantEvent::ThinkingStart { content_index } => {
-                    self.assistant_slot(
-                        content_index,
-                        Block::Thinking { content_index, text: String::new() },
-                    );
-                }
-                AssistantEvent::ThinkingDelta { content_index, delta } => {
-                    if let Block::Thinking { text, .. } = self.assistant_slot(
-                        content_index,
-                        Block::Thinking { content_index, text: String::new() },
-                    ) {
-                        text.push_str(&delta);
-                    }
-                }
-                AssistantEvent::ThinkingEnd { content_index, content } => {
-                    if let Block::Thinking { text, .. } = self.assistant_slot(
-                        content_index,
-                        Block::Thinking { content_index, text: String::new() },
-                    ) {
-                        *text = content;
-                        // pi-web parity: collapse thinking once it completes
-                        let msg_ix = self.messages.len().saturating_sub(1);
-                        self.collapsed.insert((msg_ix, content_index), false);
-                    }
-                }
-                AssistantEvent::ToolCallStart { content_index, id, tool_name } => {
-                    self.assistant_slot(
-                        content_index,
-                        Block::ToolCall {
+                        delta,
+                    } => {
+                        if let Block::Text { text, .. } = self.assistant_slot(
                             content_index,
-                            id,
-                            name: tool_name,
-                            args: String::new(),
-                            result: String::new(),
-                            is_error: false,
-                            images: Vec::new(),
-                            duration_s: None,
-                            details: None,
-                            args_partial: true,
-                            result_arrived: false,
-                        },
-                    );
-                }
-                AssistantEvent::ToolCallDelta { content_index, delta } => {
-                    if let Block::ToolCall { args, .. } = self.assistant_slot(
-                        content_index,
-                        Block::ToolCall {
-                            content_index,
-                            id: String::new(),
-                            name: String::new(),
-                            args: String::new(),
-                            result: String::new(),
-                            is_error: false,
-                            images: Vec::new(),
-                            duration_s: None,
-                            details: None,
-                            args_partial: true,
-                            result_arrived: false,
-                        },
-                    ) {
-                        args.push_str(&delta);
+                            Block::Text {
+                                content_index,
+                                text: String::new(),
+                            },
+                        ) {
+                            text.push_str(&delta);
+                        }
                     }
-                }
-                AssistantEvent::ToolCallEnd { content_index, tool_call } => {
-                    let name = tool_call["toolName"]
-                        .as_str()
-                        .or_else(|| tool_call["name"].as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let args = tool_call["arguments"]
-                        .as_object()
-                        .filter(|o| !o.is_empty())
-                        .map(|o| serde_json::Value::Object(o.clone()).to_string())
-                        .unwrap_or_default();
-                    let name_c = name;
-                    let args_c = args;
-                    if let Block::ToolCall { name, args, .. } = self.assistant_slot(
+                    AssistantEvent::TextEnd {
                         content_index,
-                        Block::ToolCall {
+                        content,
+                    } => {
+                        if let Block::Text { text, .. } = self.assistant_slot(
                             content_index,
-                            id: String::new(),
-                            name: name_c.clone(),
-                            args: args_c.clone(),
-                            result: String::new(),
-                            is_error: false,
-                            images: Vec::new(),
-                            duration_s: None,
-                            details: None,
-                            args_partial: false,
-                            result_arrived: false,
-                        },
-                    ) {
-                        *name = name_c;
-                        *args = args_c;
+                            Block::Text {
+                                content_index,
+                                text: String::new(),
+                            },
+                        ) {
+                            *text = content;
+                        }
                     }
-                }
-                AssistantEvent::Other(_) => {}
+                    AssistantEvent::ThinkingStart { content_index } => {
+                        self.assistant_slot(
+                            content_index,
+                            Block::Thinking {
+                                content_index,
+                                text: String::new(),
+                            },
+                        );
+                    }
+                    AssistantEvent::ThinkingDelta {
+                        content_index,
+                        delta,
+                    } => {
+                        if let Block::Thinking { text, .. } = self.assistant_slot(
+                            content_index,
+                            Block::Thinking {
+                                content_index,
+                                text: String::new(),
+                            },
+                        ) {
+                            text.push_str(&delta);
+                        }
+                    }
+                    AssistantEvent::ThinkingEnd {
+                        content_index,
+                        content,
+                    } => {
+                        if let Block::Thinking { text, .. } = self.assistant_slot(
+                            content_index,
+                            Block::Thinking {
+                                content_index,
+                                text: String::new(),
+                            },
+                        ) {
+                            *text = content;
+                            // pi-web parity: collapse thinking once it completes
+                            let msg_ix = self.messages.len().saturating_sub(1);
+                            self.collapsed.insert((msg_ix, content_index), false);
+                        }
+                    }
+                    AssistantEvent::ToolCallStart {
+                        content_index,
+                        id,
+                        tool_name,
+                    } => {
+                        self.assistant_slot(
+                            content_index,
+                            Block::ToolCall {
+                                content_index,
+                                id,
+                                name: tool_name,
+                                args: String::new(),
+                                result: String::new(),
+                                is_error: false,
+                                images: Vec::new(),
+                                duration_s: None,
+                                details: None,
+                                args_partial: true,
+                                result_arrived: false,
+                            },
+                        );
+                    }
+                    AssistantEvent::ToolCallDelta {
+                        content_index,
+                        delta,
+                    } => {
+                        if let Block::ToolCall { args, .. } = self.assistant_slot(
+                            content_index,
+                            Block::ToolCall {
+                                content_index,
+                                id: String::new(),
+                                name: String::new(),
+                                args: String::new(),
+                                result: String::new(),
+                                is_error: false,
+                                images: Vec::new(),
+                                duration_s: None,
+                                details: None,
+                                args_partial: true,
+                                result_arrived: false,
+                            },
+                        ) {
+                            args.push_str(&delta);
+                        }
+                    }
+                    AssistantEvent::ToolCallEnd {
+                        content_index,
+                        tool_call,
+                    } => {
+                        let name = tool_call["toolName"]
+                            .as_str()
+                            .or_else(|| tool_call["name"].as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let args = tool_call["arguments"]
+                            .as_object()
+                            .filter(|o| !o.is_empty())
+                            .map(|o| serde_json::Value::Object(o.clone()).to_string())
+                            .unwrap_or_default();
+                        let name_c = name;
+                        let args_c = args;
+                        if let Block::ToolCall { name, args, .. } = self.assistant_slot(
+                            content_index,
+                            Block::ToolCall {
+                                content_index,
+                                id: String::new(),
+                                name: name_c.clone(),
+                                args: args_c.clone(),
+                                result: String::new(),
+                                is_error: false,
+                                images: Vec::new(),
+                                duration_s: None,
+                                details: None,
+                                args_partial: false,
+                                result_arrived: false,
+                            },
+                        ) {
+                            *name = name_c;
+                            *args = args_c;
+                        }
+                    }
+                    AssistantEvent::Other(_) => {}
                 }
             }
-            Event::MessageEnd { role, blocks, usage, timestamp, stop_reason, error_message, model, .. } => {
+            Event::MessageEnd {
+                role,
+                blocks,
+                usage,
+                timestamp,
+                stop_reason,
+                error_message,
+                model,
+                ..
+            } => {
                 if role == "assistant" {
                     if let Some(m) = self.messages.last_mut() {
                         if m.role == Role::Assistant {
@@ -545,7 +645,13 @@ impl SessionRuntime {
                     // 才出现。首条用户消息一到就刷一次侧栏（pi-web
                     // 「running 会话未列入 → loadSessions」parity），再补一次
                     // 300ms 后的刷新兜住写盘 / 指纹扫描的滞后。
-                    if self.messages.iter().filter(|m| m.role == Role::User).count() == 1 {
+                    if self
+                        .messages
+                        .iter()
+                        .filter(|m| m.role == Role::User)
+                        .count()
+                        == 1
+                    {
                         cx.emit(SessionEvent::ListDirty);
                         cx.notify();
                         // 绑定对账：此刻文件已在盘上（pi 先 appendMessage 落
@@ -639,7 +745,12 @@ impl SessionRuntime {
                     // agent may have written files: refresh git status
                 }
             }
-            Event::AutoRetryStart { attempt, max_attempts, delay_ms, error_message: _ } => {
+            Event::AutoRetryStart {
+                attempt,
+                max_attempts,
+                delay_ms,
+                error_message: _,
+            } => {
                 // 状态行（快照/微信端消费）报倒计时与次数；错误原文可能很长，
                 // 不进一行状态。桌面端此时按钮保持停止态、等待行照常转。
                 let secs = (delay_ms / 1000).max(1);
@@ -653,7 +764,11 @@ impl SessionRuntime {
                 );
                 cx.emit(SessionEvent::Changed);
             }
-            Event::AutoRetryEnd { success, attempt: _, final_error: _ } => {
+            Event::AutoRetryEnd {
+                success,
+                attempt: _,
+                final_error: _,
+            } => {
                 // success=true：重试尝试已通过，轮继续（随后的 AgentStart 会把
                 // 状态行拨回 running）；false：耗尽/被中止，真轮末的
                 // agent_end{willRetry:false}+agent_settled 马上到，收尾归它们。
@@ -661,6 +776,62 @@ impl SessionRuntime {
                     self.status = "running".into();
                 }
             }
+            // ---- 此前落 Unparsed 被静默丢弃的会话事件（见 pi-rpc.md）----
+            Event::CompactionStart { .. } => {
+                // 上下文自动压缩（threshold/overflow）在轮中发生：此前整个
+                // 事件被丢，界面毫无说明地「卡住」
+                self.status = tr("status.auto_compacting").into();
+            }
+            Event::CompactionEnd {
+                aborted,
+                will_retry,
+                error_message,
+                ..
+            } => {
+                // 定局失败（不重试、未中止）才报：其余情况真轮末事件马上到
+                if let Some(err) = error_message.filter(|_| !aborted && !will_retry) {
+                    self.status = crate::i18n::tf(
+                        "status.auto_compact_failed",
+                        &[("error", truncate_line(&err, 160))],
+                    );
+                }
+            }
+            Event::SummarizationRetryScheduled {
+                attempt,
+                max_attempts,
+                delay_ms,
+                error_message: _,
+            } => {
+                // 上下文溢出摘要重试：与 auto_retry 同构的退避窗口，轮未结束
+                let secs = (delay_ms / 1000).max(1);
+                self.status = crate::i18n::tf(
+                    "status.summarization_retry",
+                    &[
+                        ("secs", secs.to_string()),
+                        ("attempt", attempt.to_string()),
+                        ("max", max_attempts.to_string()),
+                    ],
+                );
+                cx.emit(SessionEvent::Changed);
+            }
+            Event::SummarizationRetryAttemptStart { .. } => {
+                // 一次摘要重试尝试开跑（同 AutoRetryEnd success → running）
+                self.status = "running".into();
+            }
+            Event::SummarizationRetryFinished => {}
+            Event::ExtensionError { error, .. } => {
+                // 扩展崩溃不终止轮，但要在状态行留痕（此前静默丢弃）
+                self.status = crate::i18n::tf(
+                    "status.extension_error",
+                    &[("error", truncate_line(&error.unwrap_or_default(), 160))],
+                );
+            }
+            Event::ProcessExited { code } => {
+                // 合成事件：退出码先存，轮终语义由 pump 尾部（通道关闭后）
+                // 统一补全——那里才能拿到 was_running 并一次收尾
+                self.exit_code = code;
+            }
+            Event::WireEvent { .. } => {}
             Event::ExtensionUi(req) => cx.emit(SessionEvent::ExtUi(req)),
             // `!` 执行的流式输出增量：就地追加进乐观卡片（pi-web 不消费这个
             // 事件、靠会话重载——这里直接流式渲染，严格更好）
@@ -674,7 +845,14 @@ impl SessionRuntime {
                     self.notify_list(cx);
                 }
             }
-            Event::Unparsed(_) => {}
+            Event::Unparsed(v) => {
+                // 未知 wire 事件不再完全静默：按 type 去重留痕（新 pi 版本
+                // 加事件时至少 console 有一条）
+                let kind = v["type"].as_str().unwrap_or("(no type)").to_string();
+                if self.unparsed_types.insert(kind.clone()) {
+                    eprintln!("[pi-flash] unparsed pi wire event type: {kind}");
+                }
+            }
         }
         // 用户消息到达（发送回显升级 / steer 推入）→ 翻页：该消息钉视口
         // 顶，历史滚出屏（回显升级同锚点重入不重钉，见 page_turn）
@@ -731,7 +909,8 @@ impl SessionRuntime {
     /// 列表同步：结构手术（splice/reset）与翻页垫片结算全在 ChatList
     /// （chat_list.rs，pi-web useAgentSession 滚屏层的移植）。
     pub(crate) fn notify_list(&mut self, cx: &mut Context<Self>) {
-        self.pager.sync(self.messages.len(), self.phase_row_visible());
+        self.pager
+            .sync(self.messages.len(), self.phase_row_visible());
         // 消息变化（含流式 delta 路径）→ 导航摘要置脏，渲染帧惰性重建
         self.nav_dirty = true;
         cx.notify();
@@ -786,5 +965,4 @@ impl SessionRuntime {
     }
 
     // ---- 033 会话导航面板 ----
-
 }

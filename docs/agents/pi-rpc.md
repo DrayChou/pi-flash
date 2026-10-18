@@ -46,6 +46,16 @@
 
 - `-ne` 只关扩展，个人 skills 照旧（全关要 `-ns`/`-np`/`--no-themes`）；`--tools` 是注册级硬 allowlist（连 getAllTools 都挡）；重复 `-ne` 无害。
 
+## 进程死亡与轮终语义（EOF 三件套，2026-10-19）
+
+- pi 进程死亡不发任何「轮终」事件——只有 stdout EOF。app 侧 pump 尾部（`runtime/mod.rs` 的 `consume_runtime_events` 通道关闭分支）统一收尾：轮中死亡 ⇒ `turn_error=true` + `fail_dangling_tool_calls()`（悬空工具卡就地落红）+ `settle_turn()`（响铃）+ `TurnSettled`（标签栏红点）；空闲死亡只复位不冒泡。此前这里只留一条静默的 "pi exited"——标签栏三色点只认 TurnSettled，用户看到的就是「跑一半悄无声息停了」。
+- pi-link 合成 [`Event::ProcessExited`]：exit-waiter 线程 300ms 轮询 `try_wait` reap 退出码（std 无法跨线程 wait，child 住 `Arc<Mutex<Option<Child>>>`，Drop take 走后 waiter 见 None 即退）。stderr 恒 piped + 16KB 尾缓冲（`PiSession::stderr_tail`，`STDERR_TAIL_CAP`）——node OOM / unhandled rejection / 扩展 fatal 只出现在 stderr，死亡时 eprintln 留痕。
+- 排查「跑一半停了」：先看 wire log 尾部有无 `=== stdout EOF`——有 = 进程死（本节语义收尾，状态行带退出码）；无 EOF 也无 agent_end = 流挂起（另一类问题）。
+
+## 会话事件解析口径（1.3.0 实测，升级复核点）
+
+`AgentSessionEvent`（`dist/core/agent-session.d.ts`）全量对齐：除轮终三件套（`agent_end`/`agent_settled`/`auto_retry_*`）外，`compaction_start/end`（end 带 `errorMessage`/`willRetry`）、`summarization_retry_scheduled/attempt_start/finished`（与 auto_retry 同构的退避窗口，轮未结束）、`extension_error`（rpc-mode 对扩展错误的输出）、`tool_execution_*`/`queue_update`/`entry_appended`/`session_info_changed`/`thinking_level_changed`（归 `Event::WireEvent`，app 暂不消费）均已 typed。真正未知 type 落 `Event::Unparsed`：按 type 去重 eprintln 留痕，不再完全静默。升级 pi 时 grep 新版 agent-session.d.ts 的 `AgentSessionEvent` 核对增量。
+
 ## 调试
 
 - `PI_FLASH_RPC_LOG` 开线缆日志。

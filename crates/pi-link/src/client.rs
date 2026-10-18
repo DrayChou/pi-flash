@@ -5,10 +5,12 @@ use std::{
     path::Path,
     process::{Child, Command as StdCommand, Stdio},
     sync::{
+        Arc, Mutex,
         atomic::{AtomicU64, Ordering},
         mpsc,
     },
     thread,
+    time::Duration,
 };
 
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
@@ -16,10 +18,17 @@ use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use crate::protocol::{Command, Event, parse_line};
 use crate::vendor;
 
+/// stderr 尾部缓冲上限：崩溃原因（node OOM / unhandled rejection / 扩展
+/// fatal）只需尾部几行，整段留存反而吃内存
+const STDERR_TAIL_CAP: usize = 16 * 1024;
+
 pub struct PiSession {
-    child: Child,
+    /// 进程句柄挂在共享锁后：exit-waiter 线程跨线程 reap 退出码
+    ///（std 无法在别的线程 `wait()`），Drop 时 `take()` 接管击杀
+    child: Arc<Mutex<Option<Child>>>,
     cmd_tx: mpsc::Sender<String>,
     seq: AtomicU64,
+    stderr_tail: Arc<Mutex<Vec<u8>>>,
 }
 
 /// Spawn the vendored pi in RPC mode bound to `cwd`.
@@ -33,9 +42,13 @@ pub struct PiSession {
 /// 逃生口语义由档位系统承担。历史背景：曾恒定 `-ne` 防宿主扩展崩钉版
 /// pi（系统 pi 1.0 的 auto-router.ts fatal 0.87.1 RPC），v70.3 改默认
 /// 加载并把隔离降级为设置页开关。
-pub fn spawn(cwd: &Path, extra_args: &[&str]) -> Result<(PiSession, UnboundedReceiver<Event>), String> {
-    let cli = vendor::cli_path()
-        .ok_or_else(|| "vendored pi not found — run `npm ci` inside vendor/pi (see PORT_PLAN.md)".to_string())?;
+pub fn spawn(
+    cwd: &Path,
+    extra_args: &[&str],
+) -> Result<(PiSession, UnboundedReceiver<Event>), String> {
+    let cli = vendor::cli_path().ok_or_else(|| {
+        "vendored pi not found — run `npm ci` inside vendor/pi (see PORT_PLAN.md)".to_string()
+    })?;
 
     let node: String = vendor::node_bin();
     // Optional wire log (PI_FLASH_RPC_LOG=<path>): every spawn records its
@@ -76,17 +89,15 @@ pub fn spawn(cwd: &Path, extra_args: &[&str]) -> Result<(PiSession, UnboundedRec
     // no baked-in --no-session: fresh spawns persist by default (pi-web
     // parity: sessions are resumable); pass ["--session", <path>] to resume
     cmd.arg(&cli);
-    cmd.args(["--mode", "rpc"]).args(extra_args)
+    cmd.args(["--mode", "rpc"])
+        .args(extra_args)
         .current_dir(cwd)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped());
-    // stderr is discarded unless the wire log is on — pi fatals (extension
-    // crashes etc.) only ever show up there, and it was a blind spot.
-    if rpc_log.is_some() {
-        cmd.stderr(Stdio::piped());
-    } else {
-        cmd.stderr(Stdio::null());
-    }
+    // stderr 恒 piped + 尾部缓冲：pi fatal（扩展崩溃 / node OOM /
+    // unhandled rejection）只出现在这里——之前 Stdio::null()（仅
+    // PI_FLASH_RPC_LOG 时才接）时进程死亡完全无迹可寻。
+    cmd.stderr(Stdio::piped());
     // 051：pf-auth.json（目录 provider 的 injectAs / 降级明文）+ providers.json
     // （自定义 provider 的 `$PF_KEY_*`）解出的密钥注入子进程环境。解不出
     // 的引用跳过（该 provider 会话内报鉴权错），凭据库故障不阻塞 spawn。
@@ -129,8 +140,11 @@ pub fn spawn(cwd: &Path, extra_args: &[&str]) -> Result<(PiSession, UnboundedRec
     let stdout = child.stdout.take().expect("piped stdout");
     let stderr = child.stderr.take();
 
-    // stderr drainer: only exists when the wire log is on
-    if let (Some(log), Some(mut err)) = (rpc_log.clone(), stderr) {
+    // stderr drainer：常驻（而非仅 wire log 时），写尾部环形缓冲 + 可选落日志
+    let stderr_tail: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
+    if let Some(mut err) = stderr {
+        let tail = stderr_tail.clone();
+        let log_err = rpc_log.clone();
         thread::spawn(move || {
             let mut buf = [0u8; 4096];
             use std::io::Read as _;
@@ -138,9 +152,19 @@ pub fn spawn(cwd: &Path, extra_args: &[&str]) -> Result<(PiSession, UnboundedRec
                 if n == 0 {
                     break;
                 }
-                let text = String::from_utf8_lossy(&buf[..n]);
-                let mut f = log.lock().unwrap();
-                let _ = write!(f, "[stderr] {text}");
+                {
+                    let mut t = tail.lock().unwrap();
+                    t.extend_from_slice(&buf[..n]);
+                    let over = t.len().saturating_sub(STDERR_TAIL_CAP);
+                    if over > 0 {
+                        t.drain(..over);
+                    }
+                }
+                if let Some(log) = &log_err {
+                    let text = String::from_utf8_lossy(&buf[..n]);
+                    let mut f = log.lock().unwrap();
+                    let _ = write!(f, "[stderr] {text}");
+                }
             }
         });
     }
@@ -164,6 +188,8 @@ pub fn spawn(cwd: &Path, extra_args: &[&str]) -> Result<(PiSession, UnboundedRec
 
     // reader thread: parse JSONL into typed events
     let (event_tx, event_rx) = unbounded::<Event>();
+    // waiter 的 sender 克隆要在 reader spawn 前取（reader 会 move 走原值）
+    let waiter_tx = event_tx.clone();
     // 16MB stack: get_tree 的会话树是深层嵌套（每条 entry 一层），而
     // serde_json::Value 的析构是递归的——3000 条 entry 的会话在默认
     // 2MiB 线程栈上会溢出。std::thread::spawn 默认就是 2MiB。
@@ -199,7 +225,12 @@ pub fn spawn(cwd: &Path, extra_args: &[&str]) -> Result<(PiSession, UnboundedRec
                         // 「按钮点了没反应」在界面上完全无迹可寻
                         if let Some(log) = &rpc_log {
                             let mut f = log.lock().unwrap();
-                            let _ = writeln!(f, "=== unparsed ({} bytes): {}", line.len(), &line[..line.len().min(200)]);
+                            let _ = writeln!(
+                                f,
+                                "=== unparsed ({} bytes): {}",
+                                line.len(),
+                                &line[..line.len().min(200)]
+                            );
                         }
                     }
                 }
@@ -216,11 +247,42 @@ pub fn spawn(cwd: &Path, extra_args: &[&str]) -> Result<(PiSession, UnboundedRec
         })
         .expect("spawn pi rpc reader thread");
 
+    // 进程句柄挂到共享锁后：exit-waiter 跨线程 reap 退出码（std 无法在
+    // 别的线程 wait()），Drop 时 take() 接管击杀——waiter 见 None 即退出，
+    // 主动关闭不发死亡事件
+    let child_shared: Arc<Mutex<Option<Child>>> = Arc::new(Mutex::new(Some(child)));
+    let waiter_child = child_shared.clone();
+    thread::Builder::new()
+        .name("pi-rpc-exit-waiter".into())
+        .spawn(move || {
+            loop {
+                thread::sleep(Duration::from_millis(300));
+                let status = {
+                    let mut guard = waiter_child.lock().unwrap();
+                    match guard.as_mut() {
+                        Some(child) => child.try_wait().ok().flatten(),
+                        None => break, // Drop 已接管（主动关闭）：不发死亡事件
+                    }
+                };
+                if let Some(status) = status {
+                    // 合成事件：进程死亡不再只是 stdout 静默关闭。发完后本线程
+                    // 掉落 sender——通道在 reader 也收尾后才关闭，app 侧 pump
+                    // 尾部先拿到退出码再走轮终收尾。
+                    let _ = waiter_tx.unbounded_send(Event::ProcessExited {
+                        code: status.code().map(i64::from),
+                    });
+                    break;
+                }
+            }
+        })
+        .expect("spawn pi rpc exit waiter");
+
     Ok((
         PiSession {
-            child,
+            child: child_shared,
             cmd_tx,
             seq: AtomicU64::new(0),
+            stderr_tail,
         },
         event_rx,
     ))
@@ -237,15 +299,25 @@ impl PiSession {
         Ok(id)
     }
 
-    pub fn id(&self) -> u32 {
-        self.child.id()
+    pub fn id(&self) -> Option<u32> {
+        self.child.lock().unwrap().as_ref().map(Child::id)
+    }
+
+    /// stderr 尾部（崩溃原因：node OOM / unhandled rejection / 扩展 fatal
+    /// 只出现在这里）。进程死亡轮终时由 app 侧留痕。
+    pub fn stderr_tail(&self) -> String {
+        let buf = self.stderr_tail.lock().unwrap();
+        String::from_utf8_lossy(&buf).into_owned()
     }
 }
 
 impl Drop for PiSession {
     fn drop(&mut self) {
+        // take() 先把 child 从 waiter 手里拿走（它见 None 即退出）；然后
         // closing stdin requests orderly shutdown; kill is the hard fallback
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        if let Some(mut child) = self.child.lock().unwrap().take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
     }
 }

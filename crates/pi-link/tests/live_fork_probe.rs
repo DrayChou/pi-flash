@@ -30,7 +30,11 @@ fn drain(
         match ev {
             Some(e) => {
                 if let pi_link::protocol::Event::Response {
-                    command, data, success, error, ..
+                    command,
+                    data,
+                    success,
+                    error,
+                    ..
                 } = &e
                 {
                     let head = data
@@ -71,9 +75,11 @@ fn probe_fork() {
     let path = std::env::var("PROBE_SESSION").expect("PROBE_SESSION=<session.jsonl>");
     let cwd = std::env::current_dir().unwrap();
     // 探测复现应用默认路径：主会话带扩展（v70.3 起；全局开关已删）
-    let (session, mut rx) =
-        pi_link::client::spawn(&cwd, &["--session", &path]).expect("spawn pi");
-    eprintln!("spawned pi pid={} session={path}", session.id());
+    let (session, mut rx) = pi_link::client::spawn(&cwd, &["--session", &path]).expect("spawn pi");
+    eprintln!(
+        "spawned pi pid={} session={path}",
+        session.id().unwrap_or(0)
+    );
 
     session.send(&pi_link::protocol::Command::GetState).unwrap();
     let st = drain(&mut rx, "get_state", 30).expect("no get_state");
@@ -114,7 +120,10 @@ fn probe_fork() {
     session.send(&pi_link::protocol::Command::GetTree).unwrap();
     match drain(&mut rx, "get_tree", 30) {
         Some(pi_link::protocol::Event::Response { data, .. }) => {
-            eprintln!("GET_TREE payload_bytes={}", data.map(|d| d.to_string().len()).unwrap_or(0));
+            eprintln!(
+                "GET_TREE payload_bytes={}",
+                data.map(|d| d.to_string().len()).unwrap_or(0)
+            );
         }
         _ => eprintln!("GET_TREE: no response at all"),
     }
@@ -178,10 +187,11 @@ fn probe_fork() {
         _ => eprintln!("SET_SESSION_NAME: no response at all"),
     }
     session.send(&pi_link::protocol::Command::GetState).unwrap();
-    if let Some(pi_link::protocol::Event::Response { data, .. }) =
-        drain(&mut rx, "get_state", 30)
-    {
-        eprintln!("AFTER RENAME sessionName={:?}", data.as_ref().map(|d| d["sessionName"].clone()));
+    if let Some(pi_link::protocol::Event::Response { data, .. }) = drain(&mut rx, "get_state", 30) {
+        eprintln!(
+            "AFTER RENAME sessionName={:?}",
+            data.as_ref().map(|d| d["sessionName"].clone())
+        );
         if let Some(f) = data.as_ref().and_then(|d| d["sessionFile"].as_str()) {
             let txt = std::fs::read_to_string(f).unwrap_or_default();
             for line in txt.lines().rev().take(40) {
@@ -193,7 +203,9 @@ fn probe_fork() {
         }
     }
 
-    session.send(&pi_link::protocol::Command::GetMessages).unwrap();
+    session
+        .send(&pi_link::protocol::Command::GetMessages)
+        .unwrap();
     if let Some(pi_link::protocol::Event::Response { data, .. }) =
         drain(&mut rx, "get_messages", 30)
     {

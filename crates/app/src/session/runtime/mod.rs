@@ -13,14 +13,10 @@
 
 use std::path::PathBuf;
 
-
 use futures::StreamExt;
 use futures::channel::mpsc::UnboundedReceiver;
 use gpui::{Context, Entity, EventEmitter, Render, prelude::*};
-use pi_link::protocol::{
-    Command, Event, SessionState, SessionStats, SlashCommand,
-    TreeNode,
-};
+use pi_link::protocol::{Command, Event, SessionState, SessionStats, SlashCommand, TreeNode};
 
 use crate::agent_session::AgentSession;
 use crate::session::chat_list::ChatList;
@@ -142,6 +138,11 @@ pub(crate) struct SessionRuntime {
     /// 本轮结局（黄档）：最后一条 assistant 消息 stopReason = length/aborted
     /// （输出上限截断 / 中止——非外部错误也非正常完成）
     pub turn_interrupted: bool,
+    /// pi 侧车退出码（合成 ProcessExited 事件携带；进程死亡轮终时进状态行）
+    exit_code: Option<i64>,
+    /// wire 上无法识别的事件类型（按 type 去重留痕：新 pi 版本加事件的哨兵，
+    /// 不再完全静默）
+    unparsed_types: std::collections::HashSet<String>,
     pub status: String,
     /// 「其他」页提示音开关的运行时副本（app_settings.json `sound` 是真值
     /// 来源）：轮末提示音是 runtime 的职责——只有它知道自己这一轮何时结
@@ -263,6 +264,8 @@ impl SessionRuntime {
             agent_running: false,
             turn_error: false,
             turn_interrupted: false,
+            exit_code: None,
+            unparsed_types: std::collections::HashSet::new(),
             status: String::new(),
             sound_on: crate::services::workspace::load_sound_pref(),
             state: None,
@@ -482,21 +485,53 @@ async fn consume_runtime_events(
     }
     let _ = this.update(cx, |rt, cx| {
         if rt.agent.epoch == epoch {
-            rt.status = "pi exited".into();
+            // 轮中死亡 = 外部错误：补全轮终语义。此前只有一条静默的
+            // "pi exited" 状态行——标签栏三色点只认 TurnSettled，永不亮；
+            // 半截工具卡永转；无提示音（用户实测：跑着跑着就没了，标签
+            // 栏毫无动静）。
+            let code = rt.exit_code.take();
+            let was_running = rt.agent_running || rt.stream_started.is_some();
+            if was_running {
+                rt.turn_error = true;
+                rt.fail_dangling_tool_calls();
+            }
+            rt.status = match code {
+                Some(c) => crate::i18n::tf("status.pi_exited_code", &[("code", c.to_string())]),
+                None => tr("status.pi_exited").to_string(),
+            };
             rt.compacting = false;
             // 进程没了就不存在「在跑」：不就地复位，agent_running 与快照
             // is_streaming 会永久卡在 true——psp 状态槽的旋转圈永不灭
             //（用户实测：旧版还在跑的会话被掐掉后一直转）
             rt.agent_running = false;
             rt.phase_waiting = false;
-            rt.stream_started = None;
+            rt.streaming_content = false;
+            // stream_started 闩交给 settle_turn 消费（有音开关才响；用户
+            // 已 abort 则闩已清，静音）
+            rt.settle_turn();
             if let Some(s) = rt.state.as_mut() {
                 s.is_streaming = false;
+            }
+            // 死因留痕：stderr 尾部（node OOM / unhandled rejection /
+            // 扩展 fatal 只出现在这里）
+            let stderr = rt
+                .agent
+                .session
+                .as_ref()
+                .map(|s| s.stderr_tail())
+                .unwrap_or_default();
+            if !stderr.trim().is_empty() {
+                eprintln!("pi stderr tail:\n{stderr}");
             }
             // 进程死了：文件落过盘就补绑定（真标签接管；重启后可重开），
             // 没落盘（boot 即死 / 全程无消息）撤伪标签
             if !rt.try_bind_reported_file(cx) {
                 cx.emit(SessionEvent::PendingTab(None));
+            }
+            // 轮中死亡按轮终冒泡：订阅方给不在场的会话点红点（turn_error
+            // 已置）。空闲死亡（闲置进程被系统清掉）不值得打扰，不冒泡。
+            if was_running {
+                cx.emit(SessionEvent::TurnSettled);
             }
             cx.emit(SessionEvent::Changed);
             cx.notify();
@@ -512,9 +547,6 @@ mod events;
 mod ingest;
 mod nav;
 mod send;
-
-
-
 
 #[cfg(test)]
 mod turn_outcome_tests {
@@ -579,7 +611,11 @@ mod turn_outcome_tests {
         let rt = runtime(cx);
         feed(&rt, cx, ev_start("user", false));
         feed(&rt, cx, ev_start("assistant", false));
-        feed(&rt, cx, ev_end("assistant", "error", Some("Connection error.")));
+        feed(
+            &rt,
+            cx,
+            ev_end("assistant", "error", Some("Connection error.")),
+        );
         assert!(rt.read_with(cx, |r, _| r.turn_error), "error 消息当即置红");
         feed(&rt, cx, Event::AgentEnd { will_retry: true });
         assert!(
@@ -596,7 +632,11 @@ mod turn_outcome_tests {
         let rt = runtime(cx);
         feed(&rt, cx, ev_start("user", false));
         feed(&rt, cx, ev_start("assistant", false));
-        feed(&rt, cx, ev_end("assistant", "error", Some("Connection error.")));
+        feed(
+            &rt,
+            cx,
+            ev_end("assistant", "error", Some("Connection error.")),
+        );
         // 重试：pi 会再发一次 agent_start + 一条成功的 assistant 消息
         feed(&rt, cx, Event::AgentStart);
         feed(&rt, cx, ev_start("assistant", false));
@@ -616,18 +656,26 @@ mod turn_outcome_tests {
         let rt = runtime(cx);
         feed(&rt, cx, Event::AgentStart);
         feed(&rt, cx, ev_start("assistant", false));
-        feed(&rt, cx, ev_end("assistant", "error", Some("429: too many requests")));
+        feed(
+            &rt,
+            cx,
+            ev_end("assistant", "error", Some("429: too many requests")),
+        );
         feed(&rt, cx, Event::AgentEnd { will_retry: true });
         assert!(
             rt.read_with(cx, |r, _| r.agent_running),
             "退避窗口必须保持运行态，否则停止按钮翻回发送"
         );
-        feed(&rt, cx, Event::AutoRetryStart {
-            attempt: 1,
-            max_attempts: 3,
-            delay_ms: 2000,
-            error_message: Some("429".into()),
-        });
+        feed(
+            &rt,
+            cx,
+            Event::AutoRetryStart {
+                attempt: 1,
+                max_attempts: 3,
+                delay_ms: 2000,
+                error_message: Some("429".into()),
+            },
+        );
         assert!(rt.read_with(cx, |r, _| r.agent_running));
         assert!(
             rt.read_with(cx, |r, _| r.status.contains("2s")),
@@ -638,7 +686,15 @@ mod turn_outcome_tests {
         feed(&rt, cx, Event::AgentStart);
         feed(&rt, cx, ev_start("assistant", false));
         feed(&rt, cx, ev_end("assistant", "stop", None));
-        feed(&rt, cx, Event::AutoRetryEnd { success: true, attempt: 1, final_error: None });
+        feed(
+            &rt,
+            cx,
+            Event::AutoRetryEnd {
+                success: true,
+                attempt: 1,
+                final_error: None,
+            },
+        );
         feed(&rt, cx, Event::AgentEnd { will_retry: false });
         feed(&rt, cx, Event::AgentSettled);
         assert!(!rt.read_with(cx, |r, _| r.agent_running), "真轮末回落 idle");
@@ -683,6 +739,98 @@ mod turn_outcome_tests {
         assert!(!rt.read_with(cx, |r, _| r.turn_error));
         assert!(!rt.read_with(cx, |r, _| r.turn_interrupted));
     }
+
+    /// 进程死亡收尾（pi-flash-7r0）：半截工具卡就地落错误态
+    /// （红框 + 中断文案），已回结果的卡不动。
+    #[gpui::test]
+    fn process_death_closes_dangling_tool_calls(cx: &mut TestAppContext) {
+        use pi_link::protocol::{AssistantEvent, Block};
+        let rt = runtime(cx);
+        feed(&rt, cx, ev_start("assistant", false));
+        feed(
+            &rt,
+            cx,
+            Event::MessageUpdate(AssistantEvent::ToolCallStart {
+                content_index: 0,
+                id: "a".into(),
+                tool_name: "bash".into(),
+            }),
+        );
+        feed(
+            &rt,
+            cx,
+            Event::MessageUpdate(AssistantEvent::ToolCallStart {
+                content_index: 1,
+                id: "b".into(),
+                tool_name: "read".into(),
+            }),
+        );
+        // 卡 B 先回了结果：进程死时不得被改写
+        rt.update(cx, |r, _| {
+            if let Block::ToolCall {
+                result,
+                result_arrived,
+                ..
+            } = &mut r.messages[0].blocks[1]
+            {
+                *result = "ok".into();
+                *result_arrived = true;
+            }
+        });
+        rt.update(cx, |r, _| r.fail_dangling_tool_calls());
+        rt.read_with(cx, |r, _| {
+            let blocks = &r.messages[0].blocks;
+            let Block::ToolCall {
+                result: ra,
+                is_error: ea,
+                args_partial: pa,
+                result_arrived: va,
+                ..
+            } = &blocks[0]
+            else {
+                panic!("block 0 not toolcall")
+            };
+            assert!(*va && *ea && !*pa, "半截卡落错误态");
+            assert!(!ra.is_empty(), "中断文案已填");
+            let Block::ToolCall {
+                result: rb,
+                is_error: eb,
+                result_arrived: vb,
+                ..
+            } = &blocks[1]
+            else {
+                panic!("block 1 not toolcall")
+            };
+            assert_eq!(rb, "ok", "已回结果的卡不动");
+            assert!(*vb && !*eb);
+        });
+    }
+
+    /// ProcessExited 存退出码；Unparsed 按 type 去重留痕。
+    #[gpui::test]
+    fn exit_code_and_unparsed_dedup(cx: &mut TestAppContext) {
+        let rt = runtime(cx);
+        feed(&rt, cx, Event::ProcessExited { code: Some(1) });
+        feed(
+            &rt,
+            cx,
+            Event::Unparsed(serde_json::json!({"type":"mystery"})),
+        );
+        feed(
+            &rt,
+            cx,
+            Event::Unparsed(serde_json::json!({"type":"mystery"})),
+        );
+        feed(
+            &rt,
+            cx,
+            Event::Unparsed(serde_json::json!({"type":"other"})),
+        );
+        rt.read_with(cx, |r, _| {
+            assert_eq!(r.exit_code, Some(1));
+            assert_eq!(r.unparsed_types.len(), 2, "同 type 只记一次");
+        });
+    }
 }
 
 #[cfg(test)]
@@ -715,7 +863,11 @@ mod binding_guard_tests {
         std::fs::write(&real, "{}\n").unwrap();
         rt.update(cx, |r, cx| {
             r.follow_session_file(real.clone(), cx);
-            assert_eq!(r.file.as_deref(), Some(real.as_path()), "已落盘文件正常绑定");
+            assert_eq!(
+                r.file.as_deref(),
+                Some(real.as_path()),
+                "已落盘文件正常绑定"
+            );
         });
         let _ = std::fs::remove_file(&real);
     }
@@ -726,7 +878,10 @@ mod binding_guard_tests {
     fn try_bind_reported_file_states(cx: &mut TestAppContext) {
         let rt = runtime(cx);
         rt.update(cx, |r, cx| {
-            assert!(r.try_bind_reported_file(cx), "state 空 = 绑定在途，伪标签先留着");
+            assert!(
+                r.try_bind_reported_file(cx),
+                "state 空 = 绑定在途，伪标签先留着"
+            );
             assert!(r.file.is_none());
         });
         rt.update(cx, |r, cx| {
@@ -734,11 +889,13 @@ mod binding_guard_tests {
                 session_file: Some("Z:/pf-not-landed/x.jsonl".into()),
                 ..Default::default()
             });
-            assert!(!r.try_bind_reported_file(cx), "未落盘的报备文件不得视为已绑定");
+            assert!(
+                !r.try_bind_reported_file(cx),
+                "未落盘的报备文件不得视为已绑定"
+            );
             assert!(r.file.is_none());
         });
-        let real =
-            std::env::temp_dir().join(format!("pf-guard-bind-{}.jsonl", std::process::id()));
+        let real = std::env::temp_dir().join(format!("pf-guard-bind-{}.jsonl", std::process::id()));
         std::fs::write(&real, "{}\n").unwrap();
         rt.update(cx, |r, cx| {
             r.state = Some(SessionState {
