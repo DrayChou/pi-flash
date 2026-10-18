@@ -31,14 +31,19 @@ pub(crate) struct TabDrag {
     pub(crate) ix: usize,
     pub(crate) key: TabKey,
     pub(crate) label: SharedString,
+    /// 终端/更新日志 tab 的命名图标（`ui::icon` 口径）
     pub(crate) icon: Option<&'static str>,
+    /// 文件 tab 的路径：幽灵按**文件类型图标主题**取图（同 `TreeDragGhost`
+    /// 的 dir/file 两态口径），tab 本体则按 023 不画 icon
+    pub(crate) path: Option<PathBuf>,
     pub(crate) active: bool,
     pub(crate) strike: bool,
 }
 
 /// tab 拖拽幽灵：zed `DraggedTab::render` 同款——把被拖的 tab 本体
 /// （`Tab::new("").toggle_state(is_active).children(icon).child(label)`）
-/// 原样画在光标处，不另造小签。
+/// 原样画在光标处，不另造小签。 icon 取值同文件树拖拽幽灵（`TreeDragGhost`）：
+/// 文件 = `file_icons` 类型图标，终端/更新日志 = tab 自身的命名图标。
 pub(crate) struct TabDragGhost {
     pub(crate) drag: TabDrag,
 }
@@ -52,7 +57,7 @@ impl gpui::Render for TabDragGhost {
         let t = T();
         let active = self.drag.active;
         tab_body(
-            self.drag.icon,
+            drag_icon(&self.drag, 15., t.text_muted),
             self.drag.label.clone(),
             active,
             0.,
@@ -66,6 +71,23 @@ impl gpui::Render for TabDragGhost {
         .when(!active, |d| d.bg(rgb(t.chrome)))
         .shadow_md()
     }
+}
+
+/// 拖拽幽灵的图标元素：文件 tab → 文件类型图标（`ui::icon_path` 口径）；
+/// 终端/更新日志 → tab 自身的命名图标（`ui::icon`）。
+fn drag_icon(
+    drag: &TabDrag,
+    size: f32,
+    color: u32,
+) -> Option<gpui::AnyElement> {
+    if let Some(path) = drag.path.as_deref() {
+        return Some(crate::ui::icon_path(
+            crate::services::file_icons::get_icon(path),
+            size,
+            color,
+        ));
+    }
+    drag.icon.map(|n| crate::ui::icon(n, size, color).into_any_element())
 }
 
 /// topbar 高（两段同高；窗口控制钮高度跟随；2026-10-10 定夺 36→38，
@@ -370,7 +392,7 @@ fn session_tab(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyElemen
     });
     tab_shell(
         "ctab-session".into(),
-        Some("bot-message-square"),
+        Some(crate::ui::icon("bot-message-square", 15., t.text_muted).into_any_element()),
         title,
         active,
         0.,
@@ -457,16 +479,21 @@ fn content_tab(
     // 中列表漂移）。会话 tab 不接线（固定段禁拖）。
     let drag = TabDrag {
         ix,
-        key: drag_key,
+        key: drag_key.clone(),
         label: label.clone(),
         icon: tab_icon,
+        // 文件 tab 的幽灵图标走文件类型图标主题（同 TreeDragGhost 两态口径）
+        path: match &drag_key {
+            TabKey::File(p) => Some(p.clone()),
+            _ => None,
+        },
         active,
         strike,
     };
     let ghost = drag.clone();
     tab_shell(
         tab_id,
-        tab_icon,
+        tab_icon.map(|n| crate::ui::icon(n, 15., t.text_muted).into_any_element()),
         label,
         active,
         ml,
@@ -503,9 +530,8 @@ fn content_tab(
 /// tab 外观本体（zed `Tab` 的 render）：前置 icon + 标题 + 行尾标记/钮。
 /// 交互（激活/拖拽/右键）由调用点挂：真实 tab 走 `tab_shell`，拖拽幽灵
 /// 复用同一份外观（zed `DraggedTab::render` 就是重渲染那个 Tab）。
-#[allow(clippy::too_many_arguments)]
 fn tab_body(
-    icon_name: Option<&'static str>,
+    icon: Option<gpui::AnyElement>,
     label: SharedString,
     active: bool,
     ml: f32,
@@ -552,14 +578,11 @@ fn tab_body(
                 .hover(|s| s.text_color(rgb(t.text)))
         });
     tab = tab
-        // 前置 icon（会话 tab = bot-message-square；终端 tab = terminal；
-        // 文件 tab 无）。flex_shrink_0 必须显式：非激活 tab 限宽 100px 溢出
-        // 时默认 shrink 会把 svg 连带宽一起压扁（icon 缩成团的 bug）
-        .children(icon_name.map(|n| {
-            div()
-                .flex_shrink_0()
-                .child(crate::ui::icon(n, 15., t.text_muted))
-        }))
+        // 前置 icon（会话 tab = bot-message-square；终端/更新日志 tab = 自身
+        // 图标；文件 tab 按 023 不画）。flex_shrink_0 必须显式：非激活 tab
+        // 限宽 100px 溢出时默认 shrink 会把 svg 连带宽一起压扁（icon 缩成
+        // 团的 bug）
+        .children(icon.map(|n| div().flex_shrink_0().child(n)))
         .child(
             div()
                 .min_w_0()
@@ -582,7 +605,7 @@ fn tab_body(
 #[allow(clippy::too_many_arguments)]
 fn tab_shell(
     id: gpui::ElementId,
-    icon_name: Option<&'static str>,
+    icon: Option<gpui::AnyElement>,
     label: SharedString,
     active: bool,
     ml: f32,
@@ -592,7 +615,7 @@ fn tab_shell(
     badge: Option<gpui::AnyElement>,
     strike: bool,
 ) -> gpui::Stateful<gpui::Div> {
-    tab_body(icon_name, label, active, ml, t, trailing, badge, strike)
+    tab_body(icon, label, active, ml, t, trailing, badge, strike)
         .id(id)
         .on_click(switch)
 }

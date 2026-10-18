@@ -39,7 +39,10 @@ terminal打开也在这里
     的都是**最后一个** tab 的载荷——幽灵黏住最后一个 tab（黏连 bug 根因，
     2026-10-18）。
   - on_drag 发起：幽灵 = 被拖 tab 本体（`DraggedTab::render` 同款，复用
-    tab_body 外观：icon + 标题 + 激活态配色 + shadow），不另造小签。
+    tab_body 外观：icon + 标题 + 激活态配色 + shadow），不另造小签。幽灵
+    icon 取值同文件树拖拽幽灵（`TreeDragGhost` 的两态口径）：文件 tab →
+    `file_icons::get_icon`（`ui::icon_path`）+ 文件类型，终端/更新日志 →
+    tab 自身的命名图标；**tab 本体仍按 023 不画 icon**（只有幽灵带）。
   - drag_over 逐字：`bg(drop_target_background).border_0()` + 源在目标左
     → 目标左缘 2px、源在目标右 → 右缘 2px（原地只留底不画边；高亮色走
     `t.bg_hover` / `t.accent`，PF 无色板 token）。**方向与直觉相反**：目标
