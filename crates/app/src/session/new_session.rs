@@ -22,9 +22,9 @@
 use gpui::{AnyElement, MouseButton, SharedString, div, prelude::*, px, relative, rgb};
 
 use crate::Chat;
+use crate::appearance::theme::theme as T;
 use crate::i18n::tr;
 use crate::session::input;
-use crate::appearance::theme::theme as T;
 use crate::ui::{icon, icon_alpha};
 
 /// 背景 logo「墨迹」高 = 32% 视口高（LOGO_SCREEN×INK_RATIO，INK_RATIO 在
@@ -114,7 +114,9 @@ pub(crate) fn page(
                             true,
                             cx,
                         ))
-                        .child(action_bar(chat, weak, t)),
+                        .child(action_bar(chat, weak, t))
+                        // 082：Pi 扩展更新通知（选择项目栏下方；无可更新不渲染）
+                        .children(plugin_update_notice(chat, weak, t)),
                 ),
         )
         .into_any_element()
@@ -261,7 +263,11 @@ fn action_bar(
                     .gap(px(3.))
                     .cursor_pointer()
                     .child(SharedString::from(format!("v{ver}")))
-                    .child(crate::ui::icon("arrow-up", 11., crate::appearance::theme::NOTICE))
+                    .child(crate::ui::icon(
+                        "arrow-up",
+                        11.,
+                        crate::appearance::theme::NOTICE,
+                    ))
                     .hover(|s| s.text_color(rgb(t.text)))
                     .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                         cx.stop_propagation();
@@ -287,7 +293,9 @@ fn action_bar(
         let version_color = match &chat.aux.update {
             // 下载中保持淡色（设计文档：下载信息仍为 faint 字体颜色）；
             // 就绪/有新版 = 青蓝（NOTICE，通知点三色之「完成通知」）
-            UpdateState::Ready { .. } | UpdateState::Available { .. } => crate::appearance::theme::NOTICE,
+            UpdateState::Ready { .. } | UpdateState::Available { .. } => {
+                crate::appearance::theme::NOTICE
+            }
             _ => t.text_faint,
         };
         bar = bar.child(
@@ -302,4 +310,107 @@ fn action_bar(
         );
     }
     bar.into_any_element()
+}
+
+/// 082 Pi 扩展更新通知：选择项目栏下方——分隔线 + 可更新列表（名字 + ↑）
+/// + 标题行右侧【更新全部(n)】。安静原则：检查中不显示、n=0 不渲染；
+/// 点击列表行暂无动作（v1 仅展示，入口在设置·扩展页详情）。
+fn plugin_update_notice(
+    chat: &Chat,
+    weak: &gpui::WeakEntity<Chat>,
+    t: &'static crate::appearance::theme::Theme,
+) -> Option<AnyElement> {
+    let n = chat.aux.plugin_updates.available();
+    if n == 0 {
+        return None;
+    }
+    let updating_all = matches!(
+        chat.cfg.pkg_op.as_ref(),
+        Some(crate::settings::plugins::PkgOp::Update(None))
+    );
+    let busy = chat.cfg.pkg_op.is_some();
+    let rows: Vec<&crate::services::plugin_updates::PkgUpdateResult> = chat
+        .aux
+        .plugin_updates
+        .results
+        .iter()
+        .filter(|r| r.state == crate::services::plugin_updates::PkgUpdateState::UpdateAvailable)
+        .collect();
+    let w_upd = weak.clone();
+    let label = SharedString::from(format!("{}({n})", tr("extensions.update_all")));
+    let mut btn = div()
+        .id("ns-pkg-update-all")
+        .h(px(24.))
+        .px(px(9.))
+        .flex()
+        .items_center()
+        .gap(px(5.))
+        .rounded(px(5.))
+        .text_size(crate::appearance::ui_size(11.));
+    if updating_all {
+        btn = btn
+            .text_color(rgb(t.text_dim))
+            .child(crate::ui::spinner(11., t.text_dim))
+            .child(tr("extensions.updating_all"));
+    } else if busy {
+        btn = btn.opacity(0.5).text_color(rgb(t.text_dim)).child(label);
+    } else {
+        btn = btn
+            .cursor_pointer()
+            .border_1()
+            .border_color(rgb(t.border))
+            .text_color(rgb(t.text_muted))
+            .hover(|h| h.text_color(rgb(t.accent)).border_color(rgb(t.accent)))
+            .child(label)
+            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                cx.stop_propagation();
+                let _ = w_upd.update(cx, |c, cx| c.mc_update_all_packages(cx));
+            });
+    }
+    let mut notice = div()
+        .w_full()
+        .mt(px(2.))
+        .pt(px(10.))
+        .border_t_1()
+        .border_color(rgb(t.border))
+        .flex()
+        .flex_col()
+        .gap(px(2.))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(6.))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .text_size(crate::appearance::ui_size(11.))
+                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                        .text_color(rgb(t.text_dim))
+                        .child(tr("new_session.plugin_updates")),
+                )
+                .child(btn),
+        );
+    for r in rows {
+        notice = notice.child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(6.))
+                .text_size(crate::appearance::ui_size(11.))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_ellipsis()
+                        .text_color(rgb(t.text_muted))
+                        .child(SharedString::from(r.display_name.clone())),
+                )
+                .child(crate::ui::icon("arrow-up", 10., t.accent)),
+        );
+    }
+    Some(notice.into_any_element())
 }

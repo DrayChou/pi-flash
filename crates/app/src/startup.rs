@@ -722,6 +722,9 @@ fn spawn_splash_gate(cx: &mut gpui::Context<Chat>) {
             // 081 延迟加载：新版本首启开「更新日志」tab + 后台检查更新
             // （timeout 30s、失败重试 2 次间隔 10min，全程后台线程不阻塞）
             c.spawn_startup_update_hooks(cx);
+            // 082 延迟加载：Pi 扩展更新检测（只读 + 网络，零写入；结果进
+            // aux.plugin_updates，新会话页通知与设置·扩展页消费）
+            c.spawn_plugin_updates_check(cx);
             if crate::PERF.load(std::sync::atomic::Ordering::Relaxed) {
                 eprintln!("[perf] splash reveal: {:?}", t0.elapsed());
             }

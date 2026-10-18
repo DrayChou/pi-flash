@@ -48,6 +48,8 @@ pub(crate) struct AuxUi {
     pub(crate) changelog: Option<services::updater::ChangelogPage>,
     /// 更新日志页滚动句柄
     pub(crate) changelog_scroll: gpui::ScrollHandle,
+    /// 082 Pi 扩展更新检测状态（新会话页通知 + 设置·扩展页箭头/按钮消费）
+    pub(crate) plugin_updates: services::plugin_updates::UpdatesState,
     /// 微信远程控制桥（060）：transport + 待答 ExtUi 请求
     pub(crate) remote: remote_control::RemoteControl,
     /// 工具定义弹窗左列表选中的工具名（pi-web ToolDefinitionsPanel 的
@@ -676,6 +678,7 @@ impl Chat {
                 update: services::updater::initial_state(),
                 changelog: None,
                 changelog_scroll: gpui::ScrollHandle::new(),
+                plugin_updates: services::plugin_updates::UpdatesState::default(),
                 remote: remote_control::RemoteControl::new(),
                 tool_sel: None,
                 sysprompt_scroll: gpui::ScrollHandle::new(),
@@ -723,6 +726,9 @@ impl Chat {
                         // 旧列表（040：安装后列表不刷新的根因）
                         chat.pool.globals = startup::load_globals();
                         chat.reload_settings_panel();
+                        // 082：CLI op（装/卸/更）动了包 → 重跑扩展更新检测，
+                        // 刷新新会话页通知与扩展页箭头
+                        chat.spawn_plugin_updates_check(cx);
                         cx.notify();
                     })
                     .is_err()

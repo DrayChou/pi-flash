@@ -16,7 +16,8 @@ impl Chat {
         };
         let source = pi_link::skills::entry_source(entry);
         let next: Vec<serde_json::Value> = self
-            .cfg.mc_pkgs_global
+            .cfg
+            .mc_pkgs_global
             .iter()
             .enumerate()
             .map(|(i, e)| {
@@ -49,7 +50,8 @@ impl Chat {
         self.mc_clear_error(cx);
         let mut changed = 0usize;
         let next: Vec<serde_json::Value> = self
-            .cfg.mc_pkgs_global
+            .cfg
+            .mc_pkgs_global
             .iter()
             .map(|e| {
                 if pi_link::skills::entry_disabled(e) == !enable {
@@ -69,7 +71,8 @@ impl Chat {
         if changed == 0 {
             return;
         }
-        if let Err(e) = pi_link::config::write_packages(&pi_link::config::settings_path(), next.clone())
+        if let Err(e) =
+            pi_link::config::write_packages(&pi_link::config::settings_path(), next.clone())
         {
             self.mc_set_error(&crate::i18n::tf("settings.write_failed", &[("e", e)]), cx);
             return;
@@ -157,7 +160,10 @@ pub(crate) fn mc_plugins_view(
             weak,
             install_input,
             error,
-            matches!(chat.cfg.pkg_op, Some(crate::settings::plugins::PkgOp::Install)),
+            matches!(
+                chat.cfg.pkg_op,
+                Some(crate::settings::plugins::PkgOp::Install)
+            ),
             t,
         ))
         .child(two_pane(
@@ -203,7 +209,12 @@ fn pl_install_bar(
                 .flex()
                 .items_center()
                 .gap(px(8.))
-                .child(div().w(px(400.)).flex_shrink_0().child(install_input.clone()))
+                .child(
+                    div()
+                        .w(px(400.))
+                        .flex_shrink_0()
+                        .child(install_input.clone()),
+                )
                 .child(if busy {
                     div()
                         .id("pkg-install-go")
@@ -230,7 +241,8 @@ fn pl_install_bar(
                         false,
                         |c, cx| {
                             let src = c
-                                .dlg.settings
+                                .dlg
+                                .settings
                                 .clone()
                                 .map(|st| st.read(cx).install_input.clone())
                                 .map(|input| input.read(cx).value().to_string())
@@ -273,7 +285,7 @@ fn pl_install_bar(
 /// npm:）+ 行内启停开关。列表内容左右各留 15px（list px7 + 行内 px8 等距，
 /// 与右侧详情 p15 一致），上方安装栏 pl15 与之对齐。
 fn pl_sidebar(
-    _chat: &Chat,
+    chat: &Chat,
     weak: &gpui::WeakEntity<Chat>,
     section: &str,
     entries: &[(usize, &serde_json::Value)],
@@ -302,6 +314,8 @@ fn pl_sidebar(
                     .text_color(rgb(t.text_dim))
                     .child(tr("extensions.global_defaults")),
             )
+            // 082：【更新全部(n)】——无可更新且非更新中不渲染（安静原则）
+            .children(pl_update_all_button(chat, weak, t))
             // 计数 + 总开关合成一个组头三态开关（与技能页同一画法）：
             // 部分启用时轨道减淡、knob 停在开位，不装成全关也不同于全选。
             .child(group_switch(
@@ -320,38 +334,48 @@ fn pl_sidebar(
         let active = src == section;
         let weak_item = weak.clone();
         let item_src = src.clone();
-        list = list.child(
-            widgets::sidebar_item(format!("pkg-{ix}-{}", src), active)
-                // 行背景压平（040：列表无底色，选中态只靠加粗+深字色，hover 保留）
-                .bg(rgb(t.bg))
-                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                    let _ = weak_item.update(cx, |c, cx| {
-                        if let Some(st) = c.dlg.settings.clone() {
-                            st.update(cx, |s, cx| {
-                                s.section = item_src.clone();
-                                s.error = None;
-                                cx.notify();
-                            });
-                        }
-                    });
-                })
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .overflow_hidden()
-                        .whitespace_nowrap()
-                        .text_ellipsis()
-                        .child(SharedString::from(pi_link::skills::display_source(&src).to_string())),
-                )
-                .child(config_switch(
-                    SharedString::from(format!("pkg-sw-{ix}")),
-                    weak,
-                    !disabled,
-                    false,
-                    move |c, cx| c.mc_toggle_package(ix, cx),
-                )),
-        );
+        let mut item = widgets::sidebar_item(format!("pkg-{ix}-{}", src), active)
+            // 行背景压平（040：列表无底色，选中态只靠加粗+深字色，hover 保留）
+            .bg(rgb(t.bg))
+            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                let _ = weak_item.update(cx, |c, cx| {
+                    if let Some(st) = c.dlg.settings.clone() {
+                        st.update(cx, |s, cx| {
+                            s.section = item_src.clone();
+                            s.error = None;
+                            cx.notify();
+                        });
+                    }
+                });
+            })
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .text_ellipsis()
+                    .child(SharedString::from(
+                        pi_link::skills::display_source(&src).to_string(),
+                    )),
+            );
+        // 082：有更新的包在标签右侧加 ↑
+        if chat.aux.plugin_updates.state_of(&src)
+            == Some(crate::services::plugin_updates::PkgUpdateState::UpdateAvailable)
+        {
+            item = item.child(
+                div()
+                    .px(px(2.))
+                    .child(crate::ui::icon("arrow-up", 11., t.accent)),
+            );
+        }
+        list = list.child(item.child(config_switch(
+            SharedString::from(format!("pkg-sw-{ix}")),
+            weak,
+            !disabled,
+            false,
+            move |c, cx| c.mc_toggle_package(ix, cx),
+        )));
     }
     sidebar_shell("mc-sidebar")
         .w(px(LIST_W))
@@ -387,6 +411,23 @@ fn pl_detail(
     };
     let src = pi_link::skills::entry_source(v);
     let disabled = pi_link::skills::entry_disabled(v);
+    // 082：检测失败原因（Error 态的 message，如 not installed / 网络错误）
+    let update_note = match chat.aux.plugin_updates.state_of(&src) {
+        Some(crate::services::plugin_updates::PkgUpdateState::Error) => chat
+            .aux
+            .plugin_updates
+            .results
+            .iter()
+            .find(|r| r.source == src)
+            .and_then(|r| r.message.clone())
+            .map(|m| {
+                div()
+                    .text_size(crate::appearance::ui_size(11.))
+                    .text_color(rgb(t.text_dim))
+                    .child(SharedString::from(m))
+            }),
+        _ => None,
+    };
     let description = pi_link::skills::package_description(&src);
     let weak_trash = weak.clone();
     let trash_src = src.clone();
@@ -409,7 +450,10 @@ fn pl_detail(
             0x0f,
         )));
     if removing_this {
-        trash = trash.child(crate::ui::spinner(12., crate::appearance::theme::theme().danger));
+        trash = trash.child(crate::ui::spinner(
+            12.,
+            crate::appearance::theme::theme().danger,
+        ));
     } else {
         trash = trash.child(crate::ui::icon(
             "icon-trash-solid",
@@ -422,11 +466,14 @@ fn pl_detail(
     } else {
         trash = trash
             .cursor_pointer()
-            .hover(|s| s.bg(gpui::rgba(crate::appearance::theme::danger_wash(crate::appearance::theme::theme()))))
+            .hover(|s| {
+                s.bg(gpui::rgba(crate::appearance::theme::danger_wash(
+                    crate::appearance::theme::theme(),
+                )))
+            })
             .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                let _ = weak_trash.update(cx, |c, cx| {
-                    c.mc_ask_remove_package(trash_src.clone(), cx)
-                });
+                let _ =
+                    weak_trash.update(cx, |c, cx| c.mc_ask_remove_package(trash_src.clone(), cx));
             });
     }
     // 本页详情内边距与列表 15px 统一（detail_shell 默认 p20）
@@ -445,54 +492,156 @@ fn pl_detail(
                         .text_size(crate::appearance::ui_size(12.))
                         .font_weight(gpui::FontWeight::SEMIBOLD)
                         .text_color(rgb(t.text))
-                        .child(SharedString::from(pi_link::skills::display_source(&src).to_string())),
+                        .child(SharedString::from(
+                            pi_link::skills::display_source(&src).to_string(),
+                        )),
                 )
                 .child(scope_tag(&tr("scope.global"), false))
                 .child(div().flex_1())
+                .children(pl_update_button(chat, weak, &src, t))
                 .child(trash),
         )
-    // 详情排版与技能页同款：field = 标签在上、内容在下（040 定稿）
-    .child(field(
-        &tr("about.description"),
-        div()
-            .text_size(crate::appearance::ui_size(12.))
-            .text_color(rgb(t.text_muted))
-            .child(SharedString::from(
-                description.unwrap_or_else(|| "—".to_string()),
-            )),
-    ))
-    .child(field(
-        &tr("plugins.state"),
-        div().child(if disabled {
-            SharedString::from(tr("status.disabled").to_string())
-        } else {
-            SharedString::from(tr("status.enabled").to_string())
-        }),
-    ))
-    .child(field(
-        &tr("tokens.prompt_size"),
-        // 尚未测得（延迟加载未跑完/未安装）显示「—」
-        mono_text(
-            match chat.pool.ext_tokens.get(&src) {
-                Some(e) => format!(
-                    "{} tokens",
-                    crate::services::format::fmt_thousand(e.ext.max(0) as u64)
-                ),
-                None => "—".to_string(),
-            },
-            true,
-        ),
-    ))
-    .child(field(&tr("extensions.source"), mono_text(src.clone(), false)))
-    .child(field(
-        &tr("extensions.path"),
-        div()
-            .font_family(crate::editor::markdown::MONO_FAMILY)
-            .text_size(crate::appearance::ui_size(11.))
-            .text_color(rgb(t.text_dim))
-            .child(SharedString::from(breakable_path(&pi_link::skills::package_install_dir(&src).to_string_lossy()))),
-    ))
+        // 详情排版与技能页同款：field = 标签在上、内容在下（040 定稿）
+        .child(field(
+            &tr("about.description"),
+            div()
+                .text_size(crate::appearance::ui_size(12.))
+                .text_color(rgb(t.text_muted))
+                .child(SharedString::from(
+                    description.unwrap_or_else(|| "—".to_string()),
+                )),
+        ))
+        .child(field(
+            &tr("plugins.state"),
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(2.))
+                .child(if disabled {
+                    SharedString::from(tr("status.disabled").to_string())
+                } else {
+                    SharedString::from(tr("status.enabled").to_string())
+                })
+                .children(update_note),
+        ))
+        .child(field(
+            &tr("tokens.prompt_size"),
+            // 尚未测得（延迟加载未跑完/未安装）显示「—」
+            mono_text(
+                match chat.pool.ext_tokens.get(&src) {
+                    Some(e) => format!(
+                        "{} tokens",
+                        crate::services::format::fmt_thousand(e.ext.max(0) as u64)
+                    ),
+                    None => "—".to_string(),
+                },
+                true,
+            ),
+        ))
+        .child(field(
+            &tr("extensions.source"),
+            mono_text(src.clone(), false),
+        ))
+        .child(field(
+            &tr("extensions.path"),
+            div()
+                .font_family(crate::editor::markdown::MONO_FAMILY)
+                .text_size(crate::appearance::ui_size(11.))
+                .text_color(rgb(t.text_dim))
+                .child(SharedString::from(breakable_path(
+                    &pi_link::skills::package_install_dir(&src).to_string_lossy(),
+                ))),
+        ))
         .into_any_element()
+}
+
+/// 082 列表 title 行的【更新全部(n)】：无可更新且非更新中不渲染（安静
+/// 原则）；更新全部转圈，其他 op 进行中禁用。
+fn pl_update_all_button(
+    chat: &Chat,
+    weak: &gpui::WeakEntity<Chat>,
+    t: &crate::appearance::theme::Theme,
+) -> Option<gpui::AnyElement> {
+    let updating_all = matches!(
+        chat.cfg.pkg_op.as_ref(),
+        Some(crate::settings::plugins::PkgOp::Update(None))
+    );
+    let updating_any = chat.cfg.pkg_op.is_some();
+    let n = chat.aux.plugin_updates.available();
+    if n == 0 && !updating_all {
+        return None;
+    }
+    let label = SharedString::from(format!("{}({n})", tr("extensions.update_all")));
+    let mut b = div()
+        .id("pkg-update-all")
+        .h(px(20.))
+        .px(px(6.))
+        .flex()
+        .items_center()
+        .gap(px(4.))
+        .rounded(px(4.))
+        .text_size(crate::appearance::ui_size(11.));
+    if updating_all {
+        b = b
+            .text_color(rgb(t.text_dim))
+            .child(crate::ui::spinner(10., t.text_dim))
+            .child(tr("extensions.updating_all"));
+    } else if updating_any {
+        // 装/卸等其他 op 进行中：禁用态
+        b = b.opacity(0.5).text_color(rgb(t.text_dim)).child(label);
+    } else {
+        let w = weak.clone();
+        b = b
+            .cursor_pointer()
+            .text_color(rgb(t.accent))
+            .hover(|h| h.bg(rgb(t.bg_hover)))
+            .child(label)
+            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                let _ = w.update(cx, |c, cx| c.mc_update_all_packages(cx));
+            });
+    }
+    Some(b.into_any_element())
+}
+
+/// 082 详情【更新】按钮（删除 icon 左侧，同 28px 方格）：更新本包转圈，
+/// 任一 op 进行中禁用。
+fn pl_update_button(
+    chat: &Chat,
+    weak: &gpui::WeakEntity<Chat>,
+    src: &str,
+    t: &crate::appearance::theme::Theme,
+) -> Option<gpui::AnyElement> {
+    let updating_this = matches!(
+        chat.cfg.pkg_op.as_ref(),
+        Some(crate::settings::plugins::PkgOp::Update(Some(s))) if *s == src
+    );
+    let mut b = div()
+        .id("pkg-update")
+        .size(px(28.))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px(5.))
+        .border_1()
+        .border_color(rgb(t.border));
+    if updating_this {
+        b = b.child(crate::ui::spinner(12., t.accent));
+    } else {
+        b = b.child(crate::ui::icon("arrow-up", 14., t.accent));
+    }
+    if chat.cfg.pkg_op.is_some() {
+        b = b.opacity(0.5);
+    } else {
+        let w = weak.clone();
+        let s = src.to_string();
+        b = b
+            .cursor_pointer()
+            .hover(|h| h.bg(rgb(t.bg_hover)))
+            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                let _ = w.update(cx, |c, cx| c.mc_update_package(s.clone(), cx));
+            });
+    }
+    Some(b.into_any_element())
 }
 
 /// 长路径折行（040）：分隔符后插零宽空格，让无空格的路径也能断行。
@@ -525,9 +674,13 @@ pub(crate) fn remove_confirm_overlay(
 }
 
 /// 扩展页后台 CLI op（040）：转圈落点不同——Install 在安装按钮，
-/// Remove 在对应包的垃圾桶上；op 泵收到完成消息即清零。
+/// Remove 在对应包的垃圾桶上；082 增 Update——Some(source) = 单包（转圈在
+/// 详情【更新】按钮），None = 全部（转圈在列表 title【更新全部】按钮）；
+/// op 泵收到完成消息即清零。
 #[derive(Debug, Clone)]
 pub(crate) enum PkgOp {
     Install,
     Remove(String),
+    /// 082 更新：Some(source) = 单包；None = 全部
+    Update(Option<String>),
 }

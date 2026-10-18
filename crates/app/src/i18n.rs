@@ -155,6 +155,13 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("extensions.installing", "安装中", "安裝中", "Installing…"),
     ("extensions.install_hint", "从 https://pi.dev/packages 复制安装命令，做全局安装", "從 https://pi.dev/packages 複製安裝命令，做全域安裝", "Copy an install command from https://pi.dev/packages and install globally"),
     ("extensions.global_defaults", "配置全局默认扩展", "配置全域預設擴展", "Global default extensions"),
+    // 082 扩展更新
+    ("extensions.update_all", "更新全部", "更新全部", "Update all"),
+    ("extensions.updating_all", "更新中…", "更新中…", "Updating…"),
+    ("extensions.update", "更新", "更新", "Update"),
+    ("extensions.updated_one", "扩展已更新，重启会话后生效", "擴展已更新，重啟會話後生效", "Extension updated. Restart the session to apply"),
+    ("extensions.updated_all", "全部扩展已更新，重启会话后生效", "全部擴展已更新，重啟會話後生效", "All extensions updated. Restart the session to apply"),
+    ("new_session.plugin_updates", "Pi 扩展更新", "Pi 擴展更新", "Pi extension updates"),
     ("about.description", "说明", "說明", "Description"),
     ("extensions.path", "路径", "路徑", "Path"),
     ("extensions.source", "来源", "來源", "Source"),

@@ -2,7 +2,7 @@
 //! 尺寸走 `crate::ui::tokens`（UI 组件规范）；颜色走主题语义色
 //! （danger 系见 theme.rs；靛蓝徽标 hsla）。
 
-use gpui::{AnyElement, SharedString, FontWeight, MouseButton, Window, div, px, rgb};
+use gpui::{AnyElement, FontWeight, MouseButton, SharedString, Window, div, px, rgb};
 
 use super::*;
 
@@ -234,7 +234,11 @@ pub(crate) fn scope_tag(label: &str, project: bool) -> AnyElement {
         .px(px(5.))
         .py(px(1.))
         .rounded(px(3.))
-        .bg(if project { indigo_bg() } else { gpui::hsla(0., 0., 0.5, 0.12) })
+        .bg(if project {
+            indigo_bg()
+        } else {
+            gpui::hsla(0., 0., 0.5, 0.12)
+        })
         .text_size(crate::appearance::ui_size(10.))
         .text_color(if project { indigo_fg() } else { dim })
         .child(SharedString::from(label.to_string()))
@@ -304,9 +308,10 @@ pub(crate) fn mono_text(text: String, dim: bool) -> AnyElement {
 // sidebar pieces
 // ---------------------------------------------------------------------------
 
-/// 设置页左列表列宽（Providers / 扩展 / MCP 清单 / 技能）：四页统一 350，
+/// 设置页左列表列宽（Providers / 扩展 / MCP 清单 / 技能）：四页统一 400
+/// （082：350→400，扩展页行内要容「↑ 可更新」箭头；四页同步加宽），
 /// 基准 = 扩展页（2026-10-09 用户定稿「全部和扩展的列表宽度对齐」）。
-pub(crate) const LIST_W: f32 = 350.;
+pub(crate) const LIST_W: f32 = 400.;
 
 /// ConfigSidebar 基座（240px 列，bg_panel + 右边框）。
 pub(crate) fn sidebar_shell(id: &'static str) -> gpui::Stateful<gpui::Div> {
@@ -336,10 +341,7 @@ pub(crate) fn sidebar_list() -> gpui::Stateful<gpui::Div> {
 
 /// ConfigSidebarItem：30px 行（激活 bg_selected + semibold）。返回基座，
 /// 调用方 `.child(...)` 拼内容并用 [`sidebar_item_on`] 挂点击。
-pub(crate) fn sidebar_item(
-    id: impl Into<SharedString>,
-    active: bool,
-) -> gpui::Stateful<gpui::Div> {
+pub(crate) fn sidebar_item(id: impl Into<SharedString>, active: bool) -> gpui::Stateful<gpui::Div> {
     let t = T();
     div()
         .id(id.into())
@@ -353,7 +355,11 @@ pub(crate) fn sidebar_item(
         .text_size(crate::appearance::ui_size(12.))
         .cursor_pointer()
         .bg(rgb(if active { t.bg_selected } else { t.bg_panel }))
-        .font_weight(if active { FontWeight::SEMIBOLD } else { FontWeight::NORMAL })
+        .font_weight(if active {
+            FontWeight::SEMIBOLD
+        } else {
+            FontWeight::NORMAL
+        })
         .text_color(rgb(if active { t.text } else { t.text_muted }))
         .hover(|s| s.bg(rgb(t.bg_hover)))
 }
@@ -586,16 +592,17 @@ impl SliderGeom {
             gpui::size(x1 - x0, px(SLIDER_TRACK_H)),
         );
         let radius = gpui::Corners::all(px(SLIDER_TRACK_H / 2.));
-        let plain = |b: gpui::Bounds<gpui::Pixels>, color: gpui::Hsla, r: gpui::Corners<gpui::Pixels>| {
-            gpui::quad(
-                b,
-                r,
-                color,
-                gpui::Edges::default(),
-                gpui::transparent_black(),
-                gpui::BorderStyle::default(),
-            )
-        };
+        let plain =
+            |b: gpui::Bounds<gpui::Pixels>, color: gpui::Hsla, r: gpui::Corners<gpui::Pixels>| {
+                gpui::quad(
+                    b,
+                    r,
+                    color,
+                    gpui::Edges::default(),
+                    gpui::transparent_black(),
+                    gpui::BorderStyle::default(),
+                )
+            };
         window.paint_quad(plain(track_bounds, self.track, radius));
         if knob_x > x0 {
             let done = gpui::Bounds::new(
@@ -623,38 +630,32 @@ impl SliderGeom {
         // 按下：跳值（点轨道即定位）+ 起拖
         {
             let weak = weak.clone();
-            window.on_mouse_event(
-                move |ev: &gpui::MouseDownEvent, phase, _, cx| {
-                    if phase != gpui::DispatchPhase::Capture
-                        || ev.button != MouseButton::Left
-                        || !hit.contains(&ev.position)
-                    {
-                        return;
-                    }
-                    cx.stop_propagation();
-                    WIDTH_DRAG.with(|d| d.set(true));
-                    apply_value(&weak, value_at(hit, min, max, step, ev.position.x), cx);
-                },
-            );
+            window.on_mouse_event(move |ev: &gpui::MouseDownEvent, phase, _, cx| {
+                if phase != gpui::DispatchPhase::Capture
+                    || ev.button != MouseButton::Left
+                    || !hit.contains(&ev.position)
+                {
+                    return;
+                }
+                cx.stop_propagation();
+                WIDTH_DRAG.with(|d| d.set(true));
+                apply_value(&weak, value_at(hit, min, max, step, ev.position.x), cx);
+            });
         }
         // 移动：拖动中跟手（指针移出 180px 轨道也继续）
         {
             let weak = weak.clone();
-            window.on_mouse_event(
-                move |ev: &gpui::MouseMoveEvent, phase, _, cx| {
-                    if phase != gpui::DispatchPhase::Capture
-                        || !WIDTH_DRAG.with(|d| d.get())
-                    {
-                        return;
-                    }
-                    if !ev.dragging() {
-                        WIDTH_DRAG.with(|d| d.set(false));
-                        return;
-                    }
-                    cx.stop_propagation();
-                    apply_value(&weak, value_at(hit, min, max, step, ev.position.x), cx);
-                },
-            );
+            window.on_mouse_event(move |ev: &gpui::MouseMoveEvent, phase, _, cx| {
+                if phase != gpui::DispatchPhase::Capture || !WIDTH_DRAG.with(|d| d.get()) {
+                    return;
+                }
+                if !ev.dragging() {
+                    WIDTH_DRAG.with(|d| d.set(false));
+                    return;
+                }
+                cx.stop_propagation();
+                apply_value(&weak, value_at(hit, min, max, step, ev.position.x), cx);
+            });
         }
         // 松开：一次性落盘（拖动期只写内存预览）
         window.on_mouse_event(move |_: &gpui::MouseUpEvent, phase, _, _cx| {
@@ -674,10 +675,7 @@ mod tests {
     /// 轨道 180px / 旋钮 12px：可用行程 168px，两端旋钮中心对应 min/max。
     /// 数值域用真实设置区间（560..1200，步进 20）。
     fn track() -> gpui::Bounds<gpui::Pixels> {
-        gpui::Bounds::new(
-            gpui::point(px(0.), px(0.)),
-            gpui::size(px(180.), px(18.)),
-        )
+        gpui::Bounds::new(gpui::point(px(0.), px(0.)), gpui::size(px(180.), px(18.)))
     }
 
     #[test]

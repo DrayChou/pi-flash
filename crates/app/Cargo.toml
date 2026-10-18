@@ -57,6 +57,8 @@ wxprobe = { path = "../wxprobe" }
 ureq = { version = "2", default-features = false, features = ["tls", "native-certs", "gzip"] }
 sha2 = "0.10"
 zip = { version = "2", default-features = false, features = ["deflate"] }
+# 082 扩展更新检测：npm view 版本 semver 对比（pi-web plugin-updates 同款）
+semver = "1"
 # 文件打开编码检测（editor/file_content.rs，Zed file_content.rs 同款）：
 # encoding_rs 解码/编码，chardetng 非Unicode 嗅探（GBK 等遗留编码可开可存）
 encoding_rs = "0.8"
