@@ -22,8 +22,8 @@ RUST_MIN_STACK=33554432 cargo test -p pi-link   # 协议/路径测试都在 pi-l
 - UI绘制遵循 docs\UI设计\UI组件规范.md
 - **发布产物不落本机**：构建产物只留在 `target/`（如 `target/release/pi-flash.exe`），禁止复制/替换本机已安装的 `D:\softwares\...\payload\pi-flash.exe`，也不要在 payload 目录生成 `.new` 之类的暂存文件——装不装、何时装由用户自己决定
 - CHANGELOG发版驱动，平时勿碰！
-- **格式化只走 `scripts/fmt.sh <自己改过的 .rs>`**（禁用 `cargo fmt`；坑与守卫见 [engineering.md](docs/agents/engineering.md)）
-- 禁止擅自修改Settings内容！
+- 禁用 `cargo fmt`！ 格式化用 `scripts/fmt.sh <自己改过的 .rs>`（详情见 [engineering.md](docs/agents/engineering.md)）
+- 如非用户授权，禁止修改Settings模块！
 
 # 路径
 - vendored pi：`vendor/pi`（package.json+lock 入库；node_modules 走 `npm ci` 不入库）
