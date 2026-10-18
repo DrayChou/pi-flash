@@ -868,6 +868,63 @@
     padding: 18px 12px; font-size: 12px; color: var(--text-faint); text-align: center; }
   .mono-ex { font-family: Consolas, monospace; font-size: 11px; color: var(--text-dim);
     padding: 3px 0; }
+
+  /* ===== 090-2 扩展管理页：搜索 / 过滤 / 列表 ===== */
+  .main.ext-on .chat-wrap { display: none; }
+  .ext-view { display: none; flex: 1; min-width: 0; flex-direction: column; overflow: hidden; }
+  .main.ext-on .ext-view { display: flex; }
+  .ext-page { width: 100%; max-width: 880px; margin: 0 auto; padding: 22px 30px 30px; overflow-y: auto; }
+  .ext-head { display: flex; align-items: baseline; gap: 10px; }
+  .ext-head h1 { font-size: 15px; font-weight: 600; color: var(--text); }
+  .ext-head .cnt { font-size: 11px; color: var(--text-faint); }
+  .ext-toolbar { display: flex; gap: 8px; margin-top: 14px; }
+  .ext-search { flex: 1; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px;
+    background: var(--bg-panel); border: 1px solid var(--border); border-radius: 6px; }
+  .ext-search:focus-within { border-color: var(--accent); }
+  .ext-search svg { width: 14px; height: 14px; flex: none; color: var(--text-faint); }
+  .ext-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent;
+    font-size: 12px; color: var(--text); }
+  .ext-search input::placeholder { color: var(--text-faint); }
+  .seg { display: flex; align-items: stretch; flex: none; border: 1px solid var(--border);
+    border-radius: 6px; overflow: hidden; background: var(--bg-panel); }
+  .seg button { border: 0; background: transparent; padding: 0 12px; font-size: 11px;
+    color: var(--text-muted); cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button:hover { background: var(--bg-hover); }
+  .seg button.on { background: var(--bg-selected); color: var(--text); font-weight: 600; }
+  .ext-cats { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; }
+  .chip { height: 24px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent;
+    font-size: 11px; color: var(--text-muted); cursor: pointer; }
+  .chip:hover { background: var(--bg-hover); }
+  .chip.on { background: var(--bg-selected); color: var(--text); font-weight: 600; }
+  .ext-list { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
+  .ext-card { display: flex; gap: 12px; padding: 12px; background: var(--bg-panel);
+    border: 1px solid rgba(175, 196, 186, .45); border-radius: 8px; }
+  .ext-main { flex: 1; min-width: 0; }
+  .ext-name-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .ext-name { font-size: 13px; font-weight: 600; color: var(--text); }
+  .ext-ver { font-size: 11px; color: var(--text-faint); }
+  .badge { height: 17px; line-height: 15px; padding: 0 6px; border: 1px solid var(--border);
+    border-radius: 3px; font-size: 10px; color: var(--text-muted); white-space: nowrap; }
+  .ext-desc { margin-top: 5px; font-size: 12px; line-height: 1.5; color: var(--text-muted); }
+  .ext-meta { display: flex; align-items: center; gap: 6px; margin-top: 7px;
+    font-size: 11px; color: var(--text-faint); }
+  .ext-meta svg { width: 12px; height: 12px; flex: none; }
+  .ext-side { flex: none; display: flex; flex-direction: column; align-items: flex-end; }
+  .btn { height: 28px; padding: 0 14px; border-radius: 6px; font-size: 12px; cursor: pointer; }
+  .btn-pri { border: 1px solid var(--accent); background: var(--accent); color: var(--accent-contrast); }
+  .btn-pri:hover { background: var(--accent-hover); }
+  .btn-sec { border: 1px solid var(--border); background: transparent; color: var(--text); }
+  .btn-sec:hover { background: var(--bg-hover); }
+  .ext-empty { display: none; margin-top: 48px; text-align: center; font-size: 12px; color: var(--text-faint); }
+  /* topbar 扩展菜单（收放钮右侧，§5.6 菜单壳） */
+  .tb-menu { position: absolute; top: 44px; left: 42px; z-index: 60; min-width: 200px; padding: 4px;
+    background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .14); display: none; }
+  .tb-menu .mi { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 6px;
+    font-size: 12px; color: var(--text); cursor: pointer; }
+  .tb-menu .mi:hover { background: var(--bg-hover); }
+  .tb-menu .mi svg { width: 14px; height: 14px; color: var(--text-muted); }
 </style>
 </head>
 <body>
@@ -882,6 +939,15 @@
           <button class="tb-icon-btn" id="panesToggle" data-tip="收起 / 展开侧栏">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1.5" y="2.5" width="13" height="11" rx="2"/><path d="M5.5 2.5v11"/></svg>
           </button>
+          <button class="tb-icon-btn" id="extMenuBtn" data-tip="菜单" style="margin-left:2px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/></svg>
+          </button>
+          <div class="tb-menu" id="extMenu">
+            <div class="mi" id="miExt">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.439 7.85c-.049.322.059.648.289.878l1.568 1.568c.47.47.706 1.087.706 1.704s-.235 1.233-.706 1.704l-1.611 1.611a.98.98 0 0 1-.837.276c-.47-.07-.802-.48-.968-.925a2.501 2.501 0 1 0-3.214 3.214c.446.166.855.497.925.968a.979.979 0 0 1-.276.837l-1.61 1.61a2.404 2.404 0 0 1-1.705.707 2.402 2.402 0 0 1-1.704-.706l-1.568-1.568a1.026 1.026 0 0 0-.877-.29c-.493.074-.84.504-1.02.968a2.5 2.5 0 1 1-3.237-3.237c.464-.18.894-.527.967-1.02a1.026 1.026 0 0 0-.289-.877l-1.568-1.568A2.402 2.402 0 0 1 1.998 12c0-.617.236-1.234.706-1.704L4.23 8.77c.24-.24.581-.353.917-.303.515.077.877.528 1.073 1.01a2.5 2.5 0 1 0 3.259-3.259c-.482-.196-.933-.558-1.01-1.073-.05-.336.062-.676.303-.917l1.525-1.525A2.402 2.402 0 0 1 12 1.998c.617 0 1.234.236 1.704.706l1.568 1.568c.23.23.556.338.877.29.493-.074.84-.504 1.02-.968a2.5 2.5 0 1 1 3.237 3.237c-.464.18-.894.527-.967 1.02Z"/></svg>
+              <span>扩展</span>
+            </div>
+          </div>
         </div>
         <div class="panel-row">
 
@@ -1036,6 +1102,11 @@
             <button class="c-tab" id="mdTabBar">
               <span>主界面UI设计说明.md</span>
               <span class="x" id="mdClose"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span>
+            </button>
+            <button class="c-tab" id="extTabBar" data-tip="扩展管理">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.439 7.85c-.049.322.059.648.289.878l1.568 1.568c.47.47.706 1.087.706 1.704s-.235 1.233-.706 1.704l-1.611 1.611a.98.98 0 0 1-.837.276c-.47-.07-.802-.48-.968-.925a2.501 2.501 0 1 0-3.214 3.214c.446.166.855.497.925.968a.979.979 0 0 1-.276.837l-1.61 1.61a2.404 2.404 0 0 1-1.705.707 2.402 2.402 0 0 1-1.704-.706l-1.568-1.568a1.026 1.026 0 0 0-.877-.29c-.493.074-.84.504-1.02.968a2.5 2.5 0 1 1-3.237-3.237c.464-.18.894-.527.967-1.02a1.026 1.026 0 0 0-.289-.877l-1.568-1.568A2.402 2.402 0 0 1 1.998 12c0-.617.236-1.234.706-1.704L4.23 8.77c.24-.24.581-.353.917-.303.515.077.877.528 1.073 1.01a2.5 2.5 0 1 0 3.259-3.259c-.482-.196-.933-.558-1.01-1.073-.05-.336.062-.676.303-.917l1.525-1.525A2.402 2.402 0 0 1 12 1.998c.617 0 1.234.236 1.704.706l1.568 1.568c.23.23.556.338.877.29.493-.074.84-.504 1.02-.968a2.5 2.5 0 1 1 3.237 3.237c-.464.18-.894.527-.967 1.02Z"/></svg>
+              <span>扩展</span>
+              <span class="x" id="extClose"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span>
             </button>
           </div>
           <div class="tb-spacer"></div>
@@ -1289,6 +1360,29 @@ statusbar 40（项目 tab + 设置钮）│</pre>
               <span class="proj" data-tip="打开项目（Ctrl+P）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M2 10h20"/></svg>pi-flash</span>
               <span class="ver">Pi-Flash v0.1.5</span>
             </div>
+          </div>
+        </div>
+        <div class="ext-view">
+          <div class="ext-page">
+            <div class="ext-head"><h1>扩展</h1><span class="cnt" id="extCount"></span></div>
+            <div class="ext-toolbar">
+              <div class="ext-search">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
+                <input id="extQ" placeholder="搜索扩展…">
+              </div>
+              <div class="seg" id="extStatus">
+                <button class="on" data-v="all">全部</button>
+                <button data-v="in">已安装</button>
+                <button data-v="out">未安装</button>
+              </div>
+            </div>
+            <div class="ext-cats" id="extCats">
+              <button class="chip on" data-v="all">全部</button>
+              <button class="chip" data-v="pf">PF扩展</button>
+              <button class="chip" data-v="pi">PI扩展</button>
+            </div>
+            <div class="ext-list" id="extList"></div>
+            <div class="ext-empty" id="extEmpty">没有匹配的扩展</div>
           </div>
         </div>
         </main>
@@ -1871,17 +1965,20 @@ statusbar 40（项目 tab + 设置钮）│</pre>
   const chatTab = document.getElementById("chatTab");
   const termTabBar = document.getElementById("termTabBar");
   const mdTabBar = document.getElementById("mdTabBar");
+  const extTabBar = document.getElementById("extTabBar");
   let contentView = "chat";
   function setContent(v) {
     contentView = v;
     mainCol.classList.toggle("term-on", v === "term");
     mainCol.classList.toggle("md-on", v === "md");
     mainCol.classList.toggle("new-on", v === "new");
+    mainCol.classList.toggle("ext-on", v === "ext");
     contentCol.classList.toggle("term-on", v === "term");
     contentCol.classList.toggle("md-on", v === "md");
     chatTab.classList.toggle("act", v === "chat");
     termTabBar.classList.toggle("act", v === "term");
     mdTabBar.classList.toggle("act", v === "md");
+    extTabBar.classList.toggle("act", v === "ext");
   }
   function openTerm() { setContent("term"); }
   chatTab.addEventListener("click", () => setContent("chat"));
@@ -2020,6 +2117,106 @@ statusbar 40（项目 tab + 设置钮）│</pre>
     });
     msgNav.appendChild(d);
   }
+
+  // ===== 090-2 扩展管理页：topbar 菜单入口 + 搜索/过滤/列表 =====
+  const extMenuBtn = document.getElementById("extMenuBtn");
+  const extMenu = document.getElementById("extMenu");
+  const extList = document.getElementById("extList");
+  const extCount = document.getElementById("extCount");
+  const extEmpty = document.getElementById("extEmpty");
+  const extQ = document.getElementById("extQ");
+  const CAT_ZH = { panel: "面板", tab: "标签页", skill: "技能", theme: "主题", cmd: "命令", session: "会话扩展" };
+  const ICON_USER = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`;
+  const EXTS = [
+    { id: "git-firefly", name: "Git Firefly", ver: "v0.1.9", sp: ["pf"], cats: ["panel"], tier: "声明式",
+      desc: "Git 语法高亮与暂存/提交/推送的图形化面板，直接贡献 statusbar 标签。",
+      author: "d1y", npm: "@example/git-firefly", inst: false },
+    { id: "wechat-bridge", name: "WeChat Bridge", ver: "v0.3.0", sp: ["pf", "pi"], cats: ["panel", "session"], tier: "Sidecar",
+      desc: "微信远程控制：扫码绑定、/状态 /新建 /停止 命令、消息回推与扩展 UI 问答桥。",
+      author: "pi-flash", npm: "@earendil/wechat-bridge", inst: true },
+    { id: "mist-extra", name: "Mist Extra Themes", ver: "v1.2.0", sp: ["pi"], cats: ["theme"], tier: "声明式",
+      desc: "雾青衍生的四套浅色主题（晨雾 / 苔原 / 纸本 / 灰瓷），纯色板资源零代码。",
+      author: "bi_da", npm: "@pi-flash/mist-extra", inst: true },
+    { id: "commit-lint", name: "Commit Lint Skill", ver: "v2.1.0", sp: ["pi"], cats: ["skill"], tier: "声明式",
+      desc: "提交信息规范检查技能：约定式提交校验、scope 建议与自动修正。",
+      author: "kanban-oss", npm: "@oss/commit-lint-skill", inst: false },
+    { id: "session-search-pro", name: "Session Search Pro", ver: "v0.9.2", sp: ["pf"], cats: ["tab"], tier: "Sidecar",
+      desc: "跨项目全文检索会话内容，独立标签页呈现结果与上下文预览。",
+      author: "lumi", npm: "@lumi/session-search-pro", inst: false },
+    { id: "prompt-packs", name: "Prompt Packs", ver: "v1.0.4", sp: ["pi"], cats: ["session"], tier: "声明式",
+      desc: "常用审阅/重构/测试 prompt 模板，注册为 /review /refactor /test 命令。",
+      author: "ox", npm: "@ox/prompt-packs", inst: true },
+  ];
+  function extCard(x) {
+    return `<div class="ext-card" data-id="${x.id}" data-sp="${x.sp.join(",")}">
+      <div class="ext-main">
+        <div class="ext-name-row">
+          <span class="ext-name">${x.name}</span><span class="ext-ver">${x.ver}</span>
+          ${x.cats.map(c => `<span class="badge">${CAT_ZH[c] || c}</span>`).join("")}
+          <span class="badge">${x.tier}</span>
+        </div>
+        <div class="ext-desc">${x.desc}</div>
+        <div class="ext-meta">${ICON_USER}<span>${x.author}</span><span>·</span><span>${x.npm}</span></div>
+      </div>
+      <div class="ext-side">
+        <button class="btn ${x.inst ? "btn-sec" : "btn-pri"}" data-act="toggle">${x.inst ? "卸载" : "安装"}</button>
+      </div>
+    </div>`;
+  }
+  const extState = { q: "", st: "all", cat: "all" };
+  function applyExt() {
+    let shown = 0, instN = 0;
+    EXTS.forEach(x => { if (x.inst) instN++; });
+    document.querySelectorAll(".ext-card").forEach(card => {
+      const x = EXTS.find(e => e.id === card.dataset.id);
+      const okQ = !extState.q || (x.name + x.desc + x.npm + x.author).toLowerCase().includes(extState.q);
+      const okS = extState.st === "all" || (extState.st === "in") === x.inst;
+      const okC = extState.cat === "all" || x.sp.includes(extState.cat);
+      const show = okQ && okS && okC;
+      card.style.display = show ? "" : "none";
+      if (show) shown++;
+    });
+    extCount.textContent = `共 ${EXTS.length} 个 · 已安装 ${instN}`;
+    extEmpty.style.display = shown ? "none" : "block";
+  }
+  function renderExt() { extList.innerHTML = EXTS.map(extCard).join(""); applyExt(); }
+  extQ.addEventListener("input", () => { extState.q = extQ.value.trim().toLowerCase(); applyExt(); });
+  document.querySelectorAll("#extStatus button").forEach(b => b.addEventListener("click", () => {
+    document.querySelectorAll("#extStatus button").forEach(x => x.classList.remove("on"));
+    b.classList.add("on"); extState.st = b.dataset.v; applyExt();
+  }));
+  document.querySelectorAll("#extCats .chip").forEach(b => b.addEventListener("click", () => {
+    document.querySelectorAll("#extCats .chip").forEach(x => x.classList.remove("on"));
+    b.classList.add("on"); extState.cat = b.dataset.v; applyExt();
+  }));
+  extList.addEventListener("click", e => {
+    const b = e.target.closest("[data-act=toggle]");
+    if (!b) return;
+    const card = b.closest(".ext-card");
+    const x = EXTS.find(e2 => e2.id === card.dataset.id);
+    x.inst = !x.inst;
+    b.textContent = x.inst ? "卸载" : "安装";
+    b.classList.toggle("btn-pri", !x.inst);
+    b.classList.toggle("btn-sec", x.inst);
+    card.dataset.inst = x.inst;
+    applyExt();
+  });
+  // topbar 菜单：收放钮右侧 puzzle 钮 → 单项「扩展」→ 打开管理页
+  extMenuBtn.addEventListener("click", e => {
+    e.stopPropagation();
+    extMenu.style.display = extMenu.style.display === "block" ? "none" : "block";
+  });
+  extMenu.addEventListener("click", e => e.stopPropagation());
+  document.addEventListener("click", () => extMenu.style.display = "none");
+  document.getElementById("miExt").addEventListener("click", () => {
+    extMenu.style.display = "none";
+    setContent("ext");
+  });
+  extTabBar.addEventListener("click", () => setContent("ext"));
+  document.getElementById("extClose").addEventListener("click", e => {
+    e.stopPropagation(); setContent("chat");
+  });
+  renderExt();
 
   // topbar 图标按钮：悬停 tip 气泡（复用 #tooltip）
   document.querySelectorAll("[data-tip]").forEach(el => {
