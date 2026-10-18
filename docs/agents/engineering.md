@@ -103,8 +103,20 @@ TABLE（行 trim 后以 `(` 开头 + 拆出 4 列），表行**必须一行一�
 `crates/app` 跑 `cargo fmt` 会把超宽表行折成多行 → audit 只解析到零头
 （实测 552 → 233）直接 panic「TABLE 解析异常」。2026-10-18 实踩两回。
 
-**规矩**：改完代码要格式化时，用 `rustfmt --edition 2024 <具体文件>` 点名
-格式化自己改的文件，**不要**对 app 包跑整包 `cargo fmt`（包里就有
-i18n.rs 这颗雷）。误伤后恢复：`git checkout HEAD -- crates/app/src/i18n.rs`
-再重插新增表行（表行统一 `, ` 分隔单行格式）。
+**规矩（2026-10-18 三次踩踏后收敛为唯一入口）**：格式化只走
+
+```bash
+scripts/fmt.sh <自己改过的那几个 .rs>        # 只格式化点名文件
+scripts/fmt.sh --check <file.rs>            # 只检查不写盘
+scripts/fmt.sh --all                        # 全仓专项（要求工作区干净 + 输入 yes）
+```
+
+脚本内置铁律，绕不过去：无参数报错（不存在「默认整包」）、传目录/包名/
+非 .rs/未跟踪文件一律拒绝、`i18n.rs` 永远跳过（TABLE 表行是 audit 的解析
+契约）、跑完打印脏文件计数前后对比（一次 ≥20 就提示疑似洪泛）。
+**不要**再用 `cargo fmt`——它的语义是洗整个 package；`cargo fmt -- <file>`
+也只是给 rustfmt 追加参数，主体照样整包（三次踩踏里最后一次就栽在这）。
+
+误伤后恢复：`git checkout HEAD -- crates/app/src/i18n.rs` 再重插新增表行
+（表行统一 `, ` 分隔单行格式）。
 误中洪泛用 `scripts/fmt-flood-clean.sh` 一键封存；pre-commit hook 会拦大批量提交（绕过用 `--no-verify`）
