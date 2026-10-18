@@ -1,0 +1,36 @@
+#!/bin/bash
+# fmt 洪泛拦截（pi-flash engineering.md §fmt 配套，2026-10-18 两次事故后增设）
+#
+# 拦什么：单次提交暂存 ≥ 30 个文件（洪泛特征：整包 cargo fmt 后只 add 自己
+# 关心的文件，剩余百余个格式化改动留在工作区）。
+#
+# 误报逃生：
+#   git commit --no-verify          # 单次跳过
+#   PI_FLASH_ALLOW_BULK=1 git commit  # 环境变量跳过
+#
+# 启用（克隆后执行一次）：
+#   git config core.hooksPath .githooks
+
+staged=$(git diff --cached --name-only)
+count=$(echo "$staged" | grep -c .)
+
+if [ "$count" -lt 30 ]; then
+    exit 0
+fi
+
+if [ -n "$PI_FLASH_ALLOW_BULK" ]; then
+    echo "[pre-commit] PI_FLASH_ALLOW_BULK=1，放行 $count 文件大批量提交"
+    exit 0
+fi
+
+echo ""
+echo "⛔ 拦截：本次提交暂存了 $count 个文件（阈值 30）。"
+echo ""
+echo "   若这是整包 cargo fmt 的产物（fmt 洪泛）：违反 docs/agents/engineering.md"
+echo "   『禁止对 app 包跑整包 cargo fmt』，请勿提交。处理："
+echo "     scripts/fmt-flood-clean.sh   # 一键封存到 stash"
+echo ""
+echo "   若这是真实的大规模重构（非格式化）："
+echo "     git commit --no-verify       # 确认后绕过本拦截"
+echo ""
+exit 1
