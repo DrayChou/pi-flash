@@ -1331,9 +1331,10 @@ fn session_row_view(
         .into_any_element()
 }
 
-/// 置顶组头行（020 会话置顶 ③）：pin icon（MD 档，accent 常亮）+「置顶」；
-/// 样式对齐项目行（同高同字号同对齐线）。零交互：不收折/不拖拽/无右键卡
-/// ——置顶是全局单组，组序恒在最顶，头行没有可操作面。
+/// 置顶组头行（020 会话置顶 ③）：folder-bookmark icon（MD 档，accent
+/// 常亮，用户供图 2026-10-18——组头用「文件夹+书签」语义与行上 pin 区分）
+/// +「置顶」；样式对齐项目行（同高同字号同对齐线）。零交互：不收折/
+/// 不拖拽/无右键卡——置顶是全局单组，组序恒在最顶，头行没有可操作面。
 fn pinned_header_row(t: &'static Theme) -> gpui::AnyElement {
     div()
         .id("psp-pinned-header")
@@ -1345,7 +1346,7 @@ fn pinned_header_row(t: &'static Theme) -> gpui::AnyElement {
         .pl(px(align::ROW_PL))
         .pr(px(align::LIST_PX))
         .rounded(px(8.))
-        .child(icon("pin", crate::ui::tokens::icon::MD, t.accent))
+        .child(icon("folder-bookmark", crate::ui::tokens::icon::MD, t.accent))
         .child(
             div()
                 .flex_1()

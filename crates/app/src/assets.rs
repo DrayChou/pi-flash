@@ -1,7 +1,7 @@
 //! Embedded asset source: icons compiled into the binary.
 
-use std::borrow::Cow;
 use gpui::{AssetSource, SharedString};
+use std::borrow::Cow;
 
 pub struct Assets;
 
@@ -15,7 +15,10 @@ macro_rules! assets {
 
 impl AssetSource for Assets {
     fn load(&self, path: &str) -> gpui::Result<Option<Cow<'static, [u8]>>> {
-        if let Some(pct) = path.strip_prefix("icons/ring-p").and_then(|s| s.strip_suffix(".svg")) {
+        if let Some(pct) = path
+            .strip_prefix("icons/ring-p")
+            .and_then(|s| s.strip_suffix(".svg"))
+        {
             if let Ok(p) = pct.parse::<u8>() {
                 if (1..=99).contains(&p) {
                     return Ok(Some(Cow::Owned(ring_arc_svg(p))));
@@ -131,6 +134,9 @@ assets! {
     "icons/folder-input.svg",
     // 021 Pin 收藏夹：操作栏钮 + 收藏夹行首移除钮 + 右键菜单项（lucide pin）
     "icons/pin.svg",
+    // 020 会话置顶：置顶组头行 icon（lucide folder-bookmark，用户供图
+    // 2026-10-18——组头是「文件夹+书签」语义，与行上的 pin 区分）
+    "icons/folder-bookmark.svg",
     "icons/clock.svg",
     "icons/arrow-up.svg",
     "icons/arrow-down.svg",
@@ -306,7 +312,6 @@ assets! {
     "icons/file_icons/zig.svg",
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -334,8 +339,7 @@ mod tests {
             .filter(|n| n.ends_with(".svg"))
             .collect();
         files.sort();
-        let registered: std::collections::BTreeSet<&str> =
-            ASSETS.iter().map(|(p, _)| *p).collect();
+        let registered: std::collections::BTreeSet<&str> = ASSETS.iter().map(|(p, _)| *p).collect();
 
         let unregistered: Vec<&String> = files
             .iter()
@@ -395,7 +399,10 @@ mod tests {
                 .expect("ok")
                 .expect("generated");
             let s = std::str::from_utf8(&svg).expect("utf8");
-            assert!(s.contains("<svg") && s.contains("stroke-dasharray"), "{p} bad");
+            assert!(
+                s.contains("<svg") && s.contains("stroke-dasharray"),
+                "{p} bad"
+            );
         }
         // 0 与 100 不生成：0 无弧不渲染，100 走静态 ring-100
         assert!(Assets.load("icons/ring-p0.svg").expect("ok").is_none());
