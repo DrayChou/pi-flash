@@ -9,32 +9,38 @@
 //! 命中盒，三个窗口钮注册 Min/Max/Close 命中盒（zed platform_title_bar
 //! parity）。收起态面板全隐，收放钮跳到右段起点（竖线镜像位）。
 
+use gpui::WindowControlArea;
 use gpui::{MouseButton, SharedString, Window, div, prelude::*, px, rgb};
 use std::path::PathBuf;
-use gpui::WindowControlArea;
 
 use crate::Chat;
 use crate::ContentView;
 use crate::TabKey;
-use crate::i18n::tr;
 use crate::appearance::theme::theme as T;
+use crate::i18n::tr;
 use crate::ui::tokens::align;
 
-/// tab 拖拽载荷（zed DraggedTab 单 pane 版，2026-10-14）：`ix` 供悬停
-/// 插入侧指示判向；`key` 供 drop 落位（稳定键，防中途列表漂移错位）。
-/// TypeId 与树拖拽 TreeDrag 互不串扰。会话 tab 不接 on_drag（固定段
-/// 禁拖，016 定案）。
+/// tab 拖拽载荷（zed `DraggedTab` 单 pane 版）：`ix` 供悬停插入侧判定
+/// （zed drag_over 的 `ix < dragged_tab.ix` 同式）；`key` 供 drop 落位
+/// （稳定键，防中途列表漂移错位，zed 用 item id 同语义）；其余 = 幽灵
+/// 渲染所需的 tab 快照（zed 的 DraggedTab 持 item 句柄，幽灵现场重渲染
+/// 同一个 Tab）。TypeId 与树拖拽 TreeDrag 互不串扰。会话 tab 不接
+/// on_drag（固定段禁拖，016 定案）。
 #[derive(Clone)]
 pub(crate) struct TabDrag {
     pub(crate) ix: usize,
     pub(crate) key: TabKey,
+    pub(crate) label: SharedString,
+    pub(crate) icon: Option<&'static str>,
+    pub(crate) active: bool,
+    pub(crate) strike: bool,
 }
 
-/// tab 拖拽幽灵（gpui 把 `cx.active_drag.view` 画在光标处）：拖拽手势
-/// icon（icon-hand）+ 标题的浮起小签——icon 不跟随 tab 类型（那两个
-/// 终端/更新日志图标在拖拽语义下是误导，2026-10-14 定夺）。
+/// tab 拖拽幽灵：zed `DraggedTab::render` 同款——把被拖的 tab 本体
+/// （`Tab::new("").toggle_state(is_active).children(icon).child(label)`）
+/// 原样画在光标处，不另造小签。
 pub(crate) struct TabDragGhost {
-    pub(crate) label: String,
+    pub(crate) drag: TabDrag,
 }
 
 impl gpui::Render for TabDragGhost {
@@ -44,29 +50,21 @@ impl gpui::Render for TabDragGhost {
         _cx: &mut gpui::Context<Self>,
     ) -> impl IntoElement {
         let t = T();
-        div()
-            .flex()
-            .items_center()
-            .gap(px(9.))
-            .h(px(HEIGHT - 4.))
-            .max_w(px(300.))
-            .px(px(12.))
-            .rounded(px(7.))
-            .border_1()
-            .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x8c)))
-            .bg(rgb(t.bg))
-            .shadow_md()
-            .text_size(crate::appearance::ui_size(12.))
-            .text_color(rgb(t.text))
-            .child(crate::ui::icon("icon-hand", 15., t.text_muted))
-            .child(
-                div()
-                    .min_w_0()
-                    .overflow_hidden()
-                    .whitespace_nowrap()
-                    .text_ellipsis()
-                    .child(SharedString::from(self.label.clone())),
-            )
+        let active = self.drag.active;
+        tab_body(
+            self.drag.icon,
+            self.drag.label.clone(),
+            active,
+            0.,
+            t,
+            None,
+            None,
+            self.drag.strike,
+        )
+        // 幽灵浮在内容之上：非激活 tab 在条上是平铺文字（底 = 条色），
+        // 悬浮态补条底色，与 zed tab_inactive_background 同理
+        .when(!active, |d| d.bg(rgb(t.chrome)))
+        .shadow_md()
     }
 }
 
@@ -128,20 +126,21 @@ pub(crate) fn topbar_r(
     // 收起态：收放钮跳到右段起点（4px 等距，竖线镜像位）
     if chat.layout.panes_hidden {
         bar = bar
+            .child(div().ml(px(4.)).mr(px(2.)).child(icon_btn(
+                "panes-toggle-r",
+                "panel-left",
+                tr("titlebar.expand_sidebar"),
+                cx.listener(|this, _: &gpui::MouseDownEvent, _w, cx| {
+                    this.toggle_panes(cx);
+                }),
+            )))
             .child(
                 div()
-                    .ml(px(4.))
-                    .mr(px(2.))
-                    .child(icon_btn(
-                        "panes-toggle-r",
-                        "panel-left",
-                        tr("titlebar.expand_sidebar"),
-                        cx.listener(|this, _: &gpui::MouseDownEvent, _w, cx| {
-                            this.toggle_panes(cx);
-                        }),
-                    )),
-            )
-            .child(div().w(px(1.)).h(px(18.)).bg(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x8c))).mx(px(4.)));
+                    .w(px(1.))
+                    .h(px(18.))
+                    .bg(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x8c)))
+                    .mx(px(4.)),
+            );
     }
 
     // 016 中段标签栏：置顶会话 tab + 自由标签区（终端/文件），激活 tab
@@ -162,15 +161,14 @@ pub(crate) fn topbar_r(
     // v55: min/max switch to SVG icons via HoverIcon; close keeps red-bg exemption
     for (area, icon_name) in [
         (WindowControlArea::Min, "minus"),
-        (WindowControlArea::Max, if maximized { "restore" } else { "square" }),
+        (
+            WindowControlArea::Max,
+            if maximized { "restore" } else { "square" },
+        ),
     ] {
         bar = bar.child(caption_button(area, icon_name, t));
     }
-    bar.child(caption_button(
-        WindowControlArea::Close,
-        "\u{E8BB}",
-        t,
-    ))
+    bar.child(caption_button(WindowControlArea::Close, "\u{E8BB}", t))
 }
 
 /// 30×30 图标钮（topbar 通用；hover chrome-hover）。钮盒/图标走 align 令牌。
@@ -192,12 +190,15 @@ fn icon_btn(
         .cursor_pointer()
         .hover(|s| s.bg(rgb(t.bg_hover)).text_color(rgb(t.text)))
         .on_mouse_down(MouseButton::Left, handler)
-        .child(crate::ui::icon_hover(icon_name, align::TOGGLE_ICON, t.text_muted))
+        .child(crate::ui::icon_hover(
+            icon_name,
+            align::TOGGLE_ICON,
+            t.text_muted,
+        ))
 }
 
 /// 内容区 tab（Obsidian 式）：激活 = 凸起卡片（bg 色、顶圆角、下缘融入
 /// 内容区、× 可见）；非激活 = 平铺文字。`ml` = 距分隔线/前一 tab 的间距。
-
 
 /// 中段标签栏（016）：置顶会话 tab（固定段，第一位，距条左缘 10px）+
 /// 自由标签区（终端/文件，023 规则：脏点/冲突标记在 tab 行尾）。
@@ -206,10 +207,8 @@ fn icon_btn(
 /// 撤 75% 限宽，回 023 的 Zed parity）；自由标签区独立横向滑动，会话 tab
 /// 不参与滚动（2026-10-14 bug 修复：超多标签时旧实现把会话 tab 一起滚
 /// 走——它必须恒定可见）；右走流内 20px spacer（滚到底也有留白）。
-fn tab_strip(
-    chat: &mut Chat,
-    cx: &mut gpui::Context<Chat>,
-) -> gpui::AnyElement {
+fn tab_strip(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyElement {
+    let t = T();
     let mut strip = div()
         .id("topbar-tabs")
         .flex_1()
@@ -239,7 +238,8 @@ fn tab_strip(
         ) = match tab {
             crate::PanelTab::Term(id) => {
                 let title = chat
-                    .ws.terminals
+                    .ws
+                    .terminals
                     .iter()
                     .find(|t| t.id == *id)
                     .map(|t| {
@@ -249,7 +249,13 @@ fn tab_strip(
                             .unwrap_or_default()
                     })
                     .unwrap_or_default();
-                (title.into(), None, false, Some("icon-terminal-solid"), ContentView::Term)
+                (
+                    title.into(),
+                    None,
+                    false,
+                    Some("icon-terminal-solid"),
+                    ContentView::Term,
+                )
             }
             crate::PanelTab::File(p) => (
                 p.file_name()
@@ -288,7 +294,11 @@ fn tab_strip(
                         .text_color(rgb(0xf87171))
                         .child(tr("status.alert"))
                 } else if f.dirty {
-                    div().size(px(7.)).rounded_full().flex_shrink_0().bg(rgb(0xe0a562))
+                    div()
+                        .size(px(7.))
+                        .rounded_full()
+                        .flex_shrink_0()
+                        .bg(rgb(0xe0a562))
                 } else {
                     return None;
                 }
@@ -310,17 +320,23 @@ fn tab_strip(
             cx,
         ));
     }
-    // 流内右留白（滚到底也有 20px）
-    tabs_host = tabs_host.child(div().w(px(20.)).flex_shrink_0());
-    // 拖到标签区空白（tab 右侧余量）= 移到末尾（zed tab bar 空白 drop 同
-    // 语义）；drop 派发给最深 hover 目标（bubble + stop_propagation），
-    // tab 上的 drop 不会重复进这里
-    tabs_host = tabs_host.on_drop::<TabDrag>(cx.listener(
-        move |this, drag: &TabDrag, _, cx| {
-            let last = this.ws.panel_tabs.len().saturating_sub(1);
-            this.move_panel_tab(&drag.key, last, cx);
-        },
-    ));
+    // zed `render_tab_bar_drop_target` 同款：标签右侧余量整块是 drop
+    // 目标（落 = 移到末尾），拖过时底高亮；没有它拖到空白处毫无反馈。
+    // 空 child 是 zed 的 HACK 注释同款：没有内容时 drop 目标不画出来
+    tabs_host = tabs_host.child(
+        div()
+            .id("topbar-tabs-drop")
+            .min_w(px(24.))
+            .flex_grow()
+            .h_full()
+            .child("")
+            .drag_over::<TabDrag>(move |bar, _, _, _| bar.bg(rgb(t.bg_hover)))
+            .on_drop(cx.listener(move |this, drag: &TabDrag, _, cx| {
+                // zed: handle_tab_drop(dragged_tab, items.len())——落末尾
+                let last = this.ws.panel_tabs.len();
+                this.move_panel_tab(&drag.key, last, cx);
+            })),
+    );
     strip.child(tabs_host).into_any_element()
 }
 
@@ -333,24 +349,22 @@ fn session_tab(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyElemen
     let t = T();
     let active = chat.layout.content_view == ContentView::Chat;
     let title: SharedString = chat.session_title(cx).into();
-    let switch = cx.listener(move |this, _: &gpui::MouseDownEvent, _w, cx| {
+    let switch = cx.listener(move |this, _: &gpui::ClickEvent, _w, cx| {
         this.set_content_view(crate::ContentView::Chat);
         cx.notify();
     });
     // 右键 = 标签菜单（zed 移植）：会话 tab 恒存不可关，菜单无 Close、
     // Close Left 恒灰（见 psp_overlays::tab_menu_layer）
-    let ctx_menu = cx.listener(
-        move |this, ev: &gpui::MouseDownEvent, _w, cx| {
-            this.dlg.tab_menu = Some((
-                crate::TabMenuTarget::Session,
-                f32::from(ev.position.x),
-                f32::from(ev.position.y),
-            ));
-            cx.notify();
-        },
-    );
+    let ctx_menu = cx.listener(move |this, ev: &gpui::MouseDownEvent, _w, cx| {
+        this.dlg.tab_menu = Some((
+            crate::TabMenuTarget::Session,
+            f32::from(ev.position.x),
+            f32::from(ev.position.y),
+        ));
+        cx.notify();
+    });
     tab_shell(
-        "ctab-session",
+        "ctab-session".into(),
         Some("bot-message-square"),
         title,
         active,
@@ -382,13 +396,20 @@ fn content_tab(
     cx: &mut gpui::Context<Chat>,
 ) -> impl gpui::IntoElement {
     let t = T();
+    // zed `Tab::new(ix)` 同款：元素 id 必须**每个 tab 唯一**。所有文件
+    // tab 共用同一个字符串 id 时，gpui 的 element_state 也是同一条
+    //（pending_mouse_down / drag_listener 共用）——在任意一个 tab 上
+    // 起手拖，拿到的永远是最后一个 tab 的载荷（幽灵黏在最后那个 tab 上）
+    let tab_id = gpui::ElementId::from((id, ix));
     let close = cx.listener(move |this, _: &gpui::MouseDownEvent, _w, cx| {
         // 文件 tab：脏缓冲走确认弹窗；干净直关（含内容区回退）。逻辑收拢
         // 在 editor/tabs.rs close_tab_at——与标签右键菜单 Close 同一方法
         this.close_tab_at(ix, cx);
         cx.notify();
     });
-    let switch = cx.listener(move |this, _: &gpui::MouseDownEvent, window, cx| {
+    // 入 tab 的激活走 on_click（mouse-up），zed `Tab::on_click` 同式：
+    // 起手拖拽会清 clicked_state，拖一个未激活 tab 不会把它顶成激活态
+    let switch = cx.listener(move |this, _: &gpui::ClickEvent, window, cx| {
         // 切 tab 只改状态，不自动聚焦内容区（082 三期：终端不再抢键盘；
         // 键入目标由内容区点击决定）。与 Ctrl+←/→ 同一条路径：
         // activate_content_tab（tabs.rs）内含视图真变化时的 window.blur()
@@ -398,9 +419,9 @@ fn content_tab(
         this.activate_content_tab(ix, window, cx);
     });
     // 行尾 ×（仅激活态由 tab_shell 渲染）——脏 tab 也要能关（关时走
-    // FileDirty 确认弹窗）
+    // FileDirty 确认弹窗）；id 随 tab 下标唯一（同上）
     let close_x = div()
-        .id(SharedString::from(format!("{id}-x")))
+        .id(gpui::ElementId::from((tab_id.clone(), "x")))
         .flex_shrink_0()
         .size(px(20.))
         .flex()
@@ -426,13 +447,20 @@ fn content_tab(
         ));
         cx.notify();
     });
-    // zed pane tab 拖拽换位（2026-10-14）：on_drag 发起（ghost = 拖拽
-    // 手势 icon + 标题浮起小签）+ drag_over 插入侧指示 + on_drop 落位
-    // （按稳定 key 现查 from，防拖拽中列表漂移）。会话 tab 不接线（固定
-    // 段禁拖）。
-    let ghost_label = label.to_string();
+    // zed pane tab 拖拽换位：on_drag 发起（ghost = tab 本体自克隆）+
+    // drag_over 插入侧指示 + on_drop 落位（按稳定 key 现查 from，防拖拽
+    // 中列表漂移）。会话 tab 不接线（固定段禁拖）。
+    let drag = TabDrag {
+        ix,
+        key: drag_key,
+        label: label.clone(),
+        icon: tab_icon,
+        active,
+        strike,
+    };
+    let ghost = drag.clone();
     tab_shell(
-        id,
+        tab_id,
         tab_icon,
         label,
         active,
@@ -444,26 +472,22 @@ fn content_tab(
         strike,
     )
     .on_mouse_down(MouseButton::Right, ctx_menu)
-    .on_drag(
-        TabDrag { ix, key: drag_key },
-        move |_, _, _, cx| {
-            cx.new(|_| TabDragGhost { label: ghost_label.clone() })
-        },
-    )
-    .drag_over::<TabDrag>(move |mut style, drag, _, _| {
-        // zed 插入侧指示：目标在源右 = 源插到目标前（左缘亮条）；目标在
-        // 源左 = 插到目标后（右缘亮条）；原地不高亮
-        if ix == drag.ix {
-            return style;
+    .on_drag(drag, move |_, _, _, cx| {
+        cx.new(|_| TabDragGhost {
+            drag: ghost.clone(),
+        })
+    })
+    .drag_over::<TabDrag>(move |tab, dragged_tab, _, _| {
+        // zed pane.rs drag_over 逐字：高亮底 + 边去掉，源在目标左 → 目标
+        // 左缘 2px（源插到目标前）；源在目标右 → 目标右缘 2px；原地只
+        // 留底，不画边
+        let mut styled_tab = tab.bg(rgb(t.bg_hover)).border_0();
+        if ix < dragged_tab.ix {
+            styled_tab = styled_tab.border_l_2();
+        } else if ix > dragged_tab.ix {
+            styled_tab = styled_tab.border_r_2();
         }
-        style.background = Some(rgb(t.bg_hover).into());
-        style.border_color = Some(rgb(t.accent).into());
-        if ix > drag.ix {
-            style.border_widths.left = Some(gpui::AbsoluteLength::Pixels(px(2.)));
-        } else {
-            style.border_widths.right = Some(gpui::AbsoluteLength::Pixels(px(2.)));
-        }
-        style
+        styled_tab.border_color(rgb(t.accent))
     })
     .on_drop::<TabDrag>(cx.listener(move |this, drag: &TabDrag, _, cx| {
         this.move_panel_tab(&drag.key, ix, cx);
@@ -471,20 +495,21 @@ fn content_tab(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn tab_shell(
-    id: &'static str,
+/// tab 外观本体（zed `Tab` 的 render）：前置 icon + 标题 + 行尾标记/钮。
+/// 交互（激活/拖拽/右键）由调用点挂：真实 tab 走 `tab_shell`，拖拽幽灵
+/// 复用同一份外观（zed `DraggedTab::render` 就是重渲染那个 Tab）。
+#[allow(clippy::too_many_arguments)]
+fn tab_body(
     icon_name: Option<&'static str>,
     label: SharedString,
     active: bool,
     ml: f32,
     t: &'static crate::appearance::theme::Theme,
-    switch: impl Fn(&gpui::MouseDownEvent, &mut Window, &mut gpui::App) + 'static,
     trailing: Option<gpui::AnyElement>,
     badge: Option<gpui::AnyElement>,
     strike: bool,
-) -> gpui::Stateful<gpui::Div> {
+) -> gpui::Div {
     let mut tab = div()
-        .id(id)
         .ml(px(ml))
         .flex()
         .items_center()
@@ -520,14 +545,15 @@ fn tab_shell(
                 .pr(px(12.))
                 .text_color(rgb(t.text_muted))
                 .hover(|s| s.text_color(rgb(t.text)))
-        })
-        .on_mouse_down(MouseButton::Left, switch);
+        });
     tab = tab
         // 前置 icon（会话 tab = bot-message-square；终端 tab = terminal；
         // 文件 tab 无）。flex_shrink_0 必须显式：非激活 tab 限宽 100px 溢出
         // 时默认 shrink 会把 svg 连带宽一起压扁（icon 缩成团的 bug）
         .children(icon_name.map(|n| {
-            div().flex_shrink_0().child(crate::ui::icon(n, 15., t.text_muted))
+            div()
+                .flex_shrink_0()
+                .child(crate::ui::icon(n, 15., t.text_muted))
         }))
         .child(
             div()
@@ -544,6 +570,26 @@ fn tab_shell(
         .children(badge)
         .when(active, |d| d.children(trailing));
     tab
+}
+
+/// 真实 tab = 外观本体 + 元素 id（zed `Tab::new(ix)`：**每 tab 唯一**）+
+/// 点击激活（mouse-up，zed 同式）。
+#[allow(clippy::too_many_arguments)]
+fn tab_shell(
+    id: gpui::ElementId,
+    icon_name: Option<&'static str>,
+    label: SharedString,
+    active: bool,
+    ml: f32,
+    t: &'static crate::appearance::theme::Theme,
+    switch: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
+    trailing: Option<gpui::AnyElement>,
+    badge: Option<gpui::AnyElement>,
+    strike: bool,
+) -> gpui::Stateful<gpui::Div> {
+    tab_body(icon_name, label, active, ml, t, trailing, badge, strike)
+        .id(id)
+        .on_click(switch)
 }
 
 fn caption_button(

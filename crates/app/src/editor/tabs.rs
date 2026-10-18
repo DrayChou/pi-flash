@@ -610,14 +610,16 @@ impl Chat {
 
     /// tab 拖拽换位落位（zed handle_tab_drop 单 pane 版，2026-10-14）：把
     /// `key` 对应的 tab 移到 to 位置。from 由 key 现查（不信任发起时的
-    /// 下标——拖拽中途列表变了不会错位）；找不到（已关）或原地/越界 =
-    /// no-op。active_panel_tab 随 remove/insert 平移（被拖 tab 若是激活
-    /// tab 跟随到新位）；树同步不需要——同一文件换位，选中不变。
+    /// 下标——拖拽中途列表变了不会错位）；找不到（已关）= no-op；`to` 越界
+    /// 按 zed `insertion_index.min(items.len())` 夹到末尾（标签区空白 drop
+    /// 传的就是 items.len()）。active_panel_tab 随 remove/insert 平移（被拖
+    /// tab 若是激活 tab 跟随到新位）；树同步不需要——同一文件换位，选中不变。
     pub(crate) fn move_panel_tab(&mut self, key: &TabKey, to: usize, cx: &mut Context<Self>) {
         let Some(from) = self.ws.panel_tabs.iter().position(|t| &t.key() == key) else {
             return;
         };
-        if to >= self.ws.panel_tabs.len() || from == to {
+        let to = to.min(self.ws.panel_tabs.len().saturating_sub(1));
+        if from == to {
             return;
         }
         let tab = self.ws.panel_tabs.remove(from);

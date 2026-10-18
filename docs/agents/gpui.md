@@ -46,6 +46,15 @@
   div 也行）；`on_drag` 必须 `Stateful`（.id()）。
 - PF 案例（021 文件树拖拽移动）：file_tree_drag.rs（payload/幽灵/落点判定）+
   file_tree.rs `tree_drag_wiring` + file_actions.rs `tree_move_commit`。
+- **同容器内多个同类可拖元素，元素 id 必须逐个唯一**（`("前缀", ix)`）。
+  `div().id()` 的 element_state 按 id 存，共用同一个字符串 id 时
+  pending_mouse_down / drag_listener 也是同一条 → 在任意一个元素上起手
+  拖，拿到的永远是**最后一个**的载荷（topbar 标签拖拽“黏连” bug 根因，
+  2026-10-18；zed `Tab::new(ix)` 就是逐 ix 的 id）。同理 × 关闭钮等子元
+  素 id 也会撞。
+- 拖拽期“激活/选中”类动作挂 `on_click`（mouse-up），不要挂
+  `on_mouse_down`：后者在起手阈值前已触发，拖一个未选中 tab 会把它顶成
+  选中态（zed 全线 on_click）。
 
 ## 布局
 

@@ -32,14 +32,29 @@ terminal打开也在这里
 - 自由标签区伸展到最小化钮左侧 20px（flex_1 + min_w_0；2026-10-14 定案
   撤 75% 限宽，回 023 的 Zed parity）+ 横向滑动；右端 20px 固定为窗口拖拽区。
 - 会话 tab 为固定段、不参与滚动，且不接 on_drag（禁止拖拽，2026-10-14
-  定案）。自由 tab 拖拽换位 = zed pane tab 单 pane 版：on_drag 发起
-  （ghost = 拖拽手势 icon-hand + 标题浮起小签，icon 不随 tab 类型——
-  终端/更新日志图标在拖拽语义下误导，2026-10-14 定夺）→ drag_over 插入
-  侧亮条（目标在源右 = 左缘亮条，反之右缘）→ on_drop 落位（按 TabKey
-  现查 from，防中途列表漂移；active_panel_tab 随移平移，shifted_active
-  穷举单测）；拖到标签区空白 = 移到末尾。app-body 根容器挂全局兑底
-  on_drop：gpui 落点无注册目标时 active_drag 残留（ghost 不消失、新拖
-  被挡），根 no-op listener 兼清道夫，真 drop 在深层已 stop_propagation。
+  定案）。自由 tab 拖拽换位 = zed pane.rs 原文移植：
+  - **元素 id 每 tab 唯一**（`Tab::new(ix)` 同款 `("ctab-file", ix)`）。
+    所有 tab 共用同一个字符串 id 时 gpui 的 element_state 是同一条
+    （pending_mouse_down / drag_listener 共用），在任意 tab 上起手拖拿到
+    的都是**最后一个** tab 的载荷——幽灵黏住最后一个 tab（黏连 bug 根因，
+    2026-10-18）。
+  - on_drag 发起：幽灵 = 被拖 tab 本体（`DraggedTab::render` 同款，复用
+    tab_body 外观：icon + 标题 + 激活态配色 + shadow），不另造小签。
+  - drag_over 逐字：`bg(drop_target_background).border_0()` + 源在目标左
+    → 目标左缘 2px、源在目标右 → 右缘 2px（原地只留底不画边；高亮色走
+    `t.bg_hover` / `t.accent`，PF 无色板 token）。**方向与直觉相反**：目标
+    在源右侧时源是插到目标**后**面，所以亮的是目标右缘。
+  - on_drop 落位：按 TabKey 现查 from（防中途列表漂移）；`to` 越界按 zed
+    `insertion_index.min(items.len())` 夹到末尾；active_panel_tab 随移平移
+    （shifted_active 穷举单测）。
+  - 标签区右侧余量 = `render_tab_bar_drop_target` 同款（min_w 24 +
+    flex_grow + 空 child 的 zed HACK），拖过时底色高亮，落 = 移到末尾。
+  - tab 激活挂 on_click（mouse-up）而非 on_mouse_down：起手拖拽会清
+    clicked_state，拖一个未激活 tab 不会把它顶成激活态（zed `Tab::on_click`
+    同式）。
+  - app-body 根容器挂全局兑底 on_drop：gpui 落点无注册目标时 active_drag
+    残留（ghost 不消失、新拖被挡），根 no-op listener 兼清道夫，真 drop
+    在深层已 stop_propagation。
 - 会话标签前置 bot-message-square icon（15px，muted），标签贴标签栏左缘
   10px（2026-10-10 追加，替代初稿"去掉会话icon"口径）；会话 tab 为固定
   段、不随自由标签滚动（2026-10-14 追加：超多标签旧实现会把它滚出视野）。
