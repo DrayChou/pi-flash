@@ -1020,9 +1020,8 @@ fn project_row(
 
 /// 会话行：15px 状态槽（运行=旋转圈 / 未读=绿点 / 空）+ 标题；右键详情卡。
 /// `shift` = 所属项目块的避让位移（020 拖拽：整组随头行一起平移让位）。
-/// `in_pinned` = 是否置顶组内的副本行（元素 id 用 ps-pin- 前缀，与原组
-/// 行区分防 gpui id 冲突；渲染样式与 pin 语义完全一致——pin 态按会话
-/// 路径判定，两份行同亮同可点）。
+/// `in_pinned` = 是否置顶组内的行（只用于元素 id 加 ps-pin- 前缀；渲染
+/// 样式与普通行完全一致——pin 钮的图标按会话路径判定置顶态）。
 fn session_row_view(
     chat: &Chat,
     p: usize,
@@ -1219,18 +1218,19 @@ fn session_row_view(
                     },
                 )
                 .child(
-                    // 状态槽（15px）：常态 = 转圈/彩点/空；悬停被 pin 暂时替代
-                    //（020 会话置顶 ①；pin 用 MD 档中性色）。**常显 pin 只属
-                    // 于置顶组内的行**（in_pinned）——原组行平时照常显示状态
-                    //（转圈/彩点不能被占），2026-10-18 用户反馈定夺。
+                    // 状态槽（15px）：常态 = 转圈/彩点/空；悬停换成置顶钮
+                    //（020 会话置顶 ①；MD 档中性色）。**任何行都不常显 pin**
+                    // ——置顶组行也不例外（2026-10-18 二改：常显 pin 白占
+                    // 状态槽，转圈/彩点看不到）。悬停态图标随置顶态翻转：
+                    // 未置顶 = pin（置顶）、已置顶 = pin-off（取消置顶）。
                     // pin 钮只在可见时存在（tracked hover 态门控），不可见的钮
                     // 不拦截点击——状态槽那 15px 未悬停时要留给以后可能的槽位交互
                     div()
                         .relative()
                         .size(px(15.))
                         // 状态与 pin 互斥渲染（pin 是描边 icon，叠加会从缝隙露出
-                        // 底下的转圈/彩点）：非置顶组行且未悬停才画状态
-                        .when(!(in_pinned || hovered), |d| {
+                        // 底下的转圈/彩点）：未悬停才画状态
+                        .when(!hovered, |d| {
                             d.child(
                                 div()
                                     .absolute()
@@ -1266,7 +1266,7 @@ fn session_row_view(
                                     }),
                             )
                         })
-                        .when(in_pinned || hovered, |d| {
+                        .when(hovered, |d| {
                             d.child(
                                 div()
                                     .id("pin-toggle")
@@ -1284,7 +1284,11 @@ fn session_row_view(
                                             c.session_pin_toggle(path_pin.clone(), cx);
                                         });
                                     })
-                                    .child(icon("pin", crate::ui::tokens::icon::MD, t.text_dim)),
+                                    .child(icon(
+                                        if pinned { "pin-off" } else { "pin" },
+                                        crate::ui::tokens::icon::MD,
+                                        t.text_dim,
+                                    )),
                             )
                         }),
                 )

@@ -134,6 +134,9 @@ assets! {
     "icons/folder-input.svg",
     // 021 Pin 收藏夹：操作栏钮 + 收藏夹行首移除钮 + 右键菜单项（lucide pin）
     "icons/pin.svg",
+    // 020 会话置顶：已置顶行 hover 的「取消置顶」形态（lucide pin-off，
+    // 用户供图 2026-10-18——对勾斜线一眼区分「取消」而非「再置顶」）
+    "icons/pin-off.svg",
     // 020 会话置顶：置顶组头行 icon（lucide folder-bookmark，用户供图
     // 2026-10-18——组头是「文件夹+书签」语义，与行上的 pin 区分）
     "icons/folder-bookmark.svg",
