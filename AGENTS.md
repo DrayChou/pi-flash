@@ -22,7 +22,10 @@ RUST_MIN_STACK=33554432 cargo test -p pi-link   # 协议/路径测试都在 pi-l
 - UI绘制遵循 docs\UI设计\UI组件规范.md
 - **发布产物不落本机**：构建产物只留在 `target/`（如 `target/release/pi-flash.exe`），禁止复制/替换本机已安装的 `D:\softwares\...\payload\pi-flash.exe`，也不要在 payload 目录生成 `.new` 之类的暂存文件——装不装、何时装由用户自己决定
 - CHANGELOG发版驱动，平时勿碰！
-- **禁整包 cargo fmt**：对 `crates/app` 跑整包 `cargo fmt` 会折断 i18n.rs 表行并产生全仓格式化洪泛。格式化只允许 `rustfmt --edition 2024 <自己改过的具体文件>` 
+- **格式化只走 `scripts/fmt.sh`**（唯一入口）：`scripts/fmt.sh <自己改过的 .rs>` 点名文件；`--check` 只查不写；`--all` 全仓专项（须已跟踪改动为 0 + 输 `yes`，结果单独提交为 `style:`，不混进功能提交）。
+  **不要用 `cargo fmt`——它洗整个 package**（本仓 200+ .rs 大多非 fmt-clean，一跑就是几百文件洪泛）；`cargo fmt -- <file>` 的 `--` 只是给 rustfmt 追加参数，**主体照样整包**（2026-10-18 三次踩踏）。
+  脚本守卫：无参数报错、拒目录/包名/非 .rs/未跟踪文件、`i18n.rs` 永远跳过（TABLE 一行一条是 `i18n_audit` 契约，折行即 panic）、跑完打印脏文件计数哨兵。
+  救火：`scripts/fmt-flood-clean.sh` 封 stash（可恢复）；`.githooks/pre-commit` 拦 ≥30 文件提交。详见 [engineering.md](docs/agents/engineering.md)。
 - 禁止擅自修改Settings内容！
 
 # 路径
