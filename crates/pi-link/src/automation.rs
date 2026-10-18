@@ -30,7 +30,8 @@ pub mod method {
     pub const SESSION_DELETE: &str = "session.delete";
     /// 020 会话置顶（自动化验证入口：与行上 pin 钮/右键卡 pin 钮同一条
     /// 写路 session_pin_toggle）。参 {"path": "…", "pinned": bool?}——
-    /// pinned 缺省 = toggle；回 {"pinned": bool} 断言置顶态
+    /// **幂等**：pinned 缺省 = true（置顶），显式 false 才取消；回
+    /// {"pinned": bool} 即目标态。UI 按钮仍是 toggle（点击语义）。
     pub const SESSION_PIN: &str = "session.pin";
     pub const SESSION_SEND: &str = "session.send";
     pub const SESSION_STEER: &str = "session.steer";

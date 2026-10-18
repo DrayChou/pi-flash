@@ -326,15 +326,19 @@ pub(super) fn dispatch(
         }
         method::SESSION_PIN => {
             let path = params_path(params, "path")?;
-            let pinned = chat.session_pinned(&path);
-            let want = params.get("pinned").and_then(Value::as_bool);
-            let now = if want.is_none() || want != Some(pinned) {
+            // **幂等**：缺省 = 置顶（pinned: true），显式 false 才取消。
+            // 早期缺省是 toggle，脚本/测试连着调两次会互相撤销（e2e 实测
+            // 三条 pin 只剩最后一条）——自动化 op 必须可重复调用。
+            // UI 的按钮语义仍是 toggle（那是点击语义，与本 op 无关）。
+            let want = params
+                .get("pinned")
+                .and_then(Value::as_bool)
+                .unwrap_or(true);
+            let now = chat.session_pinned(&path);
+            if want != now {
                 chat.session_pin_toggle(path, cx);
-                !pinned
-            } else {
-                pinned
-            };
-            Ok(json!({"pinned": now}))
+            }
+            Ok(json!({"pinned": want}))
         }
         method::SESSION_SEND => {
             if let Some(t) = params.get("text").and_then(Value::as_str) {
