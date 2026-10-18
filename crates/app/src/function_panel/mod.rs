@@ -1276,11 +1276,7 @@ fn session_row_view(
                                             c.session_pin_toggle(path_pin.clone(), cx);
                                         });
                                     })
-                                    .child(icon(
-                                        "pin",
-                                        crate::ui::tokens::icon::MD,
-                                        if pinned { t.accent } else { t.text_dim },
-                                    )),
+                                    .child(icon("pin", crate::ui::tokens::icon::MD, t.text_dim)),
                             )
                         }),
                 )
@@ -1331,8 +1327,8 @@ fn session_row_view(
         .into_any_element()
 }
 
-/// 置顶组头行（020 会话置顶 ③）：folder-bookmark icon（MD 档，accent
-/// 常亮，用户供图 2026-10-18——组头用「文件夹+书签」语义与行上 pin 区分）
+/// 置顶组头行（020 会话置顶 ③）：folder-bookmark icon（MD 档；中性
+/// text_dim——pin/置顶不用主题色，不抢注意力，2026-10-18 用户定夺）
 /// +「置顶」；样式对齐项目行（同高同字号同对齐线）。零交互：不收折/
 /// 不拖拽/无右键卡——置顶是全局单组，组序恒在最顶，头行没有可操作面。
 fn pinned_header_row(t: &'static Theme) -> gpui::AnyElement {
@@ -1349,7 +1345,7 @@ fn pinned_header_row(t: &'static Theme) -> gpui::AnyElement {
         .child(icon(
             "folder-bookmark",
             crate::ui::tokens::icon::MD,
-            t.accent,
+            t.text_dim,
         ))
         .child(
             div()
