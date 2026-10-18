@@ -507,12 +507,6 @@ fn ensure_composer(
         f.set_on_change(Rc::new(move |v, cx| {
             let _ = weak_change.update(cx, |chat, cx| {
                 if chat.composer.input != v {
-                    // 派生界面态先行快照（on_change 里只有正文变了，图片/焦点不动）
-                    let before_can_queue =
-                        !chat.composer.input.is_empty() || !chat.composer.pending_images.is_empty();
-                    let before_bash = chat.composer.pending_images.is_empty()
-                        && chat.composer.input.trim_start().starts_with('!');
-                    let before_menu = chat.active_menu(cx);
                     // enter() 污染签名（原文尾追 \n）：组件 Enter 先插换行
                     // 触发本次 Change，随即 PressEnter → on_submit 用剥 \n 的
                     // 值覆盖回来。此间过滤集未变，不能复位 menu_ix——否则
@@ -530,23 +524,7 @@ fn ensure_composer(
                         chat.composer.menu_scroll
                             .set_offset(gpui::point(px(0.), px(0.)));
                     }
-                    // **派生界面态都没变就不 notify**：正文中间打字/删字（绝
-                    // 大多数键）只有输入组件自身变化，它自绘自己；此前每键
-                    // 一次 Chat 整窗重绘，debug 构建 × 长会话下就是「input
-                    // panel 输入迟缓」。需要整窗重绘的只有：发送钮可用态、
-                    // `!` shell 边框、任一菜单开/过滤（菜单列表是 Chat 渲的）。
-                    let after_can_queue = !chat.composer.input.is_empty()
-                        || !chat.composer.pending_images.is_empty();
-                    let after_bash = chat.composer.pending_images.is_empty()
-                        && chat.composer.input.trim_start().starts_with('!');
-                    let after_menu = chat.active_menu(cx);
-                    if before_can_queue != after_can_queue
-                        || before_bash != after_bash
-                        || before_menu.is_some()
-                        || after_menu.is_some()
-                    {
-                        cx.notify();
-                    }
+                    cx.notify();
                 }
             });
         }));
