@@ -1213,16 +1213,17 @@ fn session_row_view(
                 )
                 .child(
                     // 状态槽（15px）：常态 = 转圈/彩点/空；悬停被 pin 暂时替代
-                    //（020 会话置顶 ①），已置顶则恒显 pin（点击 = unpin；pin 用
-                    // MD 档 icon，已置顶 = accent 常亮，悬停替换 = 常字色）。
+                    //（020 会话置顶 ①；pin 用 MD 档中性色）。**常显 pin 只属
+                    // 于置顶组内的行**（in_pinned）——原组行平时照常显示状态
+                    //（转圈/彩点不能被占），2026-10-18 用户反馈定夺。
                     // pin 钮只在可见时存在（tracked hover 态门控），不可见的钮
                     // 不拦截点击——状态槽那 15px 未悬停时要留给以后可能的槽位交互
                     div()
                         .relative()
                         .size(px(15.))
                         // 状态与 pin 互斥渲染（pin 是描边 icon，叠加会从缝隙露出
-                        // 底下的转圈/彩点）：未置顶且未悬停才画状态
-                        .when(!pinned && !hovered, |d| {
+                        // 底下的转圈/彩点）：非置顶组行且未悬停才画状态
+                        .when(!(in_pinned || hovered), |d| {
                             d.child(
                                 div()
                                     .absolute()
@@ -1258,7 +1259,7 @@ fn session_row_view(
                                     }),
                             )
                         })
-                        .when(pinned || hovered, |d| {
+                        .when(in_pinned || hovered, |d| {
                             d.child(
                                 div()
                                     .id("pin-toggle")
