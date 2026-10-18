@@ -70,6 +70,7 @@ pub(crate) fn mc_misc_view(
             sess_n,
             3,
             10,
+            1,
             |v| v.to_string(),
             || crate::services::workspace::session_display_count() as u64,
             |v| {
@@ -293,6 +294,7 @@ fn stepper(
     value: u64,
     min: u64,
     max: u64,
+    step: i64,
     render: impl Fn(u64) -> String + 'static,
     cur: impl Fn() -> u64 + Clone + 'static,
     apply: impl Fn(u64) + Clone + 'static,
@@ -307,9 +309,10 @@ fn stepper(
             format!("{id_prefix}-dec"),
             "−",
             value > min,
-            -1,
+            -step,
             min,
             max,
+            step,
             cur.clone(),
             apply.clone(),
             weak,
@@ -330,9 +333,10 @@ fn stepper(
             format!("{id_prefix}-inc"),
             "+",
             value < max,
-            1,
+            step,
             min,
             max,
+            step,
             cur,
             apply,
             weak,
@@ -341,7 +345,7 @@ fn stepper(
         .into_any_element()
 }
 
-/// 052 自动清理天数步进：[0,100]，默认 0 显示「关闭」（= 不自动清理）。
+/// 052 自动清理天数步进：[0,100] 步长 5，默认 0 显示「关闭」（= 不自动清理）。
 fn clean_stepper(
     weak: &gpui::WeakEntity<Chat>,
     t: &'static crate::appearance::theme::Theme,
@@ -351,6 +355,7 @@ fn clean_stepper(
         crate::services::workspace::auto_clean_days(),
         0,
         100,
+        5,
         |v| {
             if v == 0 {
                 tr("misc.auto_clean_off").to_string()
@@ -369,8 +374,8 @@ fn clean_stepper(
     )
 }
 
-/// 步进按钮：enabled=false 时置灰且不挂点击；点击把 cur() + delta 夹回
-/// [min, max] 后交 apply 落盘（weak.update 只为拿 Chat 的 notify）。
+/// 步进按钮：enabled=false 时置灰且不挂点击；点击把 cur() 对齐步长网格后
+/// ± step、夹回 [min, max] 交 apply 落盘（weak.update 只为拿 Chat 的 notify）。
 fn step_btn(
     id: String,
     label: &str,
@@ -378,6 +383,7 @@ fn step_btn(
     delta: i64,
     min: u64,
     max: u64,
+    step: i64,
     cur: impl Fn() -> u64 + 'static,
     apply: impl Fn(u64) + 'static,
     weak: &gpui::WeakEntity<Chat>,
@@ -403,7 +409,11 @@ fn step_btn(
             .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                 cx.stop_propagation();
                 let _ = weak_click.update(cx, |_c, cx| {
-                    apply(((cur() as i64) + delta).clamp(min as i64, max as i64) as u64);
+                    let c = cur() as i64;
+                    // 对齐步长网格再步进：存量非格点值（如老默认 3）也能
+                    // 干净落到 0/5/…/100；step=1 时恒等，不影响会话显示数
+                    let base = c - c.rem_euclid(step);
+                    apply((base + delta).clamp(min as i64, max as i64) as u64);
                     cx.notify();
                 });
             })
