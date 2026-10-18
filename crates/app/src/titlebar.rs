@@ -148,26 +148,36 @@ fn icon_btn(
 /// 内容区、× 可见）；非激活 = 平铺文字。`ml` = 距分隔线/前一 tab 的间距。
 
 
-/// 中段标签栏（016）：置顶会话 tab（第一位，距条左缘 10px）+ 自由标签区
-/// （终端/文件，023 规则：脏点/冲突标记在 tab 行尾）。
+/// 中段标签栏（016）：置顶会话 tab（固定段，第一位，距条左缘 10px）+
+/// 自由标签区（终端/文件，023 规则：脏点/冲突标记在 tab 行尾）。
 ///
 /// 标签区伸展到最小化钮左侧 20px（flex_1 + min_w_0；016 2026-10-14 定案
-/// 撤 75% 限宽，回 023 的 Zed parity），超出横向滑动；左缘 10px、右走
-/// 流内 20px spacer（滚到底也有留白，不贴右边界）。
+/// 撤 75% 限宽，回 023 的 Zed parity）；自由标签区独立横向滑动，会话 tab
+/// 不参与滚动（2026-10-14 bug 修复：超多标签时旧实现把会话 tab 一起滚
+/// 走——它必须恒定可见）；右走流内 20px spacer（滚到底也有留白）。
 fn tab_strip(
     chat: &mut Chat,
     cx: &mut gpui::Context<Chat>,
-) -> gpui::Stateful<gpui::Div> {
-    let mut tabs_host = div()
+) -> gpui::AnyElement {
+    let mut strip = div()
         .id("topbar-tabs")
         .flex_1()
         .min_w_0()
         .pl(px(10.))
         .h_full()
         .flex()
+        .items_end();
+    // 固定段：置顶会话 tab（滚动区外，永不滚走）
+    strip = strip.child(session_tab(chat, cx));
+    // 自由标签区：独立横向滑动，起点紧贴会话 tab（tab 自带 ml 4px）
+    let mut tabs_host = div()
+        .id("topbar-tabs-scroll")
+        .flex_1()
+        .min_w_0()
+        .h_full()
+        .flex()
         .items_end()
         .overflow_x_scroll();
-    tabs_host = tabs_host.child(session_tab(chat, cx));
     for (ix, tab) in chat.ws.panel_tabs.iter().enumerate() {
         let (label, path, is_file, tab_icon, tab_view): (
             SharedString,
@@ -249,10 +259,12 @@ fn tab_strip(
         ));
     }
     // 流内右留白（滚到底也有 20px）
-    tabs_host.child(div().w(px(20.)).flex_shrink_0())
+    tabs_host = tabs_host.child(div().w(px(20.)).flex_shrink_0());
+    strip.child(tabs_host).into_any_element()
 }
 
-/// 置顶会话 tab（016）：中段第一位（距条左缘 10px），无 × 无 ⋯（2026-10-11
+/// 置顶会话 tab（016）：中段第一位固定段（距条左缘 10px，不随自由标签
+/// 滚动——2026-10-14 定案），无 × 无 ⋯（2026-10-11
 /// 定夺：⋯ 菜单三入口改到会话 tab 下方的功能栏，见 session::session_fn_bar），
 /// label = 会话标题（≤30 字截断不变），前置 bot-message-square icon。激活 =
 /// 会话视图（Obsidian 卡片融底）；点击回会话视图。
