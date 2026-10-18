@@ -96,27 +96,48 @@
 修复后同一探针 `attached=false`、进程树只剩 `node.exe`（pi 侧车）与 `git.exe`
 （都 CREATE_NO_WINDOW），无 conhost、无 WT 新进程。
 
-## cargo fmt 会打断 i18n_audit（i18n.rs 禁止整包 fmt）
+## 格式化：只走 `scripts/fmt.sh`（2026-10-18 三次踩踏后立的规矩）
+
+### 为什么不能跑 `cargo fmt`
+
+`cargo fmt` 的语义是**洗整个 package**，不是「你改的那个文件」：
+
+- 本仓 200+ `.rs` **绝大多数不是 rustfmt-clean**（原作者紧凑手写风：长行、
+  紧凑字面量）。跑一次 → 几百个文件立刻变脏，纯排版 diff。
+- 唯一命令 `rustfmt --edition 2024 <file>` 只改排版（换行/缩进/`use` 排序），
+  **不改语义**；编译器、测试、reviewer 都不看排版 ⇒ 本仓里整包格式化
+  **零收益、纯风险**。
+- `cargo fmt -- <file>` 里的 `--` 是**给 rustfmt 追加参数**，主体照样整包
+  （第三次踩踏就栽在这：以为带文件参数就收窄了范围）。
+
+真正需要全仓格式化（统一风格）时，正确做法是**一次性专项**：`fmt.sh --all`
+→ 单独一个 `style: 全仓 rustfmt` 提交 → 同时把 `cargo fmt --check` 挂进 CI
+从此保持干净。绝不能夹在功能提交里顺手做。
+
+### 附带雷：`i18n.rs` 的 TABLE 被 test 按行解析
 
 `i18n_audit::keys_and_translations_are_complete` 按行解析 `i18n.rs` 的
-TABLE（行 trim 后以 `(` 开头 + 拆出 4 列），表行**必须一行一条**。对
-`crates/app` 跑 `cargo fmt` 会把超宽表行折成多行 → audit 只解析到零头
-（实测 552 → 233）直接 panic「TABLE 解析异常」。2026-10-18 实踩两回。
+TABLE（行 trim 后以 `(` 开头 + 拆出 4 列），表行**必须一行一条**。rustfmt
+会把超宽表行折成多行 → audit 只解析到零头（实测 552 → 233）直接 panic
+「TABLE 解析异常」。所以 `fmt.sh` **永远跳过** `crates/app/src/i18n.rs`。
 
-**规矩（2026-10-18 三次踩踏后收敛为唯一入口）**：格式化只走
+误伤恢复：`git checkout HEAD -- crates/app/src/i18n.rs` 再重插新增表行
+（表行统一 `, ` 分隔单行格式）。
+
+### 三层防线
+
+| 层 | 位置 | 拦什么 |
+|---|---|---|
+| 入口防 | `scripts/fmt.sh` | **批量行为本身**：无参数报错（不存在「默认整包」默认值）、拒目录/包名/非 `.rs`/未跟踪文件、跳过 i18n.rs、跑完打印脏文件计数哨兵（一次涨 ≥20 提示疑似洪泛） |
+| 提交防 | `.githooks/pre-commit`（`core.hooksPath=.githooks`） | **大批量入库**：单次暂存 ≥30 文件即拦（逃生 `--no-verify` 或 `PI_FLASH_ALLOW_BULK=1`） |
+| 救火 | `scripts/fmt-flood-clean.sh` | 把工作区 `.rs` 洪泛封进 stash（可恢复），非 `.rs` 改动留在工作区 |
 
 ```bash
-scripts/fmt.sh <自己改过的那几个 .rs>        # 只格式化点名文件
-scripts/fmt.sh --check <file.rs>            # 只检查不写盘
-scripts/fmt.sh --all                        # 全仓专项（要求工作区干净 + 输入 yes）
+scripts/fmt.sh <自己改过的那几个 .rs>   # 唯一安全姿势
+scripts/fmt.sh --check <file.rs>       # 只检查不写盘
+scripts/fmt.sh --all                   # 全仓专项：已跟踪改动须为 0 + 输 yes
 ```
 
-脚本内置铁律，绕不过去：无参数报错（不存在「默认整包」）、传目录/包名/
-非 .rs/未跟踪文件一律拒绝、`i18n.rs` 永远跳过（TABLE 表行是 audit 的解析
-契约）、跑完打印脏文件计数前后对比（一次 ≥20 就提示疑似洪泛）。
-**不要**再用 `cargo fmt`——它的语义是洗整个 package；`cargo fmt -- <file>`
-也只是给 rustfmt 追加参数，主体照样整包（三次踩踏里最后一次就栽在这）。
-
-误伤后恢复：`git checkout HEAD -- crates/app/src/i18n.rs` 再重插新增表行
-（表行统一 `, ` 分隔单行格式）。
-误中洪泛用 `scripts/fmt-flood-clean.sh` 一键封存；pre-commit hook 会拦大批量提交（绕过用 `--no-verify`）
+**为什么写死成脚本**：否定式规则（「禁止整包 fmt」）对 agent 约束力不足——
+本仓连踩三次，第三次还是在 `i18n_audit` 打脸之后。把危险动作收敛成唯一
+受控入口，让「整包」这个操作在命令行上根本不可达，比记住规则可靠。
