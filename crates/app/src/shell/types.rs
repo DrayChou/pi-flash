@@ -234,6 +234,26 @@ pub(crate) enum PanelTab {
     Changelog,
 }
 
+/// tab 稳定键（2026-10-14 标签拖拽换位引入）：拖拽发起时记 key，drop 时
+/// 按 key 重查下标再 move——拖拽中途列表变化（异步关 tab 等）不会把落
+/// 位算到漂移后的错误下标上（zed 用 item id 同语义）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum TabKey {
+    Term(usize),
+    File(PathBuf),
+    Changelog,
+}
+
+impl PanelTab {
+    pub(crate) fn key(&self) -> TabKey {
+        match self {
+            PanelTab::Term(id) => TabKey::Term(*id),
+            PanelTab::File(p) => TabKey::File(p.clone()),
+            PanelTab::Changelog => TabKey::Changelog,
+        }
+    }
+}
+
 /// topbar 标签右键菜单的目标 tab（zed tab_bar 菜单移植）：置顶会话 tab
 /// 恒存不可关（菜单无 Close、Close Left 恒灰）；自由 tab 按下标定位
 /// （菜单存续期 panel_tabs 冻结——浮层 occlude 全窗，无人能动它）。

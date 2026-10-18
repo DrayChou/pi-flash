@@ -8,6 +8,17 @@ use crate::*;
 /// 自动保存静默期（023；Zed autosave after_timeout 同构）。
 const AUTOSAVE_DEBOUNCE_MS: u64 = 1000;
 
+/// tab 换位后激活下标的平移（纯函数，供单测）：remove(from) 后 >from 的
+/// -1，insert(to) 后 >=to 的 +1；被拖 tab 本身（a == from）跟随到 to。
+fn shifted_active(a: usize, from: usize, to: usize) -> usize {
+    if a == from {
+        to
+    } else {
+        let na = if a > from { a - 1 } else { a };
+        if to <= na { na + 1 } else { na }
+    }
+}
+
 impl Chat {
     /// v54.4：文件打开路由——统一打开为内容区 tab，主体渲染与编辑器配置
     /// 由 kind handler 决定（未注册类型走默认文本 kind）。html/htm 直接
@@ -597,6 +608,24 @@ impl Chat {
         true
     }
 
+    /// tab 拖拽换位落位（zed handle_tab_drop 单 pane 版，2026-10-14）：把
+    /// `key` 对应的 tab 移到 to 位置。from 由 key 现查（不信任发起时的
+    /// 下标——拖拽中途列表变了不会错位）；找不到（已关）或原地/越界 =
+    /// no-op。active_panel_tab 随 remove/insert 平移（被拖 tab 若是激活
+    /// tab 跟随到新位）；树同步不需要——同一文件换位，选中不变。
+    pub(crate) fn move_panel_tab(&mut self, key: &TabKey, to: usize, cx: &mut Context<Self>) {
+        let Some(from) = self.ws.panel_tabs.iter().position(|t| &t.key() == key) else {
+            return;
+        };
+        if to >= self.ws.panel_tabs.len() || from == to {
+            return;
+        }
+        let tab = self.ws.panel_tabs.remove(from);
+        self.ws.panel_tabs.insert(to, tab);
+        self.ws.active_panel_tab = self.ws.active_panel_tab.map(|a| shifted_active(a, from, to));
+        cx.notify();
+    }
+
     pub(crate) fn close_panel_tab(&mut self, ix: usize, cx: &mut Context<Self>) {
         if ix >= self.ws.panel_tabs.len() {
             return;
@@ -645,5 +674,31 @@ impl Chat {
             self.ws.active_terminal = Some(tix);
         }
         cx.notify();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::shifted_active;
+
+    /// 换位平移穷举：[t0..t4] 里枚举全部 (from, to, a)，用「模拟序列
+    /// remove/insert 后查同元素下标」做 oracle 对照。
+    #[test]
+    fn active_index_follows_tab_move() {
+        for n in 1..=5usize {
+            let tabs: Vec<usize> = (0..n).collect();
+            for from in 0..n {
+                for to in 0..n {
+                    let mut moved = tabs.clone();
+                    let t = moved.remove(from);
+                    moved.insert(to, t);
+                    for a in 0..n {
+                        let elem = tabs[a];
+                        let want = moved.iter().position(|&e| e == elem).unwrap();
+                        assert_eq!(shifted_active(a, from, to), want, "n={n} from={from} to={to} a={a}");
+                    }
+                }
+            }
+        }
     }
 }

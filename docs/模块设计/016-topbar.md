@@ -31,6 +31,12 @@ terminal打开也在这里
   画线"与会话 tab 卡片融底互斥，取标签规则同文件标签口径）。
 - 自由标签区伸展到最小化钮左侧 20px（flex_1 + min_w_0；2026-10-14 定案
   撤 75% 限宽，回 023 的 Zed parity）+ 横向滑动；右端 20px 固定为窗口拖拽区。
+- 会话 tab 为固定段、不参与滚动，且不接 on_drag（禁止拖拽，2026-10-14
+  定案）。自由 tab 拖拽换位 = zed pane tab 单 pane 版：on_drag 发起
+  （ghost = icon+标题浮起小签）→ drag_over 插入侧亮条（目标在源右 = 左
+  缘亮条，反之右缘）→ on_drop 落位（按 TabKey 现查 from，防中途列表漂移；
+  active_panel_tab 随移平移，shifted_active 穷举单测）；拖到标签区空白 =
+  移到末尾。
 - 会话标签前置 bot-message-square icon（15px，muted），标签贴标签栏左缘
   10px（2026-10-10 追加，替代初稿"去掉会话icon"口径）；会话 tab 为固定
   段、不随自由标签滚动（2026-10-14 追加：超多标签旧实现会把它滚出视野）。

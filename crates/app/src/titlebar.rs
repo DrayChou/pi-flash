@@ -15,9 +15,73 @@ use gpui::WindowControlArea;
 
 use crate::Chat;
 use crate::ContentView;
+use crate::TabKey;
 use crate::i18n::tr;
 use crate::appearance::theme::theme as T;
+use crate::services::file_icons;
 use crate::ui::tokens::align;
+
+/// tab 拖拽载荷（zed DraggedTab 单 pane 版，2026-10-14）：`ix` 供悬停
+/// 插入侧指示判向；`key` 供 drop 落位（稳定键，防中途列表漂移错位）。
+/// TypeId 与树拖拽 TreeDrag 互不串扰。会话 tab 不接 on_drag（固定段
+/// 禁拖，016 定案）。
+#[derive(Clone)]
+pub(crate) struct TabDrag {
+    pub(crate) ix: usize,
+    pub(crate) key: TabKey,
+}
+
+/// tab 拖拽元信息（content_tab 入参）：key + ghost 数据一次传齐，
+/// 避免 content_tab 参数继续膨胀。
+pub(crate) struct TabDragMeta {
+    pub(crate) key: TabKey,
+    pub(crate) path: Option<PathBuf>,
+}
+
+/// tab 拖拽幽灵（gpui 把 `cx.active_drag.view` 画在光标处）：icon + 标
+/// 题的浮起小签，zed tab 自克隆的极简版（等高、卡片底、浮影）。
+pub(crate) struct TabDragGhost {
+    pub(crate) label: String,
+    pub(crate) icon: Option<&'static str>,
+    pub(crate) path: Option<PathBuf>,
+}
+
+impl gpui::Render for TabDragGhost {
+    fn render(
+        &mut self,
+        _window: &mut gpui::Window,
+        _cx: &mut gpui::Context<Self>,
+    ) -> impl IntoElement {
+        let t = T();
+        // 图标：终端/更新日志固定 icon；文件按后缀取类型 icon
+        let icon: Option<&'static str> = self
+            .icon
+            .or_else(|| self.path.as_deref().map(file_icons::get_icon));
+        div()
+            .flex()
+            .items_center()
+            .gap(px(9.))
+            .h(px(HEIGHT - 4.))
+            .max_w(px(300.))
+            .px(px(12.))
+            .rounded(px(7.))
+            .border_1()
+            .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x8c)))
+            .bg(rgb(t.bg))
+            .shadow_md()
+            .text_size(crate::appearance::ui_size(12.))
+            .text_color(rgb(t.text))
+            .children(icon.map(|n| crate::ui::icon(n, 15., t.text_muted)))
+            .child(
+                div()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .text_ellipsis()
+                    .child(SharedString::from(self.label.clone())),
+            )
+    }
+}
 
 /// topbar 高（两段同高；窗口控制钮高度跟随；2026-10-10 定夺 36→38，
 /// 2026-10-13 定夺 38→40 与 statusbar 等高）。
@@ -254,12 +318,22 @@ fn tab_strip(
             tab_icon,
             badge,
             deleted,
+            TabDragMeta { key: tab.key(), path },
             tab_view,
             cx,
         ));
     }
     // 流内右留白（滚到底也有 20px）
     tabs_host = tabs_host.child(div().w(px(20.)).flex_shrink_0());
+    // 拖到标签区空白（tab 右侧余量）= 移到末尾（zed tab bar 空白 drop 同
+    // 语义）；drop 派发给最深 hover 目标（bubble + stop_propagation），
+    // tab 上的 drop 不会重复进这里
+    tabs_host = tabs_host.on_drop::<TabDrag>(cx.listener(
+        move |this, drag: &TabDrag, _, cx| {
+            let last = this.ws.panel_tabs.len().saturating_sub(1);
+            this.move_panel_tab(&drag.key, last, cx);
+        },
+    ));
     strip.child(tabs_host).into_any_element()
 }
 
@@ -314,6 +388,7 @@ fn content_tab(
     tab_icon: Option<&'static str>,
     badge: Option<gpui::AnyElement>,
     strike: bool,
+    drag_meta: TabDragMeta,
     // 082 三期后视图由 activate_content_tab 从 panel_tabs[ix] 推导，调用
     // 方传入的 view 仅作签名兼容保留
     _view: ContentView,
@@ -364,6 +439,11 @@ fn content_tab(
         ));
         cx.notify();
     });
+    // zed pane tab 拖拽换位（2026-10-14）：on_drag 发起（ghost = icon+
+    // 标题浮起小签）+ drag_over 插入侧指示 + on_drop 落位（按稳定 key
+    // 现查 from，防拖拽中列表漂移）。会话 tab 不接线（固定段禁拖）。
+    let ghost_label = label.to_string();
+    let ghost_path = drag_meta.path.clone();
     tab_shell(
         id,
         tab_icon,
@@ -377,6 +457,34 @@ fn content_tab(
         strike,
     )
     .on_mouse_down(MouseButton::Right, ctx_menu)
+    .on_drag(
+        TabDrag { ix, key: drag_meta.key },
+        move |_, _, _, cx| {
+            cx.new(|_| TabDragGhost {
+                label: ghost_label.clone(),
+                icon: tab_icon,
+                path: ghost_path.clone(),
+            })
+        },
+    )
+    .drag_over::<TabDrag>(move |mut style, drag, _, _| {
+        // zed 插入侧指示：目标在源右 = 源插到目标前（左缘亮条）；目标在
+        // 源左 = 插到目标后（右缘亮条）；原地不高亮
+        if ix == drag.ix {
+            return style;
+        }
+        style.background = Some(rgb(t.bg_hover).into());
+        style.border_color = Some(rgb(t.accent).into());
+        if ix > drag.ix {
+            style.border_widths.left = Some(gpui::AbsoluteLength::Pixels(px(2.)));
+        } else {
+            style.border_widths.right = Some(gpui::AbsoluteLength::Pixels(px(2.)));
+        }
+        style
+    })
+    .on_drop::<TabDrag>(cx.listener(move |this, drag: &TabDrag, _, cx| {
+        this.move_panel_tab(&drag.key, ix, cx);
+    }))
 }
 
 #[allow(clippy::too_many_arguments)]
