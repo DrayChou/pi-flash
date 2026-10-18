@@ -1346,7 +1346,11 @@ fn pinned_header_row(t: &'static Theme) -> gpui::AnyElement {
         .pl(px(align::ROW_PL))
         .pr(px(align::LIST_PX))
         .rounded(px(8.))
-        .child(icon("folder-bookmark", crate::ui::tokens::icon::MD, t.accent))
+        .child(icon(
+            "folder-bookmark",
+            crate::ui::tokens::icon::MD,
+            t.accent,
+        ))
         .child(
             div()
                 .flex_1()
