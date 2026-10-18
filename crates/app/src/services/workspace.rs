@@ -724,7 +724,7 @@ pub struct AppSettings {
     /// 081 其他页: 自动更新（默认 on——off 时只提示新版本号 ↑ 不下载）
     pub auto_update: Option<bool>,
     /// 052 其他页: 会话自动清理天数——最后活动超出该天数的非置顶会话
-    /// 启动时移入回收站。默认 3，0 = 关闭，钳制 [0,100]。
+    /// 启动时移入回收站。默认 0 = 关闭（2026-10-18 用户定夺），设置后钳制 [0,100]。
     pub auto_clean_days: Option<u64>,
     /// 界面页: Markdown 所见即所得（024 Live Preview 装饰；默认关——
     /// 已知回车崩溃与标题行距问题未修，用户显式开启才挂装饰）
@@ -1017,10 +1017,11 @@ pub fn auto_update() -> bool {
     app_settings().auto_update.unwrap_or(true)
 }
 
-/// 052 其他页: 会话自动清理天数（默认 3，0 = 关闭；读入口统一鐘制 [0,100]，
-/// 存量脏值也在这里被拦住）。
+/// 052 其他页: 会话自动清理天数（默认 0 = 关闭——2026-10-18 用户定夺：自动删
+/// 会话太凶，显式设置后才生效；读入口统一钳制 [0,100]，存量脏值也在
+/// 这里被拦住）。
 pub fn auto_clean_days() -> u64 {
-    app_settings().auto_clean_days.unwrap_or(3).min(100)
+    app_settings().auto_clean_days.unwrap_or(0).min(100)
 }
 
 /// 界面页: Markdown 所见即所得（024 Live Preview 装饰；默认关 = md 源码态

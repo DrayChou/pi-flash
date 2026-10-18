@@ -83,7 +83,7 @@ pub(crate) fn mc_misc_view(
         t,
     ));
 
-    // 自动清理会话（052）：−/值/+ 步进，范围 [0,100]，默认 3；0 = 关闭；
+    // 自动清理会话（052）：−/值/+ 步进，范围 [0,100]，默认 0 = 关闭；
     // 最后活动超出天数的非置顶会话启动时移入回收站。置于「提示音」前（052 定）
     col = col.child(set_row(
         tr("settings.auto_clean_title"),
@@ -341,7 +341,7 @@ fn stepper(
         .into_any_element()
 }
 
-/// 052 自动清理天数步进：[0,100]，默认 3；0 显示「关闭」（= 不自动清理）。
+/// 052 自动清理天数步进：[0,100]，默认 0 显示「关闭」（= 不自动清理）。
 fn clean_stepper(
     weak: &gpui::WeakEntity<Chat>,
     t: &'static crate::appearance::theme::Theme,
