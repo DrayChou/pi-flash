@@ -6,7 +6,7 @@ use super::snapshot;
 use crate::{Chat, ContentView, DockPanel};
 use gpui::{Context, Focusable, Keystroke, Window};
 use pi_link::automation::method;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::path::PathBuf;
 
 type OpResult = Result<Value, (String, String)>;
@@ -77,7 +77,10 @@ pub(super) fn dispatch(
             Ok(json!({"quitting": true}))
         }
         method::THEME_SET => {
-            let name = params.get("name").and_then(Value::as_str).ok_or_else(|| bad("需要 {\"name\": \"mist|default|dark|rose\"}"))?;
+            let name = params
+                .get("name")
+                .and_then(Value::as_str)
+                .ok_or_else(|| bad("需要 {\"name\": \"mist|default|dark|rose\"}"))?;
             if !crate::appearance::theme::set_by_name(name) {
                 return Err(bad(format!("未知主题: {name:?}")));
             }
@@ -89,11 +92,19 @@ pub(super) fn dispatch(
             let ix = match params.get("ix").and_then(Value::as_u64) {
                 Some(ix) => ix as usize,
                 None => {
-                    let name = params.get("name").and_then(Value::as_str).ok_or_else(|| bad("需要 {\"ix\": 0} 或 {\"name\": \"English\"}"))?;
+                    let name = params
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| bad("需要 {\"ix\": 0} 或 {\"name\": \"English\"}"))?;
                     crate::i18n::LANG_LABELS
                         .iter()
                         .position(|l| *l == name)
-                        .ok_or_else(|| bad(format!("未知语言: {name:?}（可用 {:?}，或 ix 0/1/2）", crate::i18n::LANG_LABELS)))?
+                        .ok_or_else(|| {
+                            bad(format!(
+                                "未知语言: {name:?}（可用 {:?}，或 ix 0/1/2）",
+                                crate::i18n::LANG_LABELS
+                            ))
+                        })?
                 }
             };
             crate::i18n::set_lang(ix);
@@ -101,8 +112,12 @@ pub(super) fn dispatch(
             ok()
         }
         method::INPUT_KEYS => {
-            let keys = params.get("keys").and_then(Value::as_str).ok_or_else(|| bad("需要 {\"keys\": \"ctrl-s\"}"))?;
-            let ks = Keystroke::parse(keys).map_err(|e| ("bad_params".to_string(), e.to_string()))?;
+            let keys = params
+                .get("keys")
+                .and_then(Value::as_str)
+                .ok_or_else(|| bad("需要 {\"keys\": \"ctrl-s\"}"))?;
+            let ks =
+                Keystroke::parse(keys).map_err(|e| ("bad_params".to_string(), e.to_string()))?;
             // keystroke 会进真实 UI 事件链（输入框/弹层回调里 weak.update
             // Chat），而本 op 自身已包在 chat.aux.update 里——同步派发必触发
             // entity_map 重入断言（entity_map.rs "already being updated"，
@@ -120,7 +135,9 @@ pub(super) fn dispatch(
             // 线上 hit_test 语义响应，是穿透/命中类 bug 的唯一可信模拟。
             // 与 INPUT_KEYS 同因 defer：本 op 包在 chat.aux.update 里，
             // 同步派发必触 entity_map 重入断言。
-            use gpui::{px, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PlatformInput, Point};
+            use gpui::{
+                MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PlatformInput, Point, px,
+            };
             let action = params
                 .get("action")
                 .and_then(Value::as_str)
@@ -137,8 +154,18 @@ pub(super) fn dispatch(
                 }
             };
             let position = Point::new(
-                px(coord("x", "rx", f32::from(size.width), f32::from(size.width) / 2.)),
-                px(coord("y", "ry", f32::from(size.height), f32::from(size.height) / 2.)),
+                px(coord(
+                    "x",
+                    "rx",
+                    f32::from(size.width),
+                    f32::from(size.width) / 2.,
+                )),
+                px(coord(
+                    "y",
+                    "ry",
+                    f32::from(size.height),
+                    f32::from(size.height) / 2.,
+                )),
             );
             if !matches!(action.as_str(), "click" | "down" | "up" | "move" | "rclick") {
                 return Err(bad(format!(
@@ -171,26 +198,28 @@ pub(super) fn dispatch(
                     window.dispatch_mouse_input(ev, cx);
                 };
                 match action.as_str() {
-                "move" => {
-                    window.dispatch_mouse_input(
-                        PlatformInput::MouseMove(MouseMoveEvent {
-                            position,
-                            ..Default::default()
-                        }),
-                        cx,
-                    );
-                }
-                "down" => send(window, cx, true),
-                "up" => send(window, cx, false),
-                // rclick = 右键单击（开上下文菜单类）
-                "rclick" | "click" => {
-                    send(window, cx, true);
-                    send(window, cx, false);
-                }
-                _ => unreachable!(),
+                    "move" => {
+                        window.dispatch_mouse_input(
+                            PlatformInput::MouseMove(MouseMoveEvent {
+                                position,
+                                ..Default::default()
+                            }),
+                            cx,
+                        );
+                    }
+                    "down" => send(window, cx, true),
+                    "up" => send(window, cx, false),
+                    // rclick = 右键单击（开上下文菜单类）
+                    "rclick" | "click" => {
+                        send(window, cx, true);
+                        send(window, cx, false);
+                    }
+                    _ => unreachable!(),
                 }
             });
-            Ok(json!({"deferred": true, "position": {"x": f32::from(position.x), "y": f32::from(position.y)}}))
+            Ok(
+                json!({"deferred": true, "position": {"x": f32::from(position.x), "y": f32::from(position.y)}}),
+            )
         }
         method::INPUT_FOCUS => {
             // 元素级 focus（非坐标点击）：焦点/键位类 bug 的自动化入口。
@@ -199,10 +228,13 @@ pub(super) fn dispatch(
             let target = params
                 .get("target")
                 .and_then(Value::as_str)
-                .ok_or_else(|| bad("需要 {\"target\": \"composer|chat|git_commit|terminal|editor\"}"))?;
+                .ok_or_else(|| {
+                    bad("需要 {\"target\": \"composer|chat|git_commit|terminal|editor\"}")
+                })?;
             let handle = match target {
                 "composer" => chat
-                    .composer.composer
+                    .composer
+                    .composer
                     .as_ref()
                     .map(|c| c.read(cx).focus_handle_in(cx))
                     .unwrap_or_else(|| chat.layout.focus.clone()),
@@ -225,7 +257,8 @@ pub(super) fn dispatch(
                         .active_file_path()
                         .ok_or_else(|| not_found("没有打开的文件（先 file.open）"))?;
                     let ed = chat
-                        .ws.file_cache
+                        .ws
+                        .file_cache
                         .get(&path)
                         .and_then(|f| f.editor.clone())
                         .ok_or_else(|| not_found("文件没有编辑器"))?;
@@ -234,7 +267,7 @@ pub(super) fn dispatch(
                 other => {
                     return Err(bad(format!(
                         "未知 focus 目标: {other:?}（composer|chat|git_commit|terminal|editor）"
-                    )))
+                    )));
                 }
             };
             window.focus(&handle);
@@ -278,11 +311,11 @@ pub(super) fn dispatch(
                 .and_then(Value::as_str)
                 .ok_or_else(|| bad("需要 {\"key\": \"…\"} 或 {\"path\": \"…\"}"))?
                 .to_string();
-            let rt = chat
-                .pool.runtimes
-                .get(&key)
-                .cloned()
-                .ok_or_else(|| not_found(format!("池里没有 key={key:?} 的会话（runtimes 见 ui.snapshot sessions 面）")))?;
+            let rt = chat.pool.runtimes.get(&key).cloned().ok_or_else(|| {
+                not_found(format!(
+                    "池里没有 key={key:?} 的会话（runtimes 见 ui.snapshot sessions 面）"
+                ))
+            })?;
             chat.switch_pool_rt(rt, cx);
             ok()
         }
@@ -290,6 +323,18 @@ pub(super) fn dispatch(
             let path = params_path(params, "path")?;
             chat.delete_session(path, cx);
             ok()
+        }
+        method::SESSION_PIN => {
+            let path = params_path(params, "path")?;
+            let pinned = chat.session_pinned(&path);
+            let want = params.get("pinned").and_then(Value::as_bool);
+            let now = if want.is_none() || want != Some(pinned) {
+                chat.session_pin_toggle(path, cx);
+                !pinned
+            } else {
+                pinned
+            };
+            Ok(json!({"pinned": now}))
         }
         method::SESSION_SEND => {
             if let Some(t) = params.get("text").and_then(Value::as_str) {
@@ -319,12 +364,18 @@ pub(super) fn dispatch(
 
         // ---- 输入与面板 ----
         method::COMPOSER_SET_TEXT => {
-            let text = params.get("text").and_then(Value::as_str).unwrap_or_default();
+            let text = params
+                .get("text")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
             chat.set_input(text.to_string(), cx);
             ok()
         }
         method::PANEL_DOCK => {
-            let panel = params.get("panel").and_then(Value::as_str).ok_or_else(|| bad("需要 {\"panel\": \"sessions|files|git\"}"))?;
+            let panel = params
+                .get("panel")
+                .and_then(Value::as_str)
+                .ok_or_else(|| bad("需要 {\"panel\": \"sessions|files|git\"}"))?;
             chat.layout.dock_panel = match panel {
                 "sessions" => DockPanel::Sessions,
                 "files" => DockPanel::Files,
@@ -335,7 +386,10 @@ pub(super) fn dispatch(
             ok()
         }
         method::CONTENT_VIEW => {
-            let view = params.get("view").and_then(Value::as_str).ok_or_else(|| bad("需要 {\"view\": \"chat|term|file\"}"))?;
+            let view = params
+                .get("view")
+                .and_then(Value::as_str)
+                .ok_or_else(|| bad("需要 {\"view\": \"chat|term|file\"}"))?;
             chat.set_content_view(match view {
                 "chat" => ContentView::Chat,
                 "term" => ContentView::Term,
@@ -380,7 +434,8 @@ pub(super) fn dispatch(
                 .ok_or_else(|| bad("需要 {\"text\": \"内容\"}"))?
                 .to_string();
             let ed = chat
-                .ws.file_cache
+                .ws
+                .file_cache
                 .get(&path)
                 .and_then(|f| f.editor.clone())
                 .ok_or_else(|| not_found("文件没有编辑器（未渲染）"))?;
@@ -514,7 +569,10 @@ pub(super) fn dispatch(
             if !dir.is_dir() {
                 return Err(not_found(format!("目录不存在: {}", dir.display())));
             }
-            let is_dir = params.get("is_dir").and_then(Value::as_bool).unwrap_or(false);
+            let is_dir = params
+                .get("is_dir")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
             chat.open_file_new(dir, is_dir, cx);
             tree_edit_prefill(chat, params, cx);
             ok()
@@ -553,8 +611,13 @@ pub(super) fn dispatch(
             ok()
         }
         method::GIT_COMMIT => {
-            let msg = params.get("message").and_then(Value::as_str).unwrap_or_default();
-            chat.ws.git_commit_input.update(cx, |ti, cx| ti.set_value(msg.to_string(), cx));
+            let msg = params
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            chat.ws
+                .git_commit_input
+                .update(cx, |ti, cx| ti.set_value(msg.to_string(), cx));
             chat.git_commit_staged(cx);
             Ok(json!({"ok": chat.ws.git_error.is_none(), "error": chat.ws.git_error}))
         }
@@ -568,7 +631,10 @@ pub(super) fn dispatch(
             ok()
         }
         method::GIT_SET_TAB => {
-            let tab = params.get("tab").and_then(Value::as_str).ok_or_else(|| bad("需要 {\"tab\": \"changes|history\"}"))?;
+            let tab = params
+                .get("tab")
+                .and_then(Value::as_str)
+                .ok_or_else(|| bad("需要 {\"tab\": \"changes|history\"}"))?;
             chat.git_set_tab(
                 match tab {
                     "changes" => crate::function_panel::git_panel::GitTab::Changes,
@@ -634,7 +700,10 @@ pub(super) fn dispatch(
             ok()
         }
         method::PROJECT_PICKER_OPEN => {
-            let fresh = params.get("fresh").and_then(Value::as_bool).unwrap_or(false);
+            let fresh = params
+                .get("fresh")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
             chat.open_project_picker(fresh, cx);
             ok()
         }
@@ -669,7 +738,9 @@ pub(super) fn dispatch(
             let preset = params
                 .get("preset")
                 .and_then(Value::as_str)
-                .ok_or_else(|| bad("需要 {\"preset\": \"full|custom|default|read-only|chat-only\"}"))?;
+                .ok_or_else(|| {
+                    bad("需要 {\"preset\": \"full|custom|default|read-only|chat-only\"}")
+                })?;
             chat.mc_set_tools_preset(preset, cx);
             ok()
         }
@@ -712,7 +783,11 @@ pub(super) fn dispatch(
                 .and_then(Value::as_str)
                 .ok_or_else(|| bad("需要 {\"text\": \"粘贴内容\"}"))?
                 .to_string();
-            let name = params.get("name").and_then(Value::as_str).unwrap_or("").to_string();
+            let name = params
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
             if let Some(st) = chat.dlg.settings.clone() {
                 st.update(cx, |s, cx| {
                     s.mcp_add.update(cx, |ti, cx| ti.set_value(text, cx));
@@ -757,7 +832,10 @@ pub(super) fn dispatch(
                     })
                 })
                 .collect();
-            let hover_count = items.iter().filter(|it| it["hovered"] == serde_json::json!(true)).count();
+            let hover_count = items
+                .iter()
+                .filter(|it| it["hovered"] == serde_json::json!(true))
+                .count();
             Ok(serde_json::json!({ "x": x, "y": y, "hover_count": hover_count, "chain": items }))
         }
         method::UI_DEBUG_HOVER => {
@@ -767,7 +845,9 @@ pub(super) fn dispatch(
             if let Some(sp) = params.get("session").and_then(Value::as_str) {
                 let path = std::path::PathBuf::from(sp);
                 let found = chat.psp.projects.iter().any(|g| {
-                    g.sessions.iter().any(|s| crate::services::workspace::same_path(&s.path, &path))
+                    g.sessions
+                        .iter()
+                        .any(|s| crate::services::workspace::same_path(&s.path, &path))
                 });
                 if !found {
                     return Err(not_found(format!("psp 列表没有该会话: {sp}")));
@@ -876,7 +956,8 @@ pub(super) fn dispatch(
 fn git_stage_op(chat: &mut Chat, params: &Value, stage: bool) -> Result<(), String> {
     if params.get("all").and_then(Value::as_bool).unwrap_or(false) && !stage {
         let staged: Vec<PathBuf> = chat
-            .ws.git_files
+            .ws
+            .git_files
             .iter()
             .filter(|f| f.staged)
             .map(|f| f.path.clone())
@@ -907,11 +988,7 @@ fn git_stage_op(chat: &mut Chat, params: &Value, stage: bool) -> Result<(), Stri
 
 /// 021 行内编辑的预填（files.rename / files.new_entry 的可选 `name`）：
 /// 打开编辑行后直接把新名灌进输入框，省一次 input.keys 逐字键入。
-fn tree_edit_prefill(
-    chat: &mut Chat,
-    params: &Value,
-    cx: &mut gpui::Context<Chat>,
-) {
+fn tree_edit_prefill(chat: &mut Chat, params: &Value, cx: &mut gpui::Context<Chat>) {
     let Some(name) = params.get("name").and_then(Value::as_str) else {
         return;
     };

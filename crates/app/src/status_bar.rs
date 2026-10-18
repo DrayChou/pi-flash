@@ -7,8 +7,8 @@
 use gpui::{MouseButton, div, prelude::*, px, rgb};
 
 use crate::Chat;
-use crate::services::workspace::{dock_max_from_min, save_ui_state, ui_state};
 use crate::appearance::theme::theme as T;
+use crate::services::workspace::{dock_max_from_min, save_ui_state, ui_state};
 use crate::ui::tokens::align;
 
 const HEIGHT: f32 = 40.;
@@ -60,13 +60,18 @@ pub(crate) fn control_bar(
             .pr(px(align::LIST_PX * 2.))
             .cursor_pointer()
             .hover(|s| s.bg(rgb(t.bg_hover)))
-            .on_mouse_down(MouseButton::Left, cx.listener(
-                move |this, _: &gpui::MouseDownEvent, _w, cx| {
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, _: &gpui::MouseDownEvent, _w, cx| {
                     this.open_settings(0, cx);
-                },
-            ))
+                }),
+            )
             // 大图标档 LG18（020-1 图标两档定夺：设置钮与 topbar 收放钮同档）
-            .child(crate::ui::icon_hover("sliders-horizontal", 18., t.text_muted)),
+            .child(crate::ui::icon_hover(
+                "sliders-horizontal",
+                18.,
+                t.text_muted,
+            )),
     );
     bar
 }
@@ -115,12 +120,15 @@ impl Chat {
         st.tree_changes_only = self.ws.changes_only;
         // 020 项目用户排序：拖过才有序列，没拖过存空表（读回 = None）
         st.proj_order = self.psp.proj_order.clone().unwrap_or_default();
+        // 会话置顶（pin）：有序表落盘，跨重启保留
+        st.session_pins = self
+            .psp
+            .session_pins
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect();
         // 020-1 dock 最大化态（映射见 services::workspace::dock_max_from_min）
-        st.dock_max = dock_max_from_min(
-            self.layout.sess_min,
-            self.layout.files_min,
-        )
-        .to_string();
+        st.dock_max = dock_max_from_min(self.layout.sess_min, self.layout.files_min).to_string();
         save_ui_state(&st);
         // 文件树状态（展开集合 + Pin 视图）跟着 UI 持久化时机落盘：关窗/退出
         self.archive_tree_state();

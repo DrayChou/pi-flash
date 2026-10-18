@@ -11,7 +11,9 @@ impl Chat {
     /// 全选且光标锚起点）。标题点击处理器与 ui.debug_hover {session, rename}
     /// 自动化入口共用。
     pub(crate) fn hover_card_begin_rename(&mut self, cx: &mut Context<Self>) {
-        let Some(card) = self.dlg.hover_card.as_mut() else { return };
+        let Some(card) = self.dlg.hover_card.as_mut() else {
+            return;
+        };
         let path = card.path.clone();
         // 标题口径与 hover_card 渲染一致：会话名优先，空则预览/占位
         let title = self
@@ -93,7 +95,12 @@ impl Chat {
 
     /// psp 项目行 ＋：切换到该项目并新建会话（组展开、选中）。
     pub(crate) fn new_session_in(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        if !self.ws.cwd.as_deref().is_some_and(|cur| same_path(cur, &path)) {
+        if !self
+            .ws
+            .cwd
+            .as_deref()
+            .is_some_and(|cur| same_path(cur, &path))
+        {
             self.switch_project(path, cx);
         }
         self.new_session(cx);
@@ -118,14 +125,16 @@ impl Chat {
     /// 并重置为新草稿），从 psp 移除该组。
     pub(crate) fn delete_project(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         let sessions: Vec<PathBuf> = self
-            .psp.projects
+            .psp
+            .projects
             .iter()
             .find(|g| same_path(&g.path, &path))
             .map(|g| g.sessions.iter().map(|s| s.path.clone()).collect())
             .unwrap_or_default();
         for p in &sessions {
             if self
-                .pool.runtimes
+                .pool
+                .runtimes
                 .get(&self.pool.active_key)
                 .map(|rt| rt.read(cx).file.as_deref() == Some(p.as_path()))
                 .unwrap_or(false)
@@ -153,21 +162,19 @@ impl Chat {
             self.pool.sessions.clear();
             self.sync_current_sessions();
         }
-        self.psp.unread.retain(|p| {
-            sessions
-                .iter()
-                .all(|s| !same_path(s, p))
-        });
-        self.psp.turn_errors.retain(|p| {
-            sessions
-                .iter()
-                .all(|s| !same_path(s, p))
-        });
-        self.psp.turn_warnings.retain(|p| {
-            sessions
-                .iter()
-                .all(|s| !same_path(s, p))
-        });
+        self.psp
+            .unread
+            .retain(|p| sessions.iter().all(|s| !same_path(s, p)));
+        self.psp
+            .turn_errors
+            .retain(|p| sessions.iter().all(|s| !same_path(s, p)));
+        self.psp
+            .turn_warnings
+            .retain(|p| sessions.iter().all(|s| !same_path(s, p)));
+        // 项目整个没了，其下会话的置顶记录同步清册（020 会话置顶）
+        self.psp
+            .session_pins
+            .retain(|p| !sessions.iter().any(|s| same_path(s, p)));
         self.set_status(
             crate::i18n::tf("psp.project_deleted", &[("n", sessions.len().to_string())]),
             cx,
@@ -206,7 +213,8 @@ impl Chat {
                     None => msgs_from_tail(read_tail_messages(path, 256 * 1024, 100)),
                 };
                 let cwd = self
-                    .psp.projects
+                    .psp
+                    .projects
                     .iter()
                     .find(|g| g.sessions.iter().any(|s| same_path(&s.path, path)))
                     .map(|g| g.path.clone())
@@ -215,11 +223,8 @@ impl Chat {
                     return;
                 };
                 let rt = cx.new(|_| {
-                    let mut r = session::runtime::SessionRuntime::new(
-                        key.clone(),
-                        cwd,
-                        Some(path.clone()),
-                    );
+                    let mut r =
+                        session::runtime::SessionRuntime::new(key.clone(), cwd, Some(path.clone()));
                     r.default_model = services::workspace::default_model_pref();
                     // 秒开深度优化（pi-flash-2o92）：磁盘计数改后台——主线程
                     // 全文件读是 O(会话大小) 的冻结源，回灌走 load_disk_msg_count

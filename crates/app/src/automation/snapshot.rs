@@ -8,20 +8,12 @@ use crate::session::runtime::SessionRuntime;
 use crate::{Chat, Dialog};
 use gpui::{Context, Focusable};
 use pi_link::protocol::Block;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
 pub(crate) const SURFACES: [&str; 9] = [
-    "app",
-    "sessions",
-    "session",
-    "composer",
-    "files",
-    "git",
-    "settings",
-    "dialogs",
-    "term",
+    "app", "sessions", "session", "composer", "files", "git", "settings", "dialogs", "term",
 ];
 
 pub(crate) fn surface(
@@ -47,7 +39,6 @@ pub(crate) fn surface(
         }
     }
 }
-
 
 /// snapshot 的 cwd 字段：无项目态 = 空串（不指代任何真实目录）
 fn cwd_json(chat: &Chat) -> String {
@@ -94,10 +85,22 @@ fn focused_str(chat: &Chat, window: &gpui::Window, cx: &Context<Chat>) -> Value 
     if chat.dlg.dialog_focus.is_focused(window) {
         return json!("dialog");
     }
-    if chat.ws.git_commit_input.read(cx).focus_handle().is_focused(window) {
+    if chat
+        .ws
+        .git_commit_input
+        .read(cx)
+        .focus_handle()
+        .is_focused(window)
+    {
         return json!("git_commit");
     }
-    if chat.aux.ext_input.read(cx).focus_handle().is_focused(window) {
+    if chat
+        .aux
+        .ext_input
+        .read(cx)
+        .focus_handle()
+        .is_focused(window)
+    {
         return json!("ext_input");
     }
     for t in &chat.ws.terminals {
@@ -123,7 +126,8 @@ fn focused_str(chat: &Chat, window: &gpui::Window, cx: &Context<Chat>) -> Value 
 /// 提示符出现与否的断言载体）。rows 截前 6 行、cols 全宽；只读不写。
 fn term_surface(chat: &Chat, window: &gpui::Window, _cx: &Context<Chat>) -> Value {
     let tabs = chat
-        .ws.terminals
+        .ws
+        .terminals
         .iter()
         .map(|t| {
             let focused = t.focus.is_focused(window);
@@ -301,7 +305,8 @@ fn app_surface(chat: &Chat, window: &gpui::Window, cx: &Context<Chat>) -> Value 
 
 fn sessions_surface(chat: &Chat) -> Value {
     let sessions: Vec<Value> = chat
-        .pool.sessions
+        .pool
+        .sessions
         .iter()
         .map(|s| {
             json!({
@@ -317,6 +322,11 @@ fn sessions_surface(chat: &Chat) -> Value {
                     .map(|d| d.as_millis() as u64)
                     .unwrap_or(0),
                 "unread": chat.psp.unread.contains(&s.path),
+                "pinned": chat
+                    .psp
+                    .session_pins
+                    .iter()
+                    .any(|p| crate::services::workspace::same_path(p, &s.path)),
                 "loaded": chat.pool.runtimes.contains_key(&s.path.display().to_string()),
             })
         })
@@ -328,9 +338,17 @@ fn sessions_surface(chat: &Chat) -> Value {
         .collect();
     // 伪标签（draft 已发送、pi 未落盘）：验收断言「发送瞬间标签出现」用
     let pending_tabs: Vec<Value> = chat
-        .psp.pending_tabs
+        .psp
+        .pending_tabs
         .iter()
         .map(|e| json!({"key": e.key, "preview": truncate(&e.preview, 120), "cwd": e.cwd}))
+        .collect();
+    // 会话置顶（020）：有序表（index 0 = 最近置顶），pin/unpin 事务断言用
+    let session_pins: Vec<String> = chat
+        .psp
+        .session_pins
+        .iter()
+        .map(|p| p.display().to_string())
         .collect();
     json!({
         "cwd": cwd_json(chat),
@@ -340,6 +358,7 @@ fn sessions_surface(chat: &Chat) -> Value {
         "sessions": sessions,
         "projects": projects,
         "pending_tabs": pending_tabs,
+        "session_pins": session_pins,
     })
 }
 
@@ -452,7 +471,8 @@ fn composer_surface(chat: &Chat) -> Value {
 
 fn files_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
     let rows: Vec<Value> = chat
-        .ws.tree_rows
+        .ws
+        .tree_rows
         .iter()
         .map(|r| {
             json!({
@@ -467,15 +487,21 @@ fn files_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
             })
         })
         .collect();
-    let mut expanded: Vec<String> =
-        chat.ws.expanded_dirs.iter().map(|p| p.display().to_string()).collect();
+    let mut expanded: Vec<String> = chat
+        .ws
+        .expanded_dirs
+        .iter()
+        .map(|p| p.display().to_string())
+        .collect();
     expanded.sort();
     // 021 行内编辑（Zed EditState 移植）状态：新建/改名行开合、键入值与
     // 校验态——行内编辑的事务断言全靠这条
     let tree_edit = chat.dlg.tree_edit.as_ref().map(|e| {
         let (kind, subject) = match &e.kind {
             crate::function_panel::TreeEditKind::New { dir } => ("new", dir.display().to_string()),
-            crate::function_panel::TreeEditKind::Rename { path } => ("rename", path.display().to_string()),
+            crate::function_panel::TreeEditKind::Rename { path } => {
+                ("rename", path.display().to_string())
+            }
         };
         json!({
             "kind": kind,
@@ -501,9 +527,9 @@ fn files_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
                 chat.ws.cwd.as_deref().unwrap_or_else(|| Path::new("")),
                 p,
             )
-                .iter()
-                .map(|(t, _)| t.to_string())
-                .collect()
+            .iter()
+            .map(|(t, _)| t.to_string())
+            .collect()
         })
         .unwrap_or_default();
     let file_tabs: Vec<Value> = chat
@@ -652,7 +678,8 @@ fn dialogs_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
     // 据此轮询就绪）
     let project_hits: Vec<Value> = match chat.dlg.dialog.as_ref() {
         Some(Dialog::ProjectPicker { .. }) => chat
-            .psp.project_hits
+            .psp
+            .project_hits
             .iter()
             .map(|p| json!({"name": p.name, "path": p.path.display().to_string()}))
             .collect(),
@@ -660,11 +687,9 @@ fn dialogs_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
     };
     // 文件搜索命中随弹窗上报（后台扫盘异步回填，UI 测试据此轮询就绪）
     let file_search_hits: Vec<Value> = match chat.dlg.dialog.as_ref() {
-        Some(Dialog::FileSearch { .. }) => chat
-            .ws.file_search_hits
-            .iter()
-            .map(|r| json!(r))
-            .collect(),
+        Some(Dialog::FileSearch { .. }) => {
+            chat.ws.file_search_hits.iter().map(|r| json!(r)).collect()
+        }
         _ => Vec::new(),
     };
     json!({

@@ -14,7 +14,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use gpui::{div, prelude::*, px, rgb, WindowControlArea};
+use gpui::{WindowControlArea, div, prelude::*, px, rgb};
 use pi_link::protocol::{ModelInfo, SlashCommand};
 
 use crate::Chat;
@@ -114,7 +114,9 @@ fn adopt_legacy_credentials() {
                 &marker,
                 &vault,
             ) {
-                Ok(n) if n > 0 => eprintln!("[startup] adopted {n} custom provider(s) → providers.json"),
+                Ok(n) if n > 0 => {
+                    eprintln!("[startup] adopted {n} custom provider(s) → providers.json")
+                }
                 Ok(_) => {}
                 Err(e) => eprintln!("[startup] providers adoption skipped: {e}"),
             }
@@ -122,14 +124,18 @@ fn adopt_legacy_credentials() {
         _ => eprintln!("[startup] providers adoption skipped: dir unavailable"),
     }
     // 目录 provider key：auth.json 明文 → 凭据库 + pf-auth.json
-    let Some(pf_path) = pi_link::pf_auth::path() else { return };
+    let Some(pf_path) = pi_link::pf_auth::path() else {
+        return;
+    };
     match pi_link::pf_auth::adopt_from_auth_at(
         &pf_path,
         &pi_link::config::auth_path(),
         &vault,
         &crate::services::workspace::removed_providers(),
     ) {
-        Ok(n) if n > 0 => eprintln!("[startup] adopted {n} legacy key(s) → credential vault + pf-auth.json"),
+        Ok(n) if n > 0 => {
+            eprintln!("[startup] adopted {n} legacy key(s) → credential vault + pf-auth.json")
+        }
         Ok(_) => {}
         Err(e) => eprintln!("[startup] pf-auth adoption skipped: {e}"),
     }
@@ -195,8 +201,8 @@ pub(crate) fn load_globals() -> Globals {
 /// `ProjectCtx` 是启动缓存，拿它当写后回读源就是「开关点了没反应」。
 pub(crate) fn load_skills(cwd: &Path) -> Vec<pi_link::skills::SkillEntry> {
     let agent_dir = pi_link::config::agent_dir();
-    let settings_value =
-        pi_link::config::read_json(&pi_link::config::settings_path()).unwrap_or(serde_json::json!({}));
+    let settings_value = pi_link::config::read_json(&pi_link::config::settings_path())
+        .unwrap_or(serde_json::json!({}));
     let home_agents = agent_dir
         .parent()
         .map(|p| p.join("..").join(".agents").join("skills"))
@@ -277,7 +283,11 @@ fn cache_load_from(path: &Path) -> CatalogCache {
                     let provider = m.get("provider")?.as_str()?.to_string();
                     Some(ModelInfo {
                         id,
-                        name: m.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        name: m
+                            .get("name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
                         provider,
                         context_window: m.get("contextWindow").and_then(|v| v.as_u64()),
                     })
@@ -293,7 +303,11 @@ fn cache_load_from(path: &Path) -> CatalogCache {
                 .filter_map(|c| {
                     Some(SlashCommand {
                         name: c.get("name")?.as_str()?.to_string(),
-                        description: c.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        description: c
+                            .get("description")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
                     })
                 })
                 .collect()
@@ -413,8 +427,18 @@ mod tests {
             ..Default::default()
         };
         let rpc = vec![
-            ModelInfo { id: "x".into(), name: "rpc".into(), provider: "p".into(), context_window: Some(9) },
-            ModelInfo { id: "y".into(), name: "rpc2".into(), provider: "p".into(), context_window: None },
+            ModelInfo {
+                id: "x".into(),
+                name: "rpc".into(),
+                provider: "p".into(),
+                context_window: Some(9),
+            },
+            ModelInfo {
+                id: "y".into(),
+                name: "rpc2".into(),
+                provider: "p".into(),
+                context_window: None,
+            },
         ];
         assert!(merge_models(&mut g, &rpc));
         assert_eq!(g.models.len(), 2);
@@ -426,8 +450,14 @@ mod tests {
     fn merge_commands_skips_skill_prefix() {
         let mut g = Globals::default();
         let rpc = vec![
-            SlashCommand { name: "skill:image-gen".into(), description: "s".into() },
-            SlashCommand { name: "notify".into(), description: "n".into() },
+            SlashCommand {
+                name: "skill:image-gen".into(),
+                description: "s".into(),
+            },
+            SlashCommand {
+                name: "notify".into(),
+                description: "n".into(),
+            },
         ];
         assert!(merge_commands(&mut g, &rpc));
         assert_eq!(g.commands.len(), 1);
@@ -571,19 +601,21 @@ fn spawn_pump_120ms(cx: &mut gpui::Context<Chat>) {
 /// 外部写入（pi-web / CLI 写同一会话）时重读。运行中的 agent 自己持有文件，
 /// 由 `check_external_append` 内部判断。
 fn spawn_external_append_watch(cx: &mut gpui::Context<Chat>) {
-    cx.spawn(async move |this, cx| loop {
-        cx.background_executor()
-            .timer(std::time::Duration::from_secs(3))
-            .await;
-        let ok = this
-            .update(cx, |chat, cx| {
-                for rt in chat.pool.runtimes.values() {
-                    rt.update(cx, |r, cx| r.check_external_append(cx));
-                }
-            })
-            .is_ok();
-        if !ok {
-            break;
+    cx.spawn(async move |this, cx| {
+        loop {
+            cx.background_executor()
+                .timer(std::time::Duration::from_secs(3))
+                .await;
+            let ok = this
+                .update(cx, |chat, cx| {
+                    for rt in chat.pool.runtimes.values() {
+                        rt.update(cx, |r, cx| r.check_external_append(cx));
+                    }
+                })
+                .is_ok();
+            if !ok {
+                break;
+            }
         }
     })
     .detach();
@@ -592,29 +624,33 @@ fn spawn_external_append_watch(cx: &mut gpui::Context<Chat>) {
 /// 60s 空闲回收（pi-web idle-timeout parity）：非活动会话进程空闲超 10 分钟
 /// 就杀掉（清单/内存状态不动）。
 fn spawn_idle_recycle(cx: &mut gpui::Context<Chat>) {
-    cx.spawn(async move |this, cx| loop {
-        cx.background_executor()
-            .timer(std::time::Duration::from_secs(60))
-            .await;
-        let ok = this
-            .update(cx, |chat, cx| {
-                let idle_cap = std::time::Duration::from_secs(600);
-                for (key, rt) in &chat.pool.runtimes {
-                    if *key == chat.pool.active_key {
-                        continue;
+    cx.spawn(async move |this, cx| {
+        loop {
+            cx.background_executor()
+                .timer(std::time::Duration::from_secs(60))
+                .await;
+            let ok = this
+                .update(cx, |chat, cx| {
+                    let idle_cap = std::time::Duration::from_secs(600);
+                    for (key, rt) in &chat.pool.runtimes {
+                        if *key == chat.pool.active_key {
+                            continue;
+                        }
+                        let idle = {
+                            let r = rt.read(cx);
+                            !r.agent_running
+                                && r.last_activity.elapsed() > idle_cap
+                                && r.agent.session.is_some()
+                        };
+                        if idle {
+                            rt.update(cx, |r2, _| r2.shutdown_process());
+                        }
                     }
-                    let idle = {
-                        let r = rt.read(cx);
-                        !r.agent_running && r.last_activity.elapsed() > idle_cap && r.agent.session.is_some()
-                    };
-                    if idle {
-                        rt.update(cx, |r2, _| r2.shutdown_process());
-                    }
-                }
-            })
-            .is_ok();
-        if !ok {
-            break;
+                })
+                .is_ok();
+            if !ok {
+                break;
+            }
         }
     })
     .detach();
@@ -624,24 +660,27 @@ fn spawn_idle_recycle(cx: &mut gpui::Context<Chat>) {
 /// 就把活跃时间回灌清单并落盘。活着的 runtime 的文件排除在外——它们的活跃时间
 /// 由事件路径维护，轮询会在 pi 追加时反复重扫。
 fn spawn_recents_poll(cx: &mut gpui::Context<Chat>) {
-    cx.spawn(async move |this, cx| loop {
-        cx.background_executor()
-            .timer(std::time::Duration::from_secs(30))
-            .await;
-        let exclude = match this.update(cx, |chat, cx| {
-            chat.pool.runtimes
-                .values()
-                .filter_map(|rt| rt.read(cx).file.clone())
-                .collect::<Vec<_>>()
-        }) {
-            Ok(v) => v,
-            Err(_) => break,
-        };
-        let changed = cx
-            .background_spawn(async move { pi_link::recents::poll_recent_sessions(&exclude) })
-            .await;
-        if changed {
-            let _ = this.update(cx, |_chat, cx| cx.notify());
+    cx.spawn(async move |this, cx| {
+        loop {
+            cx.background_executor()
+                .timer(std::time::Duration::from_secs(30))
+                .await;
+            let exclude = match this.update(cx, |chat, cx| {
+                chat.pool
+                    .runtimes
+                    .values()
+                    .filter_map(|rt| rt.read(cx).file.clone())
+                    .collect::<Vec<_>>()
+            }) {
+                Ok(v) => v,
+                Err(_) => break,
+            };
+            let changed = cx
+                .background_spawn(async move { pi_link::recents::poll_recent_sessions(&exclude) })
+                .await;
+            if changed {
+                let _ = this.update(cx, |_chat, cx| cx.notify());
+            }
         }
     })
     .detach();
@@ -695,7 +734,10 @@ fn spawn_splash_gate(cx: &mut gpui::Context<Chat>) {
 /// 启动恢复目标（010 重设计）。
 pub(crate) enum BootTarget {
     /// 进入项目（cwd）；session = 要恢复的最后会话（None = 项目新开草稿）。
-    Project { cwd: PathBuf, session: Option<PathBuf> },
+    Project {
+        cwd: PathBuf,
+        session: Option<PathBuf>,
+    },
     /// 无项目态：维持 ws.cwd = None，零进程。
     None,
 }
@@ -761,10 +803,9 @@ pub(crate) fn spawn_boot_restore(cx: &mut gpui::Context<Chat>) {
     cx.spawn(async move |this, cx| {
         let target = cx.background_spawn(async move { boot_target() }).await;
         let (active_cwd, active_session) = match &target {
-            BootTarget::Project { cwd, session } => (
-                Some(cwd.to_string_lossy().to_string()),
-                session.clone(),
-            ),
+            BootTarget::Project { cwd, session } => {
+                (Some(cwd.to_string_lossy().to_string()), session.clone())
+            }
             BootTarget::None => (None, None),
         };
         let _ = this.update(cx, |chat, cx| {
@@ -816,9 +857,24 @@ pub(crate) fn spawn_boot_restore(cx: &mut gpui::Context<Chat>) {
         // 清单窗口过滤，摘要查指纹索引，无全盘枚举；首次运行清单为空时
         // `recent_load_paths` 内部按 mtime 序种子（`startup::boot` 已先种一次）
         let days = crate::services::workspace::load_window_days();
-        let paths = cx
+        let mut paths = cx
             .background_spawn(async move { pi_link::recents::recent_load_paths(days) })
             .await;
+        // 置顶会话并入装载清单（020 会话置顶）：pin 的意义就是老会话常驻
+        // 可见，哪怕早已跌出加载时间窗口。追加在尾部——尾部预载按序取前
+        // N 条，置顶路径不会挤占近期会话的预载名额
+        let pins = this
+            .update(cx, |chat, _| chat.psp.session_pins.clone())
+            .unwrap_or_default();
+        for pin in pins {
+            if pin.is_file()
+                && !paths
+                    .iter()
+                    .any(|p| crate::services::workspace::same_path(p, &pin))
+            {
+                paths.push(pin);
+            }
+        }
         // 清单刚种子/保活，此处必命中索引：纯 stat + 内存查，不碰文件
         let all = pi_link::sessions::sessions_for_paths(&paths);
         let _ = this.update(cx, |chat, cx| {
@@ -829,10 +885,16 @@ pub(crate) fn spawn_boot_restore(cx: &mut gpui::Context<Chat>) {
             // 项目集确定后，后台把集合内每个项目的项目上下文装好
             // （settings/mcp/skills）——首帧不等它；切项目/开设置页直接命中
             let pending: Vec<PathBuf> = chat
-                .psp.projects
+                .psp
+                .projects
                 .iter()
                 .map(|g| g.path.clone())
-                .filter(|p| !chat.pool.project_ctx.contains_key(&p.to_string_lossy().to_string()))
+                .filter(|p| {
+                    !chat
+                        .pool
+                        .project_ctx
+                        .contains_key(&p.to_string_lossy().to_string())
+                })
                 .collect();
             if !pending.is_empty() {
                 cx.spawn(async move |this, cx| {
@@ -876,6 +938,4 @@ pub(crate) fn spawn_boot_restore(cx: &mut gpui::Context<Chat>) {
         });
     })
     .detach();
-
-
 }

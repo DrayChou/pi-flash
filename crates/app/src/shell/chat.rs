@@ -4,12 +4,11 @@
 //! 域方法住各领域文件（session/pool、session/input、editor/tabs……）；
 //! 字段数与 impl 块数不写死在注释里（随演进漂移，查数用 grep）。
 
-use crate::*;
 use crate::function_panel::{HoverCard, ProjCard, TreeEdit, TreeMenu};
 use crate::session::input::{AtFilterCache, AtIndexState};
 use crate::settings::models::McProbe;
 use crate::settings::plugins::PkgOp;
-
+use crate::*;
 
 pub(crate) struct Chat {
     /// 周边面板簇（4ea）：ext UI / 更新 / 远程 / 系统提示词弹窗
@@ -159,6 +158,14 @@ pub(crate) struct PspUi {
     /// 020 避让位移动画实例（from/to = 前后落点 + 起始时刻）：渲染期按
     /// elapsed 插值各项目块的 ±32px 平移，到点由驱动清场落回静态位移。
     pub(crate) proj_shift: Option<crate::function_panel::psp_drag::ProjShift>,
+    /// 会话置顶（pin）：绝对路径有序表，index 0 = 最近置顶（后置顶的总在
+    /// 最上面）。持久化在 UiState.session_pins；pin/unpin 都走
+    /// [`Chat::session_pin_toggle`] 单一写路。
+    pub(crate) session_pins: Vec<PathBuf>,
+    /// 悬停中的会话行（pin 槽位显隐/可点的依据；path 判等——置顶组与原组
+    /// 两份行同 path，悬停其一两处同亮，无害）。与 hovered_project 同款：
+    /// 只在翻转时 notify。
+    pub(crate) hovered_session: Option<PathBuf>,
 }
 
 /// 弹窗/悬浮层簇（4ea 字段重组）：模态槽、pill 弹层三件套、各域右键
@@ -233,7 +240,8 @@ pub(crate) struct DlgUi {
 /// 会话池簇（4ea 字段重组）：常驻 runtime 池 + 注意力指针 + 索引缓存
 /// + 启动装载的全局态与闸门（010）。
 pub(crate) struct PoolUi {
-    pub(crate) runtimes: std::collections::HashMap<String, gpui::Entity<session::runtime::SessionRuntime>>,
+    pub(crate) runtimes:
+        std::collections::HashMap<String, gpui::Entity<session::runtime::SessionRuntime>>,
     pub(crate) active_key: String,
     pub(crate) sessions: Vec<SessionInfo>,
     pub(crate) session_tail_cache: std::collections::HashMap<PathBuf, Vec<Msg>>,
@@ -291,9 +299,8 @@ pub(crate) struct ComposerUi {
     pub bar_hover: Option<usize>,
     /// 消息气泡滚动句柄（key 同 expanded_skills；跨帧保持滚动位置并供
     /// gpui-component Scrollbar 读取）
-    pub(crate) bubble_scrolls: std::rc::Rc<std::cell::RefCell<
-        std::collections::HashMap<String, gpui::ScrollHandle>,
-    >>,
+    pub(crate) bubble_scrolls:
+        std::rc::Rc<std::cell::RefCell<std::collections::HashMap<String, gpui::ScrollHandle>>>,
 }
 
 /// 壳布局簇（4ea 字段重组）：dock 面板、内容区路由、分隔条拖拽、
@@ -316,12 +323,10 @@ pub(crate) struct LayoutUi {
     pub(crate) split_drag: bool,
     /// dock 容器 bounds（canvas 每帧捕获，分隔线拖拽换算占比用；PillBtns
     /// 同款 Rc<RefCell> 绕 paint 期实体借用限制）
-    pub(crate) dock_bounds:
-        std::rc::Rc<std::cell::RefCell<Option<gpui::Bounds<gpui::Pixels>>>>,
+    pub(crate) dock_bounds: std::rc::Rc<std::cell::RefCell<Option<gpui::Bounds<gpui::Pixels>>>>,
     /// 文件树操作栏项目名（ft-project）paint 期 bounds：项目下拉的锚点
     /// （贴标题下缘左对齐；dock_bounds 同款 canvas 捕获）
-    pub(crate) ft_title_bounds:
-        std::rc::Rc<std::cell::RefCell<Option<gpui::Bounds<gpui::Pixels>>>>,
+    pub(crate) ft_title_bounds: std::rc::Rc<std::cell::RefCell<Option<gpui::Bounds<gpui::Pixels>>>>,
     pub(crate) content_view: ContentView,
     /// 浏览操作区的最后视图（Term/File）：文件树标签点击时恢复
     pub(crate) browse_last: ContentView,
@@ -419,7 +424,8 @@ pub(crate) struct WsUi {
     /// "a focused terminal is on screen" flag that gates the heartbeat
     pub(crate) term_cursor_on: bool,
     pub(crate) term_cursor_focused: bool,
-    pub(crate) term_events: Option<futures::channel::mpsc::UnboundedSender<(usize, alacritty_terminal::event::Event)>>,
+    pub(crate) term_events:
+        Option<futures::channel::mpsc::UnboundedSender<(usize, alacritty_terminal::event::Event)>>,
     pub(crate) cwd: Option<PathBuf>,
     pub(crate) branch: String,
     // git panel
@@ -504,7 +510,8 @@ impl Chat {
                 fs_watch_rx: Some(fs_watch_rx_ch),
                 cwd: None,
                 git_commit_input: {
-                    let input = cx.new(|cx| TextInput::new(cx).placeholder(tr("git.commit_placeholder")));
+                    let input =
+                        cx.new(|cx| TextInput::new(cx).placeholder(tr("git.commit_placeholder")));
                     input
                 },
             },
@@ -546,8 +553,8 @@ impl Chat {
                 bar_hover: None,
                 composer_h: std::rc::Rc::new(std::cell::Cell::new(0.)),
                 bubble_scrolls: std::rc::Rc::new(std::cell::RefCell::new(
-                std::collections::HashMap::new(),
-            )),
+                    std::collections::HashMap::new(),
+                )),
             },
             pool: PoolUi {
                 runtimes: std::collections::HashMap::new(),
@@ -602,8 +609,16 @@ impl Chat {
                 project_filter: String::new(),
                 project_sel: 0,
                 active_file: None,
-                list_mode: if ui.list_mode == "flat" { ListMode::Flat } else { ListMode::Grouped },
-                sort_mode: if ui.sort_mode == "manual" { SortMode::Manual } else { SortMode::Time },
+                list_mode: if ui.list_mode == "flat" {
+                    ListMode::Flat
+                } else {
+                    ListMode::Grouped
+                },
+                sort_mode: if ui.sort_mode == "manual" {
+                    SortMode::Manual
+                } else {
+                    SortMode::Time
+                },
                 collapsed_keys: ui.collapsed.iter().cloned().collect(),
                 psp_shown: std::collections::HashMap::new(),
                 psp_scroll: gpui::ScrollHandle::new(),
@@ -624,6 +639,8 @@ impl Chat {
                 proj_drag: None,
                 proj_drop_ix: None,
                 proj_shift: None,
+                session_pins: ui.session_pins.iter().map(|p| PathBuf::from(p)).collect(),
+                hovered_session: None,
             },
             cfg: CfgUi {
                 mc_patterns: None,
@@ -814,7 +831,6 @@ impl Chat {
         let _ = cx;
     }
 
-
     pub(crate) fn set_content_view(&mut self, v: ContentView) {
         self.layout.content_view = v;
         if matches!(v, ContentView::Term | ContentView::File) {
@@ -823,11 +839,14 @@ impl Chat {
     }
 }
 
-
 impl Chat {
     /// 当前文件 tab 编辑器的焦点句柄（持焦时 Some）——render 帧级焦点回收
     /// 的白名单，与终端/对话框同级（023）。
-    pub(crate) fn file_editor_focus(&self, window: &gpui::Window, cx: &App) -> Option<gpui::FocusHandle> {
+    pub(crate) fn file_editor_focus(
+        &self,
+        window: &gpui::Window,
+        cx: &App,
+    ) -> Option<gpui::FocusHandle> {
         if self.layout.content_view != ContentView::File {
             return None;
         }
@@ -874,15 +893,14 @@ impl Chat {
     }
 }
 
-
 impl Focusable for Chat {
     fn focus_handle(&self, cx: &App) -> FocusHandle {
         // composer 就绪后，"聚焦聊天"即落到输入组件（真输入框：光标/
         // 选区/IME 全可用），chat.layout.focus 仅作组件创建前的回退
-        self.composer.composer
+        self.composer
+            .composer
             .as_ref()
             .map(|c| c.read(cx).focus_handle_in(cx))
             .unwrap_or_else(|| self.layout.focus.clone())
     }
 }
-

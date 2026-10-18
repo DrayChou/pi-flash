@@ -10,12 +10,12 @@
 use gpui::{MouseButton, SharedString, div, prelude::*, px, rgb};
 
 use crate::Chat;
-use crate::i18n::{tr, tf};
+use crate::appearance::theme::{Theme, danger_wash, theme as T};
+use crate::i18n::{tf, tr};
 use crate::services::format::time_ago;
 use crate::services::workspace::{same_path, same_ws};
-use crate::appearance::theme::{Theme, danger_wash, theme as T};
-use crate::ui::{WithTip, icon};
 use crate::ui::popup::PopupEdges;
+use crate::ui::{WithTip, icon};
 
 /// 根渲染挂载的 psp 悬浮层合集（tooltip / 详情卡 / 菜单 / 确认）。
 pub(crate) fn psp_overlays(
@@ -30,10 +30,7 @@ pub(crate) fn psp_overlays(
     // 且不参与流布局（0 高容器会把 absolute 子元素裁掉——菜单曾因此不可见）。
     // **父层不得 occlude**：inset_0 的层一挡全窗口 hit-test 都断（行悬停
     // 背景闪烁的根因）；各浮层在自己的 bounds 内各自 occlude。
-    let mut el = div()
-        .id("psp-overlays")
-        .absolute()
-        .inset_0();
+    let mut el = div().id("psp-overlays").absolute().inset_0();
     if let Some((path, x, y)) = &chat.dlg.proj_tip {
         el = el.child(proj_tip(path, *x, *y, vp, t));
     }
@@ -87,7 +84,8 @@ pub(crate) fn psp_overlays(
         // 删除确认（一次确认 = 删文件 + 弃缓冲）；目录删除统计其子树内
         // 全部打开中的脏 tab（zed 对整个待删集合数 dirty_buffers）
         let dirty_count = chat
-            .ws.file_cache
+            .ws
+            .file_cache
             .iter()
             .filter(|(p, f)| f.dirty && (same_path(p, &path) || p.starts_with(&path)))
             .count();
@@ -162,7 +160,11 @@ fn hover_card(
     t: &'static Theme,
     cx: &mut gpui::Context<Chat>,
 ) -> gpui::AnyElement {
-    let card = chat.dlg.hover_card.clone().expect("hover_card checked by caller");
+    let card = chat
+        .dlg
+        .hover_card
+        .clone()
+        .expect("hover_card checked by caller");
     let mut found: Option<(String, u64, std::time::SystemTime, String)> = None;
     for g in &chat.psp.projects {
         if let Some(info) = g.sessions.iter().find(|s| same_path(&s.path, &card.path)) {
@@ -186,6 +188,10 @@ fn hover_card(
     };
     let path = card.path.clone();
     let confirming = card.confirming;
+    // 置顶态（020 会话置顶 ②）：渲染期判定一次，pin 钮的图标文案随它翻转；
+    // 点击只 toggle 不收卡——用户能直接看到置顶态变化
+    let pinned = chat.session_pinned(&card.path);
+    let weak_hc_pin = cx.entity().downgrade();
     // 统一算法四象限：左缘对齐鼠标 x、上/下方让 12px（光标不压卡，防误点）
     let dir = PopupEdges::around((card.x, card.y), vp, 0., 12.);
     let mut el = div()
@@ -226,38 +232,39 @@ fn hover_card(
     el = el
         .children(if card.renaming {
             // 设计稿：标题原地变输入框（Enter 提交 / Esc 取消）
-            card.rename_input.clone().map(|inp| {
-                div().mt(px(2.)).child(inp).into_any_element()
-            })
+            card.rename_input
+                .clone()
+                .map(|inp| div().mt(px(2.)).child(inp).into_any_element())
         } else {
             Some(
-            div()
-                .id("hc-name")
-                .text_size(crate::appearance::ui_size(13.5))
-                .font_weight(gpui::FontWeight::SEMIBOLD)
-                .text_color(rgb(t.text))
-                .overflow_hidden()
-                // 标题最多三行（2026-11 定夺）：够放下长会话名，再多就截断
-                // 加省略号；line_clamp 自带 overflow_hidden
-                .line_clamp(3)
-                .text_ellipsis()
-                .cursor_pointer()
-                .px(px(5.))
-                .py(px(1.))
-                .mx(px(-5.))
-                .my(px(-1.))
-                .rounded(px(6.))
-                .hover(|s| s.bg(rgb(t.bg_hover)))
-                // 点击标题 = 原地进入改名（不切换会话）
-                // 点击标题 = 原地进入改名（不切换会话）；构建/聚焦细节在
-                // Chat::hover_card_begin_rename（与自动化入口共用）
-                .on_mouse_down(MouseButton::Left, cx.listener(
-                    move |this, _: &gpui::MouseDownEvent, _window, cx| {
-                        this.hover_card_begin_rename(cx);
-                    },
-                ))
-                .child(SharedString::from(title))
-                .into_any_element(),
+                div()
+                    .id("hc-name")
+                    .text_size(crate::appearance::ui_size(13.5))
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .text_color(rgb(t.text))
+                    .overflow_hidden()
+                    // 标题最多三行（2026-11 定夺）：够放下长会话名，再多就截断
+                    // 加省略号；line_clamp 自带 overflow_hidden
+                    .line_clamp(3)
+                    .text_ellipsis()
+                    .cursor_pointer()
+                    .px(px(5.))
+                    .py(px(1.))
+                    .mx(px(-5.))
+                    .my(px(-1.))
+                    .rounded(px(6.))
+                    .hover(|s| s.bg(rgb(t.bg_hover)))
+                    // 点击标题 = 原地进入改名（不切换会话）
+                    // 点击标题 = 原地进入改名（不切换会话）；构建/聚焦细节在
+                    // Chat::hover_card_begin_rename（与自动化入口共用）
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _: &gpui::MouseDownEvent, _window, cx| {
+                            this.hover_card_begin_rename(cx);
+                        }),
+                    )
+                    .child(SharedString::from(title))
+                    .into_any_element(),
             )
         })
         .child(info_row("folder-closed", SharedString::from(prj_name), t))
@@ -282,48 +289,83 @@ fn hover_card(
                 .mb(px(7.)),
         )
         .child(
+            // 操作栏：pin 钮在最左（贴卡内左缘），删除/确认组仍右对齐
+            //（020 会话置顶 ②）
             div()
                 .flex()
-                .justify_end()
-                .gap(px(6.))
-                .children(if confirming {
-                    // 原地换 取消/确认
-                    vec![
-                        ghost_btn("hc-cancel", tr("action.cancel"), false, cx.listener(
-                            |this, _: &gpui::MouseDownEvent, _w, cx| {
-                                if let Some(c) = this.dlg.hover_card.as_mut() {
-                                    c.confirming = false;
-                                }
-                                cx.notify();
-                            },
-                        ))
-                        .into_any_element(),
-                        solid_danger_btn("hc-ok", tr("action.confirm"), {
-                            let path = path.clone();
-                            cx.listener(move |this, _: &gpui::MouseDownEvent, _w, cx| {
-                                this.dlg.hover_card = None;
-                                this.delete_session(path.clone(), cx);
-                            })
-                        })
-                        .into_any_element(),
-                    ]
-                } else {
-                    vec![ghost_btn("hc-del", tr("action.delete"), true, cx.listener(
-                        |this, _: &gpui::MouseDownEvent, _w, cx| {
-                            if let Some(c) = this.dlg.hover_card.as_mut() {
-                                c.confirming = true;
-                            }
-                            cx.notify();
-                        },
-                    ))
-                    .into_any_element()]
-                }),
+                .items_center()
+                .child(card_icon_btn(
+                    &weak_hc_pin,
+                    "hc-pin",
+                    "pin",
+                    if pinned {
+                        tr("psp.unpin")
+                    } else {
+                        tr("psp.pin")
+                    },
+                    t.text,
+                    {
+                        let path = path.clone();
+                        move |c, cx| c.session_pin_toggle(path.clone(), cx)
+                    },
+                ))
+                .child(div().flex_1())
+                .child(
+                    div()
+                        .flex()
+                        .justify_end()
+                        .gap(px(6.))
+                        .children(if confirming {
+                            // 原地换 取消/确认
+                            vec![
+                                ghost_btn(
+                                    "hc-cancel",
+                                    tr("action.cancel"),
+                                    false,
+                                    cx.listener(|this, _: &gpui::MouseDownEvent, _w, cx| {
+                                        if let Some(c) = this.dlg.hover_card.as_mut() {
+                                            c.confirming = false;
+                                        }
+                                        cx.notify();
+                                    }),
+                                )
+                                .into_any_element(),
+                                solid_danger_btn("hc-ok", tr("action.confirm"), {
+                                    let path = path.clone();
+                                    cx.listener(move |this, _: &gpui::MouseDownEvent, _w, cx| {
+                                        this.dlg.hover_card = None;
+                                        this.delete_session(path.clone(), cx);
+                                    })
+                                })
+                                .into_any_element(),
+                            ]
+                        } else {
+                            vec![
+                                ghost_btn(
+                                    "hc-del",
+                                    tr("action.delete"),
+                                    true,
+                                    cx.listener(|this, _: &gpui::MouseDownEvent, _w, cx| {
+                                        if let Some(c) = this.dlg.hover_card.as_mut() {
+                                            c.confirming = true;
+                                        }
+                                        cx.notify();
+                                    }),
+                                )
+                                .into_any_element(),
+                            ]
+                        }),
+                ),
         );
     let _ = &mut el;
     el.into_any_element()
 }
 
-fn info_row(icon_name: &'static str, text: SharedString, t: &'static Theme) -> impl gpui::IntoElement {
+fn info_row(
+    icon_name: &'static str,
+    text: SharedString,
+    t: &'static Theme,
+) -> impl gpui::IntoElement {
     div()
         .flex()
         .items_center()
@@ -349,7 +391,11 @@ fn project_card(
     t: &'static Theme,
     cx: &mut gpui::Context<Chat>,
 ) -> gpui::AnyElement {
-    let card = chat.dlg.proj_card.clone().expect("proj_card checked by caller");
+    let card = chat
+        .dlg
+        .proj_card
+        .clone()
+        .expect("proj_card checked by caller");
     let Some(g) = chat
         .psp
         .projects
@@ -442,11 +488,7 @@ fn project_card(
                         .child(full),
                 ),
         )
-        .child(info_row(
-            "icon-new-chat",
-            SharedString::from(count),
-            t,
-        ))
+        .child(info_row("icon-new-chat", SharedString::from(count), t))
         .child(
             div()
                 .h(px(1.))
@@ -464,14 +506,17 @@ fn project_card(
                 .children(if confirming {
                     // 原地换 取消/确认（会话卡同款确认态）
                     vec![
-                        ghost_btn("pjc-cancel", tr("action.cancel"), false, cx.listener(
-                            |this, _: &gpui::MouseDownEvent, _w, cx| {
+                        ghost_btn(
+                            "pjc-cancel",
+                            tr("action.cancel"),
+                            false,
+                            cx.listener(|this, _: &gpui::MouseDownEvent, _w, cx| {
                                 if let Some(c) = this.dlg.proj_card.as_mut() {
                                     c.confirming = false;
                                 }
                                 cx.notify();
-                            },
-                        ))
+                            }),
+                        )
                         .into_any_element(),
                         solid_danger_btn("pjc-ok", tr("psp.confirm_delete"), {
                             let path = path.clone();
@@ -667,7 +712,11 @@ pub(crate) fn menu_item<S: Into<SharedString>>(
                 s.bg(rgb(t.bg_hover))
             }
         })
-        .child(icon(icon_name, 14., if danger { t.danger } else { t.text_muted }))
+        .child(icon(
+            icon_name,
+            14.,
+            if danger { t.danger } else { t.text_muted },
+        ))
         .child(div().flex_1().child(SharedString::from(label.to_string())))
         .children(checked.then(|| icon("check", 12., t.accent)))
 }
@@ -692,7 +741,8 @@ fn tree_menu_layer(
 ) -> gpui::AnyElement {
     let weak = cx.entity().downgrade();
     let (x, y) = match chat.dlg.tree_menu.clone().expect("checked by caller") {
-        crate::function_panel::TreeMenu::Dir { x, y, .. } | crate::function_panel::TreeMenu::File { x, y, .. } => (x, y),
+        crate::function_panel::TreeMenu::Dir { x, y, .. }
+        | crate::function_panel::TreeMenu::File { x, y, .. } => (x, y),
     };
     // 与 psp 菜单同参：向下弹让 12px，左右象限决定横向方向
     let edges = PopupEdges::around((x, y), vp, 0., 12.);
@@ -951,22 +1001,20 @@ fn tree_proj_menu_layer(
         return div().into_any_element();
     };
     // (名字, 路径, 是否当前)：当前态渲染期判定一次，行闭包只吃快照
-    let items: Vec<(String, std::path::PathBuf, bool)> = chat
-        .psp
-        .projects
-        .iter()
-        .map(|g| {
-            (
-                g.name.clone(),
-                g.path.clone(),
-                chat
-                    .ws
-                    .cwd
-                    .as_deref()
-                    .is_some_and(|cur| same_ws(&g.path.to_string_lossy(), &cur.to_string_lossy())),
-            )
-        })
-        .collect();
+    let items: Vec<(String, std::path::PathBuf, bool)> =
+        chat.psp
+            .projects
+            .iter()
+            .map(|g| {
+                (
+                    g.name.clone(),
+                    g.path.clone(),
+                    chat.ws.cwd.as_deref().is_some_and(|cur| {
+                        same_ws(&g.path.to_string_lossy(), &cur.to_string_lossy())
+                    }),
+                )
+            })
+            .collect();
     let weak_layer = weak.clone();
     let weak_nav = weak.clone();
     let layer = crate::ui::overlay::layer(false, Some(&chat.dlg.dialog_focus), move |_w, cx| {
@@ -1086,7 +1134,8 @@ fn term_menu_layer(
     let weak_layer = weak.clone();
     let edges = PopupEdges::around((x, y), vp, 0., 12.);
     let has_sel = chat
-        .ws.terminals
+        .ws
+        .terminals
         .iter()
         .find(|t| t.id == tab_id)
         .is_some_and(|t| t.selection.is_some());
@@ -1144,20 +1193,26 @@ fn term_menu_item(
     apply: fn(&mut Chat, usize, &mut gpui::Context<Chat>),
 ) -> gpui::Stateful<gpui::Div> {
     let weak = weak.clone();
-    let item = menu_item(SharedString::from(id.to_string()), icon_name, label, false, false)
-        .on_mouse_down(MouseButton::Left, move |_, window, cx| {
-            cx.stop_propagation();
-            let _ = weak.update(cx, |c, cx| {
-                apply(c, tab_id, cx);
-                c.dlg.term_menu = None;
-                // 焦点回终端：菜单收起后键盘接着用（与打开菜单时的聚焦对称）
-                if let Some(tab) = c.ws.terminals.iter().find(|t| t.id == tab_id) {
-                    let f = tab.focus.clone();
-                    window.focus(&f);
-                }
-                cx.notify();
-            });
+    let item = menu_item(
+        SharedString::from(id.to_string()),
+        icon_name,
+        label,
+        false,
+        false,
+    )
+    .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+        cx.stop_propagation();
+        let _ = weak.update(cx, |c, cx| {
+            apply(c, tab_id, cx);
+            c.dlg.term_menu = None;
+            // 焦点回终端：菜单收起后键盘接着用（与打开菜单时的聚焦对称）
+            if let Some(tab) = c.ws.terminals.iter().find(|t| t.id == tab_id) {
+                let f = tab.focus.clone();
+                window.focus(&f);
+            }
+            cx.notify();
         });
+    });
     if enabled { item } else { item.opacity(0.45) }
 }
 
@@ -1171,15 +1226,21 @@ fn tree_item(
     apply: impl Fn(&mut Chat, &mut gpui::Context<Chat>) + 'static,
 ) -> gpui::Stateful<gpui::Div> {
     let weak = weak.clone();
-    menu_item(SharedString::from(id.to_string()), icon_name, label, danger, false)
-        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-            cx.stop_propagation();
-            let _ = weak.update(cx, |c, cx| {
-                apply(c, cx);
-                c.dlg.tree_menu = None;
-                cx.notify();
-            });
-        })
+    menu_item(
+        SharedString::from(id.to_string()),
+        icon_name,
+        label,
+        danger,
+        false,
+    )
+    .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+        cx.stop_propagation();
+        let _ = weak.update(cx, |c, cx| {
+            apply(c, cx);
+            c.dlg.tree_menu = None;
+            cx.notify();
+        });
+    })
 }
 
 /// 「在终端中打开」要走 window（open_terminal_in 建终端 tab），单独接线。
@@ -1204,7 +1265,9 @@ fn tree_terminal_item(
             let cwd = if path.is_dir() {
                 path.clone()
             } else {
-                path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| path.clone())
+                path.parent()
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or_else(|| path.clone())
             };
             c.open_terminal_in(cwd, window, cx);
             c.dlg.tree_menu = None;
@@ -1244,7 +1307,10 @@ pub(crate) fn menu_sep() -> gpui::Div {
     div()
         .h(px(1.))
         .my(px(4.))
-        .bg(gpui::rgba(crate::appearance::theme::border_alpha(T(), 0x66)))
+        .bg(gpui::rgba(crate::appearance::theme::border_alpha(
+            T(),
+            0x66,
+        )))
 }
 
 /// 删除失败持久弹层：trash Err 必看（状态栏 toast 一闪容易漏）。
@@ -1278,7 +1344,10 @@ fn tree_del_error_layer(
                 div()
                     .text_size(crate::appearance::ui_size(12.5))
                     .text_color(rgb(t.text))
-                    .child(crate::i18n::tf("extensions.remove_failed_msg", &[("msg", msg)])),
+                    .child(crate::i18n::tf(
+                        "extensions.remove_failed_msg",
+                        &[("msg", msg)],
+                    )),
             )
             .child(div().flex().justify_end().child(crate::ui::button(
                 "del-err-ok",

@@ -33,6 +33,11 @@
 
 ## 里程碑索引（新 → 旧；一行一条，细节看对应提交）
 
+- 2026-10-18 **会话置顶（020）**：psp 会话标签 pin/unpin——hover 状态槽
+  临时换 pin（tracked hover 门控、与状态互斥渲染）、右键卡动作栏最左 pin
+  钮；Grouped 新增置顶组（副本引用，id 换 ps-pin- 前缀防撞）、Flat 排会话
+  区第一；pin 序持久化 `UiState.session_pins`，启动装载/refresh 双路并集
+  保窗口外置顶会话可见；自动化 op `session.pin` + snapshot `session_pins`。
 - 2026-10-18 **单一语义回归：当前项目 ≡ 活跃会话的项目**：树/tab/下拉切
   项目改走完整 switch_project（注意力跟过去，内容视图保持），废除「活跃
   会话不动」的错误第二语义——实测会话落错项目且列表隐形（buglist 两条：

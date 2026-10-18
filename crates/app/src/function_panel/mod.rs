@@ -3,31 +3,31 @@
 //! 拖拽调宽（250–500，双击复位 282）。psp 的悬浮层（路径 tooltip / 会话
 //! 详情卡 / 两级菜单 / 删除确认）由 `psp_overlays` 在根渲染挂载。
 
+pub(crate) mod file_actions;
 pub(crate) mod file_tree;
 pub(crate) mod file_tree_drag;
 pub(crate) mod file_tree_edit;
 pub(crate) mod file_tree_pins;
 pub(crate) mod file_tree_sticky;
-pub(crate) mod file_actions;
+pub(crate) mod git_panel;
 pub(crate) mod psp_actions;
 pub(crate) mod psp_drag;
-pub(crate) mod git_panel;
-pub(crate) mod psp_overlays;
 pub(crate) mod psp_menus;
+pub(crate) mod psp_overlays;
 pub(crate) mod tab_menu;
 
 use gpui::{Context, Entity, MouseButton, SharedString, div, prelude::*, px, rgb};
 
 use std::path::PathBuf;
 
-use crate::ui::TextInput;
 use crate::Chat;
 use crate::DockPanel;
-use crate::i18n::tr;
-use crate::services::workspace::{same_ws, same_ws_key};
 use crate::ListMode;
 use crate::SortMode;
 use crate::appearance::theme::{Theme, theme as T};
+use crate::i18n::tr;
+use crate::services::workspace::{same_path, same_ws, same_ws_key};
+use crate::ui::TextInput;
 use crate::ui::tokens::align;
 use crate::ui::{WithTip, icon, spinner};
 
@@ -35,13 +35,31 @@ use crate::ui::{WithTip, icon, spinner};
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum PspRow {
     Project(usize),
-    Session { p: usize, s: usize },
+    Session {
+        p: usize,
+        s: usize,
+    },
+    /// 置顶组头行（伪项目行）：pin icon + 「置顶」；不收折/不拖拽/无卡，
+    /// 仅作分组视觉。组内会话行用 [`PspRow::PinnedSession`]（元素 id 与
+    /// 原组行区分，防 gpui id 冲突）。
+    PinnedHeader,
+    /// 置顶组内的会话行（p/s = 原项目组下标的**副本引用**，会话本体不动）：
+    /// 不参与项目块避让平移（前置头行之前无 Project 行，shift 恒 0），
+    /// 元素 id 用 ps-pin- 前缀。
+    PinnedSession {
+        p: usize,
+        s: usize,
+    },
     /// 伪标签（draft 已发送、pi 未落盘的占位行；key = 池 key draft-N）
-    Pending { key: String },
+    Pending {
+        key: String,
+    },
     /// 空项目展开时的「无会话」占位
     Empty,
     /// 「显示更多」行（key = 组 ws_key；Flat 模式用全局键）
-    More { key: String },
+    More {
+        key: String,
+    },
 }
 
 /// 每页显示的会话标签数（学 zcode：「显示更多」每次续一页）——默认值来自
@@ -56,18 +74,34 @@ pub(crate) fn psp_rows(chat: &Chat) -> Vec<PspRow> {
     // 活动）；没有任何组可归（该项目还没有已落盘会话）的插在 Title 后。
     // 折叠的组里伪标签照常显示——它正是用户刚发出的那条消息的标签。
     let orphan_pending: Vec<String> = chat
-        .psp.pending_tabs
+        .psp
+        .pending_tabs
         .iter()
-        .filter(|e| !chat.psp.projects.iter().any(|g| same_ws(&g.path.to_string_lossy(), &e.cwd)))
+        .filter(|e| {
+            !chat
+                .psp
+                .projects
+                .iter()
+                .any(|g| same_ws(&g.path.to_string_lossy(), &e.cwd))
+        })
         .map(|e| e.key.clone())
         .collect();
     match chat.psp.list_mode {
         ListMode::Grouped => {
+            // 置顶组（会话 pin）：列表最顶；内容为空不建组（空置顶组永不
+            // 显示）。会话本体留在原项目组（置顶组是副本视图），组内按
+            // pin 序（后置顶的总在最上面）。
+            let pinned = pinned_rows(chat);
+            if !pinned.is_empty() {
+                rows.push(PspRow::PinnedHeader);
+                rows.extend(pinned);
+            }
             for (pi, g) in chat.psp.projects.iter().enumerate() {
                 rows.push(PspRow::Project(pi));
                 let key = same_ws_key(&g.path.to_string_lossy());
                 for e in chat
-                    .psp.pending_tabs
+                    .psp
+                    .pending_tabs
                     .iter()
                     .filter(|e| same_ws(&g.path.to_string_lossy(), &e.cwd))
                 {
@@ -75,11 +109,7 @@ pub(crate) fn psp_rows(chat: &Chat) -> Vec<PspRow> {
                 }
                 // 拖拽中的项目收起为标签（020）：渲染期折叠——只显示组标题
                 // 行，落位重排后状态清零自动还原，不碰 collapsed_keys
-                let drag_collapsed = chat
-                    .psp
-                    .proj_drag
-                    .as_ref()
-                    .is_some_and(|d| d.key == key);
+                let drag_collapsed = chat.psp.proj_drag.as_ref().is_some_and(|d| d.key == key);
                 if drag_collapsed || chat.psp.collapsed_keys.contains(&key) {
                     continue;
                 }
@@ -87,7 +117,8 @@ pub(crate) fn psp_rows(chat: &Chat) -> Vec<PspRow> {
                     rows.push(PspRow::Empty);
                 } else {
                     let shown = chat
-                        .psp.psp_shown
+                        .psp
+                        .psp_shown
                         .get(&key)
                         .copied()
                         .unwrap_or_else(psp_page)
@@ -102,7 +133,8 @@ pub(crate) fn psp_rows(chat: &Chat) -> Vec<PspRow> {
             }
         }
         ListMode::Flat => {
-            // Flat：伪标签按插入序排列表最前（最新活动优先）
+            // Flat：伪标签按插入序排列表最前（最新活动优先），其后置顶会话
+            // 排到会话区第一位（pin 序），其余维持现排序
             for e in &chat.psp.pending_tabs {
                 rows.push(PspRow::Pending { key: e.key.clone() });
             }
@@ -119,26 +151,62 @@ pub(crate) fn psp_rows(chat: &Chat) -> Vec<PspRow> {
                     mb.cmp(&ma)
                 });
             }
+            // 置顶分区：pin 序（session_pins 位置升序）排到最前
+            let pin_rank = |p: usize, s: usize| -> usize {
+                let path = &chat.psp.projects[p].sessions[s].path;
+                chat.psp
+                    .session_pins
+                    .iter()
+                    .position(|q| same_path(q, path))
+                    .unwrap_or(usize::MAX)
+            };
+            all.sort_by_key(|&(p, s)| pin_rank(p, s));
             let key = "__flat__".to_string();
-            let shown = chat.psp.psp_shown.get(&key).copied().unwrap_or_else(psp_page);
+            let shown = chat
+                .psp
+                .psp_shown
+                .get(&key)
+                .copied()
+                .unwrap_or_else(psp_page);
             let total = all.len();
             all.truncate(shown);
-            all.into_iter().for_each(|(p, s)| rows.push(PspRow::Session { p, s }));
+            all.into_iter()
+                .for_each(|(p, s)| rows.push(PspRow::Session { p, s }));
             if total > shown {
                 rows.push(PspRow::More { key });
             }
         }
     }
-    // 无组可归的伪标签（该项目组还没被 rebuild_projects 建出来）：插在
-    // 列表顶——用户刚发的消息必须是第一眼能看到的东西
+    // 无组可归的伪标签（该项目组还没被 rebuild_projects 建出来）：插在置顶
+    // 组（若有）之后、项目区之前——用户刚发的消息必须是第一眼能看到的东西，
+    // 但不能盖住置顶组的头行
+    let orphan_at = rows
+        .iter()
+        .take_while(|r| matches!(r, PspRow::PinnedHeader | PspRow::PinnedSession { .. }))
+        .count();
     for (i, key) in orphan_pending.into_iter().enumerate() {
-        rows.insert(i, PspRow::Pending { key });
+        rows.insert(orphan_at + i, PspRow::Pending { key });
+    }
+    rows
+}
+
+/// 置顶组的会话行（Grouped 视图）：按 session_pins 序（后置顶的总在最上面）
+/// 在 projects 里找到每个置顶会话的当前下标，产出副本行引用。清单外
+/// （已删 / 未装载）的置顶项静默跳过；全部跳过则空向量 —— 上层不建组。
+fn pinned_rows(chat: &Chat) -> Vec<PspRow> {
+    let mut rows = Vec::new();
+    for pin in &chat.psp.session_pins {
+        for (pi, g) in chat.psp.projects.iter().enumerate() {
+            if let Some(si) = g.sessions.iter().position(|s| same_path(&s.path, pin)) {
+                rows.push(PspRow::PinnedSession { p: pi, s: si });
+                break;
+            }
+        }
     }
     rows
 }
 
 impl Chat {
-
     /// Group the cross-project session scan into project groups (020 拖拽
     /// 版排序：用户排序 > 首建默认序（当前项目钉顶 + 活动倒序，仅一次）>
     /// 运行期保序；组内会话恒按活动倒序——详见下方实现注释）。
@@ -148,12 +216,7 @@ impl Chat {
         let records = pi_link::projects::project_records();
         let opened: std::collections::HashMap<String, i64> = records
             .iter()
-            .map(|r| {
-                (
-                    same_ws_key(&r.path.to_string_lossy()),
-                    r.last_opened_ms,
-                )
-            })
+            .map(|r| (same_ws_key(&r.path.to_string_lossy()), r.last_opened_ms))
             .collect();
         let opened_ms = |p: &std::path::Path| {
             opened
@@ -247,8 +310,12 @@ impl Chat {
             // current pinned first, the rest by newest session mtime desc
             let cwd = self.ws.cwd.clone();
             groups.sort_by(|a, b| {
-                let ka = cwd.as_deref().is_some_and(|cur| same_ws(&a.path.to_string_lossy(), &cur.to_string_lossy()));
-                let kb = cwd.as_deref().is_some_and(|cur| same_ws(&b.path.to_string_lossy(), &cur.to_string_lossy()));
+                let ka = cwd
+                    .as_deref()
+                    .is_some_and(|cur| same_ws(&a.path.to_string_lossy(), &cur.to_string_lossy()));
+                let kb = cwd
+                    .as_deref()
+                    .is_some_and(|cur| same_ws(&b.path.to_string_lossy(), &cur.to_string_lossy()));
                 match (ka, kb) {
                     (true, false) => std::cmp::Ordering::Less,
                     (false, true) => std::cmp::Ordering::Greater,
@@ -285,8 +352,7 @@ impl Chat {
     /// （钉顶的活动项目折叠等于看不见自己刚开的会话）。
     pub(crate) fn auto_collapse_stale_projects(&mut self) {
         let hours = crate::services::workspace::auto_collapse_hours();
-        let cutoff = std::time::SystemTime::now()
-            - std::time::Duration::from_secs(hours * 3600);
+        let cutoff = std::time::SystemTime::now() - std::time::Duration::from_secs(hours * 3600);
         let cwd = self.ws.cwd.clone();
         for g in &self.psp.projects {
             if g.sessions.is_empty() {
@@ -299,7 +365,8 @@ impl Chat {
                 continue;
             }
             if newest(g) < cutoff {
-                self.psp.collapsed_keys
+                self.psp
+                    .collapsed_keys
                     .insert(same_ws_key(&g.path.to_string_lossy()));
             }
         }
@@ -314,11 +381,36 @@ impl Chat {
         };
         let cwd = cwd.to_string_lossy().to_string();
         self.pool.sessions = self
-            .psp.projects
+            .psp
+            .projects
             .iter()
             .find(|g| same_ws(&g.path.to_string_lossy(), &cwd))
             .map(|g| g.sessions.clone())
             .unwrap_or_default();
+    }
+
+    /// 会话是否已置顶（020 会话置顶；路径判等 same_path）。
+    pub(crate) fn session_pinned(&self, path: &std::path::Path) -> bool {
+        self.psp.session_pins.iter().any(|p| same_path(p, path))
+    }
+
+    /// 会话置顶开关（pin/unpin 唯一写路）：pin = 插到最前（后置顶的总在
+    /// 最上面）；unpin = 移除（置顶组随之空掉 → 不再显示）。落盘时机即
+    /// 点击时刻（不等关窗，防异常退出丢失）。
+    pub(crate) fn session_pin_toggle(&mut self, path: PathBuf, cx: &mut gpui::Context<Self>) {
+        match self
+            .psp
+            .session_pins
+            .iter()
+            .position(|p| same_path(p, &path))
+        {
+            Some(ix) => {
+                self.psp.session_pins.remove(ix);
+            }
+            None => self.psp.session_pins.insert(0, path),
+        }
+        self.persist_ui();
+        cx.notify();
     }
 }
 
@@ -330,8 +422,8 @@ fn newest(g: &crate::ProjectGroup) -> std::time::SystemTime {
         .max()
         .unwrap_or(std::time::UNIX_EPOCH);
     // 注册表打开时刻兑底：零会话的注册项目按打开时刻参与活动排序
-    let from_open = std::time::UNIX_EPOCH
-        + std::time::Duration::from_millis(g.opened_ms.max(0) as u64);
+    let from_open =
+        std::time::UNIX_EPOCH + std::time::Duration::from_millis(g.opened_ms.max(0) as u64);
     from_sessions.max(from_open)
 }
 
@@ -383,18 +475,23 @@ pub(crate) fn psp_view(
                     last_pi = Some(*pi);
                     None
                 }
+                // 置顶组行不参与项目块避让平移（头行在所有 Project 之前，
+                // 会话副本引用的是别组的项目块）
+                PspRow::PinnedHeader | PspRow::PinnedSession { .. } => None,
                 PspRow::Session { p, .. } => Some(*p),
                 _ => last_pi,
             };
             let shift = block.map(|b| psp_drag::row_shift(chat, b)).unwrap_or(0.);
             match row {
                 PspRow::Project(pi) => rows.push(project_row(chat, pi, &weak, t)),
-                PspRow::Session { p, s } => {
-                    rows.push(session_row_view(chat, p, s, shift, &weak, t, window, cx))
-                }
-                PspRow::Pending { key } => {
-                    rows.push(pending_row_view(chat, &key, shift, &weak, t))
-                }
+                PspRow::PinnedHeader => rows.push(pinned_header_row(t)),
+                PspRow::Session { p, s } => rows.push(session_row_view(
+                    chat, p, s, shift, false, &weak, t, window, cx,
+                )),
+                PspRow::PinnedSession { p, s } => rows.push(session_row_view(
+                    chat, p, s, shift, true, &weak, t, window, cx,
+                )),
+                PspRow::Pending { key } => rows.push(pending_row_view(chat, &key, shift, &weak, t)),
                 PspRow::Empty => rows.push(
                     div()
                         .id("psp-empty")
@@ -437,93 +534,93 @@ pub(crate) fn psp_view(
                 }
             }
         }
-    // psp 会话列表滚动 + 右缘滚动条。Scrollbar 挂在与滚动容器平级的
-    // relative 包裹上（贴 dock 右缘，不吃容器内 10px 留白）；ZED Regular
-    // 视觉：只有 thumb 无 track（track 色已在 sync_gpui_tokens 透明化）。
-    body = body.child(
-        div()
-            .id("psp-scroll-wrap")
-            .relative()
-            .flex_1()
-            .min_h_0()
-            .w_full()
-            .child(
-                div()
-                    .id("psp-scroll")
-                    .size_full()
-                    .overflow_y_scroll()
-                    .track_scroll(&chat.psp.psp_scroll)
-                    // 鼠标进 panel → 滚动条立现；离开 → 3s 后淡出（自绘
-                    // psp_scrollbar 读这两个状态自绘透明度）
-                    .on_hover(cx.listener(|this, hovered: &bool, _w, cx| {
-                        this.psp.psp_sb_state.set_parent_hovered(*hovered);
-                        cx.notify();
-                    }))
-                    // 滚动时立刻关掉全部浮层（详情卡/项目tooltip/删除确认）
-                    //——它们锚定的是行位置，滚动后锚点漂移，钉在原地
-                    // 只会错位（用户定稿：滚动 = 菜单立即消失）
-                    .on_scroll_wheel(cx.listener(|this, _: &gpui::ScrollWheelEvent, _w, cx| {
-                        if this.dlg.hover_card.is_some()
-                            || this.dlg.proj_card.is_some()
-                            || this.dlg.proj_tip.is_some()
-                        {
-                            this.dlg.hover_card = None;
-                            this.dlg.proj_card = None;
-                            this.dlg.proj_tip = None;
+        // psp 会话列表滚动 + 右缘滚动条。Scrollbar 挂在与滚动容器平级的
+        // relative 包裹上（贴 dock 右缘，不吃容器内 10px 留白）；ZED Regular
+        // 视觉：只有 thumb 无 track（track 色已在 sync_gpui_tokens 透明化）。
+        body = body.child(
+            div()
+                .id("psp-scroll-wrap")
+                .relative()
+                .flex_1()
+                .min_h_0()
+                .w_full()
+                .child(
+                    div()
+                        .id("psp-scroll")
+                        .size_full()
+                        .overflow_y_scroll()
+                        .track_scroll(&chat.psp.psp_scroll)
+                        // 鼠标进 panel → 滚动条立现；离开 → 3s 后淡出（自绘
+                        // psp_scrollbar 读这两个状态自绘透明度）
+                        .on_hover(cx.listener(|this, hovered: &bool, _w, cx| {
+                            this.psp.psp_sb_state.set_parent_hovered(*hovered);
                             cx.notify();
-                        }
-                    }))
-                    // 项目拖拽（020）：容器级 drag_move = 状态同步漏斗——
-                    // 列表区内续期、拖出列表区立即清态（指示线消失、收起
-                    // 的组复原）；on_drop 兜底整片列表的落点提交（行内半行
-                    // 判定已在 project_row 做，这里只消费 proj_drop_ix）
-                    .on_drag_move::<psp_drag::ProjDragTab>({
-                        let w_sync = weak.clone();
-                        move |ev, window, cx| {
-                            let inside = ev.bounds.contains(&ev.event.position);
-                            let key = ev.drag(cx).key.clone();
-                            // 拖拽全程全窗口握紧小手：AnyDrag.cursor_style
-                            // 是窗口级光标（优先于一切行光标），拖拽激活时
-                            // 从源行样式取值（OpenHand），这里覆写成
-                            // ClosedHand；refresh 与拖拽期逐 move 刷新合并
-                            let _ = cx.set_active_drag_cursor_style(
-                                gpui::CursorStyle::ClosedHand,
-                                window,
-                            );
-                            let _ = w_sync.update(cx, |c, cx| {
-                                psp_drag::sync_drag(c, key, inside, cx);
-                            });
-                        }
-                    })
-                    .on_drop::<psp_drag::ProjDragTab>({
-                        let w_drop = weak.clone();
-                        move |_, _, cx| {
-                            let _ = w_drop.update(cx, |c, cx| {
-                                let target = c.psp.proj_drop_ix;
-                                psp_drag::commit_drop(c, target, cx);
-                            });
-                        }
-                    })
-                    // 水平留白由 col 外层统一（10px），此处不再叠加
-                    .flex()
-                    .flex_col()
-                    .children(rows),
-            )
-            // 自绘滚动条（ZED Regular 移植）：贴边 0px；无 track；panel 内
-            // 常显、离开 3s+1s 淡出；thumb 悬停加宽；事件不穿透
-            .child(
-                div()
-                    .absolute()
-                    .top(px(0.))
-                    .bottom(px(0.))
-                    .right(px(-10.))
-                    .w(px(10.))
-                    .child(crate::ui::psp_scrollbar::psp_scrollbar(
-                        &chat.psp.psp_sb_state,
-                        &chat.psp.psp_scroll,
-                    )),
-            ),
-    );
+                        }))
+                        // 滚动时立刻关掉全部浮层（详情卡/项目tooltip/删除确认）
+                        //——它们锚定的是行位置，滚动后锚点漂移，钉在原地
+                        // 只会错位（用户定稿：滚动 = 菜单立即消失）
+                        .on_scroll_wheel(cx.listener(|this, _: &gpui::ScrollWheelEvent, _w, cx| {
+                            if this.dlg.hover_card.is_some()
+                                || this.dlg.proj_card.is_some()
+                                || this.dlg.proj_tip.is_some()
+                            {
+                                this.dlg.hover_card = None;
+                                this.dlg.proj_card = None;
+                                this.dlg.proj_tip = None;
+                                cx.notify();
+                            }
+                        }))
+                        // 项目拖拽（020）：容器级 drag_move = 状态同步漏斗——
+                        // 列表区内续期、拖出列表区立即清态（指示线消失、收起
+                        // 的组复原）；on_drop 兜底整片列表的落点提交（行内半行
+                        // 判定已在 project_row 做，这里只消费 proj_drop_ix）
+                        .on_drag_move::<psp_drag::ProjDragTab>({
+                            let w_sync = weak.clone();
+                            move |ev, window, cx| {
+                                let inside = ev.bounds.contains(&ev.event.position);
+                                let key = ev.drag(cx).key.clone();
+                                // 拖拽全程全窗口握紧小手：AnyDrag.cursor_style
+                                // 是窗口级光标（优先于一切行光标），拖拽激活时
+                                // 从源行样式取值（OpenHand），这里覆写成
+                                // ClosedHand；refresh 与拖拽期逐 move 刷新合并
+                                let _ = cx.set_active_drag_cursor_style(
+                                    gpui::CursorStyle::ClosedHand,
+                                    window,
+                                );
+                                let _ = w_sync.update(cx, |c, cx| {
+                                    psp_drag::sync_drag(c, key, inside, cx);
+                                });
+                            }
+                        })
+                        .on_drop::<psp_drag::ProjDragTab>({
+                            let w_drop = weak.clone();
+                            move |_, _, cx| {
+                                let _ = w_drop.update(cx, |c, cx| {
+                                    let target = c.psp.proj_drop_ix;
+                                    psp_drag::commit_drop(c, target, cx);
+                                });
+                            }
+                        })
+                        // 水平留白由 col 外层统一（10px），此处不再叠加
+                        .flex()
+                        .flex_col()
+                        .children(rows),
+                )
+                // 自绘滚动条（ZED Regular 移植）：贴边 0px；无 track；panel 内
+                // 常显、离开 3s+1s 淡出；thumb 悬停加宽；事件不穿透
+                .child(
+                    div()
+                        .absolute()
+                        .top(px(0.))
+                        .bottom(px(0.))
+                        .right(px(-10.))
+                        .w(px(10.))
+                        .child(crate::ui::psp_scrollbar::psp_scrollbar(
+                            &chat.psp.psp_sb_state,
+                            &chat.psp.psp_scroll,
+                        )),
+                ),
+        );
         panel = panel.child(body);
     }
     // 子面板在 dock 列里的伸缩（020-1）：对面最大化 → 本面板填满；本面板
@@ -546,11 +643,7 @@ pub(crate) fn psp_view(
 /// MD16）= 列表切换（项目分组 ↔ 最近会话，图标随模式换）+ 最大化（本面板
 /// 填满、文件树收起到操作栏）。左缘 = ICON_LINE 12（容器 pl4 + 钮 px8）、
 /// 右缘 = LIST_PX 10，与文件树操作栏同线。
-fn psp_ctrl_bar(
-    chat: &Chat,
-    weak: &gpui::WeakEntity<Chat>,
-    t: &'static Theme,
-) -> gpui::AnyElement {
+fn psp_ctrl_bar(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> gpui::AnyElement {
     let grouped = chat.psp.list_mode == ListMode::Grouped;
     let w_open = weak.clone();
     let w_new = weak.clone();
@@ -702,7 +795,10 @@ fn project_row(
         .cwd
         .as_deref()
         .is_some_and(|cur| same_ws(&g.path.to_string_lossy(), &cur.to_string_lossy()));
-    let collapsed = chat.psp.collapsed_keys.contains(&same_ws_key(&g.path.to_string_lossy()));
+    let collapsed = chat
+        .psp
+        .collapsed_keys
+        .contains(&same_ws_key(&g.path.to_string_lossy()));
     let hovered = chat.psp.hovered_project == Some(pi);
     let path = g.path.clone();
     let path_toggle = path.clone();
@@ -759,23 +855,28 @@ fn project_row(
                 cx.notify();
             });
         })
-        .on_mouse_down(MouseButton::Right, move |ev: &gpui::MouseDownEvent, _, cx| {
-            // 项目行右键详情卡（020）：样式对齐会话详情卡，锚点 = 鼠标
-            // 视口坐标。与会话卡互斥：右键别行 = 收旧开新
-            let (x, y) = (f32::from(ev.position.x), f32::from(ev.position.y));
-            let _ = w_card.update(cx, |c, cx| {
-                c.dlg.hover_card = None;
-                c.dlg.proj_card = Some(crate::function_panel::ProjCard {
-                    path: path_card.clone(),
-                    x,
-                    y,
-                    confirming: false,
+        .on_mouse_down(
+            MouseButton::Right,
+            move |ev: &gpui::MouseDownEvent, _, cx| {
+                // 项目行右键详情卡（020）：样式对齐会话详情卡，锚点 = 鼠标
+                // 视口坐标。与会话卡互斥：右键别行 = 收旧开新
+                let (x, y) = (f32::from(ev.position.x), f32::from(ev.position.y));
+                let _ = w_card.update(cx, |c, cx| {
+                    c.dlg.hover_card = None;
+                    c.dlg.proj_card = Some(crate::function_panel::ProjCard {
+                        path: path_card.clone(),
+                        x,
+                        y,
+                        confirming: false,
+                    });
+                    cx.notify();
                 });
-                cx.notify();
-            });
-        })
+            },
+        )
         .on_drag(
-            psp_drag::ProjDragTab { key: drag_key.clone() },
+            psp_drag::ProjDragTab {
+                key: drag_key.clone(),
+            },
             {
                 // 幽灵定位由 gpui 按 mouse − cursor_offset 完成（天然保留
                 // 抓取点偏移），这里只捕获锁 x 补偿要用的起手鼠标位
@@ -800,7 +901,11 @@ fn project_row(
             // 半行判定：上/下半 = 插到本行前/后；拖回自己或相邻 = no-op
             // → 空槽闭合、drop 也不动（no-op 对比的是**被拖项目**的当前位
             // 置，不是本行——本行位置和 target 同源，比了等于全判原地）
-            let target = if ev.event.position.y < ev.bounds.center().y { pi } else { pi + 1 };
+            let target = if ev.event.position.y < ev.bounds.center().y {
+                pi
+            } else {
+                pi + 1
+            };
             let _ = w_drag_ix.update(cx, |c, cx| {
                 psp_drag::sync_drag(c, key.clone(), true, cx);
                 let no_op = c
@@ -853,7 +958,11 @@ fn project_row(
                 } else {
                     gpui::FontWeight::MEDIUM
                 })
-                .text_color(if active { rgb(t.accent) } else { rgb(t.text_dim) })
+                .text_color(if active {
+                    rgb(t.accent)
+                } else {
+                    rgb(t.text_dim)
+                })
                 .child(name),
         )
         .when(hovered, |d| {
@@ -904,11 +1013,15 @@ fn project_row(
 
 /// 会话行：15px 状态槽（运行=旋转圈 / 未读=绿点 / 空）+ 标题；右键详情卡。
 /// `shift` = 所属项目块的避让位移（020 拖拽：整组随头行一起平移让位）。
+/// `in_pinned` = 是否置顶组内的副本行（元素 id 用 ps-pin- 前缀，与原组
+/// 行区分防 gpui id 冲突；渲染样式与 pin 语义完全一致——pin 态按会话
+/// 路径判定，两份行同亮同可点）。
 fn session_row_view(
     chat: &Chat,
     p: usize,
     s: usize,
     shift: f32,
+    in_pinned: bool,
     weak: &gpui::WeakEntity<Chat>,
     t: &'static Theme,
     window: &gpui::Window,
@@ -921,7 +1034,8 @@ fn session_row_view(
         return div().into_any_element();
     };
     let is_active = chat
-        .psp.active_file
+        .psp
+        .active_file
         .as_deref()
         .is_some_and(|f| crate::services::workspace::same_path(f, &info.path));
     // 运行态**每帧现算**：v54 把它缓存进 chat.running_files，而那份缓存的唯一
@@ -948,8 +1062,26 @@ fn session_row_view(
     let path = info.path.clone();
     let path_click = path.clone();
     let path_card = path.clone();
+    let path_hover = path.clone();
+    let path_pin = path.clone();
     let w_click = weak.clone();
     let w_card = weak.clone();
+    let w_hover = weak.clone();
+    let w_pin = weak.clone();
+    // 置顶态（会话 pin，020 会话置顶）与悬停态（pin 槽位替换依据）
+    let pinned = chat.session_pinned(&info.path);
+    let hovered = chat
+        .psp
+        .hovered_session
+        .as_deref()
+        .is_some_and(|h| crate::services::workspace::same_path(h, &info.path));
+    // 行元素 id：置顶组副本行换前缀（同会话在原组与置顶组各渲染一行，
+    // 同 id 会撞 gpui 元素状态槽）
+    let row_id: SharedString = if in_pinned {
+        format!("ps-pin-{}", info.id).into()
+    } else {
+        format!("ps-{}", info.id).into()
+    };
 
     // ---- ZCode TaskListItem 样式 parity（源码实测值）----
     // 列表 p-3 留白 + 行 pl-2.5/pr-1/py-1 + space-y-0.5 行距 + rounded-lg；
@@ -971,10 +1103,18 @@ fn session_row_view(
     );
     // 悬停态行底变成 10% 白纱（over nav），渐隐尾色必须跟着换白纱的合成
     // 视觉色——否则纯 nav 的 overlay 盖在白纱底上就是一块深色（黑块回归）
-    let fade_hover_to = gpui::Hsla::from(gpui::rgb(crate::appearance::theme::mix_rgb(t.text, t.nav, 0.1)));
+    let fade_hover_to = gpui::Hsla::from(gpui::rgb(crate::appearance::theme::mix_rgb(
+        t.text, t.nav, 0.1,
+    )));
     let fade_hover = gpui::linear_gradient(
         90.,
-        gpui::linear_color_stop(gpui::Hsla { a: 0., ..fade_hover_to }, 0.),
+        gpui::linear_color_stop(
+            gpui::Hsla {
+                a: 0.,
+                ..fade_hover_to
+            },
+            0.,
+        ),
         gpui::linear_color_stop(fade_hover_to, 1.),
     );
 
@@ -1018,121 +1158,205 @@ fn session_row_view(
         .relative()
         .top(px(shift))
         .child(
+            div()
+                .id(row_id)
+                .relative()
+                .group("psrow")
+                .w_full()
+                // §5.8：mb 补间距写法废除，真行高 32
+                .h(px(crate::ui::tokens::row::MAIN))
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .pl(px(align::ROW_PL))
+                .pr(px(align::LIST_PX))
+                .rounded(px(8.))
+                .cursor_pointer()
+                .when(is_active, |d| d.bg(row_sel).hover(|s| s.bg(row_sel)))
+                .when(!is_active, |d| d.hover(|s| s.bg(row_sel)))
+                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                    let _ = w_click.update(cx, |c, cx| {
+                        c.open_session(path_click.clone(), false, cx);
+                    });
+                })
+                .on_hover(move |h, _, cx| {
+                    // pin 槽位替换依据：只在翻转时 notify（行序重建后 path 判等
+                    // 自动失效，不需清旧）
+                    let _ = w_hover.update(cx, |c, cx| {
+                        let next = h.then(|| path_hover.clone());
+                        if c.psp.hovered_session.as_ref() != next.as_ref() {
+                            c.psp.hovered_session = next;
+                            cx.notify();
+                        }
+                    });
+                })
+                .on_mouse_down(
+                    MouseButton::Right,
+                    move |ev: &gpui::MouseDownEvent, _, cx| {
+                        // 右键详情卡（2026-10-15 定夺：悬停自动弹窗整体撤销——穿行
+                        // 滞留/换卡修补不平交互，改上下文卡语义：定位右键点、上/下方
+                        // 12px 弹出、点外即收）。锚点 = 鼠标视口坐标
+                        let (x, y) = (f32::from(ev.position.x), f32::from(ev.position.y));
+                        let _ = w_card.update(cx, |c, cx| {
+                            c.dlg.proj_card = None;
+                            c.dlg.hover_card = Some(crate::function_panel::HoverCard {
+                                path: path_card.clone(),
+                                x,
+                                y,
+                                confirming: false,
+                                renaming: false,
+                                rename_input: None,
+                            });
+                            cx.notify();
+                        });
+                    },
+                )
+                .child(
+                    // 状态槽（15px）：常态 = 转圈/彩点/空；悬停被 pin 暂时替代
+                    //（020 会话置顶 ①），已置顶则恒显 pin（点击 = unpin；pin 用
+                    // MD 档 icon，已置顶 = accent 常亮，悬停替换 = 常字色）。
+                    // pin 钮只在可见时存在（tracked hover 态门控），不可见的钮
+                    // 不拦截点击——状态槽那 15px 未悬停时要留给以后可能的槽位交互
+                    div()
+                        .relative()
+                        .size(px(15.))
+                        // 状态与 pin 互斥渲染（pin 是描边 icon，叠加会从缝隙露出
+                        // 底下的转圈/彩点）：未置顶且未悬停才画状态
+                        .when(!pinned && !hovered, |d| {
+                            d.child(
+                                div()
+                                    .absolute()
+                                    .inset_0()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .child(if running {
+                                        spinner(15., t.accent)
+                                    } else if chat.psp.turn_errors.contains(&info.path) {
+                                        // 红 = 外部错误/崩溃（t.danger，§6 danger 系唯一表达）
+                                        div()
+                                            .size(px(7.))
+                                            .rounded_full()
+                                            .bg(rgb(t.danger))
+                                            .into_any_element()
+                                    } else if chat.psp.turn_warnings.contains(&info.path) {
+                                        // 黄 = 内部中断（上限截断/中止）
+                                        div()
+                                            .size(px(7.))
+                                            .rounded_full()
+                                            .bg(rgb(crate::appearance::theme::WARN))
+                                            .into_any_element()
+                                    } else if chat.psp.unread.contains(&info.path) {
+                                        // 青蓝 = 完成通知（绿色退出通知语义，仅表达正确性）
+                                        div()
+                                            .size(px(7.))
+                                            .rounded_full()
+                                            .bg(rgb(crate::appearance::theme::NOTICE))
+                                            .into_any_element()
+                                    } else {
+                                        div().into_any_element()
+                                    }),
+                            )
+                        })
+                        .when(pinned || hovered, |d| {
+                            d.child(
+                                div()
+                                    .id("pin-toggle")
+                                    .absolute()
+                                    .inset_0()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .cursor_pointer()
+                                    .with_tip(if pinned { "psp.unpin" } else { "psp.pin" })
+                                    // 拦住冒泡：点 pin 不是点行（不开会话）
+                                    .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                                        cx.stop_propagation();
+                                        let _ = w_pin.update(cx, |c, cx| {
+                                            c.session_pin_toggle(path_pin.clone(), cx);
+                                        });
+                                    })
+                                    .child(icon(
+                                        "pin",
+                                        crate::ui::tokens::icon::MD,
+                                        if pinned { t.accent } else { t.text_dim },
+                                    )),
+                            )
+                        }),
+                )
+                .child(
+                    // 标题：flex_1 到时间区左缘为止（不进入时间区）；仅确认溢出时
+                    // 挂尾部 24px 渐隐（ZCode TaskTitleOverflowText parity）
+                    div()
+                        .relative()
+                        .flex_1()
+                        .min_w_0()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .font_family(panel_family)
+                        // 会话标签 = 面板设置值（字体大小设置.md §1）
+                        .text_size(crate::appearance::ui_size(12.))
+                        .text_color(rgb(t.text))
+                        .child(title)
+                        .when(title_overflows, |d| {
+                            d.child(
+                                div()
+                                    .absolute()
+                                    .right_0()
+                                    .top_0()
+                                    .bottom_0()
+                                    .w(px(24.))
+                                    .bg(fade)
+                                    .group_hover("psrow", |s| s.bg(fade_hover)),
+                            )
+                        }),
+                )
+                // 时间区（v55 fmtAgo）：固定宽右对齐成一列（宽度与左侧图标区+
+                // padding 视觉平衡，标题可用空间最大化）
+                .child(
+                    div()
+                        .flex_shrink_0()
+                        .w(px(38.))
+                        .flex()
+                        .items_center()
+                        .justify_end()
+                        // 时间 = 面板字号−2（2026-10-10 定夺，原 −1）
+                        .text_size(crate::appearance::ui_size(10.))
+                        .text_color(rgb(t.text_faint))
+                        .child(SharedString::from(crate::services::format::fmt_ago(
+                            info.modified,
+                        ))),
+                ),
+        )
+        .into_any_element()
+}
+
+/// 置顶组头行（020 会话置顶 ③）：pin icon（MD 档，accent 常亮）+「置顶」；
+/// 样式对齐项目行（同高同字号同对齐线）。零交互：不收折/不拖拽/无右键卡
+/// ——置顶是全局单组，组序恒在最顶，头行没有可操作面。
+fn pinned_header_row(t: &'static Theme) -> gpui::AnyElement {
     div()
-        .id(SharedString::from(format!("ps-{}", info.id)))
-        .relative()
-        .group("psrow")
-        .w_full()
-        // §5.8：mb 补间距写法废除，真行高 32
+        .id("psp-pinned-header")
         .h(px(crate::ui::tokens::row::MAIN))
+        .flex_shrink_0()
         .flex()
         .items_center()
         .gap(px(8.))
         .pl(px(align::ROW_PL))
         .pr(px(align::LIST_PX))
         .rounded(px(8.))
-        .cursor_pointer()
-        .when(is_active, |d| d.bg(row_sel).hover(|s| s.bg(row_sel)))
-        .when(!is_active, |d| d.hover(|s| s.bg(row_sel)))
-        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-            let _ = w_click.update(cx, |c, cx| {
-                c.open_session(path_click.clone(), false, cx);
-            });
-        })
-        .on_mouse_down(MouseButton::Right, move |ev: &gpui::MouseDownEvent, _, cx| {
-            // 右键详情卡（2026-10-15 定夺：悬停自动弹窗整体撤销——穿行
-            // 滞留/换卡修补不平交互，改上下文卡语义：定位右键点、上/下方
-            // 12px 弹出、点外即收）。锚点 = 鼠标视口坐标
-            let (x, y) = (f32::from(ev.position.x), f32::from(ev.position.y));
-            let _ = w_card.update(cx, |c, cx| {
-                c.dlg.proj_card = None;
-                c.dlg.hover_card = Some(crate::function_panel::HoverCard {
-                    path: path_card.clone(),
-                    x,
-                    y,
-                    confirming: false,
-                    renaming: false,
-                    rename_input: None,
-                });
-                cx.notify();
-            });
-        })
+        .child(icon("pin", crate::ui::tokens::icon::MD, t.accent))
         .child(
             div()
-                .size(px(15.))
-                .flex()
-                .items_center()
-                .justify_center()
-                .child(if running {
-                    spinner(15., t.accent)
-                } else if chat.psp.turn_errors.contains(&info.path) {
-                    // 红 = 外部错误/崩溃（t.danger，§6 danger 系唯一表达）
-                    div()
-                        .size(px(7.))
-                        .rounded_full()
-                        .bg(rgb(t.danger))
-                        .into_any_element()
-                } else if chat.psp.turn_warnings.contains(&info.path) {
-                    // 黄 = 内部中断（上限截断/中止）
-                    div()
-                        .size(px(7.))
-                        .rounded_full()
-                        .bg(rgb(crate::appearance::theme::WARN))
-                        .into_any_element()
-                } else if chat.psp.unread.contains(&info.path) {
-                    // 青蓝 = 完成通知（绿色退出通知语义，仅表达正确性）
-                    div()
-                        .size(px(7.))
-                        .rounded_full()
-                        .bg(rgb(crate::appearance::theme::NOTICE))
-                        .into_any_element()
-                } else {
-                    div().into_any_element()
-                }),
-        )
-        .child(
-            // 标题：flex_1 到时间区左缘为止（不进入时间区）；仅确认溢出时
-            // 挂尾部 24px 渐隐（ZCode TaskTitleOverflowText parity）
-            div()
-                .relative()
                 .flex_1()
                 .min_w_0()
                 .overflow_hidden()
                 .whitespace_nowrap()
-                .font_family(panel_family)
-                // 会话标签 = 面板设置值（字体大小设置.md §1）
+                .text_ellipsis()
                 .text_size(crate::appearance::ui_size(12.))
-                .text_color(rgb(t.text))
-                .child(title)
-                .when(title_overflows, |d| {
-                    d.child(
-                        div()
-                            .absolute()
-                            .right_0()
-                            .top_0()
-                            .bottom_0()
-                            .w(px(24.))
-                            .bg(fade)
-                            .group_hover("psrow", |s| s.bg(fade_hover)),
-                    )
-                }),
-        )
-        // 时间区（v55 fmtAgo）：固定宽右对齐成一列（宽度与左侧图标区+
-        // padding 视觉平衡，标题可用空间最大化）
-        .child(
-            div()
-                .flex_shrink_0()
-                .w(px(38.))
-                .flex()
-                .items_center()
-                .justify_end()
-                // 时间 = 面板字号−2（2026-10-10 定夺，原 −1）
-                .text_size(crate::appearance::ui_size(10.))
-                .text_color(rgb(t.text_faint))
-                .child(SharedString::from(crate::services::format::fmt_ago(
-                    info.modified,
-                ))),
-        ),
+                .font_weight(gpui::FontWeight::MEDIUM)
+                .text_color(rgb(t.text_dim))
+                .child(tr("psp.pinned_group")),
         )
         .into_any_element()
 }

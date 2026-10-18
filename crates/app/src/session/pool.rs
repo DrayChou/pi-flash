@@ -28,8 +28,7 @@ impl Chat {
                             let r = rt.read(cx);
                             (
                                 r.file.clone(),
-                                r.agent_running
-                                    || r.state.as_ref().is_some_and(|s| s.is_streaming),
+                                r.agent_running || r.state.as_ref().is_some_and(|s| s.is_streaming),
                             )
                         };
                         if let Some(f) = file {
@@ -82,8 +81,7 @@ impl Chat {
                         Some(p) => {
                             let p = p.clone();
                             let cwd = rt.read(cx).cwd.to_string_lossy().to_string();
-                            if let Some(e) =
-                                chat.psp.pending_tabs.iter_mut().find(|e| e.key == key)
+                            if let Some(e) = chat.psp.pending_tabs.iter_mut().find(|e| e.key == key)
                             {
                                 e.preview = p;
                             } else {
@@ -136,8 +134,10 @@ impl Chat {
                             &chat.pool.globals.commands,
                         );
                     }
-                    chat.cfg.mc_state =
-                        models_config::compute_state(chat.cfg.mc_patterns.as_ref(), &chat.mc_refs());
+                    chat.cfg.mc_state = models_config::compute_state(
+                        chat.cfg.mc_patterns.as_ref(),
+                        &chat.mc_refs(),
+                    );
                     cx.notify();
                 }
                 SessionEvent::Commands(commands) => {
@@ -188,16 +188,15 @@ impl Chat {
                 });
             }
         }
-        let (input, images, history, key, file) =
-            rt.update(cx, |r, _| {
-                (
-                    r.input.clone(),
-                    r.pending_images.clone(),
-                    r.history.clone(),
-                    r.key.clone(),
-                    r.file.clone(),
-                )
-            });
+        let (input, images, history, key, file) = rt.update(cx, |r, _| {
+            (
+                r.input.clone(),
+                r.pending_images.clone(),
+                r.history.clone(),
+                r.key.clone(),
+                r.file.clone(),
+            )
+        });
         self.composer.input = input;
         self.composer.pending_images = images;
         self.composer.history = history;
@@ -261,7 +260,9 @@ impl Chat {
     fn new_session_with(&mut self, cx: &mut Context<Self>, clear_memory: bool) {
         // 无项目态防御：new_session 只在有项目的上下文被调（composer 发送
         // 已在 send 门处先要目录；切项目/恢复路径 cwd 已就位）
-        let Some(cwd) = self.ws.cwd.clone() else { return };
+        let Some(cwd) = self.ws.cwd.clone() else {
+            return;
+        };
         // lazy draft (pi-web parity): the pi process spawns on the first
         // prompt, not now; running sessions are untouched
         let key = format!("draft-{}", self.pool.draft_seq);
@@ -339,7 +340,12 @@ impl Chat {
         cx: &mut Context<Self>,
     ) {
         let cwd = rt.read(cx).cwd.clone();
-        if !self.ws.cwd.as_deref().is_some_and(|cur| same_path(cur, &cwd)) {
+        if !self
+            .ws
+            .cwd
+            .as_deref()
+            .is_some_and(|cur| same_path(cur, &cwd))
+        {
             self.ws.cwd = Some(cwd);
             self.remount_workspace(cx);
         }
@@ -350,7 +356,9 @@ impl Chat {
     /// git/文件树/fs watcher/cwd 外单文件监听全套跟着新 cwd 重建。
     /// open_session 的池命中与新运行时两条路径共用。
     pub(crate) fn remount_workspace(&mut self, cx: &mut Context<Self>) {
-        let Some(cwd) = self.ws.cwd.clone() else { return };
+        let Some(cwd) = self.ws.cwd.clone() else {
+            return;
+        };
         // ① 归档旧项目的文件树状态（展开集合 + Pin 视图）：对齐 Zed 的
         // per-worktree 内存表，切回来不丢；同时落盘（`__tree`）
         self.archive_tree_state();
@@ -389,12 +397,14 @@ impl Chat {
         // cwd lookup: current project first, then all psp groups (v54 跨项目)，
         // 兜底当前项目；三处皆无（无项目态孤儿会话）→ 不开
         let cwd = self
-            .pool.sessions
+            .pool
+            .sessions
             .iter()
             .find(|s| s.path == path)
             .map(|s| PathBuf::from(s.cwd.clone()))
             .or_else(|| {
-                self.psp.projects
+                self.psp
+                    .projects
                     .iter()
                     .find(|g| g.sessions.iter().any(|s| s.path == path))
                     .map(|g| g.path.clone())
@@ -419,10 +429,14 @@ impl Chat {
             Some(msgs) => msgs,
             None => {
                 let msgs = msgs_from_tail(read_tail_messages(&path, 256 * 1024, 100));
-                if self.pool.session_tail_cache.len() >= crate::services::workspace::TAIL_PRELOAD * 2 {
+                if self.pool.session_tail_cache.len()
+                    >= crate::services::workspace::TAIL_PRELOAD * 2
+                {
                     self.pool.session_tail_cache.clear();
                 }
-                self.pool.session_tail_cache.insert(path.clone(), msgs.clone());
+                self.pool
+                    .session_tail_cache
+                    .insert(path.clone(), msgs.clone());
                 msgs
             }
         };
@@ -435,12 +449,19 @@ impl Chat {
             r.pending_rename = rename;
             r
         });
-        self.pool.runtimes.insert(rt.read(cx).key.clone(), rt.clone());
+        self.pool
+            .runtimes
+            .insert(rt.read(cx).key.clone(), rt.clone());
         self.subscribe_runtime(&rt, cx);
         // 秒开深度优化（pi-flash-2o92）：磁盘计数改后台——主线程全文件读
         // 是 O(会话大小) 的打开冻结源
         rt.update(cx, |r, cx| r.load_disk_msg_count(cx));
-        if !self.ws.cwd.as_deref().is_some_and(|cur| same_path(cur, &cwd)) {
+        if !self
+            .ws
+            .cwd
+            .as_deref()
+            .is_some_and(|cur| same_path(cur, &cwd))
+        {
             self.ws.cwd = Some(cwd);
             self.remount_workspace(cx);
         }
@@ -478,7 +499,10 @@ impl Chat {
         if let Some(store) = pi_link::session_ext::store_path() {
             let _ = pi_link::session_ext::remove_for(&store, &key);
         }
-        let was_active = self.pool.runtimes.get(&self.pool.active_key)
+        let was_active = self
+            .pool
+            .runtimes
+            .get(&self.pool.active_key)
             .map(|rt| rt.read(cx).file.as_deref() == Some(path.as_path()))
             .unwrap_or(false);
         // tear down the runtime (abort + process kill; dropping the entity
@@ -492,6 +516,8 @@ impl Chat {
         self.psp.unread.remove(&path);
         self.psp.turn_errors.remove(&path);
         self.psp.turn_warnings.remove(&path);
+        // 会话没了，置顶记录同步清册（020 会话置顶）
+        self.psp.session_pins.retain(|p| !same_path(p, &path));
         // recents (003-session管理): the file is gone, drop the entry
         pi_link::recents::remove_recent(&path);
         if was_active {
@@ -510,7 +536,10 @@ impl Chat {
                 self.set_status("session deleted".into(), cx);
             }
             Err(e) => {
-                self.set_status(crate::i18n::tf("extensions.remove_failed", &[("e", e.to_string())]), cx);
+                self.set_status(
+                    crate::i18n::tf("extensions.remove_failed", &[("e", e.to_string())]),
+                    cx,
+                );
             }
         }
         self.refresh_sessions();
@@ -557,7 +586,6 @@ impl Chat {
         self.dlg.rename_input = None;
         cx.notify();
     }
-
 }
 
 // ---------------------------------------------------------------------------
@@ -571,7 +599,9 @@ impl Chat {
 
     pub(crate) fn refresh_sessions(&mut self) {
         // 无项目态：没有「当前项目会话清单」可言（psp 窗口分组照常）
-        let Some(cwd) = self.ws.cwd.clone() else { return };
+        let Some(cwd) = self.ws.cwd.clone() else {
+            return;
+        };
         let cwd = cwd.to_string_lossy().to_string();
         let full = list_sessions_for_cwd(&cwd, 500)
             .into_iter()
@@ -594,10 +624,21 @@ impl Chat {
                 }
             }
         }
+        // 置顶兑底（020 会话置顶）：当前项目的置顶会话哪怕跌出加载时间
+        // 窗口也要在列表里——pin 的意义就是老会话常驻可见，对齐上面的
+        // active 兑底；其他项目的置顶会话沿用各组启动时装入的缓存
+        for pin in &self.psp.session_pins {
+            if !sessions.iter().any(|s| same_path(&s.path, pin))
+                && let Some(info) = full.iter().find(|s| same_path(&s.path, pin))
+            {
+                sessions.push(info.clone());
+            }
+        }
         self.pool.sessions = sessions;
         // sync the current project's group, then re-pin project order
         let all: Vec<SessionInfo> = self
-            .psp.projects
+            .psp
+            .projects
             .iter()
             .flat_map(|g| {
                 if same_ws(&g.path.to_string_lossy(), &cwd) {
@@ -641,7 +682,8 @@ impl Chat {
     }
 
     pub(crate) fn rt(&self) -> gpui::Entity<session::runtime::SessionRuntime> {
-        self.pool.runtimes
+        self.pool
+            .runtimes
             .get(&self.pool.active_key)
             .expect("active runtime exists")
             .clone()
@@ -658,7 +700,8 @@ impl Chat {
 
     /// 当前项目的上下文（010-启动.md §5）：命中启动装载的集合就直接返回，
     /// 未命中（新打开的项目）用同一个装载函数现算一次并纳入集合。
-    pub(crate) fn project_ctx_now(&mut self) -> startup::ProjectCtx {        // 无项目态：无项目上下文（全局设置照常，项目层为空默认）
+    pub(crate) fn project_ctx_now(&mut self) -> startup::ProjectCtx {
+        // 无项目态：无项目上下文（全局设置照常，项目层为空默认）
         let Some(cwd) = self.ws.cwd.clone() else {
             return startup::ProjectCtx::default();
         };
@@ -683,7 +726,11 @@ impl Chat {
         };
         let skills = startup::load_skills(&cwd);
         let commands = pi_link::catalog::skill_commands(&skills);
-        if let Some(ctx) = self.pool.project_ctx.get_mut(&cwd.to_string_lossy().to_string()) {
+        if let Some(ctx) = self
+            .pool
+            .project_ctx
+            .get_mut(&cwd.to_string_lossy().to_string())
+        {
             ctx.skills = skills.clone();
             ctx.skill_commands = commands;
         }
@@ -694,12 +741,14 @@ impl Chat {
     /// 回落首条用户消息。
     pub(crate) fn session_title(&self, cx: &gpui::App) -> String {
         let file = self
-            .pool.runtimes
+            .pool
+            .runtimes
             .get(&self.pool.active_key)
             .and_then(|rt| rt.read(cx).file.clone());
         let raw = file
             .and_then(|f| {
-                self.psp.projects
+                self.psp
+                    .projects
                     .iter()
                     .flat_map(|g| &g.sessions)
                     .find(|s| same_path(&s.path, &f))
@@ -707,9 +756,7 @@ impl Chat {
                         s.name
                             .clone()
                             .filter(|n| !n.trim().is_empty())
-                            .or_else(|| {
-                                Some(s.preview.clone()).filter(|p| !p.trim().is_empty())
-                            })
+                            .or_else(|| Some(s.preview.clone()).filter(|p| !p.trim().is_empty()))
                     })
             })
             .unwrap_or_else(|| tr("session.new").to_string());
@@ -721,5 +768,4 @@ impl Chat {
         }
         out
     }
-
 }

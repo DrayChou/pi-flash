@@ -30,7 +30,6 @@ const WS_SOUND_KEY: &str = "__sound";
 /// the phase-D shell).
 const WS_WINDOW_KEY: &str = "__window";
 
-
 // ---------------------------------------------------------------------------
 // core: path-injected map IO (tests use these directly; no cache)
 // ---------------------------------------------------------------------------
@@ -86,7 +85,6 @@ fn save_map_to(path: &Path, map: &serde_json::Map<String, Value>) -> bool {
     pi_link::config::write_json(path, &value).is_ok()
 }
 
-
 /// Normalized workspace key: Path components joined with "\\", so
 /// "D:/a/b" and "D:\a\b" share one memory slot (Windows path parity).
 fn ws_key(cwd: &str) -> String {
@@ -120,9 +118,7 @@ fn with_memory_cache<T>(f: impl FnOnce(&mut Option<serde_json::Map<String, Value
 fn memory() -> serde_json::Map<String, Value> {
     with_memory_cache(|cache| {
         if cache.is_none() {
-            let map = memory_path()
-                .map(|p| load_map_from(&p))
-                .unwrap_or_default();
+            let map = memory_path().map(|p| load_map_from(&p)).unwrap_or_default();
             *cache = Some(map);
         }
         cache.as_ref().expect("cache just filled").clone()
@@ -273,10 +269,7 @@ pub fn purge_app_install_memory() -> usize {
 /// ——落盘职责归调用方。此前 removed>0 时顺手 set_memory，purge 测试的
 /// 夹具 map 经此整表写穿真实 workspace.json（pins/布局/各项目记忆全冲掉，
 /// 裸跑 `cargo test -p app` 每次复发，2026-10-18 实锤）。
-fn purge_app_paths_in_map(
-    map: &mut serde_json::Map<String, Value>,
-    root: Option<&Path>,
-) -> usize {
+fn purge_app_paths_in_map(map: &mut serde_json::Map<String, Value>, root: Option<&Path>) -> usize {
     use pi_link::paths::is_app_install_path_at;
     let Some(root) = root else { return 0 };
     let before = map.len();
@@ -314,7 +307,7 @@ pub struct WindowState {
 pub struct UiState {
     /// active statusbar panel: "sessions" | "files" | "git"
     pub panel: String,
-    /// psp dock width in px (250–500)
+    /// psp dock width in px (300–500)
     pub slp_w: f32,
     /// panels + statusbar hidden (Obsidian-style collapse)
     pub panes_hidden: bool,
@@ -334,13 +327,17 @@ pub struct UiState {
     /// 020-1 dock 最大化：「none」|「files」|「sessions」——文件树/会话列表
     /// 最大化后关闭窗口，重启要还在该子面板最大化态（用户报障 2026-10-17）
     pub dock_max: String,
+    /// 会话置顶（psp 会话标签 pin）：绝对路径有序表，**越后置顶越靠前**
+    /// （index 0 = 最近置顶）。置顶会话哪怕跌出加载时间窗口也要可见，
+    /// 所以这份清单还参与启动装载并集（startup::spawn_boot_restore）。
+    pub session_pins: Vec<String>,
 }
 
 impl Default for UiState {
     fn default() -> Self {
         Self {
             panel: "sessions".into(),
-            slp_w: 300.,
+            slp_w: 340.,
             panes_hidden: false,
             list_mode: "grouped".into(),
             sort_mode: "time".into(),
@@ -349,6 +346,7 @@ impl Default for UiState {
             dock_max: "none".into(),
             dock_split: None,
             proj_order: Vec::new(),
+            session_pins: Vec::new(),
         }
     }
 }
@@ -420,6 +418,15 @@ pub fn ui_state() -> UiState {
             .filter(|s| matches!(*s, "files" | "sessions"))
             .unwrap_or("none")
             .to_string(),
+        session_pins: v
+            .get("session_pins")
+            .and_then(|c| c.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default(),
     }
 }
 
@@ -458,6 +465,7 @@ pub fn save_ui_state(s: &UiState) {
             "dock_split": s.dock_split,
             "proj_order": s.proj_order,
             "dock_max": s.dock_max,
+            "session_pins": s.session_pins,
         }),
     );
     set_memory(&map);
@@ -658,7 +666,6 @@ pub fn save_window_state(s: &WindowState) {
     set_memory(&map);
 }
 
-
 // ---------------------------------------------------------------------------
 // app settings (006 界面设置): theme / icon theme / fonts + lang / sound
 // ---------------------------------------------------------------------------
@@ -759,7 +766,10 @@ pub fn app_settings() -> AppSettings {
             Some(p) => {
                 let map = load_plain_map_from(&p);
                 AppSettings {
-                    theme: map.get("theme").and_then(|v| v.as_str()).map(str::to_string),
+                    theme: map
+                        .get("theme")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string),
                     icon_theme: map
                         .get("icon_theme")
                         .and_then(|v| v.as_str())
@@ -772,9 +782,7 @@ pub fn app_settings() -> AppSettings {
                         .and_then(|v| v.as_u64())
                         .map(|v| v.min(2) as usize),
                     sound: map.get("sound").and_then(|v| v.as_bool()),
-                    load_window_days: map
-                        .get("load_window_days")
-                        .and_then(|v| v.as_u64()),
+                    load_window_days: map.get("load_window_days").and_then(|v| v.as_u64()),
                     restore: map.get("startup_restore").and_then(|v| v.as_bool()),
                     show_thinking: map.get("show_thinking").and_then(|v| v.as_bool()),
                     git_markers: map.get("git_markers").and_then(|v| v.as_bool()),
@@ -782,9 +790,7 @@ pub fn app_settings() -> AppSettings {
                         .get("session_display_count")
                         .and_then(|v| v.as_u64()),
                     auto_collapse_hours: map.get("auto_collapse_hours").and_then(|v| v.as_u64()),
-                    at_index_ttl_secs: map
-                        .get("at_index_ttl_secs")
-                        .and_then(|v| v.as_u64()),
+                    at_index_ttl_secs: map.get("at_index_ttl_secs").and_then(|v| v.as_u64()),
                     at_index_max_projects: map
                         .get("at_index_max_projects")
                         .and_then(|v| v.as_u64()),
@@ -806,9 +812,7 @@ pub fn app_settings() -> AppSettings {
                     }),
                     auto_update: map.get("auto_update").and_then(|v| v.as_bool()),
                     md_live_preview: map.get("md_live_preview").and_then(|v| v.as_bool()),
-                    chat_content_width: map
-                        .get("chat_content_width")
-                        .and_then(|v| v.as_u64()),
+                    chat_content_width: map.get("chat_content_width").and_then(|v| v.as_u64()),
                 }
             }
             None => AppSettings::default(),
@@ -821,7 +825,9 @@ pub fn app_settings() -> AppSettings {
 /// Atomic save + cache update; skips the write when nothing changed.
 pub fn save_app_settings(s: &AppSettings) {
     with_app_settings_cache(|cache| *cache = Some(s.clone()));
-    let Some(path) = app_settings_path() else { return };
+    let Some(path) = app_settings_path() else {
+        return;
+    };
     let mut obj = serde_json::Map::new();
     if let Some(v) = &s.theme {
         obj.insert("theme".into(), Value::String(v.clone()));
@@ -972,12 +978,18 @@ pub fn auto_collapse_hours() -> u64 {
 
 /// @ 文件索引缓存有效期（秒；默认 60，clamp 1-3600）。
 pub fn at_index_ttl_secs() -> u64 {
-    app_settings().at_index_ttl_secs.unwrap_or(60).clamp(1, 3600)
+    app_settings()
+        .at_index_ttl_secs
+        .unwrap_or(60)
+        .clamp(1, 3600)
 }
 
 /// @ 文件索引缓存的最多项目数（每 cwd 一份；默认 10，clamp 1-100）。
 pub fn at_index_max_projects() -> usize {
-    app_settings().at_index_max_projects.unwrap_or(10).clamp(1, 100) as usize
+    app_settings()
+        .at_index_max_projects
+        .unwrap_or(10)
+        .clamp(1, 100) as usize
 }
 
 /// 界面页: 展示思考（关（默认）=新思考块收成一行；开=默认展开全文）。
@@ -1022,7 +1034,11 @@ pub const CHAT_WIDTH_STEP: u32 = 20;
 
 /// 会话内容宽度（px，已钳制；渲染期多次读取，只读缓存）。
 pub fn chat_content_width() -> f32 {
-    clamp_chat_width(app_settings().chat_content_width.unwrap_or(CHAT_WIDTH_DEFAULT as u64)) as f32
+    clamp_chat_width(
+        app_settings()
+            .chat_content_width
+            .unwrap_or(CHAT_WIDTH_DEFAULT as u64),
+    ) as f32
 }
 
 fn clamp_chat_width(v: u64) -> u32 {
@@ -1118,7 +1134,10 @@ mod tests {
         map.insert("a".into(), Value::Bool(true));
         save_map_to(&path, &map);
         assert!(path.is_file());
-        assert!(!path.with_extension("json.tmp").exists(), "tmp renamed away");
+        assert!(
+            !path.with_extension("json.tmp").exists(),
+            "tmp renamed away"
+        );
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
@@ -1172,7 +1191,10 @@ mod tests {
         assert!(back.contains(&cwd.join("src").join("deep")));
 
         std::fs::remove_dir_all(cwd.join("docs")).unwrap();
-        let pruned = tree_abs_paths(&cwd, &["docs".to_string(), "src".to_string(), "..".to_string()]);
+        let pruned = tree_abs_paths(
+            &cwd,
+            &["docs".to_string(), "src".to_string(), "..".to_string()],
+        );
         assert_eq!(pruned.len(), 2, "只剩根与 src");
         assert!(pruned.contains(&cwd));
         assert!(!pruned.contains(&cwd.join("docs")));
@@ -1193,14 +1215,20 @@ mod tests {
         tree_state_into_map(
             &mut map,
             &cwd_s,
-            &TreeState { expanded: vec![String::new()], pin: false },
+            &TreeState {
+                expanded: vec![String::new()],
+                pin: false,
+            },
         );
         assert!(tree_state_from(&map, &cwd_s).is_none(), "默认态不占槽位");
 
         tree_state_into_map(
             &mut map,
             &cwd_s,
-            &TreeState { expanded: vec![String::new(), "src".into()], pin: true },
+            &TreeState {
+                expanded: vec![String::new(), "src".into()],
+                pin: true,
+            },
         );
         let st = tree_state_from(&map, &cwd_s).expect("有内容应可读回");
         assert_eq!(st.expanded, vec![String::new(), "src".to_string()]);
@@ -1229,7 +1257,10 @@ mod tests {
         // 前缀像但不是子目录（proj2 不能被 proj 覆盖）
         assert!(!is_under(Path::new("D:\\proj2"), Path::new("D:\\proj")));
         // 工作区外（另一个盘/目录）
-        assert!(!is_under(Path::new("D:\\my_obsidian\\vault"), Path::new("D:\\ai_workspace")));
+        assert!(!is_under(
+            Path::new("D:\\my_obsidian\\vault"),
+            Path::new("D:\\ai_workspace")
+        ));
     }
 
     #[test]

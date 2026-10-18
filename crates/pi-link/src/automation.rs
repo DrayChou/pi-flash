@@ -13,7 +13,7 @@
 //! （`{"id","ok",...}`）。一行一记录；坏行忽略（读方 continue 不断连，
 //! 同 client.rs 纪律）。
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 
 /// 线协议版本；不兼容改动 +1，客户端按 hello 协商。
@@ -28,6 +28,10 @@ pub mod method {
     pub const SESSION_OPEN: &str = "session.open";
     pub const SESSION_SWITCH: &str = "session.switch";
     pub const SESSION_DELETE: &str = "session.delete";
+    /// 020 会话置顶（自动化验证入口：与行上 pin 钮/右键卡 pin 钮同一条
+    /// 写路 session_pin_toggle）。参 {"path": "…", "pinned": bool?}——
+    /// pinned 缺省 = toggle；回 {"pinned": bool} 断言置顶态
+    pub const SESSION_PIN: &str = "session.pin";
     pub const SESSION_SEND: &str = "session.send";
     pub const SESSION_STEER: &str = "session.steer";
     pub const SESSION_FOLLOWUP: &str = "session.followup";
@@ -154,19 +158,41 @@ pub struct AutomationError {
 
 impl AutomationError {
     pub fn new(code: &str, message: impl Into<String>) -> Self {
-        Self { code: code.to_string(), message: message.into() }
+        Self {
+            code: code.to_string(),
+            message: message.into(),
+        }
     }
 }
 
 /// 一行线记录。Unknown 兜底未知 type（同 protocol.rs：不静默丢）。
 #[derive(Debug, Clone, PartialEq)]
 pub enum AutomationRecord {
-    Hello { proto: u32, app: String, pid: u32, version: String },
-    Auth { token: String },
+    Hello {
+        proto: u32,
+        app: String,
+        pid: u32,
+        version: String,
+    },
+    Auth {
+        token: String,
+    },
     AuthOk,
-    AuthError { code: String, message: String },
-    Request { id: String, method: String, params: Value },
-    Response { id: String, ok: bool, result: Option<Value>, error: Option<AutomationError> },
+    AuthError {
+        code: String,
+        message: String,
+    },
+    Request {
+        id: String,
+        method: String,
+        params: Value,
+    },
+    Response {
+        id: String,
+        ok: bool,
+        result: Option<Value>,
+        error: Option<AutomationError>,
+    },
     Unknown(Value),
 }
 
@@ -201,8 +227,16 @@ pub fn response_error_record(id: &str, err: &AutomationError) -> Value {
 fn parse_error(v: &Value) -> Option<AutomationError> {
     let e = v.get("error")?;
     Some(AutomationError {
-        code: e.get("code").and_then(Value::as_str).unwrap_or("internal").to_string(),
-        message: e.get("message").and_then(Value::as_str).unwrap_or("").to_string(),
+        code: e
+            .get("code")
+            .and_then(Value::as_str)
+            .unwrap_or("internal")
+            .to_string(),
+        message: e
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
     })
 }
 
@@ -217,17 +251,32 @@ pub fn parse_line(line: &str) -> Option<AutomationRecord> {
     match ty {
         Some("hello") => Some(AutomationRecord::Hello {
             proto: v.get("proto").and_then(Value::as_u64).unwrap_or(0) as u32,
-            app: v.get("app").and_then(Value::as_str).unwrap_or("").to_string(),
+            app: v
+                .get("app")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
             pid: v.get("pid").and_then(Value::as_u64).unwrap_or(0) as u32,
-            version: v.get("version").and_then(Value::as_str).unwrap_or("").to_string(),
+            version: v
+                .get("version")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
         }),
         Some("auth") => Some(AutomationRecord::Auth {
-            token: v.get("token").and_then(Value::as_str).unwrap_or("").to_string(),
+            token: v
+                .get("token")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
         }),
         Some("auth_ok") => Some(AutomationRecord::AuthOk),
         Some("auth_error") => {
             let e = parse_error(&v)?;
-            Some(AutomationRecord::AuthError { code: e.code, message: e.message })
+            Some(AutomationRecord::AuthError {
+                code: e.code,
+                message: e.message,
+            })
         }
         // 请求/响应不带 type 字段：靠 method / ok 判别（和 pi 线上习惯一致，
         // 记录本体即身份）
@@ -314,15 +363,21 @@ pub fn remove_instance_file(pid: u32) {
 /// 读出全部登记（含解析失败的跳过）；按 started_at_ms 新的在前。
 pub fn read_instances_in(base: &Path) -> Vec<(InstanceInfo, PathBuf)> {
     let dir = instances_dir_in(base);
-    let Ok(entries) = std::fs::read_dir(&dir) else { return Vec::new() };
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Vec::new();
+    };
     let mut out = Vec::new();
     for e in entries.flatten() {
         let path = e.path();
         if path.extension().and_then(|s| s.to_str()) != Some("json") {
             continue;
         }
-        let Ok(text) = std::fs::read_to_string(&path) else { continue };
-        let Ok(v) = serde_json::from_str::<Value>(&text) else { continue };
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(v) = serde_json::from_str::<Value>(&text) else {
+            continue;
+        };
         let (Some(pid), Some(port)) = (
             v.get("pid").and_then(Value::as_u64),
             v.get("port").and_then(Value::as_u64),
@@ -336,7 +391,11 @@ pub fn read_instances_in(base: &Path) -> Vec<(InstanceInfo, PathBuf)> {
             InstanceInfo {
                 pid: pid as u32,
                 port: port as u16,
-                token: v.get("token").and_then(Value::as_str).unwrap_or("").to_string(),
+                token: v
+                    .get("token")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
                 started_at_ms: v.get("started_at_ms").and_then(Value::as_u64).unwrap_or(0),
             },
             path,
@@ -392,8 +451,16 @@ mod tests {
             })
         );
         let a = auth_record("tok");
-        assert_eq!(parse(&a.to_string()), Some(AutomationRecord::Auth { token: "tok".into() }));
-        assert_eq!(parse(&auth_ok_record().to_string()), Some(AutomationRecord::AuthOk));
+        assert_eq!(
+            parse(&a.to_string()),
+            Some(AutomationRecord::Auth {
+                token: "tok".into()
+            })
+        );
+        assert_eq!(
+            parse(&auth_ok_record().to_string()),
+            Some(AutomationRecord::AuthOk)
+        );
         let ae = auth_error_record("unauthorized", "bad token");
         assert_eq!(
             parse(&ae.to_string()),
@@ -442,7 +509,10 @@ mod tests {
                 id: "cli-1".into(),
                 ok: false,
                 result: None,
-                error: Some(AutomationError { code: "unknown_method".into(), message: "nope".into() }),
+                error: Some(AutomationError {
+                    code: "unknown_method".into(),
+                    message: "nope".into()
+                }),
             })
         );
     }
@@ -469,8 +539,18 @@ mod tests {
     fn instance_file_roundtrip_and_order() {
         let base = std::env::temp_dir().join(format!("pif-auto-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
-        let a = InstanceInfo { pid: 11, port: 5001, token: "ta".into(), started_at_ms: 100 };
-        let b = InstanceInfo { pid: 22, port: 5002, token: "tb".into(), started_at_ms: 200 };
+        let a = InstanceInfo {
+            pid: 11,
+            port: 5001,
+            token: "ta".into(),
+            started_at_ms: 100,
+        };
+        let b = InstanceInfo {
+            pid: 22,
+            port: 5002,
+            token: "tb".into(),
+            started_at_ms: 200,
+        };
         write_instance_file_in(&base, &a).unwrap();
         write_instance_file_in(&base, &b).unwrap();
         let got = read_instances_in(&base);
