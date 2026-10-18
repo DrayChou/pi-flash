@@ -33,10 +33,13 @@ terminal打开也在这里
   撤 75% 限宽，回 023 的 Zed parity）+ 横向滑动；右端 20px 固定为窗口拖拽区。
 - 会话 tab 为固定段、不参与滚动，且不接 on_drag（禁止拖拽，2026-10-14
   定案）。自由 tab 拖拽换位 = zed pane tab 单 pane 版：on_drag 发起
-  （ghost = icon+标题浮起小签）→ drag_over 插入侧亮条（目标在源右 = 左
-  缘亮条，反之右缘）→ on_drop 落位（按 TabKey 现查 from，防中途列表漂移；
-  active_panel_tab 随移平移，shifted_active 穷举单测）；拖到标签区空白 =
-  移到末尾。
+  （ghost = 拖拽手势 icon-hand + 标题浮起小签，icon 不随 tab 类型——
+  终端/更新日志图标在拖拽语义下误导，2026-10-14 定夺）→ drag_over 插入
+  侧亮条（目标在源右 = 左缘亮条，反之右缘）→ on_drop 落位（按 TabKey
+  现查 from，防中途列表漂移；active_panel_tab 随移平移，shifted_active
+  穷举单测）；拖到标签区空白 = 移到末尾。app-body 根容器挂全局兑底
+  on_drop：gpui 落点无注册目标时 active_drag 残留（ghost 不消失、新拖
+  被挡），根 no-op listener 兼清道夫，真 drop 在深层已 stop_propagation。
 - 会话标签前置 bot-message-square icon（15px，muted），标签贴标签栏左缘
   10px（2026-10-10 追加，替代初稿"去掉会话icon"口径）；会话 tab 为固定
   段、不随自由标签滚动（2026-10-14 追加：超多标签旧实现会把它滚出视野）。

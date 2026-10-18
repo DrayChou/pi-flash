@@ -18,7 +18,6 @@ use crate::ContentView;
 use crate::TabKey;
 use crate::i18n::tr;
 use crate::appearance::theme::theme as T;
-use crate::services::file_icons;
 use crate::ui::tokens::align;
 
 /// tab 拖拽载荷（zed DraggedTab 单 pane 版，2026-10-14）：`ix` 供悬停
@@ -31,19 +30,11 @@ pub(crate) struct TabDrag {
     pub(crate) key: TabKey,
 }
 
-/// tab 拖拽元信息（content_tab 入参）：key + ghost 数据一次传齐，
-/// 避免 content_tab 参数继续膨胀。
-pub(crate) struct TabDragMeta {
-    pub(crate) key: TabKey,
-    pub(crate) path: Option<PathBuf>,
-}
-
-/// tab 拖拽幽灵（gpui 把 `cx.active_drag.view` 画在光标处）：icon + 标
-/// 题的浮起小签，zed tab 自克隆的极简版（等高、卡片底、浮影）。
+/// tab 拖拽幽灵（gpui 把 `cx.active_drag.view` 画在光标处）：拖拽手势
+/// icon（icon-hand）+ 标题的浮起小签——icon 不跟随 tab 类型（那两个
+/// 终端/更新日志图标在拖拽语义下是误导，2026-10-14 定夺）。
 pub(crate) struct TabDragGhost {
     pub(crate) label: String,
-    pub(crate) icon: Option<&'static str>,
-    pub(crate) path: Option<PathBuf>,
 }
 
 impl gpui::Render for TabDragGhost {
@@ -53,10 +44,6 @@ impl gpui::Render for TabDragGhost {
         _cx: &mut gpui::Context<Self>,
     ) -> impl IntoElement {
         let t = T();
-        // 图标：终端/更新日志固定 icon；文件按后缀取类型 icon
-        let icon: Option<&'static str> = self
-            .icon
-            .or_else(|| self.path.as_deref().map(file_icons::get_icon));
         div()
             .flex()
             .items_center()
@@ -71,7 +58,7 @@ impl gpui::Render for TabDragGhost {
             .shadow_md()
             .text_size(crate::appearance::ui_size(12.))
             .text_color(rgb(t.text))
-            .children(icon.map(|n| crate::ui::icon(n, 15., t.text_muted)))
+            .child(crate::ui::icon("icon-hand", 15., t.text_muted))
             .child(
                 div()
                     .min_w_0()
@@ -318,7 +305,7 @@ fn tab_strip(
             tab_icon,
             badge,
             deleted,
-            TabDragMeta { key: tab.key(), path },
+            tab.key(),
             tab_view,
             cx,
         ));
@@ -388,7 +375,7 @@ fn content_tab(
     tab_icon: Option<&'static str>,
     badge: Option<gpui::AnyElement>,
     strike: bool,
-    drag_meta: TabDragMeta,
+    drag_key: TabKey,
     // 082 三期后视图由 activate_content_tab 从 panel_tabs[ix] 推导，调用
     // 方传入的 view 仅作签名兼容保留
     _view: ContentView,
@@ -439,11 +426,11 @@ fn content_tab(
         ));
         cx.notify();
     });
-    // zed pane tab 拖拽换位（2026-10-14）：on_drag 发起（ghost = icon+
-    // 标题浮起小签）+ drag_over 插入侧指示 + on_drop 落位（按稳定 key
-    // 现查 from，防拖拽中列表漂移）。会话 tab 不接线（固定段禁拖）。
+    // zed pane tab 拖拽换位（2026-10-14）：on_drag 发起（ghost = 拖拽
+    // 手势 icon + 标题浮起小签）+ drag_over 插入侧指示 + on_drop 落位
+    // （按稳定 key 现查 from，防拖拽中列表漂移）。会话 tab 不接线（固定
+    // 段禁拖）。
     let ghost_label = label.to_string();
-    let ghost_path = drag_meta.path.clone();
     tab_shell(
         id,
         tab_icon,
@@ -458,13 +445,9 @@ fn content_tab(
     )
     .on_mouse_down(MouseButton::Right, ctx_menu)
     .on_drag(
-        TabDrag { ix, key: drag_meta.key },
+        TabDrag { ix, key: drag_key },
         move |_, _, _, cx| {
-            cx.new(|_| TabDragGhost {
-                label: ghost_label.clone(),
-                icon: tab_icon,
-                path: ghost_path.clone(),
-            })
+            cx.new(|_| TabDragGhost { label: ghost_label.clone() })
         },
     )
     .drag_over::<TabDrag>(move |mut style, drag, _, _| {

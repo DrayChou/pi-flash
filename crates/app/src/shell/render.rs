@@ -429,7 +429,14 @@ impl Render for Chat {
                         });
                     }
                 },
-            );
+            )
+            // tab 拖拽全局兑底 drop：gpui 只在 drop 命中注册目标时才清
+            // active_drag，落到无目标处（会话 tab/topbar 空白/其他区域）
+            // 会残留——ghost 跟随鼠标不消失，且新拖拽被 has_active_drag
+            // 挡住永不能发起。根容器 no-op listener 兼作清道夫：bubble 相
+            // 最深目标优先，tab/滚动区的真 drop 先处理并 stop_propagation，
+            // 轮不到这里。
+            .on_drop::<crate::titlebar::TabDrag>(move |_, _, _| {});
         if !panes_hidden {
             // 分隔线响应区（跨线）：panel 内 3px + 内容区 9px（避开滚动条
             // 命中区）；可视线由 content-col 的 border 承担（hover 2px 深线）
