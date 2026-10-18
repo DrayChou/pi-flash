@@ -340,6 +340,11 @@ pub(crate) struct LayoutUi {
     /// 导航 flyout 卡片列表虚拟化句柄（v63-6：只建可视卡片；跨开合保持
     /// 滚动位）
     pub(crate) nav_flyout_list: gpui::ListState,
+    /// topbar 自由标签区的横向滚动句柄（zed `tab_bar_scroll_handle` 同款）：
+    /// 供 `activate_panel_tab` 调 `scroll_to_item(ix)` 让激活 tab 跟随滚进
+    /// 视口（Ctrl+←/→ 切到屏外 tab 时不再「激活了但看不见/点不到」）；
+    /// 必须跨帧复用（每帧 new = 滚动位全丢，见 docs/agents/gpui.md）
+    pub(crate) tabs_scroll: gpui::ScrollHandle,
     pub(crate) focus: FocusHandle,
 }
 
@@ -538,6 +543,7 @@ impl Chat {
                 nav_flyout_hovered: false,
                 nav_hover_turn: None,
                 nav_flyout_list: gpui::ListState::new(0, gpui::ListAlignment::Top, px(1000.)),
+                tabs_scroll: gpui::ScrollHandle::new(),
             },
             composer: ComposerUi {
                 input: String::new(),

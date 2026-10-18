@@ -5,7 +5,7 @@
 //! surface 名与 method::UI_SNAPSHOT 的 params.surface 对应。
 
 use crate::session::runtime::SessionRuntime;
-use crate::{Chat, Dialog};
+use crate::{Chat, ContentView, Dialog};
 use gpui::{Context, Focusable};
 use pi_link::protocol::Block;
 use serde_json::{Value, json};
@@ -470,6 +470,14 @@ fn composer_surface(chat: &Chat) -> Value {
 }
 
 fn files_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
+    // topbar 标签条滚动位（016）：句柄原值 + 激活 tab 的视口坐标
+    let tabs_off = chat.layout.tabs_scroll.offset();
+    let tabs_max = chat.layout.tabs_scroll.max_offset();
+    let tabs_vp = chat.layout.tabs_scroll.bounds();
+    let active_tab_ix = (chat.layout.content_view != ContentView::Chat)
+        .then_some(chat.ws.active_panel_tab)
+        .flatten();
+    let active_tab_bounds = active_tab_ix.and_then(|ix| chat.layout.tabs_scroll.bounds_for_item(ix));
     let rows: Vec<Value> = chat
         .ws
         .tree_rows
@@ -592,6 +600,18 @@ fn files_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
         // depth 0 = 收藏根行），files.pin / files.pin_view 的事务断言靠这两条
         "pins": chat.ws.pinned.iter().map(|p| p.display().to_string()).collect::<Vec<_>>(),
         "pin_view": chat.ws.pin_view,
+        // 016 topbar 标签条滚动位（zed `tab_bar_scroll_handle`）：Ctrl+←/→
+        // 跟随激活 tab 的回归断言面。offset_x 为 gpui 原值（负向，0 =
+        // 最左）；active_x0/x1 已换算成**视口坐标**（0..viewport_w 内 =
+        // 完整可见），active = null 表示会话视图（固定段不参与滚动）
+        "tabs_scroll": {
+            "offset_x": f32::from(tabs_off.x),
+            "max_x": f32::from(tabs_max.width),
+            "viewport_w": f32::from(tabs_vp.size.width),
+            "active_ix": active_tab_ix,
+            "active_x0": active_tab_bounds.map(|b| f32::from(b.left() + tabs_off.x - tabs_vp.left())),
+            "active_x1": active_tab_bounds.map(|b| f32::from(b.right() + tabs_off.x - tabs_vp.left())),
+        },
     })
 }
 

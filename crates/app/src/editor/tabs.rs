@@ -523,6 +523,10 @@ impl Chat {
         if let Some(crate::PanelTab::File(p)) = self.ws.panel_tabs.get(ix).cloned() {
             self.sync_tree_to_file(&p, cx);
         }
+        // zed `update_active_tab` 同款：让标签条把激活 tab 滚进视口（最小
+        // 滚动，已可见即不动）。唯一写点，点标签/Ctrl+←/→/关标签补位全跟
+        // 随；不挂渲染路径，否则用户手滚走一帧就被拽回。
+        self.layout.tabs_scroll.scroll_to_item(ix);
         cx.notify();
     }
 
@@ -625,6 +629,9 @@ impl Chat {
         let tab = self.ws.panel_tabs.remove(from);
         self.ws.panel_tabs.insert(to, tab);
         self.ws.active_panel_tab = self.ws.active_panel_tab.map(|a| shifted_active(a, from, to));
+        // 换位同 zed：drop 落位后把被拖 tab 滚进视口（拖到条尾/条头时它
+        // 可能本身就在屏外）
+        self.layout.tabs_scroll.scroll_to_item(to);
         cx.notify();
     }
 

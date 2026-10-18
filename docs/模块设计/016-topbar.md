@@ -52,6 +52,13 @@ terminal打开也在这里
   - tab 激活挂 on_click（mouse-up）而非 on_mouse_down：起手拖拽会清
     clicked_state，拖一个未激活 tab 不会把它顶成激活态（zed `Tab::on_click`
     同式）。
+  - **激活跟随滚动**（zed `update_active_tab` 同式，2026-10-18）：自由
+    标签区挂 `track_scroll(&chat.layout.tabs_scroll)`，`activate_panel_tab`
+    末尾一句 `scroll_to_item(ix)`（最小滚动，已可见不动）——Ctrl+←/→ 切到
+    屏外 tab 时不再「激活了但看不到也点不到」。响应只挂激活路径，不挂渲染
+    路径（否则用户手滚走一帧就被拽回）；拖拽换位落位后同样滚到被拖 tab。
+    已知 4px 瑕疙：tab 的 `ml(4px)` 是 margin，不入 child bounds，走到首
+    tab 时它会贴紧会话 tab（zed 用 position 内 padding 不复现）。
   - app-body 根容器挂全局兑底 on_drop：gpui 落点无注册目标时 active_drag
     残留（ghost 不消失、新拖被挡），根 no-op listener 兼清道夫，真 drop
     在深层已 stop_propagation。

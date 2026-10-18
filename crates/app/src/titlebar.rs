@@ -219,7 +219,11 @@ fn tab_strip(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyElement 
         .items_end();
     // 固定段：置顶会话 tab（滚动区外，永不滚走）
     strip = strip.child(session_tab(chat, cx));
-    // 自由标签区：独立横向滑动，起点紧贴会话 tab（tab 自带 ml 4px）
+    // 自由标签区：独立横向滑动，起点紧贴会话 tab（tab 自带 ml 4px）。
+    // `track_scroll` 挂上句柄（zed tab bar 同款）后 gpui 每帧记 child
+    // bounds → `ScrollHandle::scroll_to_item(ix)` 才能把激活 tab 滚进视口
+    //（activate_panel_tab 调）；子元素顺序 = panel_tabs 下标，末尾 drop
+    // 目标不占 tab 下标，故不需 zed 的 `- pinned_tab_count` 偏移。
     let mut tabs_host = div()
         .id("topbar-tabs-scroll")
         .flex_1()
@@ -227,7 +231,8 @@ fn tab_strip(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyElement 
         .h_full()
         .flex()
         .items_end()
-        .overflow_x_scroll();
+        .overflow_x_scroll()
+        .track_scroll(&chat.layout.tabs_scroll);
     for (ix, tab) in chat.ws.panel_tabs.iter().enumerate() {
         let (label, path, is_file, tab_icon, tab_view): (
             SharedString,
