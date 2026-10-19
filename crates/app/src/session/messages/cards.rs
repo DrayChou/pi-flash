@@ -115,7 +115,9 @@ fn render_subagent_card(
     is_error: bool,
     details: Option<&serde_json::Value>,
     duration_s: Option<i64>,
-    args_partial: bool,
+    // 子代理卡不区分「参数是否流式部分到达」（args 只取 label/prompt），
+    // 保留形参以对齐普通工具卡的调用签名
+    _args_partial: bool,
     result_arrived: bool,
     weak: &gpui::WeakEntity<Chat>,
     collapsed: &HashMap<(usize, usize), bool>,
@@ -124,7 +126,7 @@ fn render_subagent_card(
     let key = (msg_ix, content_index);
     let expanded = collapsed.get(&key).copied().unwrap_or(false);
     let d = details.cloned().unwrap_or_default();
-    let child_id = d.get("child_id").and_then(|v| v.as_str()).unwrap_or("—");
+    // child_id 仅在 details 里（面板/日志用），卡面不展示
     let running = d.get("status").and_then(|v| v.as_str()) == Some("running");
     let stop_reason = d.get("stop_reason").and_then(|v| v.as_str()).unwrap_or("");
     let session_file = d
