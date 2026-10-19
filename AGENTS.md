@@ -22,7 +22,7 @@ RUST_MIN_STACK=33554432 cargo test -p pi-link   # 协议/路径测试都在 pi-l
 - UI绘制遵循 docs\UI设计\UI组件规范.md
 - **发布产物不落本机**：构建产物只留在 `target/`（如 `target/release/pi-flash.exe`），禁止复制/替换本机已安装的 `D:\softwares\...\payload\pi-flash.exe`，也不要在 payload 目录生成 `.new` 之类的暂存文件——装不装、何时装由用户自己决定
 - CHANGELOG发版驱动，平时勿碰！
-- **排版不用管**：本仓是 rustfmt-clean 仓（基线 `b36f9b2`，登记在 `.git-blame-ignore-revs`），`.githooks/pre-commit` 会对暂存的 `crates/**.rs` **自动**跑 rustfmt 并重新暂存——不需要记任何排版规则，也不需要自己跑 fmt。`vendor/**` 永不格式化（vendored 上游副本）、`i18n.rs` 的 TABLE 靠 `#[rustfmt::skip]` 豁免（删了那个属性 `i18n_audit` 就炸）。手工入口仅 `scripts/fmt.sh`。**发版前不做统一格式化**（理由见 [engineering.md](docs/agents/engineering.md)）
+- 禁止排版！pre-commit 自动对暂存的 crates/**.rs 跑 rustfmt
 - 如非用户授权，禁止修改Settings模块！
 
 # 路径
