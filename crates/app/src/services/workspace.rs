@@ -12,7 +12,7 @@
 
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 use serde_json::Value;
 
@@ -1005,6 +1005,14 @@ pub fn at_index_max_projects() -> usize {
 /// 界面页: 展示思考（关（默认）=新思考块收成一行；开=默认展开全文）。
 pub fn show_thinking() -> bool {
     app_settings().show_thinking.unwrap_or(false)
+}
+
+/// subagent 功能总开关（开发旗标，默认关；dev-flags.json /
+/// PI_FLASH_SUBAGENTS 控制）。进程内缓存一次——改动重启（重新 cargo run）
+/// 生效；渲染期每帧调用安全。
+pub fn subagents_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(pi_link::subagents::dev_enabled)
 }
 
 /// 文件树 git 标识开关（设置-界面；默认关 = 清爽目录树，023 定案）。

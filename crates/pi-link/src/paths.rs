@@ -36,7 +36,9 @@ pub fn dir() -> Option<PathBuf> {
 /// 正式 home：仅 release 构建走到这（npm 载荷 / 绿色包）。debug 档不调用，压告警。
 #[cfg_attr(debug_assertions, allow(dead_code))]
 fn pro_dir() -> Option<PathBuf> {
-    let home = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")).ok()?;
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .ok()?;
     Some(Path::new(&home).join(".pi-flash"))
 }
 
@@ -50,7 +52,9 @@ fn dev_dir() -> Option<PathBuf> {
     if ws_dev.parent().is_some_and(|p| p.is_dir()) {
         return Some(ws_dev);
     }
-    let home = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")).ok()?;
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .ok()?;
     Some(Path::new(&home).join(".pi-flash-dev"))
 }
 
@@ -178,6 +182,13 @@ pub fn app_settings_file() -> Option<PathBuf> {
     file("app-settings.json")
 }
 
+/// `<PF数据目录>/dev-flags.json` — 开发旗标（功能总开关，默认关；改动重启
+/// 生效）。debug 构建目录 = `./pi-flash-dev/`（gitignore，开发机各自建），
+/// release = `~/.pi-flash/`（用户机器无此文件 = 功能恒关，发布包即关态）。
+pub fn dev_flags_file() -> Option<PathBuf> {
+    file("dev-flags.json")
+}
+
 /// `~/.pi-flash/session-index.json` — 会话摘要指纹索引（tail-seek 缓存）。
 pub fn session_index_file() -> Option<PathBuf> {
     file("session-index.json")
@@ -231,7 +242,9 @@ const MIGRATION: &[(&str, &str)] = &[
 ];
 /// 旧目录：`~/.pi/agent`（迁移源目录）。
 fn legacy_dir() -> Option<PathBuf> {
-    let home = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")).ok()?;
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .ok()?;
     Some(Path::new(&home).join(".pi").join("agent"))
 }
 
@@ -264,7 +277,9 @@ fn migrate_into(new_dir: &Path, legacy_dir: &Path) -> usize {
 /// 返回搬过来的文件数。任何一步失败都只是少搬一个文件，不阻塞启动。
 pub fn migrate_legacy_files() -> usize {
     let Some(dir) = ensure_dir() else { return 0 };
-    let Some(old_dir) = legacy_dir() else { return 0 };
+    let Some(old_dir) = legacy_dir() else {
+        return 0;
+    };
     migrate_into(&dir, &old_dir)
 }
 
@@ -303,7 +318,10 @@ mod tests {
             !old_dir.join("pi-flash-workspace.json").exists(),
             "旧文件是 rename 搬家，不是复制"
         );
-        assert!(old_dir.join("pi-flash-session-recents.json").exists(), "目标已在则跳过");
+        assert!(
+            old_dir.join("pi-flash-session-recents.json").exists(),
+            "目标已在则跳过"
+        );
         assert_eq!(
             std::fs::read_to_string(new_dir.join("session-recents.json")).unwrap(),
             "{\"new\":1}"
@@ -326,8 +344,14 @@ mod tests {
             &pkg.join("payload").join("vendor").join("pi"),
             &root
         ));
-        assert!(is_app_install_path_at(&pkg.join("bin").join("pi-flash.js"), &root));
-        assert!(!is_app_install_path_at(Path::new("D:/ai_workspace/pi-flash"), &root));
+        assert!(is_app_install_path_at(
+            &pkg.join("bin").join("pi-flash.js"),
+            &root
+        ));
+        assert!(!is_app_install_path_at(
+            Path::new("D:/ai_workspace/pi-flash"),
+            &root
+        ));
         assert!(!is_app_install_path_at(Path::new("D:/softwares"), &root));
         // 同一套字符串规范化：大小写 / 正反斜杠不影响判定
         assert!(is_app_install_path_at(
@@ -338,7 +362,10 @@ mod tests {
         // 所在目录本身，不升一级
         let root2 = app_install_root(Path::new("D:/work/payload-demo/pi-flash.exe"));
         assert_eq!(root2, Path::new("D:/work/payload-demo"));
-        assert!(is_app_install_path_at(Path::new("D:/work/payload-demo/vendor"), &root2));
+        assert!(is_app_install_path_at(
+            Path::new("D:/work/payload-demo/vendor"),
+            &root2
+        ));
         assert!(!is_app_install_path_at(Path::new("D:/work"), &root2));
         // 绿色解压包：目录名不含 payload 前缀 → exe 目录即根
         assert_eq!(

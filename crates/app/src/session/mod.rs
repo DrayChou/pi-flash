@@ -251,7 +251,10 @@ fn session_fn_bar(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyEle
             }),
         ))
         .child(fn_bar_sep(t))
-        .child(subagent_fn_bar_btn(chat, cx))
+        // 子代理面板钮：开发旗标关着整颗隐藏（含徽标；044-1 §1.1）
+        .when(crate::services::workspace::subagents_enabled(), |d| {
+            d.child(subagent_fn_bar_btn(chat, cx))
+        })
         .into_any_element()
 }
 

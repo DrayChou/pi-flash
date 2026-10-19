@@ -22,12 +22,11 @@ use general::mc_general_view;
 use misc::mc_misc_view;
 
 use super::*;
-pub(crate) use crate::ui::{VListHeight, DropdownState, icon, vlist};
+pub(crate) use crate::ui::{DropdownState, VListHeight, icon, vlist};
 pub(crate) use widgets::{
-    config_button, config_switch, detail_shell, error_note, field,
-    group_header, group_switch, mono_text, note, scope_tag, SwitchMark,
-    section_title, set_row, sidebar_list, sidebar_shell, switch_base, status_dot,
-    width_slider, Btn, LIST_W,
+    Btn, LIST_W, SwitchMark, config_button, config_switch, detail_shell, error_note, field,
+    group_header, group_switch, mono_text, note, scope_tag, section_title, set_row, sidebar_list,
+    sidebar_shell, status_dot, switch_base, width_slider,
 };
 
 /// 页签序：0 界面 · 1 模型 · 2 技能 · 3 扩展 · 4 MCP · 5 其他 · 8 快捷键
@@ -177,9 +176,8 @@ impl SettingsPanel {
             mj_ctx: cx.new(|cx| TextInput::new(cx).numeric(true)),
             mj_api: 0,
             mj_reasoning: false,
-            install_input: cx.new(|cx| {
-                TextInput::new(cx).placeholder(tr("extensions.source_example"))
-            }),
+            install_input: cx
+                .new(|cx| TextInput::new(cx).placeholder(tr("extensions.source_example"))),
             mcp_add: {
                 let weak_add = cx.weak_entity();
                 cx.new(|cx| {
@@ -296,19 +294,24 @@ impl SettingsPanel {
             &self.ag_turns_n,
         ];
         self.focus.is_focused(window)
-            || inputs.iter().any(|e| e.read(cx).focus_handle_in(cx).is_focused(window))
+            || inputs
+                .iter()
+                .any(|e| e.read(cx).focus_handle_in(cx).is_focused(window))
     }
 
     /// 切页签时的 section 预填（open_settings 与左导航点击共用）。
-    pub(crate) fn prefill_section(chat: &Chat, tab: u8) -> String {        match tab {
+    pub(crate) fn prefill_section(chat: &Chat, tab: u8) -> String {
+        match tab {
             TAB_MODELS => chat.mc_provider_ids().first().cloned().unwrap_or_default(),
             TAB_SKILLS => chat
-                .cfg.mc_skills
+                .cfg
+                .mc_skills
                 .first()
                 .map(|s| s.path.to_string_lossy().to_string())
                 .unwrap_or_default(),
             TAB_PLUGINS => chat
-                .cfg.mc_pkgs_global
+                .cfg
+                .mc_pkgs_global
                 .first()
                 .map(pi_link::skills::entry_source)
                 .unwrap_or_default(),
@@ -439,46 +442,105 @@ pub(crate) fn render_settings(
     window: &gpui::Window,
 ) -> gpui::AnyElement {
     let t = T();
-    let SettingsFormData { focus: _focus, tab, section, key_input, key_visible, model_filter, model_filter_value, enabled_filter, enabled_filter_value, model_free_only, mj_name, mj_base, mj_key, mj_id, mj_mname, mj_ctx, mj_api, mj_reasoning, install_input, mcp_add, mcp_add_value, mcp_name, error, font_popup, font_dd, font_filter, font_filter_value, size_popup, size_dd, .. } =
-        d.clone();
+    let SettingsFormData {
+        focus: _focus,
+        tab,
+        section,
+        key_input,
+        key_visible,
+        model_filter,
+        model_filter_value,
+        enabled_filter,
+        enabled_filter_value,
+        model_free_only,
+        mj_name,
+        mj_base,
+        mj_key,
+        mj_id,
+        mj_mname,
+        mj_ctx,
+        mj_api,
+        mj_reasoning,
+        install_input,
+        mcp_add,
+        mcp_add_value,
+        mcp_name,
+        error,
+        font_popup,
+        font_dd,
+        font_filter,
+        font_filter_value,
+        size_popup,
+        size_dd,
+        ..
+    } = d.clone();
     let weak_close = weak.clone();
 
     // 页内容：界面/其他=单列 rows（滚动在 body）；其余页自带左右分栏 +
     // 可选顶条/底栏（自身 h_full，body 不滚动）
     let pane: gpui::AnyElement = match tab {
         TAB_MODELS => crate::settings::models::mc_models_view(
-            chat, weak, &section, &key_input, key_visible, &model_filter, &model_filter_value,
-            &enabled_filter, &enabled_filter_value,
-            &mj_name, &mj_base, &mj_key, &mj_id, &mj_mname, &mj_ctx,
-            mj_api, mj_reasoning, &error, model_free_only,
+            chat,
+            weak,
+            &section,
+            &key_input,
+            key_visible,
+            &model_filter,
+            &model_filter_value,
+            &enabled_filter,
+            &enabled_filter_value,
+            &mj_name,
+            &mj_base,
+            &mj_key,
+            &mj_id,
+            &mj_mname,
+            &mj_ctx,
+            mj_api,
+            mj_reasoning,
+            &error,
+            model_free_only,
         ),
         TAB_SKILLS => {
             let (sidebar, detail) = crate::settings::skills::mc_skills_view(chat, weak, &section);
             two_pane(sidebar, detail)
         }
         TAB_AGENTS => {
-            let (sidebar, detail) = crate::settings::agents::mc_agents_view(chat, weak, &section, d);
+            let (sidebar, detail) =
+                crate::settings::agents::mc_agents_view(chat, weak, &section, d);
             two_pane(sidebar, detail)
         }
-        TAB_PLUGINS => crate::settings::plugins::mc_plugins_view(
-            chat, weak, &section, &install_input, &error,
-        ),
+        TAB_PLUGINS => {
+            crate::settings::plugins::mc_plugins_view(chat, weak, &section, &install_input, &error)
+        }
         TAB_MCP => crate::settings::mcp::mc_mcp_view(
-            chat, weak, &section, &mcp_add, &mcp_add_value, &mcp_name, &error,
+            chat,
+            weak,
+            &section,
+            &mcp_add,
+            &mcp_add_value,
+            &mcp_name,
+            &error,
         ),
         TAB_MISC => mc_misc_view(chat, weak),
         TAB_REMOTE => crate::settings::remote::mc_remote_view(chat, weak),
         TAB_ABOUT => crate::settings::about::mc_about_view(),
         TAB_SHORTCUTS => crate::settings::shortcuts::mc_shortcuts_view(window),
         _ => mc_general_view(
-            chat, weak, font_popup, &font_dd, &font_filter, &font_filter_value,
-            size_popup, &size_dd,
+            chat,
+            weak,
+            font_popup,
+            &font_dd,
+            &font_filter,
+            &font_filter_value,
+            size_popup,
+            &size_dd,
         ),
     };
 
     // 界面/其他页保持旧行为：body 滚动 + 大内边距；分栏页 body 不滚动、
     // pane 自身 h_full（顶条/底栏/侧栏滚动各自管理）
-    let single_column = tab == TAB_GENERAL || tab == TAB_MISC || tab == TAB_ABOUT || tab == TAB_SHORTCUTS;
+    let single_column =
+        tab == TAB_GENERAL || tab == TAB_MISC || tab == TAB_ABOUT || tab == TAB_SHORTCUTS;
     let body = if single_column {
         let mut body_el = div()
             .id("mc-body")
@@ -520,54 +582,50 @@ pub(crate) fn render_settings(
     // stop_propagation，dropdown 弹层开着时其外点监听在 capture 阶段先关
     // 弹层并拦下事件
     let weak_dismiss = weak_close.clone();
-    let overlay = crate::ui::overlay::layer(
-        true,
-        Some(&chat.dlg.dialog_focus),
-        move |_w, cx| {
-            let _ = weak_dismiss.update(cx, |c, cx| {
-                c.dlg.settings = None;
-                cx.notify();
-            });
+    let overlay = crate::ui::overlay::layer(true, Some(&chat.dlg.dialog_focus), move |_w, cx| {
+        let _ = weak_dismiss.update(cx, |c, cx| {
+            c.dlg.settings = None;
+            cx.notify();
+        });
+    })
+    .flex()
+    .items_center()
+    .justify_center()
+    // 窗框走公共基座（设置弹窗是这套大卡片窗框的原始形态，系统提示词 /
+    // 工具定义两个面板直接复用它）
+    .child(crate::ui::overlay::big_card(
+        // 设置弹窗没有标题（左导航即身份）
+        "",
+        Some(
+            div()
+                // §7 设置主导航列 160（2026-10-10 定夺恢复——P3 曾误按
+                // sidebar_shell 的 240 改宽，两处是不同的面）
+                .w(px(160.))
+                .flex_shrink_0()
+                .bg(rgb(t.nav))
+                // 左导航贴弹窗左下角，同理自己倒左下角
+                .rounded_bl(px(10.))
+                .border_r_1()
+                .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x66)))
+                .flex()
+                .flex_col()
+                .p(px(8.))
+                .pt(px(12.))
+                .children(nav_items(tab, weak_close.clone()))
+                .into_any_element(),
+        ),
+        body,
+        t,
+        {
+            let weak_close = weak_close.clone();
+            move |_w, cx| {
+                let _ = weak_close.update(cx, |c, cx| {
+                    c.dlg.settings = None;
+                    cx.notify();
+                });
+            }
         },
-    )
-        .flex()
-        .items_center()
-        .justify_center()
-        // 窗框走公共基座（设置弹窗是这套大卡片窗框的原始形态，系统提示词 /
-        // 工具定义两个面板直接复用它）
-        .child(crate::ui::overlay::big_card(
-            // 设置弹窗没有标题（左导航即身份）
-            "",
-            Some(
-                div()
-                    // §7 设置主导航列 160（2026-10-10 定夺恢复——P3 曾误按
-                    // sidebar_shell 的 240 改宽，两处是不同的面）
-                    .w(px(160.))
-                    .flex_shrink_0()
-                    .bg(rgb(t.nav))
-                    // 左导航贴弹窗左下角，同理自己倒左下角
-                    .rounded_bl(px(10.))
-                    .border_r_1()
-                    .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x66)))
-                    .flex()
-                    .flex_col()
-                    .p(px(8.))
-                    .pt(px(12.))
-                    .children(nav_items(tab, weak_close.clone()))
-                    .into_any_element(),
-            ),
-            body,
-            t,
-            {
-                let weak_close = weak_close.clone();
-                move |_w, cx| {
-                    let _ = weak_close.update(cx, |c, cx| {
-                        c.dlg.settings = None;
-                        cx.notify();
-                    });
-                }
-            },
-        ));
+    ));
     overlay.into_any_element()
 }
 
@@ -589,7 +647,7 @@ fn two_pane(sidebar: gpui::AnyElement, detail: gpui::AnyElement) -> gpui::AnyEle
 fn nav_items(tab: u8, weak_close: gpui::WeakEntity<Chat>) -> Vec<gpui::AnyElement> {
     let t = T();
     // tr() 传 &'static 键返回 &'static；显式标注避免数组被推断成临时生命周期
-    let items: [(u8, &'static str, &'static str); 9] = [
+    let mut items: Vec<(u8, &'static str, &'static str)> = vec![
         (TAB_GENERAL, tr("settings.tab.appearance"), "monitor"),
         (TAB_MODELS, tr("settings.tab.models"), "cpu"),
         (TAB_SKILLS, tr("settings.tab.skills"), "layers"),
@@ -600,55 +658,65 @@ fn nav_items(tab: u8, weak_close: gpui::WeakEntity<Chat>) -> Vec<gpui::AnyElemen
         (TAB_ABOUT, tr("settings.tab.about"), "info"),
         (TAB_SHORTCUTS, tr("settings.tab.shortcuts"), "keyboard"),
     ];
+    // 子代理页随功能总开关隐藏（开发旗标默认关；渲染分支保留，重开=删掉
+    // 本行过滤，同 TAB_REMOTE 先例）
+    if !crate::services::workspace::subagents_enabled() {
+        items.retain(|(ix, _, _)| *ix != TAB_AGENTS);
+    }
     items
-    .iter()
-    .map(|(ix, label, icon_name)| {
-        let ix = *ix; // 值捕获：数组无 const promotion，闭包不能带栈引用
-        let active = tab == ix;
-        let weak_tab = weak_close.clone();
-        div()
-            .id(SharedString::from(format!("mc-nav-{ix}")))
-            .flex()
-            .items_center()
-            .gap(px(9.))
-            .px(px(10.))
-            .py(px(7.5))
-            .mb(px(1.))
-            .rounded(px(8.))
-            .text_size(crate::appearance::ui_size(13.))
-            .text_color(if active { rgb(t.text) } else { rgb(t.text_muted) })
-            .when(active, |d| {
-                d.bg(rgb(t.bg_selected)).font_weight(gpui::FontWeight::SEMIBOLD)
-            })
-            .cursor_pointer()
-            .hover(|s| s.bg(rgb(t.bg_hover)).text_color(rgb(t.text)))
-            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                let _ = weak_tab.update(cx, |c, cx| {
-                    let next_section = SettingsPanel::prefill_section(c, ix);
-                    let is_mcp = ix == TAB_MCP;
-                    if let Some(st) = c.dlg.settings.clone() {
-                        st.update(cx, |s, cx| {
-                            s.tab = ix;
-                            s.error = None;
-                            // MCP 页 section 连带回填走 mcp_select（下同）
-                            if !is_mcp {
-                                s.section = next_section.clone();
-                            }
-                            cx.notify();
-                        });
-                    }
-                    if is_mcp {
-                        c.mcp_select(next_section, cx);
-                    }
-                });
-            })
-            .child(icon(
-                icon_name,
-                15.,
-                if active { t.accent } else { t.text_muted },
-            ))
-            .child(SharedString::from(*label))
-            .into_any_element()
-    })
-    .collect()
+        .iter()
+        .map(|(ix, label, icon_name)| {
+            let ix = *ix; // 值捕获：数组无 const promotion，闭包不能带栈引用
+            let active = tab == ix;
+            let weak_tab = weak_close.clone();
+            div()
+                .id(SharedString::from(format!("mc-nav-{ix}")))
+                .flex()
+                .items_center()
+                .gap(px(9.))
+                .px(px(10.))
+                .py(px(7.5))
+                .mb(px(1.))
+                .rounded(px(8.))
+                .text_size(crate::appearance::ui_size(13.))
+                .text_color(if active {
+                    rgb(t.text)
+                } else {
+                    rgb(t.text_muted)
+                })
+                .when(active, |d| {
+                    d.bg(rgb(t.bg_selected))
+                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                })
+                .cursor_pointer()
+                .hover(|s| s.bg(rgb(t.bg_hover)).text_color(rgb(t.text)))
+                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                    let _ = weak_tab.update(cx, |c, cx| {
+                        let next_section = SettingsPanel::prefill_section(c, ix);
+                        let is_mcp = ix == TAB_MCP;
+                        if let Some(st) = c.dlg.settings.clone() {
+                            st.update(cx, |s, cx| {
+                                s.tab = ix;
+                                s.error = None;
+                                // MCP 页 section 连带回填走 mcp_select（下同）
+                                if !is_mcp {
+                                    s.section = next_section.clone();
+                                }
+                                cx.notify();
+                            });
+                        }
+                        if is_mcp {
+                            c.mcp_select(next_section, cx);
+                        }
+                    });
+                })
+                .child(icon(
+                    icon_name,
+                    15.,
+                    if active { t.accent } else { t.text_muted },
+                ))
+                .child(SharedString::from(*label))
+                .into_any_element()
+        })
+        .collect()
 }

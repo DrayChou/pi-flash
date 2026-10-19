@@ -126,10 +126,13 @@ pub fn spawn(
             cmd.arg("-e").arg(ext);
         }
     }
-    // 045 M1：subagent 扩展。存在则挂上（`-ne` 下显式 `-e` 仍生效），模型因此
-    // 多出 `agent` 工具；缺失只是没有该工具，不影响启动。
-    if let Some(ext) = crate::subagents::ext_path() {
-        cmd.arg("-e").arg(ext);
+    // 045 M1：subagent 扩展。开发旗标开着且文件存在才挂（`-ne` 下显式 `-e`
+    // 仍生效），模型因此多出 `agent` 工具；不挂只是没有该工具，不影响启动。
+    // 默认关（dev-flags.json / PI_FLASH_SUBAGENTS 控制，重启生效）。
+    if crate::subagents::dev_enabled() {
+        if let Some(ext) = crate::subagents::ext_path() {
+            cmd.arg("-e").arg(ext);
+        }
     }
     #[cfg(windows)]
     {

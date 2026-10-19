@@ -15,6 +15,31 @@ use std::path::{Path, PathBuf};
 
 const REL: &str = "extensions/pi-subagents/src/index.ts";
 
+/// 功能总开关（2026-10-19 发布前拍板：subagent 是开发中功能，**默认关**，
+/// 发布包即关态）。优先级：
+/// 1. 环境变量：`PI_FLASH_SUBAGENTS=1` 强开 / `=0`（或 false）强关；
+/// 2. `<PF数据目录>/dev-flags.json` 的 `"subagents"` 键为 true 才开
+///    （debug = `./pi-flash-dev/`，release = `~/.pi-flash/`，用户机器无此文件）；
+/// 3. 都没有 → 关。
+///
+/// 不缓存（调用频率 = spawn 级）；app 渲染侧自行 OnceLock 包装——改动重启
+/// 生效。
+pub fn dev_enabled() -> bool {
+    if let Ok(flag) = std::env::var("PI_FLASH_SUBAGENTS") {
+        if flag == "0" || flag.eq_ignore_ascii_case("false") {
+            return false;
+        }
+        if flag == "1" || flag.eq_ignore_ascii_case("true") {
+            return true;
+        }
+    }
+    crate::paths::dev_flags_file()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .and_then(|v| v.get("subagents").and_then(|f| f.as_bool()))
+        .unwrap_or(false)
+}
+
 /// Resolve the extension entry file, if this build ships it.
 pub fn ext_path() -> Option<PathBuf> {
     if let Ok(flag) = std::env::var("PI_FLASH_SUBAGENTS") {

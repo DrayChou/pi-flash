@@ -746,3 +746,28 @@ N小时前）+ `⏱时长 · Nk tokens`。头部加聚合：`N 个子代理 | �
 - 委派后开面板：两行版式、运行中排前、头部合计随运行跳动；完成后 tokens
   列出现（新委派的才有，重启前的老子代理 tokens 为 "—"）
 - 行点击开子会话；ESC 外点不关（浮层无拦截，✕/按钮关）
+
+## 本轮追加（2026-10-19 第七批）——subagent 功能总开关（发布前拍板）
+
+用户拍板：subagent 未过 UI 实测就要发版 → 做开发旗标总开关，**发布包即
+关态**，不做 UI 开关、不动 app-settings.json。机制：
+
+- 旗标文件 `<PF数据目录>/dev-flags.json`：`{"subagents": true}` 才开。
+  debug = `./pi-flash-dev/`（gitignore，开发机各自建；本机已建），
+  release = `~/.pi-flash/`（用户机器无此文件 = 恒关）
+- env 覆盖最高优先：`PI_FLASH_SUBAGENTS=1` 强开 / `=0` 强关
+- app 侧 OnceLock 缓存（`workspace::subagents_enabled`），改动**重启生效**
+- 同源：pi-link `subagents::dev_enabled()`
+
+### 关态生效面（7 处消费点）
+
+①client.rs 不注入 `-e pi-subagents`（agent 工具消失）；②full 档 `--tools`
+不点名 agent；③设置导航隐藏子代理页（TAB_REMOTE 先例同款，渲染分支保留）；
+④操作栏「子代理面板」按钮整颗隐藏；⑤会话激活不建面板缓存不起轮询（零 IO）；
+⑥token_probe 无涉（本就不引）；⑦徽标随按钮隐藏。
+
+### 验证项
+
+- 默认（删/改 dev-flags.json 后重启）：无按钮、无设置页、对话里无 agent 工具
+- `{"subagents": true}` 重启：全部恢复
+- `PI_FLASH_SUBAGENTS=0` 压过旗标文件

@@ -328,12 +328,18 @@ impl SessionRuntime {
                 extra.push("--tools".into());
                 extra.push("read,bash,edit,write".into());
             }
-            // full：内置 7 件 + agent（045 subagent，内置植入能力）（--tools）
+            // full：内置 7 件（--tools）+ agent（045 subagent，开发旗标开着
+            // 才点名——allowlist 指向不存在的注册工具没有意义）
             // + 精确集（-ne + 个人扩展 + 内置扩展）⇒ 插件一个不装 ⇒
             // 系统提示词零插件注入（034 §1.2）
             "full" => {
                 extra.push("--tools".into());
-                extra.push("bash,read,edit,write,grep,find,ls,agent".into());
+                let tools = if crate::services::workspace::subagents_enabled() {
+                    "bash,read,edit,write,grep,find,ls,agent"
+                } else {
+                    "bash,read,edit,write,grep,find,ls"
+                };
+                extra.push(tools.into());
                 extra.extend(crate::session::tools_recipe::full_args(&self.cwd));
             }
             // 自定义（原 full+plugins）：不发 --tools（注册级 allowlist 会把
