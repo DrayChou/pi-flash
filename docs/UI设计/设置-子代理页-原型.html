@@ -122,6 +122,7 @@
   .ed-actions { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 0 2px;
     border-top: 1px solid rgba(175,196,186,.3); margin-top: 12px; }
   .ed-head-row { display: flex; align-items: center; gap: 8px; flex: none; }
+  .ed-head-row .nm { width: 96px; flex: none; font-size: 12.5px; color: var(--text); }
   .ed-head-row input[type=text] { width: 50%; height: 30px; border: 1px solid var(--border);
     background: var(--bg-panel); border-radius: 6px; font-size: 12.5px; color: var(--text);
     padding: 0 10px; font-family: inherit; outline: 0; }
@@ -204,6 +205,7 @@
 
               <div class="pane on" id="d-reviewer">
                 <div class="ed-head-row">
+                  <span class="nm">名称</span>
                   <input type="text" value="code-reviewer">
                   <span style="flex:1"></span>
                   <button class="btn danger">删除</button>
@@ -260,6 +262,7 @@
 
               <div class="pane" id="d-explorer">
                 <div class="ed-head-row">
+                  <span class="nm">名称</span>
                   <input type="text" value="explorer" readonly>
                   <span style="flex:1"></span>
                   <button class="btn">复制为自定义</button>
