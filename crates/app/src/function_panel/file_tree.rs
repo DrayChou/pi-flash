@@ -668,6 +668,10 @@ fn changes_row(
 /// 定稿）：树视图下显示各自功能 icon，进入对应视图后 icon 换成目录树
 /// （accent 高亮）——「点击回目录树」语义。搜索文件 / 资源管理器 / 终端 /
 /// 最大化恒为功能 icon。按钮命中区 26px（§5.2 槽位），图标统一小档 MD16。
+///
+/// **自动隐藏**：五颗功能 icon 常态不可见（opacity 0），鼠标进入操作栏
+/// （group `ft-bar-reveal`）才显影——只用绘制期 opacity，钮盒位置/命中区
+/// 不动，所以显隐不抖列对齐；最大化钮不参与（`reveal = false`）。
 fn action_bar(
     chat: &Chat,
     weak: &gpui::WeakEntity<Chat>,
@@ -701,6 +705,9 @@ fn action_bar(
     // 名字区右键 = 根目录菜单（树体不再有根行，根下的新建/改名等入口保留下）
     div()
         .id("ft-action-bar")
+        // 自动隐藏的显影组：鼠标在本操作栏内 → 五颗功能 icon 显影
+        // （group_hover 的父命中区覆盖子钮，见 bar_btn）
+        .group("ft-bar-reveal")
         .w_full()
         .h(px(crate::ui::tokens::panel_ctrl::BAR_H))
         .flex_shrink_0()
@@ -799,6 +806,7 @@ fn action_bar(
                     },
                     t,
                     pin_open,
+                    true,
                     None,
                     move |_, _, cx| {
                         let _ = w_pin.update(cx, |c, cx| c.toggle_pin_view(cx));
@@ -819,6 +827,7 @@ fn action_bar(
                     },
                     t,
                     changes_only,
+                    true,
                     None,
                     move |_, _, cx| {
                         let _ = w_toggle.update(cx, |c, cx| c.toggle_changes_only(cx));
@@ -830,6 +839,7 @@ fn action_bar(
                     tr("file_tree.search"),
                     t,
                     false,
+                    true,
                     None,
                     move |_, _, cx| {
                         let _ = w_search.update(cx, |c, cx| c.open_file_search(cx));
@@ -841,6 +851,7 @@ fn action_bar(
                     tr("file_tree.reveal_in_explorer"),
                     t,
                     false,
+                    true,
                     None,
                     move |_, _, _cx| {
                         // 无项目态：没有可展示的目录，按钮 no-op
@@ -855,6 +866,7 @@ fn action_bar(
                     tr("file_tree.open_in_terminal"),
                     t,
                     false,
+                    true,
                     None,
                     move |_, window, cx| {
                         // 无项目态：没有可打开终端的目录，按钮 no-op
@@ -867,6 +879,8 @@ fn action_bar(
                     "maximize",
                     tr("file_tree.maximize"),
                     t,
+                    false,
+                    // 最大化常显（自动隐藏的唯一例外）
                     false,
                     Some(&crate::MaximizeFileTree),
                     move |_, _, cx| {
@@ -888,12 +902,14 @@ fn action_bar(
 /// 用 accent 实色不参与 hover 变亮——开关点亮语义）。`tip` = hover
 /// tooltip（ui::tooltip 统一入口 §5.10，显示期过 tr 随语言切换）；
 /// `action` 非空时 tooltip 附键位 chip（键位反查 keymap，082 最大化钮）。
+/// `reveal` = 自动隐藏（常态 opacity 0，操作栏 hover 显影；见 action_bar 头注）。
 fn bar_btn(
     id: &'static str,
     icon_name: &'static str,
     tip: &'static str,
     t: &'static crate::appearance::theme::Theme,
     active: bool,
+    reveal: bool,
     action: Option<&'static dyn gpui::Action>,
     on_click: impl Fn(&gpui::MouseDownEvent, &mut gpui::Window, &mut gpui::App) + 'static,
 ) -> gpui::AnyElement {
@@ -907,6 +923,14 @@ fn bar_btn(
         .rounded(px(6.))
         .cursor_pointer()
         .hover(|s| s.bg(rgb(t.bg_hover)));
+    // 自动隐藏：opacity 只管绘制，命中区/布局原样——显隐之间按钮不挪位，
+    // 悬停灭掉一个 icon 不会让同排钮重排。tooltip 照旧（图标透明也能悬到）
+    let btn = if reveal {
+        btn.opacity(0.)
+            .group_hover("ft-bar-reveal", |s| s.opacity(1.))
+    } else {
+        btn
+    };
     let btn = match action {
         Some(a) => btn.with_tip_action(tip, a),
         None => btn.with_tip(tip),

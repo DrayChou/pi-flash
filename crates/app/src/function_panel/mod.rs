@@ -633,6 +633,10 @@ pub(crate) fn psp_view(
 /// MD16）= 列表切换（项目分组 ↔ 最近会话，图标随模式换）+ 最大化（本面板
 /// 填满、文件树收起到操作栏）。左缘 = ICON_LINE 12（容器 pl4 + 钮 px8）、
 /// 右缘 = LIST_PX 10，与文件树操作栏同线。
+///
+/// **自动隐藏**：右侧「列表切换」常态不可见（opacity 0），鼠标进入本控制栏
+/// （group `psp-bar-reveal`）才显影——少一颗常驻图标减视觉冗余；最大化钮
+/// 不参与。只用绘制期 opacity，钮盒位置/命中区不变（列对齐不抖）。
 fn psp_ctrl_bar(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> gpui::AnyElement {
     let grouped = chat.psp.list_mode == ListMode::Grouped;
     let w_open = weak.clone();
@@ -670,6 +674,8 @@ fn psp_ctrl_bar(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -
     };
     div()
         .id("psp-ctrl")
+        // 自动隐藏的显影组：鼠标在本控制栏内 → 右侧列表切换钮显影
+        .group("psp-bar-reveal")
         .w_full()
         .flex_shrink_0()
         .h(px(crate::ui::tokens::panel_ctrl::BAR_H))
@@ -720,6 +726,10 @@ fn psp_ctrl_bar(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -
                 .w(px(26.))
                 .px(px(0.))
                 .justify_center()
+                // 自动隐藏：常态透明、控制栏 hover 显影（只为减视觉冗余，
+                // 命中区照旧，鼠标进bar拉到这颗上即现形）
+                .opacity(0.)
+                .group_hover("psp-bar-reveal", |s| s.opacity(1.))
                 .with_tip(if grouped {
                     "psp.switch_to_flat"
                 } else {
