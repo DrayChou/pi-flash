@@ -32,6 +32,12 @@
   `docs/调研/pi-扩展生态对接调研.md`。
 
 ## 里程碑索引
+- 2026-10-19 subagent M2/M3/044核心：codemode fan-out + usage 回流 + 子会话
+  codemode 装配；后台投递/控制工具三件/孤儿对账；PF 专属卡（状态徽标/耗时/
+  tokens/成本/打开子会话跳转）。full 档 --tools 纳入 agent；子会话判定改
+  自体 marker（parentSession 会误杀 fork）。扩展 69 + app 304 测试全绿。
+
+
 - 2026-10-19 subagent M1：`extensions/pi-subagents`（dsh 调用机制 + pi 原生执行）
   落地并接进 PF spawn 链（`-e`），PF 内实测委派通过；64 单测全绿。
 - 2026-10-19 subagent 子会话判定改 marker（`subagent/child` custom entry），
