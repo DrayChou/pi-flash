@@ -108,24 +108,47 @@ impl AgentProfile {
     }
 }
 
-/// 内置 Agent 定义（随扩展出厂，只读）。id 与内容须与扩展侧内置清单一致。
+/// 内置 Agent 定义（随扩展出厂，只读）。id 与内容须与扩展侧内置清单
+/// （`extensions/pi-subagents/src/profile.ts` `BUILTIN_PROFILE_DOCS`）逐字
+/// 一致——两侧各存一份，改动时同步。
+/// 2026-10-19 拍板：dsh 无出厂内置，对齐 ZCode 两内置（general-purpose +
+/// Explore，explorer 即 Explore 位）。
 pub fn builtin_agents() -> Vec<AgentProfile> {
-    vec![AgentProfile {
-        id: "explorer".into(),
-        description: "只读探索 · 调研与定位".into(),
-        model: None,
-        tools: Some("read-only".into()),
-        max_turns: Some(0),
-        inject_agents_md: Some(true),
-        system_prompt: None,
-        append_system_prompt: Some(
-            "你是只读探索员：调研代码、定位实现、回答问题。\n不执行任何写操作。".into(),
-        ),
-        unknown: Vec::new(),
-        origin: AgentOrigin::Builtin,
-        path: None,
-        error: None,
-    }]
+    vec![
+        AgentProfile {
+            id: "explorer".into(),
+            description: "只读探索 · 调研与定位".into(),
+            model: None,
+            tools: Some("read-only".into()),
+            max_turns: Some(0),
+            inject_agents_md: Some(true),
+            system_prompt: None,
+            append_system_prompt: Some(
+                "你是只读探索员：调研代码、定位实现、回答问题。\n不执行任何写操作。".into(),
+            ),
+            unknown: Vec::new(),
+            origin: AgentOrigin::Builtin,
+            path: None,
+            error: None,
+        },
+        // 不写 `tools:` = inherit = 继承委派者全部工具（ZCode「全部工具」位）
+        AgentProfile {
+            id: "general-purpose".into(),
+            description: "通用子代理 · 复杂调研、代码检索、多步任务".into(),
+            model: None,
+            tools: None,
+            max_turns: Some(0),
+            inject_agents_md: Some(true),
+            system_prompt: None,
+            append_system_prompt: Some(
+                "你是通用子代理：独立完成委派的任务——调研复杂问题、检索代码、执行多步操作。\n可使用会话的全部工具，按需读写文件与执行命令。".into(),
+            ),
+            unknown: Vec::new(),
+            origin: AgentOrigin::Builtin,
+            path: None,
+            error: None,
+        },
+    ]
 }
 
 /// 扫一个目录里的 `*.md`，逐个解析（损坏的保留 + 记 error）。
@@ -179,13 +202,13 @@ pub fn read_agent_file(id: String, path: &Path) -> AgentProfile {
 
 /// 解析 Agent 文档（frontmatter + 正文）。语义对齐扩展侧
 /// `profileFromDocument`。
-pub fn parse_agent(
-    id: &str,
-    text: &str,
-    origin: AgentOrigin,
-) -> Result<AgentProfile, String> {
+pub fn parse_agent(id: &str, text: &str, origin: AgentOrigin) -> Result<AgentProfile, String> {
     let (data, body) = parse_frontmatter(text).ok_or("unterminated frontmatter")?;
-    let get = |k: &str| data.iter().find(|(key, _)| key == k).map(|(_, v)| v.clone());
+    let get = |k: &str| {
+        data.iter()
+            .find(|(key, _)| key == k)
+            .map(|(_, v)| v.clone())
+    };
 
     let tools = get(FIELD_TOOLS);
     if let Some(t) = &tools {
@@ -203,10 +226,9 @@ pub fn parse_agent(
     }
     let max_turns = match get(FIELD_MAX_TURNS) {
         None => None,
-        Some(v) => v
-            .parse::<u32>()
-            .map(Some)
-            .map_err(|_| format!("{FIELD_MAX_TURNS} must be a non-negative integer (0 = unlimited)"))?,
+        Some(v) => v.parse::<u32>().map(Some).map_err(|_| {
+            format!("{FIELD_MAX_TURNS} must be a non-negative integer (0 = unlimited)")
+        })?,
     };
     let inject = match get(FIELD_INJECT_AGENTS_MD) {
         None => None,
@@ -307,7 +329,9 @@ pub fn parse_frontmatter(text: &str) -> Option<(Vec<(String, String)>, String)> 
     }
     let end = normalized[4..].find("\n---")? + 4;
     let block = &normalized[4..end];
-    let body = normalized[end + 4..].strip_prefix('\n').unwrap_or(&normalized[end + 4..]);
+    let body = normalized[end + 4..]
+        .strip_prefix('\n')
+        .unwrap_or(&normalized[end + 4..]);
     let body = body.trim().to_string();
 
     let mut out: Vec<(String, String)> = Vec::new();
@@ -385,7 +409,11 @@ fn list_item(line: &str) -> Option<String> {
 fn split_pair(line: &str) -> Option<(String, &str)> {
     let colon = line.find(':')?;
     let key = line[..colon].trim();
-    if key.is_empty() || !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+    if key.is_empty()
+        || !key
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
         return None;
     }
     Some((key.to_string(), line[colon + 1..].trim()))
@@ -441,14 +469,21 @@ mod tests {
         assert!(!a.inject_enabled());
         assert_eq!(a.append_system_prompt.as_deref(), Some("append body"));
         // 未知字段透传
-        assert!(a.unknown.iter().any(|(k, v)| k == "futureField" && v == "whatever"));
+        assert!(
+            a.unknown
+                .iter()
+                .any(|(k, v)| k == "futureField" && v == "whatever")
+        );
     }
 
     #[test]
     fn reads_systemprompt_block_scalar() {
         let doc = "---\ndescription: strict\nsystemPrompt: |\n  You are strict.\n  Never edit.\n---\nextra notes\n";
         let a = parse_agent("strict", doc, AgentOrigin::Custom).unwrap();
-        assert_eq!(a.system_prompt.as_deref(), Some("You are strict.\nNever edit."));
+        assert_eq!(
+            a.system_prompt.as_deref(),
+            Some("You are strict.\nNever edit.")
+        );
         assert_eq!(a.append_system_prompt.as_deref(), Some("extra notes"));
     }
 
@@ -466,7 +501,14 @@ mod tests {
     fn rejects_bad_tools_and_inject() {
         assert!(parse_agent("p", "---\ntools: read\n---\nx\n", AgentOrigin::Custom).is_err());
         assert!(parse_agent("p", "---\ntools:\n  - read\n---\nx\n", AgentOrigin::Custom).is_err());
-        assert!(parse_agent("p", "---\ninjectAgentsMd: yes\n---\nx\n", AgentOrigin::Custom).is_err());
+        assert!(
+            parse_agent(
+                "p",
+                "---\ninjectAgentsMd: yes\n---\nx\n",
+                AgentOrigin::Custom
+            )
+            .is_err()
+        );
         assert!(parse_agent("p", "---\nisolation: docker\n---\nx\n", AgentOrigin::Custom).is_err());
     }
 
@@ -494,7 +536,12 @@ mod tests {
         std::fs::write(d.join("broken.md"), "---\ndescription: oops\n").unwrap();
         let list = scan_agents_dir(&d);
         assert_eq!(list.len(), 2);
-        assert!(list.iter().find(|a| a.id == "good.md" || a.id == "good").map(|a| a.error.is_none()).unwrap_or(false));
+        assert!(
+            list.iter()
+                .find(|a| a.id == "good.md" || a.id == "good")
+                .map(|a| a.error.is_none())
+                .unwrap_or(false)
+        );
         let broken = list.iter().find(|a| a.id.starts_with("broken")).unwrap();
         assert!(broken.error.is_some(), "corrupt file must carry an error");
         assert_eq!(broken.origin, AgentOrigin::Custom);
@@ -504,16 +551,72 @@ mod tests {
     #[test]
     fn builtin_explorer_and_custom_override() {
         let builtins = builtin_agents();
+        assert_eq!(
+            builtins.len(),
+            2,
+            "explorer + general-purpose（2026-10-19 拍板）"
+        );
         let ex = builtins.iter().find(|b| b.id == "explorer").unwrap();
         assert_eq!(ex.tools_tier(), "read-only");
         assert_eq!(ex.max_turns_tier(), MaxTurnsTier::Unlimited);
+        let gp = builtins.iter().find(|b| b.id == "general-purpose").unwrap();
+        assert_eq!(gp.tools_tier(), "inherit", "general-purpose 继承全部工具");
+        assert_eq!(gp.max_turns_tier(), MaxTurnsTier::Unlimited);
         let custom = AgentProfile {
             id: "explorer".into(),
             origin: AgentOrigin::Custom,
-            ..parse_agent("explorer", "---\ndescription: mine\n---\n", AgentOrigin::Custom).unwrap()
+            ..parse_agent(
+                "explorer",
+                "---\ndescription: mine\n---\n",
+                AgentOrigin::Custom,
+            )
+            .unwrap()
         };
         assert!(custom.overrides_builtin(&builtins));
-        let other = AgentProfile { id: "nope".into(), ..custom.clone() };
+        let other = AgentProfile {
+            id: "nope".into(),
+            ..custom.clone()
+        };
         assert!(!other.overrides_builtin(&builtins));
+    }
+
+    /// 两侧内置清单逐字一致（profile.ts `BUILTIN_PROFILE_DOCS` ↔ 本模块
+    /// `builtin_agents`）：id 集、description、tools、maxTurns、正文。
+    /// 防止「两处各存一份」的同步契约静默烂掉——扩展侧改了这边忘改就红。
+    #[test]
+    fn builtins_match_extension_docs() {
+        let docs = [
+            (
+                "explorer",
+                "只读探索 · 调研与定位",
+                Some("read-only"),
+                "你是只读探索员：调研代码、定位实现、回答问题。\n不执行任何写操作。",
+            ),
+            (
+                "general-purpose",
+                "通用子代理 · 复杂调研、代码检索、多步任务",
+                None,
+                "你是通用子代理：独立完成委派的任务——调研复杂问题、检索代码、执行多步操作。\n可使用会话的全部工具，按需读写文件与执行命令。",
+            ),
+        ];
+        let builtins = builtin_agents();
+        assert_eq!(builtins.len(), docs.len());
+        for (id, description, tools, body) in docs {
+            let a = builtins
+                .iter()
+                .find(|b| b.id == id)
+                .unwrap_or_else(|| panic!("builtin {id} missing"));
+            assert_eq!(
+                a.description, description,
+                "{id} description 与扩展侧不一致"
+            );
+            assert_eq!(a.tools.as_deref(), tools, "{id} tools 与扩展侧不一致");
+            assert_eq!(a.max_turns, Some(0), "{id} maxTurns 与扩展侧不一致");
+            assert_eq!(
+                a.append_system_prompt.as_deref(),
+                Some(body),
+                "{id} 正文与扩展侧不一致"
+            );
+        }
     }
 }

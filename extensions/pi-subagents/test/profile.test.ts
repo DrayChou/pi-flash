@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 
 import { SubagentError, SubagentErrorCode } from "../src/errors.ts";
-import { listProfiles, loadProfile, parseFrontmatter, profileFromDocument } from "../src/profile.ts";
+import { listProfiles, listProfilesSync, loadProfile, parseFrontmatter, profileFromDocument } from "../src/profile.ts";
 import { captureSync } from "./helpers.ts";
 
 const code = (error: unknown) => (error as SubagentError).code;
@@ -163,7 +163,7 @@ describe("profile loading", () => {
 		await writeFile(join(projectDir, "b.md"), "---\n---\n");
 		await writeFile(join(projectDir, "c.md"), "---\n---\n");
 
-		assert.deepEqual(await listProfiles({ globalDir, projectDir }), ["a", "b", "c", "explorer"]);
+		assert.deepEqual(await listProfiles({ globalDir, projectDir }), ["a", "b", "c", "explorer", "general-purpose"]);
 	});
 
 	it("falls back to the built-in explorer when no file exists", async () => {
@@ -173,6 +173,16 @@ describe("profile loading", () => {
 		assert.equal(profile.tools, "read-only");
 		assert.equal(profile.maxTurns, 0, "explorer is the unlimited tier");
 		assert.match(profile.appendSystemPrompt ?? "", /只读探索员/);
+		assert.equal(profile.source, "<builtin>");
+	});
+
+	it("falls back to the built-in general-purpose with inherited tools", async () => {
+		const root = await mkdtemp(join(tmpdir(), "pi-subagents-"));
+		const paths = { globalDir: join(root, "missing"), projectDir: join(root, "also-missing") };
+		const profile = await loadProfile("general-purpose", paths);
+		assert.equal(profile.tools, undefined, "no tools key = inherit the delegator's assembly");
+		assert.equal(profile.maxTurns, 0);
+		assert.match(profile.appendSystemPrompt ?? "", /通用子代理/);
 		assert.equal(profile.source, "<builtin>");
 	});
 
@@ -190,7 +200,32 @@ describe("profile loading", () => {
 		const root = await mkdtemp(join(tmpdir(), "pi-subagents-"));
 		assert.deepEqual(
 			await listProfiles({ globalDir: join(root, "x"), projectDir: join(root, "y") }),
-			["explorer"],
+			["explorer", "general-purpose"],
 		);
+	});
+});
+
+describe("listProfilesSync", () => {
+	it("carries built-in frontmatter summaries", () => {
+		const root = join(tmpdir(), "pi-subagents-sync-missing");
+		const summaries = listProfilesSync({ globalDir: join(root, "x"), projectDir: join(root, "y") });
+		assert.deepEqual(summaries, [
+			{ id: "explorer", description: "只读探索 · 调研与定位", tools: "read-only" },
+			{ id: "general-purpose", description: "通用子代理 · 复杂调研、代码检索、多步任务" },
+		]);
+	});
+
+	it("a custom file shadows the built-in summary, a corrupt one degrades to a bare id", async () => {
+		const root = await mkdtemp(join(tmpdir(), "pi-subagents-"));
+		const globalDir = join(root, "global");
+		await mkdir(globalDir, { recursive: true });
+		await writeFile(join(globalDir, "explorer.md"), "---\ndescription: mine\n---\nmy body");
+		await writeFile(join(globalDir, "broken.md"), "---\ndescription: oops\n");
+		const summaries = listProfilesSync({ globalDir, projectDir: join(root, "missing") });
+		assert.deepEqual(
+			summaries.find((s) => s.id === "explorer"),
+			{ id: "explorer", description: "mine" },
+		);
+		assert.deepEqual(summaries.find((s) => s.id === "broken"), { id: "broken", description: "" });
 	});
 });

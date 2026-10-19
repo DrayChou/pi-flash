@@ -562,8 +562,8 @@ agent 回复的轮块却正常；同一个行为不该有两套写法。
    `builtin_agents` 逐字一致，**两处各存一份，改动必须同步**）；
    loadProfile 文件未命中回落内置；注册工具时清单拼进描述（同步扫盘，
    新建 profile 下次会话可见——PF 每会话独立 spawn pi）。
-   **语义（用户未最终拍板）**：不点名 = 裸委派兜底；点名 explorer = 只读
-   探索员。助手建议不设默认 profile，用户验证后再定。
+   **语义（2026-10-19 拍板）**：不点名 = 裸委派兜底（全继承），不设默认
+   profile；委派清单进工具描述让模型知道委派谁。
 
 ### 验证路径（045-3 清单的 UI 部分）
 
@@ -572,8 +572,8 @@ agent 回复的轮块却正常；同一个行为不该有两套写法。
 - 对话里「用 explorer 帮我调研 xxx」→ 子代理卡 + 面板行出现
 - 会话操作栏「子代理面板」按钮 → 浮层（LIST_W=400 宽、锚操作栏正下方）、
   运行中徽标、整行点击开子会话 tab、外点/ESC/✕ 关
-- 徽标陈旧性已知取舍：面板关着时徽标显示缓存的上次运行数（open 标志与
-  Option 缓存分离，用户未表态；替代方案 = 关着也轮询，一直读盘）
+- 徽标陈旧性（2026-10-19 拍板：关面板只是隐藏，常驻轮询）——已改：打开期
+  1s / 收起期 5s 常驻轮询，会话激活即建缓存，徽标从切换起就准
 - maxTurns 软限实测：profile 设 50/指定 N，委派超限任务看 steer 收尾与
   stopReason=max_turns 卡片「轮次用尽」
 - maxloop 委派参数：CLI 或对话里传 maxloop=3 验证优先级
@@ -581,4 +581,38 @@ agent 回复的轮块却正常；同一个行为不该有两套写法。
 ### 遗留
 
 - pif-ui 自动化断言未写（045-1 §7 收尾项）
-- 044-1 §6.3「内置 preset 清单」已定为 explorer，设计文档该行可更新
+
+## 本轮追加（2026-10-19 第二批）——内置 general-purpose + 委派清单 + 常驻轮询
+
+考证结论：dsh（deepseek-harness）**无出厂内置子代理**（subagent 包是纯委派
+框架，preset 全靠部署 bundle 提供），按用户指示对齐 ZCode 两内置 → explorer
+（即 Explore 位）+ 新增 **general-purpose**。同轮落地用户两拍板：①委派清单
+带描述进工具描述；②面板关着 = 隐藏，常驻轮询。
+
+### 改动
+
+- 内置 general-purpose：`extensions/pi-subagents/src/profile.ts`
+  BUILTIN_PROFILE_DOCS + `crates/pi-link/src/agents.rs` builtin_agents
+  两侧逐字同步（agents.rs 新增 `builtins_match_extension_docs` 对账测试）；
+  不写 `tools:` = 继承全部工具，maxTurns 0 = 无软限，与 ZCode「全部工具」位对齐
+- 委派清单带摘要：profile.ts `listProfileIdsSync` 升级为 `listProfilesSync`
+  （返回 id+description+tools，同名自定义覆盖内置摘要，损坏文件降级裸 id）；
+  tool.ts 描述渲染 `- id: description (tools: 档位)` 逐行清单
+- 面板常驻轮询（subagent_panel.rs）：`if !open 退场` 改为开 1s / 关 5s 常驻
+  （`polling` 守卫防重复 spawn）；poll 内比对 rt file 自愈换会话（归零重扫、
+  open 保持）；pool.rs `switch_to` 末尾挂 `ensure_subagent_panel`（open=false
+  空结构起步，首轮 poll 全量扫，不拖慢切换热路径）——徽标不再依赖先开一次面板
+
+### 本轮验证项（叠加在上一节验证路径上）
+
+- Settings 子代理页左列表出现两个内置（explorer、general-purpose），都可
+  只读查看 + 复制为自定义；general-purpose 详情工具档显示「继承」
+- 工具描述实测（PI_FLASH_RPC_LOG 或让模型复述）：`agent` 工具描述含
+  「- explorer: 只读探索 · 调研与定位 (tools: read-only)」「- general-purpose:
+  通用子代理 … (tools: inherit)」两行
+- 对话点名「用 general-purpose 帮我 xxx」→ 正常委派、子会话有全部工具
+  （可写文件/跑命令）；自定义 `general-purpose.md` 同名覆盖内置（两处语义一致）
+- 徽标：会话 A 委派后台任务 → 切到会话 B 再切回（或停在 B 看操作栏），
+  徽标 ≤5s 内出现/更新；浮层关着徽标照样走
+- perf_probe 三测需 `tmp/perf/perf-80k.txt` 基准文件（gitignore，新克隆要
+  从黄金仓拷），缺文件报 NotFound 属环境而非代码

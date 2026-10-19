@@ -13,6 +13,7 @@
  */
 
 import { SubagentError, SubagentErrorCode } from "./errors.ts";
+import type { ProfileSummary } from "./profile.ts";
 import type { SubagentManager } from "./manager.ts";
 import type { Delivery, SubagentResult } from "./types.ts";
 
@@ -73,12 +74,25 @@ export const DELEGATION_PARAMETERS = {
 	required: ["prompt"],
 } as const;
 
-export function delegationDescription(options: Pick<DelegationToolOptions, "inheritsParentContext" | "allowedProfiles" | "defaultProfile">): string {
+export function delegationDescription(
+	options: Pick<DelegationToolOptions, "inheritsParentContext" | "allowedProfiles" | "defaultProfile"> & {
+		/** Frontmatter digests for the nameable profiles; when present the
+		 * description lists each profile with what it is, so the model can pick
+		 * on intent instead of guessing from bare ids. */
+		profileSummaries?: ProfileSummary[];
+	},
+): string {
 	const context = options.inheritsParentContext
 		? "It does not see the current in-flight turn, only completed history."
 		: "It does not see this conversation.";
-	const profiles =
-		options.allowedProfiles && options.allowedProfiles.length > 0
+	const summaries = options.profileSummaries;
+	const profiles = summaries && summaries.length > 0
+		? ` Choose a profile:\n${summaries
+				.map((p) =>
+					`- ${p.id}${p.description ? `: ${p.description}` : ""}${p.tools ? ` (tools: ${p.tools})` : " (tools: inherit)"}`,
+				)
+				.join("\n")}.`
+		: options.allowedProfiles && options.allowedProfiles.length > 0
 			? ` Choose a profile from: ${options.allowedProfiles.join(", ")}.`
 			: options.defaultProfile
 				? ` The profile defaults to ${options.defaultProfile}.`

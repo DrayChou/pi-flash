@@ -240,6 +240,9 @@ impl Chat {
                 rt.update(cx, |r2, _| r2.ext_queue.push(r));
             }
         }
+        // 子代理面板缓存随会话激活常备（open=false）：徽标从切换起就准，
+        // 不依赖先开过一次面板（2026-10-19 拍板：关面板只是隐藏，轮询常驻）
+        self.ensure_subagent_panel(cx);
         cx.notify();
     }
 }

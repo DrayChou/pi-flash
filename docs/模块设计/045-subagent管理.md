@@ -127,6 +127,11 @@ manager(机制层),只消费目录约定,不拥有定义——预制与自定义
 | 自定义 | `~/.pi/agent/agents/*.md` | 用户完全所有;同名覆盖内置 |
 | 内置 | 扩展代码内常量 | 随 pi-subagents 出厂,只读 |
 
+内置清单 2026-10-19 定稿:**explorer + general-purpose** 两枚(抄 ZCode 两
+内置;经查 dsh 无出厂内置)。落点 = profile.ts BUILTIN_PROFILE_DOCS +
+pi-link agents.rs builtin_agents,两侧逐字一致(有对账测试);委派工具描述
+注册期扫盘列清单(带 description + tools 档位),模型按意图点名。
+
 近期:文件即事实源(PF/CLI/扩展三方共享,零自有存储)。2026-10-19 拍板:
 ①**不分项目级**(只分内置/自定义);②**不做包分发**(内部组件);
 ③**PF 编辑走表单**不让用户直写明文(防小白+防注入),配置后续单独管理

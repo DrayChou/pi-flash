@@ -6,7 +6,7 @@
  * rather than silently running with the parent's composition.
  */
 
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -38,6 +38,16 @@ export const BUILTIN_PROFILE_DOCS: Readonly<Record<string, string>> = {
 		"---",
 		"你是只读探索员：调研代码、定位实现、回答问题。",
 		"不执行任何写操作。",
+	].join("\n"),
+	// 2026-10-19 拍板：dsh 无出厂内置，对齐 ZCode 的两内置（general-purpose +
+	// Explore，explorer 即 Explore 位）。不写 `tools:` = 继承委派者全部工具。
+	"general-purpose": [
+		"---",
+		"description: 通用子代理 · 复杂调研、代码检索、多步任务",
+		"maxTurns: 0",
+		"---",
+		"你是通用子代理：独立完成委派的任务——调研复杂问题、检索代码、执行多步操作。",
+		"可使用会话的全部工具，按需读写文件与执行命令。",
 	].join("\n"),
 };
 
@@ -251,22 +261,52 @@ export async function listProfiles(paths: ProfilePaths): Promise<string[]> {
 	return [...ids].sort();
 }
 
-/** Sync twin of {@link listProfiles} for tool-description building —
- * `registerTool` takes a static string, so the delegation tool's list of
- * nameable profiles is computed once at registration. Fresh sessions see
- * newly written profile files (PF spawns one pi process per session). */
-export function listProfileIdsSync(paths: ProfilePaths): string[] {
-	const ids = new Set<string>(Object.keys(BUILTIN_PROFILE_DOCS));
+/** Frontmatter digest for the delegation list — enough for the model to pick
+ * a profile without reading the whole document. */
+export interface ProfileSummary {
+	id: string;
+	description: string;
+	/** Tool tier; `undefined` = inherit the delegator's assembly. */
+	tools?: ToolTier;
+}
+
+/** Sync twin of {@link listProfiles} carrying frontmatter summaries, for
+ * tool-description building — `registerTool` takes a static string, so the
+ * delegation tool's view of the nameable profiles is computed once at
+ * registration. Fresh sessions see newly written profile files (PF spawns one
+ * pi process per session). Shadow order matches {@link loadProfile}: project
+ * file > global file > built-in. A corrupt document still lists (bare id);
+ * actually delegating to it fails closed via {@link loadProfile}. */
+export function listProfilesSync(paths: ProfilePaths): ProfileSummary[] {
+	const docs = new Map<string, string>(Object.entries(BUILTIN_PROFILE_DOCS));
 	for (const dir of [paths.globalDir, paths.projectDir]) {
 		try {
 			for (const entry of readdirSync(dir)) {
-				if (entry.endsWith(".md")) ids.add(entry.slice(0, -3));
+				if (!entry.endsWith(".md")) continue;
+				const id = entry.slice(0, -3);
+				try {
+					docs.set(id, readFileSync(join(dir, entry), "utf8"));
+				} catch {
+					// unreadable file: keep the previous doc, or bare id if none
+				}
 			}
 		} catch {
 			// dir missing: built-ins still count
 		}
 	}
-	return [...ids].sort();
+	return [...docs.entries()]
+		.sort(([a], [b]) => (a < b ? -1 : 1))
+		.map(([id, doc]) => {
+			const summary: ProfileSummary = { id, description: "" };
+			try {
+				const { data } = parseFrontmatter(doc, id);
+				if (typeof data.description === "string") summary.description = data.description;
+				if (TOOL_TIERS.includes(data.tools as ToolTier)) summary.tools = data.tools as ToolTier;
+			} catch {
+				// corrupt frontmatter: list the bare id; use fails closed later
+			}
+			return summary;
+		});
 }
 
 function asProfileError(error: unknown, source: string): SubagentError {

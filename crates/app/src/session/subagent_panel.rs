@@ -2,8 +2,12 @@
 //!
 //! 入口 = 会话操作栏按钮（`session_fn_bar`，运行中带计数徽标）；点开从
 //! 操作栏向下延伸的浮层（遮上半内容区，点外/ESC/✕ 关）。事实源 = 父会话
-//! JSONL 的 `subagent/descriptor`（[`pi_link::subagent_catalog`]），打开期间
-//! 1s 增量轮询；整行点击 = 以正式 tab 打开子会话并关浮层。
+//! JSONL 的 `subagent/descriptor`（[`pi_link::subagent_catalog`]），整行点击
+//! = 以正式 tab 打开子会话并关浮层。
+//!
+//! 轮询常驻（2026-10-19 用户拍板：关面板只是隐藏，徽标必须一直准）——打开
+//! 期 1s 增量读、收起期 5s 慢速轮询；会话激活即建缓存（open=false），徽标
+//! 不依赖「先开过一次面板」。
 //!
 //! 状态色与 messages/cards.rs 的 subagent 卡片同源（运行黄 / 完成绿 /
 //! 失败红），面板不另起一套。
@@ -19,8 +23,11 @@ use pi_link::subagent_catalog::{
     CatalogRow, StatusKind, merge_rows, read_catalog, row_duration_secs,
 };
 
-/// 轮询间隔（044-1 §1.4：面板打开期 1s 增量读）。
+/// 打开期轮询间隔（044-1 §1.4：1s 增量读）。
 const POLL_TICK: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// 收起期轮询间隔（关面板只是隐藏；5s 对徽标够新鲜）。
+const CLOSED_POLL_TICK: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// 状态色（照抄 cards.rs 的 subagent 卡片；中止橙按 044-1 §1.3 交互稿）。
 const C_RUNNING: u32 = 0xeab308;
@@ -28,11 +35,11 @@ const C_DONE: u32 = 0x22c55e;
 const C_ERROR: u32 = 0xf87171;
 const C_ABORTED: u32 = 0xf97316;
 
-/// 浮层宿主状态：持 catalog 缓存（§1.4 的 offset+rows）；`open` 独立控开关。
+/// 浮层宿主状态：持 catalog 缓存（§1.4 的 offset+rows）；`open` 只控渲染。
 ///
-/// 分开而非让 Option 直接当开关，是因为 §1.1 要求「常驻按钮 + 运行中计数
-/// 徽标」——徽标读缓存，面板关着时也能显示上次已知的运行数（关着即丢数据
-/// 会让徽标恒空，功能等于没做）。轮询只在 open 时跑，关着不烧 IO。
+/// `open` 与 Option 分开：徽标随时读缓存，浮层收起不清数据。`polling`
+/// 守卫常驻轮询任务只拉起一份——轮询从会话激活跑到 Chat 消亡，收起不清
+/// 缓存也不停轮（间隔放慢），换会话在 poll 内自愈归零重扫。
 #[derive(Clone)]
 pub(crate) struct SubagentPanel {
     /// 父会话文件（descriptor 的落盘处）；没落盘的会话无 catalog。
@@ -41,8 +48,10 @@ pub(crate) struct SubagentPanel {
     pub offset: u64,
     /// 累积的 descriptor 投影（同 childId 末条覆盖）。
     pub rows: Vec<CatalogRow>,
-    /// 浮层是否展开（只控渲染与轮询，不丢缓存）。
+    /// 浮层是否展开（只控渲染；收起轮询放慢到 [`CLOSED_POLL_TICK`]）。
     pub open: bool,
+    /// 常驻轮询任务是否在跑（防 toggle/切换重复 spawn）。
+    pub polling: bool,
 }
 
 impl SubagentPanel {
@@ -54,7 +63,7 @@ impl SubagentPanel {
 
 impl Chat {
     /// 切换子代理浮层：首次打开（或换会话后）拉一次全量，之后只翻 open。
-    /// 关浮层不丢缓存（徽标还要用）。
+    /// 关浮层不丢缓存不停轮（徽标还要用）。
     pub(crate) fn toggle_subagent_panel(&mut self, cx: &mut gpui::Context<Self>) {
         let file = self.rt().read(cx).file.clone();
         let already = self
@@ -64,13 +73,8 @@ impl Chat {
             .is_some_and(|p| p.file == file);
         match self.dlg.subagent_panel.as_mut() {
             // 同会话已有缓存：只翻开关
-            Some(p) if already => {
-                p.open = !p.open;
-                if p.open {
-                    spawn_poll(cx);
-                }
-            }
-            // 首次 / 换了会话：重拉全量
+            Some(p) if already => p.open = !p.open,
+            // 首次 / 换了会话：重拉全量；polling 继承（旧任务还活着就别再 spawn）
             _ => {
                 let (rows, offset) = match file.as_deref() {
                     Some(f) => {
@@ -79,24 +83,62 @@ impl Chat {
                     }
                     None => (Vec::new(), 0),
                 };
-                self.dlg.subagent_panel = Some(SubagentPanel { file, offset, rows, open: true });
-                spawn_poll(cx);
+                let polling = self.dlg.subagent_panel.as_ref().is_some_and(|p| p.polling);
+                self.dlg.subagent_panel = Some(SubagentPanel {
+                    file,
+                    offset,
+                    rows,
+                    open: true,
+                    polling,
+                });
             }
         }
+        ensure_poll(self, cx);
         cx.notify();
     }
 
-    /// 一轮增量轮询：只读上次 offset 之后的新增字节，合并后重绘。
-    /// 浮层已关 / 无缓存 / 会话文件没了 → 停（返回 false 让轮询任务退场）。
-    fn subagent_panel_poll(&mut self, cx: &mut gpui::Context<Self>) -> bool {
-        let Some(panel) = self.dlg.subagent_panel.as_mut() else {
-            return false;
-        };
-        if !panel.open {
-            return false;
+    /// 会话激活时常备面板缓存（open=false，只出数据不出浮层）——徽标从切换
+    /// 起就准，不依赖「先开过一次面板」。switch_pool_rt 调；空结构起步，首轮
+    /// poll 全量扫，不拖慢切换热路径。
+    pub(crate) fn ensure_subagent_panel(&mut self, cx: &mut gpui::Context<Self>) {
+        let file = self.rt().read(cx).file.clone();
+        let already = self
+            .dlg
+            .subagent_panel
+            .as_ref()
+            .is_some_and(|p| p.file == file);
+        if !already {
+            let polling = self.dlg.subagent_panel.as_ref().is_some_and(|p| p.polling);
+            self.dlg.subagent_panel = Some(SubagentPanel {
+                file,
+                offset: 0,
+                rows: Vec::new(),
+                open: false,
+                polling,
+            });
         }
+        ensure_poll(self, cx);
+    }
+
+    /// 一轮增量轮询：只读上次 offset 之后的新增字节，合并后重绘。
+    /// 返回下一轮间隔（开 1s / 关 5s）；None = 面板没了（Chat 消亡）→ 任务退场。
+    /// 会话切换在这里自愈：缓存挂的还是旧会话 → 归零重扫新会话（open 保持）。
+    fn subagent_panel_poll(&mut self, cx: &mut gpui::Context<Self>) -> Option<std::time::Duration> {
+        let current = self.rt().read(cx).file.clone();
+        let panel = self.dlg.subagent_panel.as_mut()?;
+        if panel.file != current {
+            panel.file = current;
+            panel.offset = 0;
+            panel.rows.clear();
+        }
+        let tick = if panel.open {
+            POLL_TICK
+        } else {
+            CLOSED_POLL_TICK
+        };
         let Some(file) = panel.file.clone() else {
-            return false;
+            // 会话还没落盘：没东西可读，慢速等文件出现
+            return Some(tick);
         };
         let scan = read_catalog(&file, panel.offset);
         if scan.next_offset != panel.offset {
@@ -104,7 +146,7 @@ impl Chat {
             merge_rows(&mut panel.rows, scan.rows);
             cx.notify();
         }
-        true
+        Some(tick)
     }
 
     /// 整行点击：子会话是普通 pi 会话，直接 open_session（只读检视 + 可续跑），
@@ -118,17 +160,29 @@ impl Chat {
     }
 }
 
-/// 轮询任务：面板开着就每秒续一轮，关了就退场（同 psp_drag 看门狗范式）。
+/// 拉起常驻轮询（幂等：`polling` 已在跑则不动）。
+fn ensure_poll(chat: &mut Chat, cx: &mut gpui::Context<Chat>) {
+    if let Some(p) = chat.dlg.subagent_panel.as_mut() {
+        if p.polling {
+            return;
+        }
+        p.polling = true;
+    }
+    spawn_poll(cx);
+}
+
+/// 常驻轮询任务：间隔由上轮 poll 的返回值决定（开 1s / 关 5s，同 psp_drag
+/// 看门狗范式）；poll 返回 None（Chat 消亡）才退场。
 fn spawn_poll(cx: &mut gpui::Context<Chat>) {
     cx.spawn(async move |this, cx| {
+        let mut tick = POLL_TICK;
         loop {
-            cx.background_executor().timer(POLL_TICK).await;
-            let alive = this
+            cx.background_executor().timer(tick).await;
+            let next = this
                 .update(cx, |chat, cx| chat.subagent_panel_poll(cx))
-                .unwrap_or(false);
-            if !alive {
-                break;
-            }
+                .unwrap_or(None);
+            let Some(next_tick) = next else { break };
+            tick = next_tick;
         }
     })
     .detach();
@@ -138,7 +192,11 @@ fn spawn_poll(cx: &mut gpui::Context<Chat>) {
 /// 无运行中不渲染徽标。
 pub(crate) fn running_badge(chat: &Chat) -> Option<gpui::AnyElement> {
     let t = T();
-    let n = chat.dlg.subagent_panel.as_ref().map(SubagentPanel::running_count)?;
+    let n = chat
+        .dlg
+        .subagent_panel
+        .as_ref()
+        .map(SubagentPanel::running_count)?;
     if n == 0 {
         return None;
     }
@@ -310,47 +368,49 @@ fn panel_row(weak: &gpui::WeakEntity<Chat>, row: &CatalogRow) -> gpui::AnyElemen
         .hover(|s| s.bg(rgb(t.bg_hover)));
     if open.is_some() {
         let weak_row = weak.clone();
-        el = el.cursor_pointer().on_mouse_down(MouseButton::Left, move |_, _, cx| {
-            let _ = weak_row.update(cx, |c, cx| {
-                if let Some(p) = open.clone() {
-                    c.open_subagent_child(p, cx);
-                }
+        el = el
+            .cursor_pointer()
+            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                let _ = weak_row.update(cx, |c, cx| {
+                    if let Some(p) = open.clone() {
+                        c.open_subagent_child(p, cx);
+                    }
+                });
             });
-        });
     }
     el.child(crate::settings::widgets::status_dot(kind_c))
-    .child(
-        div()
-            .flex_1()
-            .min_w_0()
-            .overflow_hidden()
-            .whitespace_nowrap()
-            .text_ellipsis()
-            .child(SharedString::from(row.display_label().to_string())),
-    )
-    .child(
-        div()
-            .flex_shrink_0()
-            .font_family(crate::editor::markdown::MONO_FAMILY)
-            .text_size(crate::appearance::ui_size(11.))
-            .text_color(rgb(t.text_dim))
-            .child(SharedString::from(meta)),
-    )
-    .child(
-        div()
-            .flex_shrink_0()
-            .text_size(crate::appearance::ui_size(11.))
-            .text_color(rgb(t.text_dim))
-            .child(SharedString::from(time)),
-    )
-    .child(
-        div()
-            .flex_shrink_0()
-            .text_size(crate::appearance::ui_size(11.))
-            .text_color(rgb(kind_c))
-            .child(SharedString::from(kind_text)),
-    )
-    .into_any_element()
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .text_ellipsis()
+                .child(SharedString::from(row.display_label().to_string())),
+        )
+        .child(
+            div()
+                .flex_shrink_0()
+                .font_family(crate::editor::markdown::MONO_FAMILY)
+                .text_size(crate::appearance::ui_size(11.))
+                .text_color(rgb(t.text_dim))
+                .child(SharedString::from(meta)),
+        )
+        .child(
+            div()
+                .flex_shrink_0()
+                .text_size(crate::appearance::ui_size(11.))
+                .text_color(rgb(t.text_dim))
+                .child(SharedString::from(time)),
+        )
+        .child(
+            div()
+                .flex_shrink_0()
+                .text_size(crate::appearance::ui_size(11.))
+                .text_color(rgb(kind_c))
+                .child(SharedString::from(kind_text)),
+        )
+        .into_any_element()
 }
 
 /// 行状态（色 + 文案）：终态优先分码，缺 stop_reason 时按 phase 兜底。

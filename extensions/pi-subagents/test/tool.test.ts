@@ -95,4 +95,25 @@ describe("delegation description", () => {
 		const text = delegationDescription({ inheritsParentContext: false, allowedProfiles: ["explorer", "writer"] });
 		assert.match(text, /explorer, writer/);
 	});
+
+	it("lists profile summaries with descriptions when given", () => {
+		const text = delegationDescription({
+			inheritsParentContext: false,
+			profileSummaries: [
+				{ id: "explorer", description: "只读探索 · 调研与定位", tools: "read-only" },
+				{ id: "general-purpose", description: "通用子代理 · 复杂调研、代码检索、多步任务" },
+			],
+		});
+		assert.match(text, /- explorer: 只读探索 · 调研与定位 \(tools: read-only\)/);
+		assert.match(text, /- general-purpose: 通用子代理.*\(tools: inherit\)/);
+		assert.doesNotMatch(text, /explorer, writer/);
+	});
+
+	it("degrades a summary without a description to a bare id line", () => {
+		const text = delegationDescription({
+			inheritsParentContext: false,
+			profileSummaries: [{ id: "broken", description: "" }],
+		});
+		assert.match(text, /- broken/);
+	});
 });
