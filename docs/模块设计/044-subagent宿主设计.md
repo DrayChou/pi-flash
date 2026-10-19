@@ -6,7 +6,7 @@
 > 总原则(承 045):**编排逻辑一行都不进宿主;宿主只消费 pi 标准事件面,
 > 零自建协议**。本会话早前讨论的"Rust 内生编排 / delegate_dsh / token 账本"
 > 方案作废,被 045 的 pi 原生路线替代;本文吸收其有效残片(§7 后端不感知、§2.4 usage 上卷)。
-> dsh/pi-web/ZCode 三家 subagent 全量对照见 [调研/subagent三家对比](../调研/subagent三家对比.md)(只归档研究,本文只吸收其中宿主可见部分)。
+> dsh/pi-web/ZCode 三家 subagent 全量对照曾归档于本地调研笔记（不入库，本文只吸收其中宿主可见部分）。
 
 ## 0. 结论速览
 
@@ -121,7 +121,7 @@ pi-subagents 作为普通 pi package,走 040/041 的扩展开关与装载机制,
 - 045 的 `agent` 工具/profile 若未来扩展 provider(另一 harness 经 ACP、
   Claude Code、Codex、vendored dsh),宿主观测面**零改动**:onUpdate/
   setWidget/usage 上卷/entry 契约不变,卡片至多多个 provider 标签。
-- vendored dsh 路线([集成dsh](../调研/集成dsh.md))降格为扩展侧 provider
+- vendored dsh 路线（见本地调研笔记）降格为扩展侧 provider
   候选:ACP 协议层若做,住 pi-link/acp.rs(协议测试在 pi-link),宿主仍
   不感知。**宿主永远只见 pi 标准事件面。**
 

@@ -1,7 +1,7 @@
 # subagent 开发计划(扩展侧,045 配套)
 
 > 状态:**待开工**。依据 [045-subagent管理](045-subagent管理.md)(设计)+
-> [调研/subagent三家对比](../调研/subagent三家对比.md)(研究归档)。
+> 三家 subagent 全量对照研究见本地调研笔记（不入库）。
 > **优先级铁定:L1 复刻 dsh-subagent 调用机制先行;L2 pi 增强(codemode/nested-call)
 > 后置叠加。** 机制与 codemode 正交——manager/activation 是纯编排类,不依赖 codemode,
 > 不会推倒重来。
