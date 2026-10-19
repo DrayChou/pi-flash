@@ -69,7 +69,6 @@ mod audit {
 "psp.project_deleted",
 "psp.project_groups",
 "psp.recent_sessions",
-"psp.session_label",
 "psp.sort_by_time",
 "psp.sort_manual",
 "psp.sort_mode",

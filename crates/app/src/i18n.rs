@@ -522,7 +522,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("psp.recent_sessions", "最近会话列表", "", ""),
     ("psp.search", "搜索", "搜尋", "Search"),
     ("psp.search_sessions", "搜索会话", "搜尋會話", "Search sessions"),
-    ("psp.session_label", "会话", "", ""),
+    ("psp.session_label", "会话", "會話", "Sessions"),
     ("psp.sessions_count", "{n} 个会话", "{n} 個會話", "{n} sessions"),
     ("session.autoclean_done", "已自动清理 {n} 个超期会话（移入回收站）", "已自動清理 {n} 個超期會話（移入資源回收筒）", "Auto-cleaned {n} stale session(s) (moved to recycle bin)"),
     ("psp.sort", "排序", "排序", "Sort"),
