@@ -256,10 +256,10 @@ pub(crate) fn subagent_panel_element(
         .shadow_lg()
         .overflow_hidden();
 
-    // 头部：标题 + 关闭 ✕（规则 5：有可见内容的卡片挂 ×）
-    card = card.child(panel_header(weak));
+    // 头部：标题 + 计数 + 合计（时长/tokens/运行中）+ 关闭 ✕
+    card = card.child(panel_header(weak, panel));
 
-    // 行列表（滚动）
+    // 行列表（滚动）；运行中排前，其余按开始时间新→旧（pi-web Agents 口径）
     let mut list = div()
         .id("subagent-panel-list")
         .flex_1()
@@ -276,7 +276,13 @@ pub(crate) fn subagent_panel_element(
                 .child(tr("subagent.empty")),
         );
     } else {
-        for row in &panel.rows {
+        let mut rows: Vec<&CatalogRow> = panel.rows.iter().collect();
+        rows.sort_by(|a, b| {
+            b.in_flight()
+                .cmp(&a.in_flight())
+                .then_with(|| b.started_at.cmp(&a.started_at))
+        });
+        for row in rows {
             list = list.child(panel_row(weak, row));
         }
     }
@@ -285,26 +291,68 @@ pub(crate) fn subagent_panel_element(
     Some(card.into_any_element())
 }
 
-/// 头部行：标题 + ✕ 关闭。
-fn panel_header(weak: &gpui::WeakEntity<Chat>) -> gpui::AnyElement {
+/// 头部行：标题 + N 个子代理 | 合计 ⏱时长 · tokens · N 个运行中 | ✕ 关闭
+/// （pi-web Agents 头部口径）。
+fn panel_header(weak: &gpui::WeakEntity<Chat>, panel: &SubagentPanel) -> gpui::AnyElement {
     let t = T();
     let weak_close = weak.clone();
+    let running = panel.rows.iter().filter(|r| r.in_flight()).count();
+    let total_secs: i64 = panel.rows.iter().filter_map(row_duration_secs).sum();
+    let total_tokens: u64 = panel.rows.iter().filter_map(|r| r.usage_total).sum();
+
+    let mut stats = format!("{} ⏱{}", tr("subagent.total"), duration_text(total_secs));
+    if total_tokens > 0 {
+        stats.push_str(&format!(" · {} tokens", tokens_text(total_tokens)));
+    }
+
     div()
         .id("subagent-panel-head")
         .flex()
         .items_center()
+        .gap(px(6.))
         .px(px(12.))
         .py(px(8.))
         .border_b_1()
         .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x66)))
+        // 左：标题 + N 个子代理
         .child(
             div()
-                .flex_1()
-                .min_w_0()
+                .flex_shrink_0()
                 .text_size(crate::appearance::ui_size(12.))
                 .font_weight(gpui::FontWeight::SEMIBOLD)
                 .text_color(rgb(t.text))
                 .child(tr("subagent.panel")),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .text_size(crate::appearance::ui_size(11.))
+                .text_color(rgb(t.text_dim))
+                .child(SharedString::from(format!(
+                    "{} {}",
+                    panel.rows.len(),
+                    tr("subagent.n_agents")
+                ))),
+        )
+        // 右：合计 stats + 运行中计数（accent 强调）+ ✕
+        .child(
+            div()
+                .flex_shrink_0()
+                .text_size(crate::appearance::ui_size(11.))
+                .text_color(rgb(t.text_dim))
+                .child(SharedString::from(stats)),
+        )
+        .child(
+            div()
+                .flex_shrink_0()
+                .text_size(crate::appearance::ui_size(11.))
+                .text_color(rgb(if running > 0 { t.accent } else { t.text_dim }))
+                .child(SharedString::from(format!(
+                    "{} {}",
+                    running,
+                    tr("subagent.n_running")
+                ))),
         )
         .child(
             div()
@@ -332,28 +380,35 @@ fn panel_header(weak: &gpui::WeakEntity<Chat>) -> gpui::AnyElement {
         .into_any_element()
 }
 
-/// 一行子代理：状态点 + label（退 childId）+ `provider·d{depth}` + 耗时，
+/// 一行子代理（pi-web Agents 行口径，两行版式）：
+/// 第一行 = 标题 + 状态图标文案；第二行 = `profile · 多久前` + `⏱时长 · tokens`。
 /// 整行点击 = 打开子会话。
 fn panel_row(weak: &gpui::WeakEntity<Chat>, row: &CatalogRow) -> gpui::AnyElement {
     let t = T();
+    let kind = row.status_kind();
     let (kind_c, kind_text) = status_of(row);
-    let meta = format!("{}·d{}", row.provider, row.depth);
-    let time = row_duration_secs(row)
-        .map(|s| format!("{s}s"))
-        .unwrap_or_else(|| "—".to_string());
+    let label = row.display_label().to_string();
+    let profile = row.profile.clone().unwrap_or_else(|| row.provider.clone());
+    let line2_left = format!("{} · {}", profile, ago_text(&row.started_at));
+    let mut line2_right = row_duration_secs(row)
+        .map(duration_text)
+        .unwrap_or_else(|| "—".into());
+    if let Some(n) = row.usage_total {
+        line2_right.push_str(&format!(" · {} tokens", tokens_text(n)));
+    }
     let open = row.session_file.clone().map(PathBuf::from);
 
     let mut el = div()
         .id(SharedString::from(format!("subagent-row-{}", row.child_id)))
-        .h(px(30.))
+        .w_full()
         .px(px(8.))
+        .py(px(6.))
         .mb(px(1.))
         .rounded(px(5.))
         .flex()
-        .items_center()
-        .gap(px(8.))
+        .flex_col()
+        .gap(px(2.))
         .text_size(crate::appearance::ui_size(12.))
-        .text_color(rgb(t.text_muted))
         .hover(|s| s.bg(rgb(t.bg_hover)));
     if open.is_some() {
         let weak_row = weak.clone();
@@ -367,39 +422,107 @@ fn panel_row(weak: &gpui::WeakEntity<Chat>, row: &CatalogRow) -> gpui::AnyElemen
                 });
             });
     }
-    el.child(crate::settings::widgets::status_dot(kind_c))
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .overflow_hidden()
-                .whitespace_nowrap()
-                .text_ellipsis()
-                .child(SharedString::from(row.display_label().to_string())),
-        )
-        .child(
-            div()
-                .flex_shrink_0()
-                .font_family(crate::editor::markdown::MONO_FAMILY)
-                .text_size(crate::appearance::ui_size(11.))
-                .text_color(rgb(t.text_dim))
-                .child(SharedString::from(meta)),
-        )
-        .child(
-            div()
-                .flex_shrink_0()
-                .text_size(crate::appearance::ui_size(11.))
-                .text_color(rgb(t.text_dim))
-                .child(SharedString::from(time)),
-        )
-        .child(
-            div()
-                .flex_shrink_0()
-                .text_size(crate::appearance::ui_size(11.))
-                .text_color(rgb(kind_c))
-                .child(SharedString::from(kind_text)),
-        )
-        .into_any_element()
+    el.child(
+        // 第一行：标题 + 状态
+        div()
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .text_ellipsis()
+                    .text_color(rgb(t.text))
+                    .child(SharedString::from(label)),
+            )
+            .child(
+                div()
+                    .flex_shrink_0()
+                    .text_size(crate::appearance::ui_size(11.))
+                    .text_color(rgb(kind_c))
+                    .child(SharedString::from(format!(
+                        "{} {}",
+                        status_icon(kind),
+                        kind_text
+                    ))),
+            ),
+    )
+    .child(
+        // 第二行：profile · 多久前 | ⏱时长 · tokens
+        div()
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .text_size(crate::appearance::ui_size(11.))
+            .text_color(rgb(t.text_dim))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .text_ellipsis()
+                    .child(SharedString::from(line2_left)),
+            )
+            .child(div().flex_shrink_0().child(SharedString::from(line2_right))),
+    )
+    .into_any_element()
+}
+
+/// 状态图标（044-1 §1.3 徽标字符，与 messages/cards.rs 同源口径）。
+fn status_icon(kind: StatusKind) -> &'static str {
+    match kind {
+        StatusKind::Running => "⟳",
+        StatusKind::Done => "✓",
+        StatusKind::Aborted => "⊘",
+        StatusKind::MaxTurns => "⌛",
+        StatusKind::Error => "✕",
+    }
+}
+
+/// 秒 → 紧凑时长（pi-web 口径）：22s / 1m42s。
+fn duration_text(secs: i64) -> String {
+    if secs < 0 {
+        return "—".into();
+    }
+    if secs < 60 {
+        format!("{secs}s")
+    } else {
+        format!("{}m{}s", secs / 60, secs % 60)
+    }
+}
+
+/// tokens 紧凑格式（pi-web 口径）：870 / 23k / 100k。
+fn tokens_text(n: u64) -> String {
+    if n < 1000 {
+        n.to_string()
+    } else {
+        format!("{}k", (n + 500) / 1000)
+    }
+}
+
+/// descriptor 的 startedAt → “多久前”：刚刚 / N秒前 / N分钟前 / N小时前。
+fn ago_text(started_at: &str) -> String {
+    let Some(t) = pi_link::subagent_catalog::parse_iso_secs(started_at) else {
+        return String::new();
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(t);
+    let s = (now - t).max(0);
+    if s < 10 {
+        tr("subagent.just_now").to_string()
+    } else if s < 60 {
+        format!("{s}{}", tr("subagent.ago_secs"))
+    } else if s < 3600 {
+        format!("{}{}", s / 60, tr("subagent.ago_mins"))
+    } else {
+        format!("{}{}", s / 3600, tr("subagent.ago_hours"))
+    }
 }
 
 /// 行状态（色 + 文案）：终态优先分码，缺 stop_reason 时按 phase 兜底。

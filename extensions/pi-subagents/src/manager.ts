@@ -286,6 +286,8 @@ export class SubagentManager {
 				// A blown turn budget is a distinct terminal state, not a generic
 				// failure: the card shows "轮次用尽" rather than a bare error code.
 				errorCode: result.stopReason === "max_turns" ? "MAX_TURNS" : result.errorCode,
+				// 子代理 token 用量落盘（面板行的 tokens 列，pi-web Agents 对齐）
+				...(result.usage ? { usage: result.usage } : {}),
 				updatedAt: this.#now().toISOString(),
 			};
 			this.#emit(record);

@@ -721,3 +721,28 @@ it yourself）。
 派出两条 agent 调用**，均点名 explorer（"pi-flash subagent 调研" /
 "pi-web subagent 调研"），prompt 为结构化调研提纲——即 ZCode 行为。
 已过：扩展 91 测试（新增政策回归断言）。
+
+## 本轮追加（2026-10-19 第六批）——面板行 pi-web Agents 化 + tokens 落盘
+
+用户给 pi-web Agents 面板截图定稿：面板只画子代理状态。行从单行 30px 改
+两行版式：第一行 = 标题 + 状态图标文案（⟳ 运行中 / ✓ 完成 / ⊘ 已中止 /
+⌛ 轮次用尽 / ✕ 失败）；第二行 = `profile · 多久前`（刚刚/N秒前/N分钟前/
+N小时前）+ `⏱时长 · Nk tokens`。头部加聚合：`N 个子代理 | 合计 ⏱总时长 ·
+总tokens · N 个运行中`（运行中 >0 显 accent）。行排序 = 运行中在前、其余
+按开始时间新→旧。整行点击开子会话保留，不画 pi-web 的「主 Agent」行。
+
+### 数据链路（tokens 列是新数据）
+
+- descriptor.ts：加可选 `usage`（不动版本号，老 descriptor 缺字段 → 面板
+  显示 "—"）
+- manager.ts `#settle`：终态把 `result.usage` 折进 descriptor 落盘
+- subagent_catalog.rs：CatalogRow 加 `usage_total`（优先 `total`，缺了
+  input+output+cacheRead+cacheWrite 求和，全零/缺失 → None）
+- i18n：subagent.n_agents / total / n_running / just_now / ago_secs /
+  ago_mins / ago_hours 七键
+
+### 验证项
+
+- 委派后开面板：两行版式、运行中排前、头部合计随运行跳动；完成后 tokens
+  列出现（新委派的才有，重启前的老子代理 tokens 为 "—"）
+- 行点击开子会话；ESC 外点不关（浮层无拦截，✕/按钮关）

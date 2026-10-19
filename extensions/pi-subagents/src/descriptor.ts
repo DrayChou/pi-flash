@@ -36,6 +36,9 @@ export interface SubagentDescriptor {
 	/** Set once the activation settled. `max_turns` = the soft limit was blown past. */
 	stopReason?: "completed" | "aborted" | "error" | "max_turns";
 	errorCode?: string;
+	/** Child token usage, folded in at settle. Optional: v1 descriptors written
+	 * before the field existed simply lack it (panel shows "—"). */
+	usage?: { input: number; output: number; cacheRead?: number; cacheWrite?: number; total?: number };
 	startedAt: string;
 	updatedAt: string;
 }

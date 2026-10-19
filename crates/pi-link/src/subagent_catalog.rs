@@ -40,6 +40,8 @@ pub struct CatalogRow {
     pub error_code: Option<String>,
     /// 子会话文件（整行点击 = 以正式 tab 打开）
     pub session_file: Option<String>,
+    /// 子代理 token 合计（descriptor.usage，终态才落盘；老 descriptor 无此字段）
+    pub usage_total: Option<u64>,
     pub started_at: String,
     pub updated_at: String,
 }
@@ -52,7 +54,10 @@ impl CatalogRow {
 
     /// 面板行的展示名：label 优先，退回 child_id。
     pub fn display_label(&self) -> &str {
-        self.label.as_deref().filter(|s| !s.is_empty()).unwrap_or(&self.child_id)
+        self.label
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(&self.child_id)
     }
 
     /// 运行中徽标色（⟳ 黄）/ 终态按 stopReason 分色。返回主题语义色名。
@@ -125,7 +130,10 @@ pub fn read_catalog(file: &Path, from_offset: u64) -> CatalogScan {
         return read_catalog(file, 0);
     }
     if len == from_offset {
-        return CatalogScan { rows: Vec::new(), next_offset: from_offset };
+        return CatalogScan {
+            rows: Vec::new(),
+            next_offset: from_offset,
+        };
     }
     if f.seek(SeekFrom::Start(from_offset)).is_err() {
         return CatalogScan::default();
@@ -133,7 +141,10 @@ pub fn read_catalog(file: &Path, from_offset: u64) -> CatalogScan {
     let mut buf = String::new();
     if f.read_to_string(&mut buf).is_err() {
         // 尾部有非法 UTF-8（正在写）：本轮跳过，下一轮重试同一 offset
-        return CatalogScan { rows: Vec::new(), next_offset: from_offset };
+        return CatalogScan {
+            rows: Vec::new(),
+            next_offset: from_offset,
+        };
     }
 
     let mut by_id: HashMap<String, CatalogRow> = HashMap::new();
@@ -160,7 +171,10 @@ pub fn read_catalog(file: &Path, from_offset: u64) -> CatalogScan {
             rows.push(by_id.remove(&row.child_id).unwrap_or(row));
         }
     }
-    CatalogScan { rows, next_offset: from_offset + consumed }
+    CatalogScan {
+        rows,
+        next_offset: from_offset + consumed,
+    }
 }
 
 /// 解析一行 JSONL；只认 `type=custom` + `customType=subagent/descriptor`。
@@ -191,16 +205,42 @@ fn parse_line(line: &str) -> Option<CatalogRow> {
     Some(CatalogRow {
         child_id: child_id.to_string(),
         provider,
-        label: d["label"].as_str().map(str::to_string).filter(|s| !s.is_empty()),
-        profile: d["profile"].as_str().map(str::to_string).filter(|s| !s.is_empty()),
+        label: d["label"]
+            .as_str()
+            .map(str::to_string)
+            .filter(|s| !s.is_empty()),
+        profile: d["profile"]
+            .as_str()
+            .map(str::to_string)
+            .filter(|s| !s.is_empty()),
         depth,
         phase,
         stop_reason: d["stopReason"].as_str().map(str::to_string),
         error_code: d["errorCode"].as_str().map(str::to_string),
-        session_file: d["sessionFile"].as_str().map(str::to_string).filter(|s| !s.is_empty()),
+        session_file: d["sessionFile"]
+            .as_str()
+            .map(str::to_string)
+            .filter(|s| !s.is_empty()),
+        usage_total: usage_total_of(&d["usage"]),
         started_at: d["startedAt"].as_str().unwrap_or("").to_string(),
         updated_at: d["updatedAt"].as_str().unwrap_or("").to_string(),
     })
+}
+
+/// descriptor.usage 的合计 tokens：优先 `total`，缺了把可加字段求和。
+/// 无 usage 字段 / 全零 → None（面板显示 "—"，老 descriptor 兼容）。
+fn usage_total_of(u: &Value) -> Option<u64> {
+    if !u.is_object() {
+        return None;
+    }
+    if let Some(t) = u["total"].as_u64() {
+        return Some(t);
+    }
+    let sum: u64 = ["input", "output", "cacheRead", "cacheWrite"]
+        .iter()
+        .filter_map(|k| u[*k].as_u64())
+        .sum();
+    (sum > 0).then_some(sum)
 }
 
 /// ISO-8601（`2026-10-19T12:34:56.789Z`）→ Unix 秒。解析不出返回 None。
@@ -309,7 +349,11 @@ mod tests {
         assert_eq!(first.rows.len(), 1);
         // 追加一条更新 + 一条新的
         let mut more = desc("sub-1", "completed", ",\"stopReason\":\"completed\"");
-        more.push_str(&desc("sub-2", "failed", ",\"stopReason\":\"error\",\"errorCode\":\"CAPACITY_REACHED\""));
+        more.push_str(&desc(
+            "sub-2",
+            "failed",
+            ",\"stopReason\":\"error\",\"errorCode\":\"CAPACITY_REACHED\"",
+        ));
         let mut fh = std::fs::OpenOptions::new().append(true).open(&f).unwrap();
         use std::io::Write;
         fh.write_all(more.as_bytes()).unwrap();
@@ -371,6 +415,27 @@ mod tests {
         let second = read_catalog(&f, first.next_offset + 1000);
         assert_eq!(second.rows.len(), 1, "截断后必须归零重扫");
         assert_eq!(second.rows[0].child_id, "sub-9");
+        let _ = std::fs::remove_file(&f);
+    }
+
+    #[test]
+    fn usage_total_prefers_total_then_sums_parts() {
+        let f = tmp("usage");
+        // 带 total：直接用
+        let with_total = "{\"type\":\"custom\",\"customType\":\"subagent/descriptor\",\"data\":{\"childId\":\"a\",\"provider\":\"spawn\",\"phase\":\"completed\",\"usage\":{\"input\":100,\"output\":50,\"total\":23700}}}
+";
+        // 无 total：字段求和；空对象 / 缺字段：None（老 descriptor）
+        let no_total = "{\"type\":\"custom\",\"customType\":\"subagent/descriptor\",\"data\":{\"childId\":\"b\",\"provider\":\"spawn\",\"phase\":\"completed\",\"usage\":{\"input\":100,\"output\":50,\"cacheRead\":3}}}
+";
+        let plain = desc("c", "completed", "");
+        std::fs::write(&f, format!("{with_total}{no_total}{plain}")).unwrap();
+        let scan = read_catalog(&f, 0);
+        assert_eq!(scan.rows[0].usage_total, Some(23700));
+        assert_eq!(scan.rows[1].usage_total, Some(153));
+        assert_eq!(
+            scan.rows[2].usage_total, None,
+            "老 descriptor 无 usage → None"
+        );
         let _ = std::fs::remove_file(&f);
     }
 

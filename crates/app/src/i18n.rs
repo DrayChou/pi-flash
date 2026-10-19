@@ -699,6 +699,13 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("subagent.aborted", "已中止", "已中止", "Aborted"),
     ("subagent.max_turns", "轮次用尽", "輪次用盡", "Out of turns"),
     ("subagent.failed", "失败", "失敗", "Failed"),
+    ("subagent.n_agents", "个子代理", "個子代理", "sub-agents"),
+    ("subagent.total", "合计", "合計", "Total"),
+    ("subagent.n_running", "个运行中", "個執行中", "running"),
+    ("subagent.just_now", "刚刚", "剛剛", "just now"),
+    ("subagent.ago_secs", "秒前", "秒前", "s ago"),
+    ("subagent.ago_mins", "分钟前", "分鐘前", "m ago"),
+    ("subagent.ago_hours", "小时前", "小時前", "h ago"),
 ];
 
 /// Translate a **semantic key** for the active language.
