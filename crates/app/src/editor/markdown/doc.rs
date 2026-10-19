@@ -3,7 +3,7 @@
 
 use super::*;
 use crate::appearance::theme::Theme;
-use gpui::{AnyElement, div, prelude::*, px, rgb};
+use gpui::{AnyElement, div, px, rgb};
 use std::path::PathBuf;
 
 static DOC_MODE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);

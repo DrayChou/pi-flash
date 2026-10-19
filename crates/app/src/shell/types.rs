@@ -3,7 +3,6 @@
 //! 内容区 tab（PanelTab/FileTab）。全量 pub(crate)：crate 内自由可达。
 
 use crate::*;
-use gpui::*;
 
 /// 一个项目的文件树内存态（对齐 Zed `expanded_dir_ids` 的 per-worktree
 /// 结构）：展开集合 + Pin 视图开关。切项目不丢、可落盘恢复（010/021）。
