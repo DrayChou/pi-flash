@@ -135,6 +135,13 @@
   .g-btn.primary { background: var(--accent); color: var(--accent-contrast); font-weight: 600; }
   .g-btn.primary:hover { background: var(--accent-hover); }
   .g-btn:disabled { opacity: .45; cursor: default; }
+  .sw { flex: none; width: 34px; height: 19px; border-radius: 10px; background: var(--border);
+    position: relative; cursor: default; transition: background .15s; display: inline-block; }
+  .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 15px; height: 15px;
+    border-radius: 50%; background: #fff; transition: transform .15s; }
+  .sw.on { background: var(--accent); }
+  .sw.on::after { transform: translateX(15px); }
+  .scope { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--text-dim); font-weight: 400; }
   .ed-dirty { display: flex; align-items: center; gap: 6px; color: var(--warn); font-size: 11px; }
   .ed-dirty i { width: 7px; height: 7px; border-radius: 50%; background: var(--warn); display: inline-block; }
   .ed-hint { font-size: 11px; color: var(--text-faint); }
@@ -208,15 +215,16 @@
               <!-- 态1：自定义（表单编辑，含未保存标记） -->
               <div class="pane on" id="d-reviewer">
                 <h3>code-reviewer
-                  <span class="badge">自定义</span><span class="badge over">覆盖内置</span>
+                  <span class="badge over">覆盖内置</span>
                   <span style="flex:1"></span>
+                  <span class="scope">作用域<span class="badge">自定义</span></span>
                   <button class="ghost-btn danger">删除</button>
                 </h3>
 
                 <div class="frm">
                   <div class="frm-row">
                     <label>描述<small>列表与委派时展示</small></label>
-                    <div class="frm-ctl"><input type="text" value="代码评审 · 正确性与边界"></div>
+                    <div class="frm-ctl"><input type="text" value="代码评审 · 正确性与边界" placeholder="展示给模型的简短说明"></div>
                   </div>
                   <div class="frm-row">
                     <label>模型<small>留空跟随会话</small></label>
@@ -244,10 +252,20 @@
 输出格式：按严重度分级的问题清单 + 每条附修复建议。</textarea></div>
                   </div>
                   <div class="frm-row">
+                    <label>项目指令<small>AGENTS.md 是否进上下文</small></label>
+                    <div class="frm-ctl" style="display:flex;align-items:center;padding-top:5px">
+                      <i class="sw on"></i>
+                      <span class="hint" style="margin:0 0 0 10px">注入项目 AGENTS.md</span>
+                    </div>
+                  </div>
+                  <div class="frm-row">
                     <label>工具档位<small>复用会话档位配方</small></label>
                     <div class="frm-ctl">
-                      <button class="sel-btn" style="width:100%">inherit · 继承委派者<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button>
-                      <div class="hint">下拉项：继承委派者 · read-only（只读内置）· default（内置工具）· full（全部内置，无扩展）。full+ 仅委派者可用，子代理经「继承」获得。</div>
+                      <div style="display:flex;align-items:center;gap:10px">
+                        <button class="sel-btn" style="width:250px">inherit · 继承委派者<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button>
+                        <span class="hint" style="margin:0">控制该子代理可调用的工具范围</span>
+                      </div>
+                      <div class="hint">read-only 只读内置 · default 内置工具 · full 全部内置无扩展；full+ 仅委派者可用，经「继承」获得</div>
                     </div>
                   </div>
                 </div>
@@ -265,8 +283,9 @@
               <!-- 态2：内置（表单只读 + 复制为自定义） -->
               <div class="pane" id="d-explorer">
                 <h3>explorer
-                  <span class="badge lock">内置</span><span class="badge ro">只读</span>
+                  <span class="badge ro">只读</span>
                   <span style="flex:1"></span>
+                  <span class="scope">作用域<span class="badge lock">内置</span></span>
                   <button class="ghost-btn accent">复制为自定义</button>
                 </h3>
 
@@ -291,6 +310,13 @@
                     <label>系统提示词</label>
                     <div class="frm-ctl"><textarea readonly>你是只读探索员：调研代码、定位实现、回答问题。
 不执行任何写操作。</textarea></div>
+                  </div>
+                  <div class="frm-row">
+                    <label>项目指令</label>
+                    <div class="frm-ctl" style="display:flex;align-items:center;padding-top:5px">
+                      <i class="sw on"></i>
+                      <span class="hint" style="margin:0 0 0 10px">注入项目 AGENTS.md</span>
+                    </div>
                   </div>
                   <div class="frm-row">
                     <label>工具档位</label>

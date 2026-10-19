@@ -145,6 +145,8 @@ maxTurns: 15                  # 🆕 轮次预算:软限(到限 steer 收尾,超
 systemPrompt: |               # 🆕 替换式人格(before_agent_start
   你是代码评审员…               #    systemPrompt override;优先于追加)
 appendSystemPrompt: …         # 追加式(与替换并存;替换优先)
+injectAgentsMd: true          # 项目 AGENTS.md 是否注入子代理上下文
+                              # (默认 true;ZCode 同款开关)
 ```
 
 (追加的语义对齐 pi 官方 SYSTEM.md/APPEND_SYSTEM.md 两档。)
