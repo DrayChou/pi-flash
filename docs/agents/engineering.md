@@ -86,7 +86,10 @@
    **测试代码也不例外**：updater.rs 测试里的 powershell（Compress-Archive 造
    zip 夹具）漏 flag，每跑一轮 `cargo test -p app updater::` 就弹一个带进度条
    的 PS 窗抢屏幕（2026-10-18 实锤，agent 代跑测试时尤甚）——已加
-   `hidden_powershell()` 帮手统一口径。
+   `hidden_powershell()` 帮手统一口径。**并发 spawn 也不例外**：测试里裸
+   `Command::new("git")` 多线程同时 spawn 会撞 conhost 分配竞态——code=-1073741502
+   （0xC0000142 STATUS_DLL_INIT_FAILED）、stderr 为空、单跑又必过（2026-10-19
+   status_tests 实锤）——测试也要走 `git_cmd()`，别自建 Command。
 3. 读 PE Subsystem 别手撸偏移——本地 python 按 `pe+24+68` 读 debug exe 得出 2、
    release 得出 3，与实测行为矛盾；**以「进程树里有没有 conhost / 探针
    attached」为准**，别信自己算的字段。
@@ -95,6 +98,24 @@
 `conhost.exe 0x4` + `GetConsoleProcessList` 在 `main` 第一行就 `attached=true`；
 修复后同一探针 `attached=false`、进程树只剩 `node.exe`（pi 侧车）与 `git.exe`
 （都 CREATE_NO_WINDOW），无 conhost、无 WT 新进程。
+
+## git 子进程语义三坑：pathspec / porcelain 路径基准 / -z rename（2026-10-19 实锤）
+
+外部用户实测报告（`docs/pi-flash-file-tree-freeze-20261019/`，含复现脚本与
+微基准）钉死，`services/git.rs` 的坑，全是「cwd==repo_root 时看不出问题」型：
+
+1. **`git status` 无 pathspec = 扫整仓**：cwd 是仓库子目录时照扫仓库根，
+   `-uall` 还递归展开全部未跟踪目录——家目录遗留仓库 + Windows junction
+   实测 270 万条 / 414MB / 99.9s。PF 把结果全存 `ws.git_files`，点文件夹时
+   UI 线程 `flatten()` 全量重建 HashMap → 冻死数秒。status/numstat 一律带
+   `-- .` 钉在项目内（同环境 0.095s / 3289 条）。
+2. **porcelain 输出是仓库根相对路径，不是 cwd 相对路径**：`cwd.join()` 在
+   cwd==repo_root 时碰巧对，子目录项目全拼成假路径——徽标永远不亮、
+   `changed_ancestor_dirs` 造出几十万个假祖先目录。修法：`git rev-parse
+   --show-toplevel` 定根，重定基到 cwd（与 read_dir 同形态，git_map 才命中）。
+3. **`-z` 下 rename/copy 是两条 NUL 记录**（`R  new\0old\0`），没有 TAB 可切；
+   按 TAB 解析永远不命中，old path 还会被当成独立条目。修法：X/Y 为 R/C 时
+   消费紧跟的下一条记录。
 
 ## 格式化：只走 `scripts/fmt.sh`（2026-10-18 三次踩踏后立的规矩）
 

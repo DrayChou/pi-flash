@@ -73,30 +73,52 @@ fn git_cmd(cwd: &Path, args: &[&str]) -> std::process::Command {
 
 fn run_git(cwd: &Path, args: &[&str]) -> Option<String> {
     let out = git_cmd(cwd, args).output().ok()?;
-    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).to_string())
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).to_string())
 }
 
-/// `git status --porcelain=v1 -z --untracked-files=all` parsed to files.
+/// `git status --porcelain=v1 -z --untracked-files=all -- .` parsed to files.
+///
+/// cwd 可能是仓库的子目录：无 pathspec 时 git 扫整个仓库，`-uall` 还会
+/// 递归展开全部未跟踪目录（家目录遗留仓库 + Windows junction 实测
+/// 270 万条 / 414MB / 99.9s）；`-- .` 把扫描钉在 cwd 内。
 pub fn git_status_files(cwd: &Path) -> Vec<GitFile> {
-    let Some(out) = run_git(cwd, &["status", "--porcelain=v1", "-z", "--untracked-files=all"])
-    else {
+    let Some(out) = run_git(
+        cwd,
+        &[
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=all",
+            "--",
+            ".",
+        ],
+    ) else {
         return Vec::new();
     };
+    // porcelain 输出仓库根相对路径；重定基到 cwd，与文件树 read_dir 生成
+    // 的路径同形态，flatten 的 git_map 才能命中。
+    let repo_root = run_git(cwd, &["rev-parse", "--show-toplevel"])
+        .map(|s| PathBuf::from(s.trim()))
+        .unwrap_or_else(|| cwd.to_path_buf());
+    let rel_cwd = cwd.strip_prefix(&repo_root).ok();
     let mut files = Vec::new();
-    // -z: NUL-separated records; rename records embed a TAB then the new name
-    for rec in out.split('\0') {
+    // -z: 记录 NUL 分隔；rename/copy 是两条记录——新路径带 "XY " 前缀，
+    // 旧路径是紧跟的无前缀记录（没有 TAB 可切）。
+    let mut records = out.split('\0');
+    while let Some(rec) = records.next() {
         if rec.len() < 4 {
             continue;
         }
         let xy = &rec[..2];
         let rest = &rec[3..];
-        let x_byte = xy.as_bytes()[0];
-        let staged = !matches!(x_byte, b' ' | b'?');
+        let x = xy.as_bytes()[0];
+        let y = xy.as_bytes()[1];
+        let staged = !matches!(x, b' ' | b'?');
         let (status, file_path) = match xy {
             "??" => (GitStatus::Untracked, rest),
             _ => {
-                let x = xy.as_bytes()[0];
-                let y = xy.as_bytes()[1];
                 let st = if x == b'D' || y == b'D' {
                     GitStatus::Deleted
                 } else if x == b'A' {
@@ -108,34 +130,54 @@ pub fn git_status_files(cwd: &Path) -> Vec<GitFile> {
                 } else {
                     GitStatus::Modified
                 };
-                // renames: "orig	new" — track the new name
-                let p = match rest.split_once('\t') {
-                    Some((_, new)) => new,
-                    None => rest,
-                };
-                (st, p)
+                (st, rest)
             }
         };
-        let full = cwd.join(file_path);
-        files.push(GitFile { path: full, status, staged });
+        let full = match rel_cwd.and_then(|prefix| Path::new(file_path).strip_prefix(prefix).ok()) {
+            Some(sub) => cwd.join(sub),
+            None => repo_root.join(file_path),
+        };
+        files.push(GitFile {
+            path: full,
+            status,
+            staged,
+        });
+        if matches!(x, b'R' | b'C') || matches!(y, b'R' | b'C') {
+            records.next(); // 旧路径记录不是独立条目
+        }
     }
     files
 }
 
-/// Total (+, -) line counts of tracked changes (numstat HEAD summary).
+/// Total (+, -) line counts of tracked changes (numstat HEAD summary,
+/// scoped to cwd — 子目录项目不计项目外的改动).
 pub fn git_numstat(cwd: &Path) -> (u64, u64) {
     let Some(out) = run_git(
         cwd,
-        &["diff", "--no-color", "--no-ext-diff", "--numstat", "HEAD"],
+        &[
+            "diff",
+            "--no-color",
+            "--no-ext-diff",
+            "--numstat",
+            "HEAD",
+            "--",
+            ".",
+        ],
     ) else {
         return (0, 0);
     };
     let (mut add, mut del) = (0u64, 0u64);
     for line in out.lines() {
         let mut it = line.split('\t');
-        let (Some(a), Some(d)) = (it.next(), it.next()) else { continue };
-        if let Ok(n) = a.parse::<u64>() { add += n; }
-        if let Ok(n) = d.parse::<u64>() { del += n; }
+        let (Some(a), Some(d)) = (it.next(), it.next()) else {
+            continue;
+        };
+        if let Ok(n) = a.parse::<u64>() {
+            add += n;
+        }
+        if let Ok(n) = d.parse::<u64>() {
+            del += n;
+        }
     }
     (add, del)
 }
@@ -162,11 +204,16 @@ pub fn git_file_diff(cwd: &Path, path: &Path, untracked: bool) -> String {
     }
     run_git(
         cwd,
-        &["diff", "--no-color", "--no-ext-diff", "--", &path.to_string_lossy()],
+        &[
+            "diff",
+            "--no-color",
+            "--no-ext-diff",
+            "--",
+            &path.to_string_lossy(),
+        ],
     )
     .unwrap_or_default()
 }
-
 
 /// run_git with error surface (commit/push report failure text).
 fn run_git_checked(cwd: &Path, args: &[&str]) -> Result<String, String> {
@@ -275,5 +322,169 @@ beef00Bob2026-09-25 09:00fix";
         assert_eq!(log[0].author, "Alice");
         assert_eq!(log[0].subject, "feat: add | pipe");
         assert_eq!(log[1].subject, "fix");
+    }
+}
+
+#[cfg(test)]
+mod status_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    /// temp git 仓库，Drop 清理；tag+pid 后缀防测试间碰撞。
+    struct TempRepo {
+        root: PathBuf,
+    }
+
+    impl TempRepo {
+        fn new(tag: &str) -> Self {
+            let root = std::env::temp_dir().join(format!("pif-git-{tag}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&root);
+            std::fs::create_dir_all(&root).unwrap();
+            Self::git(&root, &["init"]);
+            Self { root }
+        }
+
+        fn git(repo: &Path, args: &[&str]) {
+            // 复用 git_cmd（CREATE_NO_WINDOW）：裸 spawn 控制台程序在并发
+            // 测试下会撞 conhost 分配竞态（0xC0000142 STATUS_DLL_INIT_FAILED）
+            let out = super::git_cmd(repo, args)
+                .output()
+                .expect("git 必须在 PATH 里");
+            assert!(
+                out.status.success(),
+                "git {args:?} in {repo:?}: code={:?}, stdout={:?}, stderr={:?}",
+                out.status.code(),
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr)
+            );
+        }
+
+        fn commit_all(&self, msg: &str) {
+            Self::git(&self.root, &["add", "-A"]);
+            Self::git(
+                &self.root,
+                &[
+                    "-c",
+                    "user.name=t",
+                    "-c",
+                    "user.email=t@t",
+                    "commit",
+                    "-m",
+                    msg,
+                ],
+            );
+        }
+    }
+
+    impl Drop for TempRepo {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.root);
+        }
+    }
+
+    #[test]
+    fn non_git_dir_returns_empty() {
+        let dir = std::env::temp_dir().join(format!("pif-git-nogit-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(git_status_files(&dir).is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 项目是大仓库子目录时：不扫 sibling，路径重定基成 cwd 形态。
+    #[test]
+    fn status_scopes_to_subdir_and_rebases_paths_onto_cwd() {
+        let t = TempRepo::new("scope");
+        let sub = t.root.join("sub");
+        let sibling = t.root.join("sibling");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::create_dir_all(&sibling).unwrap();
+        std::fs::write(sub.join("tracked.txt"), "a\n").unwrap();
+        std::fs::write(sibling.join("noise.txt"), "n\n").unwrap();
+        t.commit_all("init");
+
+        // sub 内一改一增；sibling 塞 300 个未跟踪文件，混进结果即失败
+        std::fs::write(sub.join("tracked.txt"), "b\n").unwrap();
+        std::fs::write(sub.join("new.txt"), "x\n").unwrap();
+        for i in 0..300 {
+            std::fs::write(sibling.join(format!("n{i}.txt")), "y\n").unwrap();
+        }
+
+        let files = git_status_files(&sub);
+        assert!(!files.is_empty());
+        for f in &files {
+            assert!(
+                f.path.starts_with(&sub),
+                "path outside cwd: {}",
+                f.path.display()
+            );
+        }
+        // 与 read_dir 同形态（flatten 的 git_map 命中的前提）
+        let map: HashMap<PathBuf, GitStatus> =
+            files.iter().map(|f| (f.path.clone(), f.status)).collect();
+        assert_eq!(
+            map.get(&sub.join("tracked.txt")),
+            Some(&GitStatus::Modified)
+        );
+        assert_eq!(map.get(&sub.join("new.txt")), Some(&GitStatus::Untracked));
+    }
+
+    /// 真实消费方回归：子目录仓库里徽标要能落到树行上。
+    #[test]
+    fn flatten_badge_hits_real_tree_path_in_subdir_repo() {
+        let t = TempRepo::new("badge");
+        let sub = t.root.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(sub.join("mod.txt"), "a\n").unwrap();
+        t.commit_all("init");
+        std::fs::write(sub.join("mod.txt"), "b\n").unwrap();
+
+        let files = git_status_files(&sub);
+        let mut expanded = std::collections::HashSet::new();
+        expanded.insert(sub.clone());
+        let rows = crate::services::file_tree::flatten(&sub, &expanded, &files);
+        let row = rows
+            .iter()
+            .find(|r| r.path == sub.join("mod.txt"))
+            .expect("modified file row missing");
+        assert_eq!(row.git, Some(GitStatus::Modified));
+    }
+
+    /// -z 下 rename 是 `R  new\0old\0` 两条记录：只留新路径一条 Renamed。
+    #[test]
+    fn rename_in_z_mode_consumes_old_path_record() {
+        let t = TempRepo::new("rename");
+        let sub = t.root.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(sub.join("old.txt"), "r\n").unwrap();
+        t.commit_all("init");
+        TempRepo::git(&t.root, &["mv", "sub/old.txt", "sub/renamed.txt"]);
+
+        let files = git_status_files(&sub);
+        let renamed: Vec<&GitFile> = files
+            .iter()
+            .filter(|f| f.status == GitStatus::Renamed)
+            .collect();
+        assert_eq!(renamed.len(), 1, "all: {files:?}");
+        assert_eq!(renamed[0].path, sub.join("renamed.txt"));
+        assert!(
+            files.iter().all(|f| f.path != sub.join("old.txt")),
+            "old path leaked as separate entry: {files:?}"
+        );
+    }
+
+    #[test]
+    fn numstat_scopes_to_cwd() {
+        let t = TempRepo::new("numstat");
+        let sub = t.root.join("sub");
+        let sibling = t.root.join("sibling");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::create_dir_all(&sibling).unwrap();
+        std::fs::write(sub.join("a.txt"), "one\n").unwrap();
+        std::fs::write(sibling.join("b.txt"), "x\n").unwrap();
+        t.commit_all("init");
+        std::fs::write(sub.join("a.txt"), "one\ntwo\nthree\n").unwrap();
+        std::fs::write(sibling.join("b.txt"), "x\ny\nz\nw\n").unwrap();
+        assert_eq!(git_numstat(&sub), (2, 0));
     }
 }

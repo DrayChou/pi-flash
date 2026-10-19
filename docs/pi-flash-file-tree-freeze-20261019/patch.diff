@@ -1,0 +1,77 @@
+diff --git a/crates/app/src/services/git.rs b/crates/app/src/services/git.rs
+index ead9cc8..ea35ac3 100644
+--- a/crates/app/src/services/git.rs
++++ b/crates/app/src/services/git.rs
+@@ -78,13 +78,26 @@ fn run_git(cwd: &Path, args: &[&str]) -> Option<String> {
+ 
+ /// `git status --porcelain=v1 -z --untracked-files=all` parsed to files.
+ pub fn git_status_files(cwd: &Path) -> Vec<GitFile> {
+-    let Some(out) = run_git(cwd, &["status", "--porcelain=v1", "-z", "--untracked-files=all"])
+-    else {
++    // cwd may be a subdirectory of the repository. `git status` scans the
++    // whole repository by default, and `--untracked-files=all` recursively
++    // lists sibling directories too. `-- .` scopes the scan to cwd: on a
++    // large repository this is the difference between ~100 s and ~0.1 s.
++    let Some(out) = run_git(
++        cwd,
++        &["status", "--porcelain=v1", "-z", "--untracked-files=all", "--", "."],
++    ) else {
+         return Vec::new();
+     };
++    // Porcelain paths are relative to the repository root, not to cwd.
++    // Joining them onto cwd breaks every path when cwd is a subdirectory.
++    let repo_root = run_git(cwd, &["rev-parse", "--show-toplevel"])
++        .map(|s| PathBuf::from(s.trim()))
++        .unwrap_or_else(|| cwd.to_path_buf());
+     let mut files = Vec::new();
+-    // -z: NUL-separated records; rename records embed a TAB then the new name
+-    for rec in out.split('\0') {
++    // -z: records are NUL-separated. Rename/copy records have a second
++    // NUL-separated record (the old path) that has no "XY " prefix.
++    let mut records = out.split('\0');
++    while let Some(rec) = records.next() {
+         if rec.len() < 4 {
+             continue;
+         }
+@@ -92,6 +105,8 @@ pub fn git_status_files(cwd: &Path) -> Vec<GitFile> {
+         let rest = &rec[3..];
+         let x_byte = xy.as_bytes()[0];
+         let staged = !matches!(x_byte, b' ' | b'?');
++        let is_rename_or_copy = matches!(xy.as_bytes()[0], b'R' | b'C')
++            || matches!(xy.as_bytes()[1], b'R' | b'C');
+         let (status, file_path) = match xy {
+             "??" => (GitStatus::Untracked, rest),
+             _ => {
+@@ -108,16 +123,16 @@ pub fn git_status_files(cwd: &Path) -> Vec<GitFile> {
+                 } else {
+                     GitStatus::Modified
+                 };
+-                // renames: "orig	new" — track the new name
+-                let p = match rest.split_once('\t') {
+-                    Some((_, new)) => new,
+-                    None => rest,
+-                };
+-                (st, p)
++                // With -z the new path is already in `rest` (there is no TAB).
++                (st, rest)
+             }
+         };
+-        let full = cwd.join(file_path);
++        let full = repo_root.join(file_path);
+         files.push(GitFile { path: full, status, staged });
++        if is_rename_or_copy {
++            // Consume the old-path record; it is not a status entry.
++            let _ = records.next();
++        }
+     }
+     files
+ }
+@@ -126,7 +141,7 @@ pub fn git_status_files(cwd: &Path) -> Vec<GitFile> {
+ pub fn git_numstat(cwd: &Path) -> (u64, u64) {
+     let Some(out) = run_git(
+         cwd,
+-        &["diff", "--no-color", "--no-ext-diff", "--numstat", "HEAD"],
++        &["diff", "--no-color", "--no-ext-diff", "--numstat", "HEAD", "--", "."],
+     ) else {
+         return (0, 0);
+     };

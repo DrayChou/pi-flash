@@ -1,3 +1,27 @@
+## 待验证（本轮修复）——展开文件夹卡几秒（真凶：git status 无 pathspec 扫整仓 270 万条）
+
+外部用户实测报告：`docs/pi-flash-file-tree-freeze-20261019/`（含复现脚本与
+微基准）。他的项目是 HOME 遗留 git 仓库（2023 年、无 commit）的子目录，点
+文件夹 UI 冻结数秒、git 徽标全部不亮；作者机器（cwd==repo_root）从未复现。
+
+- ✅ 根因（三层叠加）：`git_status_files()` 的 `git status -uall` 无
+  pathspec → 子目录项目也扫整仓（junction 递归后 2,702,629 条 / 414MB /
+  99.9s）全存 `ws.git_files`；点击文件夹 UI 线程同步 `rebuild_tree()` →
+  `flatten()` 为 270 万条建 HashMap + 祖先遍历（C++ 微基准下限 7.554s）→
+  冻结，fs watcher 还会在每次写入后重跑整场扫描。附带两个正确性 bug：
+  porcelain 路径是仓库根相对、`cwd.join()` 全拼成假路径（徽标失效、34 万
+  假祖先目录）；`-z` rename 按 TAB 切永远不命中、old path 被当独立条目。
+- ✅ 修法（services/git.rs）：status/numstat 加 `-- .` 钉在 cwd（实测同环境
+  99.9s → 0.095s）；`rev-parse --show-toplevel` 定根后把路径重定基到 cwd
+  （与 read_dir 同形态，flatten 的 git_map 才命中）；rename/copy 消费第二条
+  NUL 记录。行为变化（有意）：文件树/git 面板只显示项目内变更。
+- ✅ 验证：新增 status_tests 5 例（临时真仓库：子目录 scoping、徽标命中
+  flatten 回归、-z rename、numstat scoping、非 git 空）；app 311+7 全绿、
+  pi-link 166 全绿。跟进项入 bd：在途 git 扫描无取消、flatten map 每击重建、
+  load_project_files 死代码、read_branch 子目录无分支。
+- 备注：测试并发裸 spawn git 撞 0xC0000142（conhost 竞态），复用 git_cmd
+  （CREATE_NO_WINDOW）解决，坑已记 engineering.md。
+
 ## 待验证（本轮修复）——树/标签切项目后发消息，会话落在旧项目、列表上「消失」
 
 用户口径：打开 PF 起会话查 pin 失忆问题，会话从 pi-flash 列表里消失；观宏知微
