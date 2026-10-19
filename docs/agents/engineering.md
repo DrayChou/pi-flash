@@ -124,6 +124,15 @@ TABLE（行 trim 后以 `(` 开头 + 拆出 4 列），表行**必须一行一�
 误伤恢复：`git checkout HEAD -- crates/app/src/i18n.rs` 再重插新增表行
 （表行统一 `, ` 分隔单行格式）。
 
+### 附带雷：点名 `mod.rs` = 洗整个模块树（2026-10-19 实测）
+
+rustfmt 递归解析 `mod` 声明：`rustfmt mod.rs` 会把**该目录全部子模块**
+一起格式化。点名 `markdown/mod.rs` + `services/mod.rs` 两个文件，实际
+脏了 12 → 33 个文件（markdown/\*、services/\* 全军覆没）。守则：改的是
+`mod.rs` 本身且想只洗它，要么接受树洗、要么先 `--check` 看波及面、
+要么事后 `git checkout HEAD -- <无辜文件>` 回滚。哨兵（涨 ≥20 报警）
+就是为这一刻准备的——报警即核对 `git status`，别直接提交。
+
 ### 三层防线
 
 | 层 | 位置 | 拦什么 |
