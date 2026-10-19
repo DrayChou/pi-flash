@@ -127,12 +127,6 @@
     color: var(--text); font-family: inherit; outline: 0; }
   .frm-ctl textarea:focus { border-color: var(--accent); }
 
-  .tool-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-  .tchip { font-size: 11.5px; padding: 3.5px 10px; border-radius: 6px; border: 1px solid var(--border);
-    background: var(--bg-panel); color: var(--text-dim); cursor: default; user-select: none; }
-  .tchip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); font-weight: 600; }
-  .tchip.lock { opacity: .45; cursor: default; }
-
   /* 底部动作条（吸底） */
   .ed-actions { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 0 2px;
     border-top: 1px solid rgba(175,196,186,.3); margin-top: 12px; }
@@ -250,19 +244,10 @@
 输出格式：按严重度分级的问题清单 + 每条附修复建议。</textarea></div>
                   </div>
                   <div class="frm-row">
-                    <label>工具<small>可用的工具面</small></label>
+                    <label>工具档位<small>复用会话档位配方</small></label>
                     <div class="frm-ctl">
-                      <div class="tool-chips">
-                        <span class="tchip on">read</span>
-                        <span class="tchip on">grep</span>
-                        <span class="tchip on">glob</span>
-                        <span class="tchip">bash</span>
-                        <span class="tchip">edit</span>
-                        <span class="tchip">write</span>
-                        <span class="tchip">find</span>
-                        <span class="tchip">ls</span>
-                        <span class="tchip">agent</span>
-                      </div>
+                      <button class="sel-btn" style="width:100%">inherit · 继承委派者<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button>
+                      <div class="hint">下拉项：继承委派者 · read-only（只读内置）· default（内置工具）· full（全部内置，无扩展）。full+ 仅委派者可用，子代理经「继承」获得。</div>
                     </div>
                   </div>
                 </div>
@@ -308,17 +293,9 @@
 不执行任何写操作。</textarea></div>
                   </div>
                   <div class="frm-row">
-                    <label>工具</label>
+                    <label>工具档位</label>
                     <div class="frm-ctl">
-                      <div class="tool-chips">
-                        <span class="tchip on lock">read</span>
-                        <span class="tchip on lock">grep</span>
-                        <span class="tchip on lock">glob</span>
-                        <span class="tchip on lock">ls</span>
-                        <span class="tchip lock">bash</span>
-                        <span class="tchip lock">edit</span>
-                        <span class="tchip lock">write</span>
-                      </div>
+                      <button class="sel-btn" style="width:100%">read-only · 4 个只读内置工具<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button>
                     </div>
                   </div>
                 </div>
@@ -368,10 +345,6 @@
       const d = document.getElementById(li.dataset.d);
       if (d) d.classList.add('on');
     });
-  });
-  // 工具 chips 可点选切换（演示）
-  document.querySelectorAll('.tchip:not(.lock)').forEach(c => {
-    c.addEventListener('click', () => c.classList.toggle('on'));
   });
 </script>
 </body>
