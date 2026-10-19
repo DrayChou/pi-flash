@@ -28,6 +28,8 @@ cargo run -p app
 - 最终回答含子代理返回的 `PF-SUBAGENT-OK`
 - 子会话文件落在**父会话同目录**(`~/.pi/agent/sessions/<encoded-cwd>/`),
   header 带 `parentSession`;父会话 jsonl 有 `subagent/descriptor` 条目
+- **侧栏不该多出行**:子会话带 `parentSession`,索引层识别为子会话并从项目会话
+  列表/计数中排除(`sessions.rs` `IndexEntry::is_child`);仍可按路径打开检视
 
 实测记录(2026-10-19):PF 界面确认通过。同轮快照 `messages` 为
 user → assistant(tool_calls=1)→ assistant("PF-SUBAGENT-OK");子会话文件与
@@ -129,5 +131,8 @@ You are a probe. Answer in one word.
 ## E. 已知边界(不在本验收内)
 
 - 工具卡为通用渲染(无 subagent 专属卡片、无子会话跳转)——属 044 宿主侧
+- 子会话当前只是「不上列表」;在父会话下**嵌套展示**属 044 的 M3
+- CLI 用 `--no-session` 时父会话无文件 → 子会话拿不到 `parentSession`,
+  会作为普通会话出现(仅影响 CLI 冒烟,PF 恒有会话文件)
 - 后台投递(`background: true`)只回 childId,完成通知未接宿主(M3)
 - codemode fan-out / usage 上卷展示(M2)、worktree、外部后端(ACP/CC/Codex)

@@ -108,6 +108,11 @@ struct IndexEntry {
     /// 旧版索引文件无此字段 → 0（下次指纹失效时全量重数一次后落盘）。
     #[serde(default)]
     count_bytes: u64,
+    /// Session 父链：子代理会话的 header 带 `parentSession`。这类会话是真实
+    /// 会话（可打开/可检视），但不该混进侧栏的项目会话列表——否则每次委派都
+    /// 会在列表里多出一行「子代理首条 prompt」。
+    #[serde(default)]
+    parent: Option<String>,
 }
 
 impl IndexEntry {
@@ -130,6 +135,11 @@ impl IndexEntry {
             message_count: self.message_count,
             name: self.name.clone(),
         }
+    }
+
+    /// Subagent session: listed only through its parent, never as a peer row.
+    fn is_child(&self) -> bool {
+        self.parent.as_ref().is_some_and(|p| !p.is_empty())
     }
 }
 
@@ -275,14 +285,21 @@ impl Scanner {
             }
         }
         files.sort_by(|a, b| b.0.cmp(&a.0));
-        files.truncate(max);
 
         let mut out = Vec::new();
         let mut seen: Vec<PathBuf> = Vec::new();
         for (mtime, path) in files {
+            if out.len() >= max {
+                break;
+            }
             seen.push(path.clone());
             if let Some(info) = self.info_for(&path, &mtime) {
-                out.push(info);
+                // 子代理会话不占侧栏行：它们只从父会话进入（044 跳转），
+                // 否则每次委派都在列表里多出一行子代理的首条 prompt。
+                let is_child = self.entries.get(&path).is_some_and(IndexEntry::is_child);
+                if !is_child {
+                    out.push(info);
+                }
             }
         }
         self.prune_missing(&seen, groups);
@@ -500,9 +517,11 @@ fn preview_from_partial_line(line: &str) -> Option<String> {
 /// `count_bytes` 续读新增后缀即可；文件缩水（外部改写，非 pi 行为）才
 /// 全量重数。活跃会话文件每轮都在变，这里的增量化直接决定发送消息时
 /// 主线程重扫的卡顿。
-fn scan_file(path: &Path, modified: SystemTime, size: u64, prev: Option<&IndexEntry>) -> Option<IndexEntry> {    let prefix = read_prefix(path, PREFIX_BYTES);
+fn scan_file(path: &Path, modified: SystemTime, size: u64, prev: Option<&IndexEntry>) -> Option<IndexEntry> {
+    let prefix = read_prefix(path, PREFIX_BYTES);
     let mut id = String::new();
     let mut cwd = String::new();
+    let mut parent: Option<String> = None;
     let mut preview = String::new();
     for line in prefix.lines().take(PREVIEW_LINES) {
         let Ok(v) = crate::json::parse_value(line) else {
@@ -519,6 +538,10 @@ fn scan_file(path: &Path, modified: SystemTime, size: u64, prev: Option<&IndexEn
             Some("session") => {
                 id = v["id"].as_str().unwrap_or("").to_string();
                 cwd = v["cwd"].as_str().unwrap_or("").to_string();
+                parent = v["parentSession"]
+                    .as_str()
+                    .filter(|p| !p.is_empty())
+                    .map(str::to_string);
             }
             Some("message") => {
                 if v["message"]["role"].as_str() == Some("user") && preview.is_empty() {
@@ -580,6 +603,7 @@ fn scan_file(path: &Path, modified: SystemTime, size: u64, prev: Option<&IndexEn
         name,
         message_count,
         count_bytes,
+        parent,
     })
 }
 
@@ -1225,6 +1249,37 @@ mod tests {
         assert_eq!(a[0].id, "a1");
         assert_eq!(s.list_for_cwd("D:\\missing", 10).len(), 0);
         assert_eq!(s.list(10).len(), 2);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn list_skips_child_sessions() {
+        // 045：子代理会话（header 带 parentSession）是真会话，但不占侧栏行。
+        let root = temp_root("children");
+        let parent = write_session(&root, "D:\\proj-c", "parent1", BODY);
+        let group = parent.parent().unwrap().to_path_buf();
+        let child = group.join("2026-09-26T00-00-01-000Z_child1.jsonl");
+        std::fs::write(
+            &child,
+            format!(
+                "{{\"type\":\"session\",\"version\":3,\"id\":\"child1\",\"cwd\":\"D:\\\\proj-c\",\"parentSession\":\"{}\"}}\n{}",
+                parent.display().to_string().replace('\\', "\\\\"),
+                BODY
+            ),
+        )
+        .unwrap();
+
+        let mut s = Scanner::open(&root);
+        let listed = s.list_for_cwd("D:\\proj-c", 10);
+        assert_eq!(listed.len(), 1, "只有父会话上行: {listed:?}");
+        assert_eq!(listed[0].id, "parent1");
+
+        // 子会话仍可被解析（父链记录在索引里），只是不出现在列表结果里。
+        let mtime = std::fs::metadata(&child).unwrap().modified().unwrap();
+        let entry = scan_file(&child, mtime, std::fs::metadata(&child).unwrap().len(), None)
+            .expect("child scan ok");
+        assert!(entry.is_child(), "parentSession 应被识别为子会话");
+        assert_eq!(entry.id, "child1");
         let _ = std::fs::remove_dir_all(&root);
     }
 
