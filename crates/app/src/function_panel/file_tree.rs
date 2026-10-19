@@ -672,6 +672,7 @@ fn changes_row(
 /// **自动隐藏**：五颗功能 icon 常态不可见（opacity 0），鼠标进入操作栏
 /// （group `ft-bar-reveal`）才显影——只用绘制期 opacity，钮盒位置/命中区
 /// 不动，所以显隐不抖列对齐；最大化钮不参与（`reveal = false`）。
+/// 受设置-界面「部分操作隐藏」总开关（`autohide_icons`，默认 on）控制。
 fn action_bar(
     chat: &Chat,
     weak: &gpui::WeakEntity<Chat>,
@@ -924,8 +925,9 @@ fn bar_btn(
         .cursor_pointer()
         .hover(|s| s.bg(rgb(t.bg_hover)));
     // 自动隐藏：opacity 只管绘制，命中区/布局原样——显隐之间按钮不挪位，
-    // 悬停灭掉一个 icon 不会让同排钮重排。tooltip 照旧（图标透明也能悬到）
-    let btn = if reveal {
+    // 悬停灭掉一个 icon 不会让同排钮重排。tooltip 照旧（图标透明也能悬到）。
+    // 设置-界面「部分操作隐藏」关掉后恒显（开关默认 on）
+    let btn = if reveal && crate::services::workspace::autohide_icons() {
         btn.opacity(0.)
             .group_hover("ft-bar-reveal", |s| s.opacity(1.))
     } else {

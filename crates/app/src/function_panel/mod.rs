@@ -637,6 +637,7 @@ pub(crate) fn psp_view(
 /// **自动隐藏**：右侧「列表切换」常态不可见（opacity 0），鼠标进入本控制栏
 /// （group `psp-bar-reveal`）才显影——少一颗常驻图标减视觉冗余；最大化钮
 /// 不参与。只用绘制期 opacity，钮盒位置/命中区不变（列对齐不抖）。
+/// 受设置-界面「部分操作隐藏」总开关（`autohide_icons`，默认 on）控制。
 fn psp_ctrl_bar(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> gpui::AnyElement {
     let grouped = chat.psp.list_mode == ListMode::Grouped;
     let w_open = weak.clone();
@@ -671,6 +672,20 @@ fn psp_ctrl_bar(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -
             .group_hover("pc-btn", |s| s.text_color(rgb(t.text)))
             .size(px(size))
             .into_any_element()
+    };
+    // 列表切换钮（右二之一）链外组好再进 child（child 实参位置不能写
+    // let）。自动隐藏（设置-界面「部分操作隐藏」，默认 on）= 常态透明、
+    // 控制栏 hover 显影；命中区/布局不动，关掉开关则恒显
+    let list_toggle = btn("psp-list-toggle")
+        .w(px(26.))
+        .px(px(0.))
+        .justify_center();
+    let list_toggle = if crate::services::workspace::autohide_icons() {
+        list_toggle
+            .opacity(0.)
+            .group_hover("psp-bar-reveal", |s| s.opacity(1.))
+    } else {
+        list_toggle
     };
     div()
         .id("psp-ctrl")
@@ -722,14 +737,7 @@ fn psp_ctrl_bar(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -
         .child(
             // 列表切换：图标随当前模式换（分组 = folder-list，扁平 =
             // icon-flat），点击直切，不再走 ⋯ 菜单（020-1 定稿）
-            btn("psp-list-toggle")
-                .w(px(26.))
-                .px(px(0.))
-                .justify_center()
-                // 自动隐藏：常态透明、控制栏 hover 显影（只为减视觉冗余，
-                // 命中区照旧，鼠标进bar拉到这颗上即现形）
-                .opacity(0.)
-                .group_hover("psp-bar-reveal", |s| s.opacity(1.))
+            list_toggle
                 .with_tip(if grouped {
                     "psp.switch_to_flat"
                 } else {

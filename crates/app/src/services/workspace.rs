@@ -729,6 +729,9 @@ pub struct AppSettings {
     /// 界面页: Markdown 所见即所得（024 Live Preview 装饰；默认关——
     /// 已知回车崩溃与标题行距问题未修，用户显式开启才挂装饰）
     pub md_live_preview: Option<bool>,
+    /// 界面页: 部分操作隐藏（dock 两操作栏不常用 icon 常态透明、hover
+    /// 操作栏才显影；默认 on）
+    pub autohide_icons: Option<bool>,
     /// 界面页: 会话内容宽度 px（消息列 / composer 胶囊 / 新会话页内容带 /
     /// ask 问卷卡共用的单一内容列宽，pi-web `--chat-content-max-width`
     /// parity；缺键 = [`CHAT_WIDTH_DEFAULT`]）
@@ -819,6 +822,7 @@ pub fn app_settings() -> AppSettings {
                         .and_then(|v| v.as_u64())
                         .map(|v| v.min(100)),
                     md_live_preview: map.get("md_live_preview").and_then(|v| v.as_bool()),
+                    autohide_icons: map.get("autohide_icons").and_then(|v| v.as_bool()),
                     chat_content_width: map.get("chat_content_width").and_then(|v| v.as_u64()),
                 }
             }
@@ -904,6 +908,9 @@ pub fn save_app_settings(s: &AppSettings) {
     }
     if let Some(v) = s.md_live_preview {
         obj.insert("md_live_preview".into(), Value::Bool(v));
+    }
+    if let Some(v) = s.autohide_icons {
+        obj.insert("autohide_icons".into(), Value::Bool(v));
     }
     if let Some(v) = s.chat_content_width {
         obj.insert("chat_content_width".into(), Value::Number(v.into()));
@@ -1005,6 +1012,13 @@ pub fn at_index_max_projects() -> usize {
 /// 界面页: 展示思考（关（默认）=新思考块收成一行；开=默认展开全文）。
 pub fn show_thinking() -> bool {
     app_settings().show_thinking.unwrap_or(false)
+}
+
+/// 界面页: 部分操作隐藏（dock 会话控制栏「列表切换」与文件树操作栏五颗
+/// 功能 icon 常态透明，hover 各自操作栏才显影；默认 on）。渲染期每帧读，
+/// `app_settings()` 走进程内缓存，开销可忽略。
+pub fn autohide_icons() -> bool {
+    app_settings().autohide_icons.unwrap_or(true)
 }
 
 /// subagent 功能总开关（开发旗标，默认关；dev-flags.json /

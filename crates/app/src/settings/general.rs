@@ -140,6 +140,27 @@ pub(crate) fn mc_general_view(
         t,
     ));
 
+    // 部分操作隐藏 switch（dock 两操作栏不常用 icon 自动隐藏总开关；默认
+    // on = 隐藏，hover 各自操作栏才显影。切开关即生效：notify 重渲 Chat，
+    // 下帧 dock 操作栏按新值决定是否挂 opacity 0）
+    let autohide = crate::services::workspace::autohide_icons();
+    col = col.child(set_row(
+        tr("settings.autohide_icons"),
+        tr("settings.autohide_icons_hint"),
+        switch_base("general-autohide-icons", autohide, false, {
+            let weak = weak.clone();
+            move |on, cx| {
+                let _ = weak.update(cx, |_c, cx| {
+                    let mut s = crate::services::workspace::app_settings();
+                    s.autohide_icons = Some(on);
+                    crate::services::workspace::save_app_settings(&s);
+                    cx.notify();
+                });
+            }
+        }),
+        t,
+    ));
+
     // ---- 语言：三个一排，左对齐（置底——用户定夺） ------------------------
     col = col.child(section_label(tr("settings.language")));
     col = col.child(lang_row(weak, t));
