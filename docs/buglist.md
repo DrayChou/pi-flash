@@ -663,3 +663,35 @@ open=false，浮层照渲染）。
 - 点「子代理面板」→ 面板占内容区上半、消息区压到下半，再点/✕ 收起
 - 面板开着时 composer 模型下拉/思考档/输入全部正常可点（原 bug）
 - 切会话/新会话页（012）面板不残留；徽标照常 ≤5s 更新
+
+## 本轮追加（2026-10-19 第四批）——dsh 鼓励委派对齐 + 面板回浮层
+
+（上一节「第三批」的停靠式面板已被本批三改取代：面板回浮层、不下推消息区；
+第三批的 open 门修复仍然有效。）
+
+### 1. dsh 三件套对照结果（用户问「都设置了吗」）
+
+| dsh 原有 | PF 现状 | 本轮动作 |
+|---|---|---|
+| 系统提示词注入（tool-subagent 末尾 section："Start independent delegations … together in one assistant message and continue useful work while they run."） | ❌ 没有（只有 promptSnippet 一行 + namespace.instructions） | 补：pi 原生通道 `promptGuidelines`（注册即进系统提示词 Rules 节），dsh 原文照搬（工具名换 agent）+ PF 追加一条「自包含子任务主动派」 |
+| `isConcurrencySafe: true` | ❌ 没有 | 补：pi 等价物 `executionMode: "parallel"`（同帧多委派真并行） |
+| 容量池（slot 占用至清理完成 / 满了拒绝不排队） | ✅ 早有：capacity.ts 两条规则移植，默认 8，`PI_SUBAGENTS_CAPACITY`/`PI_SUBAGENTS_MAX_DEPTH` env 可调 | 无动作 |
+
+已知差异：dsh 还有「深度到顶提示」（systemPrompt context 注入 "remaining
+levels 0, do not call"），PF 未做——超深委派有 DEPTH_LIMIT 错误反馈兜底，
+默认 maxDepth=1 且子代理拿不到 agent 工具，影响面小。
+
+### 2. 面板回浮层（三改）
+
+用户实测停靠版（二改）把消息区下推，不要。回浮层：absolute 挂 chat-wrap
+顶左（操作栏正下方）、宽 400（LIST_W）、最大高内容区上半、阴影圆角卡；
+**保留二改教训不挂全屏外点拦截**（composer 模型下拉不受影响），✕/再点按钮
+关。渲染序放 chat-wrap 末位（与 composer 重叠时面板在上）。044-1 定案块记三改。
+
+### 验证项
+
+- 新会话直接说「调研一下 xxx」（不点名 subagent）→ 模型主动委派（提示词生效）
+- 一句话派多个任务 → 多条 agent 调用同帧并行（面板出现多行「运行中」）
+- 面板打开：消息区**不被下推**（浮层盖在消息上）、composer/模型下拉可正常点
+- ✕/再点按钮关面板；行点击开子会话
+

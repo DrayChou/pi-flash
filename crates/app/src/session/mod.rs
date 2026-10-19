@@ -117,10 +117,6 @@ pub(crate) fn main_column(
                             .children(ext_widget_rows(chat, t, false));
                     } else {
                         wrap = wrap
-                            // 子代理停靠面板（044-1 §1.1 二改：弃浮层）：open 时
-                            // 占内容区上半，消息与 composer 让位下半；无遮挡层，
-                            // composer/模型下拉不受影响
-                            .children(subagent_panel::subagent_panel_element(chat, weak))
                             // message list（底部 135px 让位悬浮 composer）
                             .child(session_list(
                                 chat,
@@ -141,7 +137,16 @@ pub(crate) fn main_column(
                                 false,
                                 cx,
                             ))
-                            .children(ext_widget_rows(chat, t, false));
+                            .children(ext_widget_rows(chat, t, false))
+                            // 子代理浮层面板（044-1 §1.1 三改）：absolute 挂
+                            // chat-wrap（relative）顶左 = 操作栏正下方悬浮，
+                            // 不推挤消息区；无全屏外点拦截，composer 点击不受
+                            // 影响。放最后 = 与 composer 重叠时面板在上
+                            .children(subagent_panel::subagent_panel_element(
+                                chat,
+                                weak,
+                                f32::from(window.viewport_size().height),
+                            ));
                     }
                     // ask_user_question 问卷卡浮层：挂进 chat-wrap（中栏）——
                     // 与 composer 同一居中基准；挂整窗根会被左右侧栏挤偏

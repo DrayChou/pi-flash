@@ -1,10 +1,11 @@
 //! 子代理面板（044-1 §1）——当前会话子代理 catalog 的聚合视图。
 //!
 //! 入口 = 会话操作栏按钮（`session_fn_bar`，运行中带计数徽标）；点开为
-//! 停靠在内容区上半的面板（2026-10-19 二改：弃浮层——浮层的全屏外点拦截
-//! 会把 composer 模型下拉等点击一起吃掉），消息区与 composer 让位下半，
-//! ✕/再点按钮关。事实源 = 父会话 JSONL 的 `subagent/descriptor`
-//! （[`pi_link::subagent_catalog`]），整行点击 = 以正式 tab 打开子会话并收面板。
+//! 锚在操作栏正下方的浮层卡片（2026-10-19 三改：二改的停靠版会下推消息区，
+//! 用户不要；浮层但**不挂全屏外点拦截**——那会把 composer 模型下拉等点击
+//! 一起吃掉，是第三批修掉的雷）。✕/再点按钮关。事实源 = 父会话 JSONL 的
+//! `subagent/descriptor`（[`pi_link::subagent_catalog`]），整行点击 = 以正式
+//! tab 打开子会话并收面板。
 //!
 //! 轮询常驻（2026-10-19 用户拍板：关面板只是隐藏，徽标必须一直准）——打开
 //! 期 1s 增量读、收起期 5s 慢速轮询；会话激活即建缓存（open=false），徽标
@@ -15,7 +16,7 @@
 
 use std::path::PathBuf;
 
-use gpui::{MouseButton, SharedString, div, prelude::*, px, relative, rgb};
+use gpui::{MouseButton, SharedString, div, prelude::*, px, rgb};
 
 use crate::Chat;
 use crate::appearance::theme::theme as T;
@@ -218,11 +219,15 @@ pub(crate) fn running_badge(chat: &Chat) -> Option<gpui::AnyElement> {
     )
 }
 
-/// 面板本体：停靠内容区上半（044-1 §1.1 二改：弃浮层，无遮挡/外点/ESC），
-/// 消息区与 composer 让位下半；`open=false` → None（不占渲染）。
+/// 面板本体：浮层（044-1 §1.1 三改——二改的停靠版会把消息区下推，用户
+/// 不要）。`absolute` 挂 chat-wrap（relative）顶左 = 操作栏正下方悬浮，
+/// 不推挤消息区；**不挂全屏外点拦截**（那会把 composer 模型下拉等点击一起
+/// 吃掉，见 buglist 第三批），关 = ✕ 或再点操作栏按钮。
+/// `open=false` → None（不占渲染）。
 pub(crate) fn subagent_panel_element(
     chat: &Chat,
     weak: &gpui::WeakEntity<Chat>,
+    content_h: f32,
 ) -> Option<gpui::AnyElement> {
     let t = T();
     let panel = chat.dlg.subagent_panel.as_ref()?;
@@ -231,16 +236,25 @@ pub(crate) fn subagent_panel_element(
         return None;
     }
 
+    // 宽 = 设置列表标准宽（LIST_W=400，082 定稿，与二改前浮层同源）；
+    // 最大高 = 内容区上半，矮窗口保底 160px
+    let card_max_h = (content_h / 2.).max(160.);
+
     let mut card = div()
         .id("subagent-panel-card")
-        // 占内容区（chat-wrap）上半；矮窗口保底 160px 可用
-        .h(relative(0.5))
-        .min_h(px(160.))
+        .absolute()
+        .top_0()
+        .left_0()
+        .w(px(crate::settings::LIST_W))
+        .max_h(px(card_max_h))
         .flex()
         .flex_col()
-        .border_b_1()
+        .rounded(px(8.))
+        .border_1()
         .border_color(rgb(t.border))
-        .bg(rgb(t.bg));
+        .bg(rgb(t.bg))
+        .shadow_lg()
+        .overflow_hidden();
 
     // 头部：标题 + 关闭 ✕（规则 5：有可见内容的卡片挂 ×）
     card = card.child(panel_header(weak));

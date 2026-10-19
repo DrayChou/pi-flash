@@ -266,8 +266,20 @@ export default function piSubagents(pi: ExtensionAPI): void {
 			allowedProfiles: profiles.map((p) => p.id),
 			profileSummaries: profiles,
 		}),
-		promptSnippet: "Delegate a task to a child agent with its own session",
-		parameters: DELEGATION_PARAMETERS as unknown as never,
+	promptSnippet: "Delegate a task to a child agent with its own session",
+	// dsh 对齐三件套之二（容量池早已移植，见 capacity.ts）：
+	// ① isConcurrencySafe:true 的 pi 等价物——同帧多条委派真并行执行；
+	// ② 系统提示词注入（dsh tool-subagent 末尾 section，pi 原生通道
+	//    promptGuidelines → Rules 节）——没有它模型只在被点名时才委派。
+	promptGuidelines: [
+		// dsh 原文（tool 名换成我们的 agent）
+		"Start independent delegations with `agent` together in one assistant message and continue useful work while they run.",
+		// PF 追加：点名前也该主动派——自包含子任务不占主线
+		"Prefer `agent` for self-contained subtasks (research, code search, multi-step checks) instead of doing them inline.",
+	],
+	// ③ 同帧并行执行标记
+	executionMode: "parallel",
+	parameters: DELEGATION_PARAMETERS as unknown as never,
 		// 045 M2.1：声明后 codemode 脚本拿 structuredContent（而非文本），
 		// fan-out 结果可直接编程聚合。
 		outputSchema: {
