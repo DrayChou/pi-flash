@@ -15,6 +15,7 @@ pub(crate) mod model_picker;
 pub(crate) mod messages;
 pub(crate) mod new_session;
 pub(crate) mod runtime;
+pub(crate) mod subagent_panel;
 pub(crate) mod plugin_picker;
 pub(crate) mod mcp_picker;
 pub(crate) mod tools_recipe;
@@ -32,6 +33,8 @@ use crate::ext_ui::render_ext_widget;
 use crate::Chat;
 use crate::services::format::*;
 use crate::appearance::theme::theme as T;
+
+pub(crate) use subagent_panel::SubagentPanel;
 
 pub(crate) fn main_column(
     chat: &mut Chat,
@@ -143,6 +146,14 @@ pub(crate) fn main_column(
                 })
                 .child(nav_gutter(chat, rt_entity.clone(), weak.clone(), t, cx)),
         )
+        // 子代理浮层面板（044-1 §1）：挂 session 列根（relative）内，层盖整列、
+        // 卡片从 32px 操作栏正下方起（subagent_panel_element 内 pt 36）；
+        // 与 ask_card 同层叠口径，后渲染者在上
+        .children(subagent_panel::subagent_panel_element(
+            chat,
+            weak,
+            f32::from(window.viewport_size().height),
+        ))
 }
 
 /// 会话功能栏（2026-10-11：topbar ⋯ 菜单撤下拉改常驻条）：会话 tab 下方
@@ -236,6 +247,43 @@ fn session_fn_bar(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyEle
                 cx.notify();
             }),
         ))
+        .child(fn_bar_sep(t))
+        .child(subagent_fn_bar_btn(chat, cx))
+        .into_any_element()
+}
+
+/// 「子代理面板」钮（044-1 §1.1）：icon + 文案 + 运行中计数徽标；
+/// 浮层开着时点亮 accent。徽标数 phase ∈ provisioning/active。
+fn subagent_fn_bar_btn(
+    chat: &mut Chat,
+    cx: &mut gpui::Context<Chat>,
+) -> gpui::AnyElement {
+    let t = T();
+    let open = chat.dlg.subagent_panel.as_ref().is_some_and(|p| p.open);
+    let badge = subagent_panel::running_badge(chat);
+    let hover_fg = if open { t.accent } else { t.text };
+    div()
+        .id("sfbar-subagent")
+        .flex()
+        .items_center()
+        .gap(px(6.))
+        .px(px(8.))
+        .py(px(4.))
+        .rounded(px(6.))
+        .text_size(crate::appearance::ui_size(11.5))
+        .text_color(rgb(if open { t.accent } else { t.text_muted }))
+        .cursor_pointer()
+        .hover(move |s| s.bg(rgb(t.bg_hover)).text_color(rgb(hover_fg)))
+        .on_mouse_down(MouseButton::Left, cx.listener(|this, _: &gpui::MouseDownEvent, _w, cx| {
+            this.toggle_subagent_panel(cx);
+        }))
+        .child(crate::ui::icon(
+            "user-round",
+            crate::ui::tokens::icon::MD,
+            if open { t.accent } else { t.text_muted },
+        ))
+        .child(SharedString::from(tr("subagent.panel")))
+        .children(badge)
         .into_any_element()
 }
 

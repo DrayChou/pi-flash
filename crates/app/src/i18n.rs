@@ -690,6 +690,15 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("agents.empty", "还没有自定义子代理——点上方「新建」创建一个", "還沒有自訂子代理——點上方「新增」建立一個", "No custom subagents yet — click New above to create one"),
     ("agents.saved", "已保存", "已儲存", "Saved"),
     ("agents.name_invalid", "名称只能含字母、数字、连字符与下划线", "名稱只能含字母、數字、連字號與底線", "Name may only contain letters, digits, hyphens and underscores"),
+    // -- 子代理面板（044-1 §1）
+    ("subagent.panel", "子代理面板", "子代理面板", "Subagent panel"),
+    ("subagent.empty", "本会话还没有子代理——在对话里让我委派任务即可", "本會話還沒有子代理——在對話裡讓我委派任務即可", "No subagents in this session yet — delegate a task in the conversation"),
+    ("subagent.open_child", "打开子会话", "開啟子會話", "Open child session"),
+    ("subagent.running", "运行中", "執行中", "Running"),
+    ("subagent.done", "完成", "完成", "Done"),
+    ("subagent.aborted", "已中止", "已中止", "Aborted"),
+    ("subagent.max_turns", "轮次用尽", "輪次用盡", "Out of turns"),
+    ("subagent.failed", "失败", "失敗", "Failed"),
 ];
 
 /// Translate a **semantic key** for the active language.

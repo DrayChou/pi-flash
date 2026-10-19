@@ -1,0 +1,365 @@
+//! 子代理浮层面板（044-1 §1）——当前会话子代理 catalog 的聚合视图。
+//!
+//! 入口 = 会话操作栏按钮（`session_fn_bar`，运行中带计数徽标）；点开从
+//! 操作栏向下延伸的浮层（遮上半内容区，点外/ESC/✕ 关）。事实源 = 父会话
+//! JSONL 的 `subagent/descriptor`（[`pi_link::subagent_catalog`]），打开期间
+//! 1s 增量轮询；整行点击 = 以正式 tab 打开子会话并关浮层。
+//!
+//! 状态色与 messages/cards.rs 的 subagent 卡片同源（运行黄 / 完成绿 /
+//! 失败红），面板不另起一套。
+
+use std::path::PathBuf;
+
+use gpui::{MouseButton, SharedString, div, prelude::*, px, rgb};
+
+use crate::Chat;
+use crate::appearance::theme::theme as T;
+use crate::i18n::tr;
+use pi_link::subagent_catalog::{
+    CatalogRow, StatusKind, merge_rows, read_catalog, row_duration_secs,
+};
+
+/// 轮询间隔（044-1 §1.4：面板打开期 1s 增量读）。
+const POLL_TICK: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// 状态色（照抄 cards.rs 的 subagent 卡片；中止橙按 044-1 §1.3 交互稿）。
+const C_RUNNING: u32 = 0xeab308;
+const C_DONE: u32 = 0x22c55e;
+const C_ERROR: u32 = 0xf87171;
+const C_ABORTED: u32 = 0xf97316;
+
+/// 浮层宿主状态：持 catalog 缓存（§1.4 的 offset+rows）；`open` 独立控开关。
+///
+/// 分开而非让 Option 直接当开关，是因为 §1.1 要求「常驻按钮 + 运行中计数
+/// 徽标」——徽标读缓存，面板关着时也能显示上次已知的运行数（关着即丢数据
+/// 会让徽标恒空，功能等于没做）。轮询只在 open 时跑，关着不烧 IO。
+#[derive(Clone)]
+pub(crate) struct SubagentPanel {
+    /// 父会话文件（descriptor 的落盘处）；没落盘的会话无 catalog。
+    pub file: Option<PathBuf>,
+    /// 下一轮增量续读的字节偏移。
+    pub offset: u64,
+    /// 累积的 descriptor 投影（同 childId 末条覆盖）。
+    pub rows: Vec<CatalogRow>,
+    /// 浮层是否展开（只控渲染与轮询，不丢缓存）。
+    pub open: bool,
+}
+
+impl SubagentPanel {
+    /// 运行中计数（phase ∈ provisioning/active）——操作栏徽标数它。
+    fn running_count(&self) -> usize {
+        self.rows.iter().filter(|r| r.in_flight()).count()
+    }
+}
+
+impl Chat {
+    /// 切换子代理浮层：首次打开（或换会话后）拉一次全量，之后只翻 open。
+    /// 关浮层不丢缓存（徽标还要用）。
+    pub(crate) fn toggle_subagent_panel(&mut self, cx: &mut gpui::Context<Self>) {
+        let file = self.rt().read(cx).file.clone();
+        let already = self
+            .dlg
+            .subagent_panel
+            .as_ref()
+            .is_some_and(|p| p.file == file);
+        match self.dlg.subagent_panel.as_mut() {
+            // 同会话已有缓存：只翻开关
+            Some(p) if already => {
+                p.open = !p.open;
+                if p.open {
+                    spawn_poll(cx);
+                }
+            }
+            // 首次 / 换了会话：重拉全量
+            _ => {
+                let (rows, offset) = match file.as_deref() {
+                    Some(f) => {
+                        let scan = read_catalog(f, 0);
+                        (scan.rows, scan.next_offset)
+                    }
+                    None => (Vec::new(), 0),
+                };
+                self.dlg.subagent_panel = Some(SubagentPanel { file, offset, rows, open: true });
+                spawn_poll(cx);
+            }
+        }
+        cx.notify();
+    }
+
+    /// 一轮增量轮询：只读上次 offset 之后的新增字节，合并后重绘。
+    /// 浮层已关 / 无缓存 / 会话文件没了 → 停（返回 false 让轮询任务退场）。
+    fn subagent_panel_poll(&mut self, cx: &mut gpui::Context<Self>) -> bool {
+        let Some(panel) = self.dlg.subagent_panel.as_mut() else {
+            return false;
+        };
+        if !panel.open {
+            return false;
+        }
+        let Some(file) = panel.file.clone() else {
+            return false;
+        };
+        let scan = read_catalog(&file, panel.offset);
+        if scan.next_offset != panel.offset {
+            panel.offset = scan.next_offset;
+            merge_rows(&mut panel.rows, scan.rows);
+            cx.notify();
+        }
+        true
+    }
+
+    /// 整行点击：子会话是普通 pi 会话，直接 open_session（只读检视 + 可续跑），
+    /// 并收起浮层（缓存留着，徽标仍显示）。
+    pub(crate) fn open_subagent_child(&mut self, path: PathBuf, cx: &mut gpui::Context<Self>) {
+        if let Some(p) = self.dlg.subagent_panel.as_mut() {
+            p.open = false;
+        }
+        self.open_session(path, false, cx);
+        cx.notify();
+    }
+}
+
+/// 轮询任务：面板开着就每秒续一轮，关了就退场（同 psp_drag 看门狗范式）。
+fn spawn_poll(cx: &mut gpui::Context<Chat>) {
+    cx.spawn(async move |this, cx| {
+        loop {
+            cx.background_executor().timer(POLL_TICK).await;
+            let alive = this
+                .update(cx, |chat, cx| chat.subagent_panel_poll(cx))
+                .unwrap_or(false);
+            if !alive {
+                break;
+            }
+        }
+    })
+    .detach();
+}
+
+/// 操作栏按钮的运行中计数徽标（044-1 §1.3：N = phase ∈ provisioning/active）。
+/// 无运行中不渲染徽标。
+pub(crate) fn running_badge(chat: &Chat) -> Option<gpui::AnyElement> {
+    let t = T();
+    let n = chat.dlg.subagent_panel.as_ref().map(SubagentPanel::running_count)?;
+    if n == 0 {
+        return None;
+    }
+    Some(
+        div()
+            .min_w(px(16.))
+            .h(px(16.))
+            .px(px(4.))
+            .rounded_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(rgb(t.accent))
+            .text_size(crate::appearance::ui_size(10.))
+            .text_color(rgb(t.accent_contrast))
+            .child(SharedString::from(n.to_string()))
+            .into_any_element(),
+    )
+}
+
+/// 浮层本体：遮挡 + 外点/ESC 关 + 卡片锚在操作栏正下方（遮上半内容区）。
+/// 面板没开 → None（不占渲染）。
+///
+/// 宽 = [`crate::settings::LIST_W`]（设置四页统一列表宽，082 定稿 400）——
+/// 面板就是一份列表，不再自拟数值；最大高 = 内容区上半。
+pub(crate) fn subagent_panel_element(
+    chat: &Chat,
+    weak: &gpui::WeakEntity<Chat>,
+    content_h: f32,
+) -> Option<gpui::AnyElement> {
+    let t = T();
+    let panel = chat.dlg.subagent_panel.as_ref()?;
+    let weak_dismiss = weak.clone();
+    let dismiss = move |_: &mut gpui::Window, cx: &mut gpui::App| {
+        let _ = weak_dismiss.update(cx, |c, cx| {
+            // 只收浮层，不丢缓存（徽标还要用）
+            if let Some(p) = c.dlg.subagent_panel.as_mut() {
+                p.open = false;
+            }
+            cx.notify();
+        });
+    };
+
+    // 卡片：宽用设置列表标准宽（LIST_W=400，有出处），最大高 = 内容区上半
+    let card_w = px(crate::settings::LIST_W);
+    let card_max_h = (content_h / 2.).max(160.);
+
+    let mut card = div()
+        .id("subagent-panel-card")
+        .flex()
+        .flex_col()
+        .w(card_w)
+        .max_h(px(card_max_h))
+        .rounded(px(8.))
+        .border_1()
+        .border_color(rgb(t.border))
+        .bg(rgb(t.bg))
+        .shadow_lg()
+        // 规则 4：点卡片本身不触发外点关闭
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation());
+
+    // 头部：标题 + 关闭 ✕（规则 5：有可见内容的卡片挂 ×）
+    card = card.child(panel_header(weak));
+
+    // 行列表（滚动）
+    let mut list = div()
+        .id("subagent-panel-list")
+        .flex_1()
+        .min_h_0()
+        .overflow_y_scroll()
+        .px(px(6.))
+        .py(px(6.));
+    if panel.rows.is_empty() {
+        list = list.child(
+            div()
+                .p(px(16.))
+                .text_size(crate::appearance::ui_size(12.))
+                .text_color(rgb(t.text_dim))
+                .child(tr("subagent.empty")),
+        );
+    } else {
+        for row in &panel.rows {
+            list = list.child(panel_row(weak, row));
+        }
+    }
+    card = card.child(list);
+
+    Some(
+        crate::ui::overlay::layer(false, None, dismiss)
+            // 锚定：操作栏（32px）正下方，向下延伸
+            .pt(px(36.))
+            .flex()
+            .flex_col()
+            .items_start()
+            .child(card)
+            .into_any_element(),
+    )
+}
+
+/// 头部行：标题 + ✕ 关闭。
+fn panel_header(weak: &gpui::WeakEntity<Chat>) -> gpui::AnyElement {
+    let t = T();
+    let weak_close = weak.clone();
+    div()
+        .id("subagent-panel-head")
+        .flex()
+        .items_center()
+        .px(px(12.))
+        .py(px(8.))
+        .border_b_1()
+        .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x66)))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .text_size(crate::appearance::ui_size(12.))
+                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .text_color(rgb(t.text))
+                .child(tr("subagent.panel")),
+        )
+        .child(
+            div()
+                .id("subagent-panel-x")
+                .size(px(20.))
+                .rounded(px(4.))
+                .flex()
+                .items_center()
+                .justify_center()
+                .cursor_pointer()
+                .text_size(crate::appearance::ui_size(12.))
+                .text_color(rgb(t.text_muted))
+                .hover(|s| s.bg(rgb(t.bg_hover)))
+                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                    let _ = weak_close.update(cx, |c, cx| {
+                        // 只收浮层，不丢缓存（徽标还要用）
+                        if let Some(p) = c.dlg.subagent_panel.as_mut() {
+                            p.open = false;
+                        }
+                        cx.notify();
+                    });
+                })
+                .child("✕"),
+        )
+        .into_any_element()
+}
+
+/// 一行子代理：状态点 + label（退 childId）+ `provider·d{depth}` + 耗时，
+/// 整行点击 = 打开子会话。
+fn panel_row(weak: &gpui::WeakEntity<Chat>, row: &CatalogRow) -> gpui::AnyElement {
+    let t = T();
+    let (kind_c, kind_text) = status_of(row);
+    let meta = format!("{}·d{}", row.provider, row.depth);
+    let time = row_duration_secs(row)
+        .map(|s| format!("{s}s"))
+        .unwrap_or_else(|| "—".to_string());
+    let open = row.session_file.clone().map(PathBuf::from);
+
+    let mut el = div()
+        .id(SharedString::from(format!("subagent-row-{}", row.child_id)))
+        .h(px(30.))
+        .px(px(8.))
+        .mb(px(1.))
+        .rounded(px(5.))
+        .flex()
+        .items_center()
+        .gap(px(8.))
+        .text_size(crate::appearance::ui_size(12.))
+        .text_color(rgb(t.text_muted))
+        .hover(|s| s.bg(rgb(t.bg_hover)));
+    if open.is_some() {
+        let weak_row = weak.clone();
+        el = el.cursor_pointer().on_mouse_down(MouseButton::Left, move |_, _, cx| {
+            let _ = weak_row.update(cx, |c, cx| {
+                if let Some(p) = open.clone() {
+                    c.open_subagent_child(p, cx);
+                }
+            });
+        });
+    }
+    el.child(crate::settings::widgets::status_dot(kind_c))
+    .child(
+        div()
+            .flex_1()
+            .min_w_0()
+            .overflow_hidden()
+            .whitespace_nowrap()
+            .text_ellipsis()
+            .child(SharedString::from(row.display_label().to_string())),
+    )
+    .child(
+        div()
+            .flex_shrink_0()
+            .font_family(crate::editor::markdown::MONO_FAMILY)
+            .text_size(crate::appearance::ui_size(11.))
+            .text_color(rgb(t.text_dim))
+            .child(SharedString::from(meta)),
+    )
+    .child(
+        div()
+            .flex_shrink_0()
+            .text_size(crate::appearance::ui_size(11.))
+            .text_color(rgb(t.text_dim))
+            .child(SharedString::from(time)),
+    )
+    .child(
+        div()
+            .flex_shrink_0()
+            .text_size(crate::appearance::ui_size(11.))
+            .text_color(rgb(kind_c))
+            .child(SharedString::from(kind_text)),
+    )
+    .into_any_element()
+}
+
+/// 行状态（色 + 文案）：终态优先分码，缺 stop_reason 时按 phase 兜底。
+fn status_of(row: &CatalogRow) -> (u32, &'static str) {
+    match row.status_kind() {
+        StatusKind::Running => (C_RUNNING, tr("subagent.running")),
+        StatusKind::Done => (C_DONE, tr("subagent.done")),
+        StatusKind::Aborted => (C_ABORTED, tr("subagent.aborted")),
+        StatusKind::MaxTurns => (C_ABORTED, tr("subagent.max_turns")),
+        StatusKind::Error => (C_ERROR, tr("subagent.failed")),
+    }
+}

@@ -240,6 +240,9 @@ pub(crate) struct DlgUi {
     /// 010 重设计 send 门：无项目态下用户敲下的文字在弹「打开项目」前
     /// 暂存于此，switch_project 选定目录后回填并自动发送（话不丢）
     pub(crate) pending_send: Option<String>,
+    /// 子代理浮层面板（044-1 §1）：Some = 开着（1s 轮询启动），None = 关闭
+    /// （轮询停止）。rows 是累积的 descriptor 投影，offset 是下一轮续读起点。
+    pub(crate) subagent_panel: Option<crate::session::SubagentPanel>,
 }
 
 /// 会话池簇（4ea 字段重组）：常驻 runtime 池 + 注意力指针 + 索引缓存
@@ -613,6 +616,7 @@ impl Chat {
                 status_toast: None,
                 settings: None,
                 pending_send: None,
+                subagent_panel: None,
             },
             psp: PspUi {
                 projects: Vec::new(),
