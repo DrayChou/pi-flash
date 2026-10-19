@@ -117,30 +117,36 @@
    按 TAB 解析永远不命中，old path 还会被当成独立条目。修法：X/Y 为 R/C 时
    消费紧跟的下一条记录。
 
-## 格式化：只走 `scripts/fmt.sh`（2026-10-18 三次踩踏后立的规矩）
+## 格式化：本仓不跑 rustfmt（2026-10-20 起彻底弃用）
 
-### 为什么不能跑 `cargo fmt`
+**政策**：`cargo fmt`、`rustfmt <file>`、`scripts/fmt.sh` 的写盘模式**一律不用**。
+排版靠手写（本仓风：紧凑、长行、少折行），交付前不做任何格式化动作。
+`scripts/fmt.sh` 已退化成墓碑：除 `--check <file.rs>`（只读诊断）外全部报错退出。
 
-`cargo fmt` 的语义是**洗整个 package**，不是「你改的那个文件」：
+为什么从「只格式化点名文件」再退一步——历史账（2026-10-18 三次洪泛、
+2026-10-19 `mod.rs` 连洗子树、2026-10-19 洪泛混进功能提交）说明「受控入口」
+仍然不够：
 
-- 本仓 200+ `.rs` **绝大多数不是 rustfmt-clean**（原作者紧凑手写风：长行、
-  紧凑字面量）。跑一次 → 几百个文件立刻变脏，纯排版 diff。
-- 唯一命令 `rustfmt --edition 2024 <file>` 只改排版（换行/缩进/`use` 排序），
-  **不改语义**；编译器、测试、reviewer 都不看排版 ⇒ 本仓里整包格式化
-  **零收益、纯风险**。
-- `cargo fmt -- <file>` 里的 `--` 是**给 rustfmt 追加参数**，主体照样整包
-  （第三次踩踏就栽在这：以为带文件参数就收窄了范围）。
+- 本仓 200+ `.rs` **绝大多数不是 rustfmt-clean**（原作者紧凑手写风）。哪怕只
+  点名一个文件，rustfmt 也会把该文件里**所有无关行**重排 → 功能提交混进大片
+  纯排版 diff，review 失真、cherry-pick 冲突（`1f66410` 就是这样带上
+  `markdown/*`、`shell/render.rs` 的排版改动）。
+- `rustfmt` 只改排版（换行/缩进/`use` 排序），**不改语义**；编译器、测试、
+  reviewer 都不看排版 ⇒ 格式化**收益恒为零、风险恒不为零**。
+- `cargo fmt -- <file>` 里的 `--` 是**给 rustfmt 追加参数**，主体照样整包。
+- 本仓没有 `cargo fmt --check` 门禁，也没有统一风格计划 ⇒ 不存在任何
+  「必须格式化」的外部约束。
 
-真正需要全仓格式化（统一风格）时，正确做法是**一次性专项**：`fmt.sh --all`
-→ 单独一个 `style: 全仓 rustfmt` 提交 → 同时把 `cargo fmt --check` 挂进 CI
-从此保持干净。绝不能夹在功能提交里顺手做。
+真要做全仓统一风格：那是**人工决策的独立事项**（单独 `style:` 提交 + 同时挂
+CI 门禁），不是交付流程的一步。当前结论：不做。
 
 ### 附带雷：`i18n.rs` 的 TABLE 被 test 按行解析
 
 `i18n_audit::keys_and_translations_are_complete` 按行解析 `i18n.rs` 的
 TABLE（行 trim 后以 `(` 开头 + 拆出 4 列），表行**必须一行一条**。rustfmt
 会把超宽表行折成多行 → audit 只解析到零头（实测 552 → 233）直接 panic
-「TABLE 解析异常」。所以 `fmt.sh` **永远跳过** `crates/app/src/i18n.rs`。
+「TABLE 解析异常」。所以任何格式化动作都必须跳开 `crates/app/src/i18n.rs`
+（旧版 `fmt.sh` 内部写死了 SKIP，现在写盘模式已下线，这条留着防手工误跑）。
 
 误伤恢复：`git checkout HEAD -- crates/app/src/i18n.rs` 再重插新增表行
 （表行统一 `, ` 分隔单行格式）。
@@ -149,25 +155,24 @@ TABLE（行 trim 后以 `(` 开头 + 拆出 4 列），表行**必须一行一�
 
 rustfmt 递归解析 `mod` 声明：`rustfmt mod.rs` 会把**该目录全部子模块**
 一起格式化。点名 `markdown/mod.rs` + `services/mod.rs` 两个文件，实际
-脏了 12 → 33 个文件（markdown/\*、services/\* 全军覆没）。守则：改的是
-`mod.rs` 本身且想只洗它，要么接受树洗、要么先 `--check` 看波及面、
-要么事后 `git checkout HEAD -- <无辜文件>` 回滚。哨兵（涨 ≥20 报警）
-就是为这一刻准备的——报警即核对 `git status`，别直接提交。
+脏了 12 → 33 个文件（markdown/\*、services/\* 全军覆没）。结论：`mod.rs` 是
+rustfmt 的最佳放大器，这也是「点名文件」方案被废弃的直接原因；万一手工跑了，
+用 `git status --short` 核对波及面、`git checkout HEAD -- <无辜文件>` 回滚。
 
-### 三层防线
+### 现在的三道防线（都是事故网，不是流程步骤）
 
 | 层 | 位置 | 拦什么 |
 |---|---|---|
-| 入口防 | `scripts/fmt.sh` | **批量行为本身**：无参数报错（不存在「默认整包」默认值）、拒目录/包名/非 `.rs`/未跟踪文件、跳过 i18n.rs、跑完打印脏文件计数哨兵（一次涨 ≥20 提示疑似洪泛） |
-| 提交防 | `.githooks/pre-commit`（`core.hooksPath=.githooks`） | **大批量入库**：单次暂存 ≥30 文件即拦（逃生 `--no-verify` 或 `PI_FLASH_ALLOW_BULK=1`） |
-| 救火 | `scripts/fmt-flood-clean.sh` | 把工作区 `.rs` 洪泛封进 stash（可恢复），非 `.rs` 改动留在工作区 |
+| 入口防 | `scripts/fmt.sh` | **写盘格式化已下线**：除 `--check <file.rs>`（只读）外，任何调用（文件列表 / 目录 / `--all` / `-p`）都报错退出 |
+| 提交防 | `.githooks/pre-commit`（`core.hooksPath=.githooks`） | **大批量入库**：单次暂存 ≥30 文件即拦（逃生 `--no-verify` / `PI_FLASH_ALLOW_BULK=1`）——拦的是「洪泛被顺手 add 进来」这类事故 |
+| 救火 | `scripts/fmt-flood-clean.sh` | 万一有人手工跑了 rustfmt：把工作区 `.rs` 洪泛封进 stash（可恢复），非 `.rs` 改动留在工作区 |
 
 ```bash
-scripts/fmt.sh <自己改过的那几个 .rs>   # 唯一安全姿势
-scripts/fmt.sh --check <file.rs>       # 只检查不写盘
-scripts/fmt.sh --all                   # 全仓专项：已跟踪改动须为 0 + 输 yes
+scripts/fmt.sh --check <file.rs>   # 唯一可用姿势：只读诊断，不写盘
+git status --short                 # 交付前自检：不该出现自己没编辑过的 .rs
 ```
 
-**为什么写死成脚本**：否定式规则（「禁止整包 fmt」）对 agent 约束力不足——
-本仓连踩三次，第三次还是在 `i18n_audit` 打脸之后。把危险动作收敛成唯一
-受控入口，让「整包」这个操作在命令行上根本不可达，比记住规则可靠。
+**为什么连「点名文件」也不留**：否定式规则（「禁止整包 fmt」）对 agent 约束力
+不足，本仓连踩四次；而「只点名文件」这条退让仍然会把该文件里无关的行洗进
+提交（`1f66410` 的排版噪音就是这么来的）。让写盘路径在命令行上根本不存在，
+比记住规则可靠。

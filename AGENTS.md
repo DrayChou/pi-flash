@@ -22,7 +22,7 @@ RUST_MIN_STACK=33554432 cargo test -p pi-link   # 协议/路径测试都在 pi-l
 - UI绘制遵循 docs\UI设计\UI组件规范.md
 - **发布产物不落本机**：构建产物只留在 `target/`（如 `target/release/pi-flash.exe`），禁止复制/替换本机已安装的 `D:\softwares\...\payload\pi-flash.exe`，也不要在 payload 目录生成 `.new` 之类的暂存文件——装不装、何时装由用户自己决定
 - CHANGELOG发版驱动，平时勿碰！
-- 禁用 `cargo fmt`！ 格式化用 `scripts/fmt.sh <自己改过的 .rs>`（详情见 [engineering.md](docs/agents/engineering.md)）
+- **不跑 rustfmt**：`cargo fmt` / `rustfmt <file>` 一律不用（本仓无 rustfmt-clean 基线，点名文件也会洗出无关 diff，点名 `mod.rs` 更会连洗整个子树）。排版靠手写；`scripts/fmt.sh` 已下线为墓碑（仅留 `--check` 只读诊断，详情见 [engineering.md](docs/agents/engineering.md)）
 - 如非用户授权，禁止修改Settings模块！
 
 # 路径

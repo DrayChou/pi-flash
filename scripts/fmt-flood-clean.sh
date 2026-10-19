@@ -1,5 +1,6 @@
 #!/bin/bash
-# fmt 洪泛一键封存（pi-flash engineering.md §fmt 配套）
+# fmt 洪泛救火（pi-flash engineering.md §格式化 配套；2026-10-20 起 rustfmt
+# 已彻底弃用，本脚本仍留作手滑后的事故回收）
 #
 # 场景：某会话对全仓跑了整包 cargo fmt，工作区出现大量纯格式化 .rs 改动。
 # 本脚本把所有 .rs 改动封存进 stash（可恢复），docs 等非 .rs 改动留在工作区。

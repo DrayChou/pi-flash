@@ -1,7 +1,10 @@
 #!/bin/bash
-# fmt 洪泛拦截（pi-flash engineering.md §fmt 配套，2026-10-18 两次事故后增设）
+# 批量入库拦截（pi-flash engineering.md §格式化 配套）
 #
-# 拦什么：单次提交暂存 ≥ 30 个文件（洪泛特征：整包 cargo fmt 后只 add 自己
+# 本仓自 2026-10-20 起不跑 rustfmt（scripts/fmt.sh 已下线为墓碑）；本钩子
+# 仍保留成事故网：拦「整包格式化 / 大批无关改动被顺手 add 进来」这类提交。
+#
+# 拦什么：单次提交暂存 ≥ 30 个文件（洪泛特征：跑了 cargo fmt 后只 add 自己
 # 关心的文件，剩余百余个格式化改动留在工作区）。
 #
 # 误报逃生：
@@ -26,8 +29,8 @@ fi
 echo ""
 echo "⛔ 拦截：本次提交暂存了 $count 个文件（阈值 30）。"
 echo ""
-echo "   若这是整包 cargo fmt 的产物（fmt 洪泛）：违反 docs/agents/engineering.md"
-echo "   『禁止对 app 包跑整包 cargo fmt』，请勿提交。处理："
+echo "   若这是整包 cargo fmt 的产物（fmt 洪泛）：本仓不跑 rustfmt，见"
+echo "   docs/agents/engineering.md，请勿提交。处理："
 echo "     scripts/fmt-flood-clean.sh   # 一键封存到 stash"
 echo ""
 echo "   若这是真实的大规模重构（非格式化）："
