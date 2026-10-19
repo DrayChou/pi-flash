@@ -1008,7 +1008,8 @@ fn actions(
         .flex()
         .items_center()
         .justify_end()
-        .gap(gpui::px(space::SP3));
+        // 按钮间统一间距 = SP4（图标↔文字/控件↔控件 标准档，见 UI 组件规范 §1）
+        .gap(gpui::px(space::SP4));
 
     if row.busy {
         group = group.child(crate::ui::spinner(14., t.accent));
@@ -1147,7 +1148,7 @@ fn pager(
         .flex()
         .items_center()
         .justify_center()
-        .gap(gpui::px(space::SP3));
+        .gap(gpui::px(space::SP4));
     for btn in page_window(page, total_pages.max(1)) {
         match btn {
             PageBtn::Gap => {

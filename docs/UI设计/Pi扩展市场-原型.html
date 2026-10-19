@@ -134,8 +134,14 @@ html[data-theme="dark"] .sheet-head button:hover { background: rgba(255,255,255,
 .summary .safety a { color: var(--text-dim); text-decoration: none; border-bottom: 1px dotted var(--border); }
 
 /* ===================== 单列卡片列表 ===================== */
-.list { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column;
-  gap: 10px; padding: 0 20px 6px; }
+.list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
+  display: flex; flex-direction: column; gap: 10px; padding: 0 20px 6px;
+  scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.list::-webkit-scrollbar { width: 10px; }
+.list::-webkit-scrollbar-track { background: transparent; }
+.list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px;
+  border: 3px solid transparent; background-clip: content-box; }
+.list::-webkit-scrollbar-thumb:hover { background: var(--text-faint); background-clip: content-box; }
 
 .pkg {
   position: relative; flex: none;
@@ -192,7 +198,7 @@ html[data-theme="dark"] .chip.ext { color: var(--accent-hover); }
 .pkg:hover .cmd code { color: var(--text); }
 
 /* 右侧动作 */
-.acts { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.acts { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
 .reveal { opacity: 0; transition: opacity .12s ease; }
 .pkg:hover .reveal, .pkg:focus-within .reveal { opacity: 1; }
 
@@ -201,13 +207,13 @@ html[data-theme="dark"] .chip.ext { color: var(--accent-hover); }
   border-radius: 2px; background: var(--accent); opacity: .45; }
 
 /* 底栏 */
-.foot { flex: none; display: flex; align-items: center; gap: 12px; height: 52px; padding: 0 20px;
+.foot { flex: none; display: flex; align-items: center; gap: 8px; height: 52px; padding: 0 20px;
   border-top: 1px solid var(--hairline); font-size: 12px; color: var(--text-muted); }
 .pager { font: inherit; font-size: 12px; height: 30px; padding: 0 12px; border-radius: 6px;
   border: 1px solid var(--hairline); background: transparent; color: var(--text-muted); cursor: pointer; }
 .pager:hover { background: var(--bg-hover); color: var(--text); }
 .pager[disabled] { opacity: .38; cursor: default; }
-.foot .pages { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.foot .pages { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; }
 .pg { font: inherit; font-size: 12px; width: 32px; height: 30px; border-radius: 6px;
   border: 1px solid var(--hairline); background: transparent; color: var(--text-muted);
   cursor: pointer; font-variant-numeric: tabular-nums; }
@@ -472,6 +478,46 @@ html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: 
 </div>
 
 <script>
+  // 演示用：把首屏 4 张卡克隆到 50 张，验证滚动与按钮对齐（设计稿专用）
+  (function fillDemo() {
+    const list = document.querySelector('.list');
+    const seed = [...list.querySelectorAll('.pkg')];
+    const pool = [
+      ['pi-powerline-footer', 'v0.20.2', 'nicopreme', 'Powerline-style status bar for the pi coding agent.', '93.9K', '2 天前', 'installed'],
+      ['pi-lens', 'v4.4.4', 'apmantza', 'Real-time code feedback — LSP, linters, formatters, type-checking, structural analysis.', '88.8K', '16 小时前', ''],
+      ['pi-harness-runtime', 'v1.1.381', 'manotluijiu', 'Codex-style usage status and an autonomous coding harness for pi.', '54.7K', '6 小时前', 'update'],
+      ['@narumitw/pi-usage', 'v0.67.0', 'narumitw', 'Provider usage, limits, reset times, API balances and Codex Fast mode.', '73.0K', '2 天前', ''],
+      ['pi-goal-x', 'v0.32.3', 'tmonk', 'Adds /goal: conversational goal planning, persistent progress and an independent completion auditor.', '127.1K', '17 天前', ''],
+      ['@plannotator/pi-extension', 'v0.28.23', 'backnotprop', 'Interactive plan review with annotations; review code and PRs inline.', '119.9K', '2 天前', 'installed'],
+      ['pi-cache-optimizer', 'v2.10.2', 'freescheme', 'Stable prompts and OpenAI-compatible cache keys for higher prompt/KV cache hit rates.', '34.0K', '1 天前', ''],
+      ['gentle-engram', 'v0.4.2', 'alan_buscaglia', 'Persistent memory for Pi agents — one local-or-cloud brain across sessions.', '29.4K', '8 天前', ''],
+    ];
+    let i = 0;
+    while (list.querySelectorAll('.pkg').length < 50) {
+      const src = seed[i % seed.length].cloneNode(true);
+      const meta = pool[i % pool.length];
+      const name = meta[0] + (i >= pool.length ? '-' + Math.floor(i / pool.length) : '');
+      src.querySelector('.name').textContent = name;
+      src.querySelector('.ver').textContent = meta[1];
+      const metas = src.querySelectorAll('.meta b');
+      metas[0].textContent = meta[2];
+      metas[1].textContent = meta[3];
+      src.querySelector('.meta span:last-child').textContent = meta[4];
+      src.querySelector('.cmd code').textContent = 'pi install npm:' + name;
+      src.classList.toggle('installed', meta[6] === 'installed' || meta[6] === 'update');
+      const acts = src.querySelector('.acts');
+      acts.innerHTML = '';
+      if (meta[6] === '') {
+        acts.innerHTML = '<button class="btn primary sm">安装</button>';
+      } else {
+        const trash = '<button class="btn ghost sm icon" title="卸载"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg></button>';
+        acts.innerHTML = trash + (meta[6] === 'update' ? '<button class="btn primary sm">更新</button>' : '');
+      }
+      list.appendChild(src);
+      i++;
+    }
+  })();
+
   const btn = document.getElementById('themeBtn');
   btn.addEventListener('click', () => {
     const dark = document.documentElement.dataset.theme === 'dark';
