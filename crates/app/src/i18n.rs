@@ -229,7 +229,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("settings.auto_collapse_hint", "启动时，超时未活动的项目默认折叠", "啟動時，超時未活動的專案預設摺疊", "Collapse projects with no recent activity at startup"),
     ("settings.session_count_hint", "各项目默认显示的会话数量", "各項目預設顯示的會話數量", "Sessions shown per project by default"),
     ("settings.auto_clean_title", "自动清理会话", "自動清理會話", "Auto-clean sessions"),
-    ("settings.auto_clean_hint", "设置会话停止活动N天后自动删除（移入回收站，置顶会话除外），0为不自动清理", "設置會話停止活動N天後自動刪除（移入資源回收筒，置頂會話除外），0為不自動清理", "Delete sessions after N days of inactivity (moves to the recycle bin, pinned excluded); 0 disables auto-clean"),
+    ("settings.auto_clean_hint", "设置会话停止活动N天后自动删除，移入回收站，置顶会话除外", "設置會話停止活動N天後自動刪除，移入資源回收筒，置頂會話除外", "Delete sessions after N days of inactivity,moves to the recycle bin, pinned excluded"),
     ("misc.auto_clean_off", "关闭", "關閉", "Off"),
     ("misc.auto_clean_days", "{n} 天", "{n} 天", "{n} days"),
     ("settings.show_more", "显示更多", "顯示更多", "Show more"),
