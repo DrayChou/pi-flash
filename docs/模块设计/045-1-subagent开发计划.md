@@ -108,14 +108,56 @@ preset-selection 分支(我们走 profile,见 045 §8),预计落到 3000–3500 
 
 **M3 出口**:PF 宿主接上后台通知与聚合面板(044 v2)。
 
-## 4. 依赖与并行
+## 7. 实现计划(2026-10-20 定稿,原型已过稿)
+
+> 依赖顺序:M4(扩展字段)先行——M5 表单/M6 面板的字段契约由它落实;
+> M5 与 M6 互不依赖,可并行。验收 = 跑起 PF 在界面里看到功能。
+
+### M4:扩展侧字段落地(pi-subagents,TS)
+
+| # | 任务 | 验收 |
+|---|---|---|
+| 4.1 | `maxTurns` 软限:local backend 数 turn(子会话事件流),到限 steer「请汇总收尾」,再一轮未收尾 abort;`stopReason: max_turns` | 测试:maxTurns=2 的委派,第 2 轮 steer、第 3 轮 abort,descriptor 记 max_turns |
+| 4.2 | 委派级 `maxloop`:agent 工具 inputSchema 加 `maxloop?`,优先级 maxloop > profile maxTurns > 默认 100 | CLI 委派传 maxloop=3 实测 |
+| 4.3 | `systemPrompt` 替换式(before_agent_start override,替换优先于追加) | 子会话系统提示不含默认人格、含自定义 |
+| 4.4 | `injectAgentsMd`(默认 true;false 时子会话不加载项目 AGENTS.md) | 关闭后子会话上下文无 AGENTS.md 内容 |
+| 4.5 | `tools` 档位化:废弃白名单裁剪逻辑,改四档枚举(inherit 沿用委派者装配 / read-only / default / full → 334 行既有三套白名单) | 四档各一测,继承档与委派者一致 |
+| 4.6 | profile 解析补全上述字段 + 未知字段原样透传 | 解析回环测试 |
+
+### M5:Settings-子代理页(crates/app,设计 = 044-1 §2,原型已过稿)
+
+| # | 任务 | 落点 |
+|---|---|---|
+| 5.1 | pi-link 设施:`agents.rs` 定义目录读写(扫 `~/.pi/agent/agents/*.md` + 内置常量清单、frontmatter 解析/写回、未知字段透传、损坏定位) | `crates/pi-link/src/agents.rs` |
+| 5.2 | 设置面板新页(tab + nav 项 + i18n 三语) | `settings/agents.rs` + `mod.rs` |
+| 5.3 | 左列表:内置/自定义两组 + 组头计数 + 自定义行「新建」按钮 + sidebar_item 选中态 | 同上(件照抄 settings/widgets.rs) |
+| 5.4 | 右表单:名称/描述/模型(继承首项+分隔+模型列表)/工具权限四档/系统提示 textarea/最大轮次四档(50·100·不限·指定 N)/注入AGENTS.md 开关 | 同上 |
+| 5.5 | 动作:保存(写回 md)/删除(进回收站)/新建/内置只读 + 复制为自定义 | 同上 |
+| 5.6 | 损坏态:红条 + 打开文件修复 + 删除 | 同上 |
+
+### M6:子代理面板(crates/app,设计 = 044-1 §1)
+
+| # | 任务 | 落点 |
+|---|---|---|
+| 6.1 | `subagent_catalog::read_catalog(file, from_offset)` 流式扫 descriptor,同 childId 末条覆盖 | `crates/pi-link/src/subagent_catalog.rs` |
+| 6.2 | 操作栏按钮 + 运行中计数徽标(数 phase ∈ provisioning/active) | `session/mod.rs session_fn_bar` |
+| 6.3 | 浮层面板(overlay::layer,向下延伸遮上半区,点外/ESC/✕ 关) | 新 `session/subagent_panel.rs` |
+| 6.4 | 打开期 1s 轮询增量读;整行点击 = open_session 开正式 tab 并关浮层 | 同上 |
+| 6.5 | 空态文案 + i18n 三语 | 同上 |
+
+### 收尾
+
+- i18n_audit 门禁 + `cargo test -p app` 全绿 + pif-ui 自动化链路跑 M5/M6 界面断言
+- 与用户一起做完整测试(045-3 验收清单)
+
+## 8. 依赖与并行(旧)
 
 - **M1 全部独立于宿主**——纯 TS,只依赖 vendored pi 1.1.0,可在 CLI 内完成验收。
 - **M2 只依赖 M1.8/M1.9**(工具面存在)。
 - **M3.5 是唯一需要 044 配合的点**;其余 M3 也可在 CLI 验证。
 - 可并行的:1.1/1.2/1.3 先行,1.4 与它们并行(接口按 types.ts 定);1.6/1.7 与 1.4 并行。
 
-## 5. 风险
+## 9. 风险(旧)
 
 | 风险 | 应对 |
 |---|---|
@@ -125,7 +167,7 @@ preset-selection 分支(我们走 profile,见 045 §8),预计落到 3000–3500 
 | Windows worktree | 按 `BACKEND_UNSUPPORTED` 拒绝(045 §10 待研究 4) |
 | 扩展分发 | pi package 走 npm;PF 是否内置分发由 044 后续定 |
 
-## 6. 不做
+## 10. 不做(旧)
 
 - ❌ 不碰 `crates/app` 宿主代码(M1–M3 全在扩展侧)
 - ❌ 不做 team/roster/DAG(远期,045 §8 之外的协作面)
