@@ -25,11 +25,6 @@ RUST_MIN_STACK=33554432 cargo test -p pi-link   # 协议/路径测试都在 pi-l
 - 禁用 `cargo fmt`！ 格式化用 `scripts/fmt.sh <自己改过的 .rs>`（详情见 [engineering.md](docs/agents/engineering.md)）
 - 如非用户授权，禁止修改Settings模块！
 
-# 并行开发
-- **开工先 `scripts/agent-workspace.sh <名字>` 建克隆，cd 进克隆再干活**（黄金仓库永不写入），无条件、不判断。
-- 提交只 add 自己改过的文件，永不 `git add -A`；克隆用前/推送前 `git pull --rebase`。
-- 验收 = push 后黄金仓库可见；克隆用完删除，防僵尸堆盘。
-
 # 路径
 - vendored pi：`vendor/pi`（package.json+lock 入库；node_modules 走 `npm ci` 不入库）
 - 架构设计：`docs/ARCHITECTURE.md`；复刻计划：`docs/PORT_PLAN.md`
