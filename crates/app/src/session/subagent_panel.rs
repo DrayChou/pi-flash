@@ -1,9 +1,10 @@
-//! 子代理浮层面板（044-1 §1）——当前会话子代理 catalog 的聚合视图。
+//! 子代理面板（044-1 §1）——当前会话子代理 catalog 的聚合视图。
 //!
-//! 入口 = 会话操作栏按钮（`session_fn_bar`，运行中带计数徽标）；点开从
-//! 操作栏向下延伸的浮层（遮上半内容区，点外/ESC/✕ 关）。事实源 = 父会话
-//! JSONL 的 `subagent/descriptor`（[`pi_link::subagent_catalog`]），整行点击
-//! = 以正式 tab 打开子会话并关浮层。
+//! 入口 = 会话操作栏按钮（`session_fn_bar`，运行中带计数徽标）；点开为
+//! 停靠在内容区上半的面板（2026-10-19 二改：弃浮层——浮层的全屏外点拦截
+//! 会把 composer 模型下拉等点击一起吃掉），消息区与 composer 让位下半，
+//! ✕/再点按钮关。事实源 = 父会话 JSONL 的 `subagent/descriptor`
+//! （[`pi_link::subagent_catalog`]），整行点击 = 以正式 tab 打开子会话并收面板。
 //!
 //! 轮询常驻（2026-10-19 用户拍板：关面板只是隐藏，徽标必须一直准）——打开
 //! 期 1s 增量读、收起期 5s 慢速轮询；会话激活即建缓存（open=false），徽标
@@ -14,7 +15,7 @@
 
 use std::path::PathBuf;
 
-use gpui::{MouseButton, SharedString, div, prelude::*, px, rgb};
+use gpui::{MouseButton, SharedString, div, prelude::*, px, relative, rgb};
 
 use crate::Chat;
 use crate::appearance::theme::theme as T;
@@ -35,9 +36,9 @@ const C_DONE: u32 = 0x22c55e;
 const C_ERROR: u32 = 0xf87171;
 const C_ABORTED: u32 = 0xf97316;
 
-/// 浮层宿主状态：持 catalog 缓存（§1.4 的 offset+rows）；`open` 只控渲染。
+/// 面板宿主状态：持 catalog 缓存（§1.4 的 offset+rows）；`open` 只控渲染。
 ///
-/// `open` 与 Option 分开：徽标随时读缓存，浮层收起不清数据。`polling`
+/// `open` 与 Option 分开：徽标随时读缓存，面板收起不清数据。`polling`
 /// 守卫常驻轮询任务只拉起一份——轮询从会话激活跑到 Chat 消亡，收起不清
 /// 缓存也不停轮（间隔放慢），换会话在 poll 内自愈归零重扫。
 #[derive(Clone)]
@@ -48,7 +49,7 @@ pub(crate) struct SubagentPanel {
     pub offset: u64,
     /// 累积的 descriptor 投影（同 childId 末条覆盖）。
     pub rows: Vec<CatalogRow>,
-    /// 浮层是否展开（只控渲染；收起轮询放慢到 [`CLOSED_POLL_TICK`]）。
+    /// 面板是否展开（只控渲染；收起轮询放慢到 [`CLOSED_POLL_TICK`]）。
     pub open: bool,
     /// 常驻轮询任务是否在跑（防 toggle/切换重复 spawn）。
     pub polling: bool,
@@ -62,8 +63,8 @@ impl SubagentPanel {
 }
 
 impl Chat {
-    /// 切换子代理浮层：首次打开（或换会话后）拉一次全量，之后只翻 open。
-    /// 关浮层不丢缓存不停轮（徽标还要用）。
+    /// 切换子代理面板：首次打开（或换会话后）拉一次全量，之后只翻 open。
+    /// 关面板不丢缓存不停轮（徽标还要用）。
     pub(crate) fn toggle_subagent_panel(&mut self, cx: &mut gpui::Context<Self>) {
         let file = self.rt().read(cx).file.clone();
         let already = self
@@ -150,7 +151,7 @@ impl Chat {
     }
 
     /// 整行点击：子会话是普通 pi 会话，直接 open_session（只读检视 + 可续跑），
-    /// 并收起浮层（缓存留着，徽标仍显示）。
+    /// 并收起面板（缓存留着，徽标仍显示）。
     pub(crate) fn open_subagent_child(&mut self, path: PathBuf, cx: &mut gpui::Context<Self>) {
         if let Some(p) = self.dlg.subagent_panel.as_mut() {
             p.open = false;
@@ -217,46 +218,29 @@ pub(crate) fn running_badge(chat: &Chat) -> Option<gpui::AnyElement> {
     )
 }
 
-/// 浮层本体：遮挡 + 外点/ESC 关 + 卡片锚在操作栏正下方（遮上半内容区）。
-/// 面板没开 → None（不占渲染）。
-///
-/// 宽 = [`crate::settings::LIST_W`]（设置四页统一列表宽，082 定稿 400）——
-/// 面板就是一份列表，不再自拟数值；最大高 = 内容区上半。
+/// 面板本体：停靠内容区上半（044-1 §1.1 二改：弃浮层，无遮挡/外点/ESC），
+/// 消息区与 composer 让位下半；`open=false` → None（不占渲染）。
 pub(crate) fn subagent_panel_element(
     chat: &Chat,
     weak: &gpui::WeakEntity<Chat>,
-    content_h: f32,
 ) -> Option<gpui::AnyElement> {
     let t = T();
     let panel = chat.dlg.subagent_panel.as_ref()?;
-    let weak_dismiss = weak.clone();
-    let dismiss = move |_: &mut gpui::Window, cx: &mut gpui::App| {
-        let _ = weak_dismiss.update(cx, |c, cx| {
-            // 只收浮层，不丢缓存（徽标还要用）
-            if let Some(p) = c.dlg.subagent_panel.as_mut() {
-                p.open = false;
-            }
-            cx.notify();
-        });
-    };
-
-    // 卡片：宽用设置列表标准宽（LIST_W=400，有出处），最大高 = 内容区上半
-    let card_w = px(crate::settings::LIST_W);
-    let card_max_h = (content_h / 2.).max(160.);
+    // open 门（不可省）：缓存常驻（徽标轮询用），没这道门面板会永远渲染
+    if !panel.open {
+        return None;
+    }
 
     let mut card = div()
         .id("subagent-panel-card")
+        // 占内容区（chat-wrap）上半；矮窗口保底 160px 可用
+        .h(relative(0.5))
+        .min_h(px(160.))
         .flex()
         .flex_col()
-        .w(card_w)
-        .max_h(px(card_max_h))
-        .rounded(px(8.))
-        .border_1()
+        .border_b_1()
         .border_color(rgb(t.border))
-        .bg(rgb(t.bg))
-        .shadow_lg()
-        // 规则 4：点卡片本身不触发外点关闭
-        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation());
+        .bg(rgb(t.bg));
 
     // 头部：标题 + 关闭 ✕（规则 5：有可见内容的卡片挂 ×）
     card = card.child(panel_header(weak));
@@ -284,16 +268,7 @@ pub(crate) fn subagent_panel_element(
     }
     card = card.child(list);
 
-    Some(
-        crate::ui::overlay::layer(false, None, dismiss)
-            // 锚定：操作栏（32px）正下方，向下延伸
-            .pt(px(36.))
-            .flex()
-            .flex_col()
-            .items_start()
-            .child(card)
-            .into_any_element(),
-    )
+    Some(card.into_any_element())
 }
 
 /// 头部行：标题 + ✕ 关闭。

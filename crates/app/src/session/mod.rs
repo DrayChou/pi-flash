@@ -5,22 +5,24 @@
 
 pub(crate) mod actions_bar;
 pub(crate) mod attachments;
-pub(crate) mod menu;
-pub(crate) mod pool;
 pub(crate) mod chat_list;
 pub(crate) mod diff;
 pub(crate) mod fork;
 pub(crate) mod input;
-pub(crate) mod model_picker;
+pub(crate) mod mcp_picker;
+pub(crate) mod menu;
 pub(crate) mod messages;
+pub(crate) mod model_picker;
 pub(crate) mod new_session;
+pub(crate) mod plugin_picker;
+pub(crate) mod pool;
 pub(crate) mod runtime;
 pub(crate) mod subagent_panel;
-pub(crate) mod plugin_picker;
-pub(crate) mod mcp_picker;
 pub(crate) mod tools_recipe;
 
-use gpui::{Animation, AnimationExt, MouseButton, SharedString, div, list, prelude::*, px, relative, rgb};
+use gpui::{
+    Animation, AnimationExt, MouseButton, SharedString, div, list, prelude::*, px, relative, rgb,
+};
 use pi_link::protocol::Block;
 
 use crate::i18n::tr;
@@ -31,8 +33,8 @@ use self::messages::{
 use crate::ext_ui::render_ext_widget;
 
 use crate::Chat;
-use crate::services::format::*;
 use crate::appearance::theme::theme as T;
+use crate::services::format::*;
 
 pub(crate) use subagent_panel::SubagentPanel;
 
@@ -63,7 +65,8 @@ pub(crate) fn main_column(
     let new_session_page = rt.read(cx).messages.is_empty() && !streaming;
     // composer 焦点态来自输入组件（chat.layout.focus 仅是组件创建前的回退）
     let input_focused = chat
-        .composer.composer
+        .composer
+        .composer
         .as_ref()
         .map(|c| c.read(cx).focus_handle_in(cx).is_focused(window))
         .unwrap_or(false);
@@ -114,6 +117,10 @@ pub(crate) fn main_column(
                             .children(ext_widget_rows(chat, t, false));
                     } else {
                         wrap = wrap
+                            // 子代理停靠面板（044-1 §1.1 二改：弃浮层）：open 时
+                            // 占内容区上半，消息与 composer 让位下半；无遮挡层，
+                            // composer/模型下拉不受影响
+                            .children(subagent_panel::subagent_panel_element(chat, weak))
                             // message list（底部 135px 让位悬浮 composer）
                             .child(session_list(
                                 chat,
@@ -146,14 +153,6 @@ pub(crate) fn main_column(
                 })
                 .child(nav_gutter(chat, rt_entity.clone(), weak.clone(), t, cx)),
         )
-        // 子代理浮层面板（044-1 §1）：挂 session 列根（relative）内，层盖整列、
-        // 卡片从 32px 操作栏正下方起（subagent_panel_element 内 pt 36）；
-        // 与 ask_card 同层叠口径，后渲染者在上
-        .children(subagent_panel::subagent_panel_element(
-            chat,
-            weak,
-            f32::from(window.viewport_size().height),
-        ))
 }
 
 /// 会话功能栏（2026-10-11：topbar ⋯ 菜单撤下拉改常驻条）：会话 tab 下方
@@ -190,9 +189,8 @@ fn session_fn_bar(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyEle
             let dir = pi_link::sessions::sessions_root().map(|root| {
                 match cwd.as_deref() {
                     Some(c) => {
-                        let d = root.join(pi_link::sessions::group_name_for_cwd(
-                            &c.to_string_lossy(),
-                        ));
+                        let d =
+                            root.join(pi_link::sessions::group_name_for_cwd(&c.to_string_lossy()));
                         if d.is_dir() { d } else { root }
                     }
                     // 无项目态：直接开 sessions 根
@@ -254,10 +252,7 @@ fn session_fn_bar(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyEle
 
 /// 「子代理面板」钮（044-1 §1.1）：icon + 文案 + 运行中计数徽标；
 /// 浮层开着时点亮 accent。徽标数 phase ∈ provisioning/active。
-fn subagent_fn_bar_btn(
-    chat: &mut Chat,
-    cx: &mut gpui::Context<Chat>,
-) -> gpui::AnyElement {
+fn subagent_fn_bar_btn(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyElement {
     let t = T();
     let open = chat.dlg.subagent_panel.as_ref().is_some_and(|p| p.open);
     let badge = subagent_panel::running_badge(chat);
@@ -274,9 +269,12 @@ fn subagent_fn_bar_btn(
         .text_color(rgb(if open { t.accent } else { t.text_muted }))
         .cursor_pointer()
         .hover(move |s| s.bg(rgb(t.bg_hover)).text_color(rgb(hover_fg)))
-        .on_mouse_down(MouseButton::Left, cx.listener(|this, _: &gpui::MouseDownEvent, _w, cx| {
-            this.toggle_subagent_panel(cx);
-        }))
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(|this, _: &gpui::MouseDownEvent, _w, cx| {
+                this.toggle_subagent_panel(cx);
+            }),
+        )
         .child(crate::ui::icon(
             "user-round",
             crate::ui::tokens::icon::MD,
@@ -409,42 +407,40 @@ fn session_list(
         })
         .child(
             list(rt_list.clone(), move |ix, _window, cx| {
-        let rt_view = rt_entity.read(cx);
-        let chat = chat_entity.read(cx);
-        let weak = weak_for_msg.clone();
-        match rt_view.messages.get(ix) {
-            Some(m) if m.role == Role::Custom => div()
-                .w_full()
-                .flex()
-                .justify_center()
-                .child(
-                    div()
+                let rt_view = rt_entity.read(cx);
+                let chat = chat_entity.read(cx);
+                let weak = weak_for_msg.clone();
+                match rt_view.messages.get(ix) {
+                    Some(m) if m.role == Role::Custom => div()
                         .w_full()
-                        .max_w(px(content_w))
-                        .child(render_custom_msg(m, ix, t, &rt_view.collapsed, &weak)),
-                )
-                .into_any_element(),
-            // `!` shell 命令卡（031）：独立消息行，不进轮分组
-            Some(m) if m.role == Role::Bash => div()
-                .w_full()
-                .flex()
-                .justify_center()
-                .child(
-                    div()
+                        .flex()
+                        .justify_center()
+                        .child(div().w_full().max_w(px(content_w)).child(render_custom_msg(
+                            m,
+                            ix,
+                            t,
+                            &rt_view.collapsed,
+                            &weak,
+                        )))
+                        .into_any_element(),
+                    // `!` shell 命令卡（031）：独立消息行，不进轮分组
+                    Some(m) if m.role == Role::Bash => div()
                         .w_full()
-                        .max_w(px(content_w))
-                        .child(render_bash_msg(m, ix, t, &rt_view.collapsed, &weak)),
-                )
-                .into_any_element(),
-            Some(m) if m.role == Role::User => div()
-                .w_full()
-                .flex()
-                .justify_center()
-                .child(
-                    div()
+                        .flex()
+                        .justify_center()
+                        .child(div().w_full().max_w(px(content_w)).child(render_bash_msg(
+                            m,
+                            ix,
+                            t,
+                            &rt_view.collapsed,
+                            &weak,
+                        )))
+                        .into_any_element(),
+                    Some(m) if m.role == Role::User => div()
                         .w_full()
-                        .max_w(px(content_w))
-                        .child(render_msg(
+                        .flex()
+                        .justify_center()
+                        .child(div().w_full().max_w(px(content_w)).child(render_msg(
                             m,
                             ix,
                             &weak,
@@ -459,147 +455,147 @@ fn session_list(
                             rt_view.copy_flash.is_some_and(|(cix, at)| {
                                 cix == ix && at.elapsed().as_millis() < 1500
                             }),
-                        )),
-                )
-                .into_any_element(),
-            Some(_) => {
-                // agent 回复按轮聚合：轮头（首条或前一条非 assistant）渲染
-                // 整块；轮内后续消息已含在轮块中，跳过
-                let is_turn_head = ix == 0
-                    || !matches!(
-                        rt_view.messages.get(ix - 1).map(|p| &p.role),
-                        Some(Role::Assistant)
-                    );
-                if !is_turn_head {
-                    return div().into_any_element();
-                }
-                let end = rt_view.messages[ix..]
-                    .iter()
-                    .position(|mm| matches!(mm.role, Role::User | Role::Custom | Role::Bash))
-                    .map(|off| ix + off)
-                    .unwrap_or(rt_view.messages.len());
-                let turn: Vec<&pi_link::protocol::Block> = Vec::new();
-                let _ = turn;
-                let turn_msgs: Vec<&crate::session::messages::Msg> =
-                    rt_view.messages[ix..end].iter().collect();
-                let turn_ixs: Vec<usize> = (ix..end).collect();
-                // 流式中且本轮包含最后一条消息 → 工作中（思考/工具组默认展开，
-                // 模型行显示 ↓token 估算 + t/s 徽章）。
-                // 必须用事件驱动的 agent_running：get_state 快照的 is_streaming
-                // 一轮内没人重拉 → 恒 false，会让「工作详情」组按「已有最终回答」
-                // 默认折叠（思考框看不见）、↓token / t/s 徽章永不出现——composer
-                // 早为此改用 agent_running（见 main_column 顶部注释），消息区漏改。
-                let streaming = rt_view.agent_running;
-                let stream_est = if streaming && end == rt_view.messages.len() {
-                    rt_view.messages.last().map(|last| {
-                        let text: String = last
-                            .blocks
+                        )))
+                        .into_any_element(),
+                    Some(_) => {
+                        // agent 回复按轮聚合：轮头（首条或前一条非 assistant）渲染
+                        // 整块；轮内后续消息已含在轮块中，跳过
+                        let is_turn_head = ix == 0
+                            || !matches!(
+                                rt_view.messages.get(ix - 1).map(|p| &p.role),
+                                Some(Role::Assistant)
+                            );
+                        if !is_turn_head {
+                            return div().into_any_element();
+                        }
+                        let end = rt_view.messages[ix..]
                             .iter()
-                            .map(|b| match b {
-                                Block::Text { text, .. }
-                                | Block::Thinking { text, .. } => text.as_str(),
-                                _ => "",
+                            .position(|mm| {
+                                matches!(mm.role, Role::User | Role::Custom | Role::Bash)
                             })
-                            .collect();
-                        estimate_tokens(&text)
-                    })
-                } else {
-                    None
-                };
-                // v56-5 c23（pi-web tps badge parity）：启动 0.5s 后显示
-                let stream_tps = stream_est.zip(rt_view.stream_started).and_then(|(est, start)| {
-                    let secs = start.elapsed().as_secs_f32();
-                    (secs >= 0.5 && est > 0).then(|| est as f32 / secs)
-                });
-                // 「新分支」锚点：分支保留到本轮 agent 回复为止 → fork 到
-                // 「下一条用户消息之前」（该用户消息本身及之后的内容丢弃）。
-                // 本轮就是尾部时 pi 没有可 fork 的 before 目标 → 走 rpc
-                // clone（整段复制）。锚点还没回来就不给按钮。
-                let fork = if rt_view.active_user_entry_ids.is_empty() {
-                    None
-                } else {
-                    let next_user = rt_view.messages[end..]
-                        .iter()
-                        .find(|m| m.role == Role::User)
-                        .and_then(|m| m.entry_id.clone());
-                    Some(self::fork::ForkAnchor {
-                        tail: end >= rt_view.messages.len(),
-                        next_user,
-                        forking: rt_view.forking,
-                    })
-                };
-                div()
-                    .w_full()
-                    .flex()
-                    .justify_center()
-                    .child(
+                            .map(|off| ix + off)
+                            .unwrap_or(rt_view.messages.len());
+                        let turn: Vec<&pi_link::protocol::Block> = Vec::new();
+                        let _ = turn;
+                        let turn_msgs: Vec<&crate::session::messages::Msg> =
+                            rt_view.messages[ix..end].iter().collect();
+                        let turn_ixs: Vec<usize> = (ix..end).collect();
+                        // 流式中且本轮包含最后一条消息 → 工作中（思考/工具组默认展开，
+                        // 模型行显示 ↓token 估算 + t/s 徽章）。
+                        // 必须用事件驱动的 agent_running：get_state 快照的 is_streaming
+                        // 一轮内没人重拉 → 恒 false，会让「工作详情」组按「已有最终回答」
+                        // 默认折叠（思考框看不见）、↓token / t/s 徽章永不出现——composer
+                        // 早为此改用 agent_running（见 main_column 顶部注释），消息区漏改。
+                        let streaming = rt_view.agent_running;
+                        let stream_est = if streaming && end == rt_view.messages.len() {
+                            rt_view.messages.last().map(|last| {
+                                let text: String =
+                                    last.blocks
+                                        .iter()
+                                        .map(|b| match b {
+                                            Block::Text { text, .. }
+                                            | Block::Thinking { text, .. } => text.as_str(),
+                                            _ => "",
+                                        })
+                                        .collect();
+                                estimate_tokens(&text)
+                            })
+                        } else {
+                            None
+                        };
+                        // v56-5 c23（pi-web tps badge parity）：启动 0.5s 后显示
+                        let stream_tps =
+                            stream_est
+                                .zip(rt_view.stream_started)
+                                .and_then(|(est, start)| {
+                                    let secs = start.elapsed().as_secs_f32();
+                                    (secs >= 0.5 && est > 0).then(|| est as f32 / secs)
+                                });
+                        // 「新分支」锚点：分支保留到本轮 agent 回复为止 → fork 到
+                        // 「下一条用户消息之前」（该用户消息本身及之后的内容丢弃）。
+                        // 本轮就是尾部时 pi 没有可 fork 的 before 目标 → 走 rpc
+                        // clone（整段复制）。锚点还没回来就不给按钮。
+                        let fork = if rt_view.active_user_entry_ids.is_empty() {
+                            None
+                        } else {
+                            let next_user = rt_view.messages[end..]
+                                .iter()
+                                .find(|m| m.role == Role::User)
+                                .and_then(|m| m.entry_id.clone());
+                            Some(self::fork::ForkAnchor {
+                                tail: end >= rt_view.messages.len(),
+                                next_user,
+                                forking: rt_view.forking,
+                            })
+                        };
                         div()
                             .w_full()
-                            .max_w(px(content_w))
-                            .child(render_assistant_turn(
-                                &turn_msgs,
-                                &turn_ixs,
-                                ix,
-                                &weak,
-                                &rt_view.collapsed,
-                                t,
-                                &rt_view.model_label_text(),
-                                stream_est,
-                                stream_tps,
-                                compute_meta(&rt_view.messages, ix),
-                                chat.composer.bar_hover == Some(ix),
-                                // 复制反馈（032 恢复）：copy_flash 点亮且未超 1.5s
-                                // （键 = 轮头 start_ix，与用户栏的 msg_ix 互不重叠）
-                                rt_view.copy_flash.is_some_and(|(cix, at)| {
-                                    cix == ix && at.elapsed().as_millis() < 1500
-                                }),
-                                fork,
-                            )),
-                    )
-                    .into_any_element()
-            }
-            None => {
-                // 条目序 [msgs | phase 行 | spacer]（chat_list::sync 的
-                // splice 编排与之对齐）。spacer = 翻页垫片（pi-web
-                // PromptAnchorSpacer）：把「跟随位」垫到用户消息顶。
-                // phase 行 = 等待脉冲（文本流式一经出现即让位）
-                let content = rt_view.messages.len()
-                    + usize::from(rt_view.phase_row_visible());
-                if rt_view.pager.anchor_active() && ix == content {
-                    div()
-                        .w_full()
-                        .h(px(rt_view.pager.spacer_px()))
-                        .into_any_element()
-                } else if chat.rt().read(cx).phase_row_visible() {
-                    let label = chat.rt().read(cx).phase_label();
-                    div()
-                        .w_full()
-                        .flex()
-                        .justify_center()
-                        .child(
+                            .flex()
+                            .justify_center()
+                            .child(div().w_full().max_w(px(content_w)).child(
+                                render_assistant_turn(
+                                    &turn_msgs,
+                                    &turn_ixs,
+                                    ix,
+                                    &weak,
+                                    &rt_view.collapsed,
+                                    t,
+                                    &rt_view.model_label_text(),
+                                    stream_est,
+                                    stream_tps,
+                                    compute_meta(&rt_view.messages, ix),
+                                    chat.composer.bar_hover == Some(ix),
+                                    // 复制反馈（032 恢复）：copy_flash 点亮且未超 1.5s
+                                    // （键 = 轮头 start_ix，与用户栏的 msg_ix 互不重叠）
+                                    rt_view.copy_flash.is_some_and(|(cix, at)| {
+                                        cix == ix && at.elapsed().as_millis() < 1500
+                                    }),
+                                    fork,
+                                ),
+                            ))
+                            .into_any_element()
+                    }
+                    None => {
+                        // 条目序 [msgs | phase 行 | spacer]（chat_list::sync 的
+                        // splice 编排与之对齐）。spacer = 翻页垫片（pi-web
+                        // PromptAnchorSpacer）：把「跟随位」垫到用户消息顶。
+                        // phase 行 = 等待脉冲（文本流式一经出现即让位）
+                        let content =
+                            rt_view.messages.len() + usize::from(rt_view.phase_row_visible());
+                        if rt_view.pager.anchor_active() && ix == content {
                             div()
                                 .w_full()
-                                .max_w(px(content_w))
-                                .pt(px(2.))
-                                .child(phase_pulse(label, t)),
-                        )
-                        .into_any_element()
-                } else {
-                    div().w_full().into_any_element()
+                                .h(px(rt_view.pager.spacer_px()))
+                                .into_any_element()
+                        } else if chat.rt().read(cx).phase_row_visible() {
+                            let label = chat.rt().read(cx).phase_label();
+                            div()
+                                .w_full()
+                                .flex()
+                                .justify_center()
+                                .child(
+                                    div()
+                                        .w_full()
+                                        .max_w(px(content_w))
+                                        .pt(px(2.))
+                                        .child(phase_pulse(label, t)),
+                                )
+                                .into_any_element()
+                        } else {
+                            div().w_full().into_any_element()
+                        }
+                    }
                 }
-            }
-        }
-    })
-    .flex_1()
-    .min_h_0()
-    // 上下内边距必须与 chat_list 的钉顶/垫片几何一致（PAD_TOP/PAD_BOTTOM），
-    // 改这里等于改滚屏数学
-    .pt(px(chat_list::PAD_TOP))
-    .pb(px(chat_list::PAD_BOTTOM)),
+            })
+            .flex_1()
+            .min_h_0()
+            // 上下内边距必须与 chat_list 的钉顶/垫片几何一致（PAD_TOP/PAD_BOTTOM），
+            // 改这里等于改滚屏数学
+            .pt(px(chat_list::PAD_TOP))
+            .pb(px(chat_list::PAD_BOTTOM)),
         )
         .into_any_element()
 }
-
 
 /// 会话导航面板 (033)：右缘 10px 竖条，屏高 75%，按「屏高 − composer
 /// 高度×50%」居中；生成算法（v63-5，2026-10-10 上限 20→10）：轮次均分
@@ -621,7 +617,11 @@ fn nav_gutter(
     // 摘要读 runtime 缓存（v63-3：notify_list 置脏、惰性重建，渲染帧
     // 零重算——摘要「一轮一次」，不随渲染帧反复拼前缀）
     let (summary, scroll_top_ix, nav_pinned) = rt_entity.update(cx, |rt, _| {
-        (rt.nav_summary(), rt.pager.scroll_top_ix(), rt.pager.nav_pinned())
+        (
+            rt.nav_summary(),
+            rt.pager.scroll_top_ix(),
+            rt.pager.nav_pinned(),
+        )
     });
     // 刻度选中 = 真实定位轮次（033）：视口顶之上最近的轮。贴底（含未
     // 滚动的短会话）时逻辑位是 None，scroll_top_ix 回退成总条目数 →
@@ -651,9 +651,8 @@ fn nav_gutter(
     // floor(t·k/N) 对桶起始轮（i·N mod k ≠ 0）floor 回上一桶——点段 i
     // 高亮 i−1；不带 −1 的 floor((t+1)·k/N) 整体偏下一桶（恒等映射下
     // = t+1，点哪段亮下一段）——v63-7 两版都踩过，此为终版
-    let tick_of_turn = move |t: usize| -> usize {
-        (((t + 1) * tick_count - 1) / n_turns).min(tick_count - 1)
-    };
+    let tick_of_turn =
+        move |t: usize| -> usize { (((t + 1) * tick_count - 1) / n_turns).min(tick_count - 1) };
 
     let mut gutter = div()
         .id("nav-gutter")
@@ -728,17 +727,20 @@ fn nav_gutter(
             .pl(px(6.))
             .pr(px(14.))
             .child(
-                gpui::list(chat.layout.nav_flyout_list.clone(), move |ix, _window, cx| {
-                    let Some(s) = summary_cards.turns.get(ix) else {
-                        return div().into_any_element();
-                    };
-                    // 选中框 = 悬浮光标（enter 置位），状态在 Chat 上，
-                    // 经 weak 升级读取（list 闭包只有 &mut App）
-                    let on = weak_cards
-                        .upgrade()
-                        .is_some_and(|c| c.read(cx).layout.nav_hover_turn == Some(ix));
-                    nav_card(ix, s, on, &weak_cards, &rt_cards, t)
-                })
+                gpui::list(
+                    chat.layout.nav_flyout_list.clone(),
+                    move |ix, _window, cx| {
+                        let Some(s) = summary_cards.turns.get(ix) else {
+                            return div().into_any_element();
+                        };
+                        // 选中框 = 悬浮光标（enter 置位），状态在 Chat 上，
+                        // 经 weak 升级读取（list 闭包只有 &mut App）
+                        let on = weak_cards
+                            .upgrade()
+                            .is_some_and(|c| c.read(cx).layout.nav_hover_turn == Some(ix));
+                        nav_card(ix, s, on, &weak_cards, &rt_cards, t)
+                    },
+                )
                 // 上下 padding 挂 list 本体（prepaint 会应用）
                 .pt(px(8.))
                 .pb(px(8.))
@@ -749,10 +751,15 @@ fn nav_gutter(
         // 滚动条仅在实际溢出时渲染；ListStateHandle 把 ListState 适配成
         // gpui-component Scrollbar 的句柄（拖拽走 list.rs 的 scrollbar 协
         // 作接口），锚在滚动区（总结栏之下）
-        if chat.layout.nav_flyout_list.max_offset_for_scrollbar().height > px(0.) {
-            let handle = crate::ui::list_handle::ListStateHandle(
-                chat.layout.nav_flyout_list.clone(),
-            );
+        if chat
+            .layout
+            .nav_flyout_list
+            .max_offset_for_scrollbar()
+            .height
+            > px(0.)
+        {
+            let handle =
+                crate::ui::list_handle::ListStateHandle(chat.layout.nav_flyout_list.clone());
             let sb_state = gpui_component::scroll::ScrollbarState::default();
             flyout_wrap = flyout_wrap.child(
                 div()
@@ -761,9 +768,9 @@ fn nav_gutter(
                     .bottom(px(8.))
                     .right(px(3.))
                     .w(px(8.))
-                    .child(
-                        gpui_component::scroll::Scrollbar::vertical(&sb_state, &handle),
-                    ),
+                    .child(gpui_component::scroll::Scrollbar::vertical(
+                        &sb_state, &handle,
+                    )),
             );
         }
         gutter = gutter.child(flyout_wrap);
@@ -807,9 +814,13 @@ fn nav_gutter(
                         cx.listener(move |this, _, window, cx| {
                             // 面板联动（v63-6）：面板滚到该段的区域起始卡
                             //（卡序号 = 轮序号）
-                            this.layout.nav_flyout_list
+                            this.layout
+                                .nav_flyout_list
                                 .scroll_to_reveal_item(turn_of_tick(i));
-                            rt_scroll.read(cx).pager.nav_goto(turn_of_tick(i), target_ix);
+                            rt_scroll
+                                .read(cx)
+                                .pager
+                                .nav_goto(turn_of_tick(i), target_ix);
                             window.refresh();
                         }),
                     )
@@ -859,8 +870,7 @@ fn nav_gutter(
                                 this.layout.nav_open = true;
                                 this.layout.nav_hide_at = None;
                             } else if !this.layout.nav_flyout_hovered {
-                                this.layout.nav_hide_at =
-                                    Some(std::time::Instant::now());
+                                this.layout.nav_hide_at = Some(std::time::Instant::now());
                             }
                             cx.notify();
                         }))
@@ -918,12 +928,9 @@ fn nav_summary_header(
             .gap(px(space::SP4))
             .child(crate::ui::icon(icon_name, tok_icon::MD, dim));
         if colon {
-            group = group.child(num_style(div()).child(SharedString::from(format!(
-                "{count}："
-            ))));
+            group = group.child(num_style(div()).child(SharedString::from(format!("{count}："))));
         } else {
-            group =
-                group.child(num_style(div()).child(SharedString::from(count.to_string())));
+            group = group.child(num_style(div()).child(SharedString::from(count.to_string())));
         }
         header = header.child(group);
     }
@@ -1059,9 +1066,14 @@ fn nav_card(
 }
 
 /// Extension setWidget rows above/below the composer (ext protocol surface).
-fn ext_widget_rows(chat: &Chat, t: &'static crate::appearance::theme::Theme, above: bool) -> Option<gpui::AnyElement> {
+fn ext_widget_rows(
+    chat: &Chat,
+    t: &'static crate::appearance::theme::Theme,
+    above: bool,
+) -> Option<gpui::AnyElement> {
     let rows: Vec<gpui::AnyElement> = chat
-        .aux.ext_widgets
+        .aux
+        .ext_widgets
         .iter()
         .filter(|(_, _, a)| *a == above)
         .map(|(_, lines, _)| render_ext_widget(lines, t))
@@ -1094,4 +1106,3 @@ fn phase_pulse(label: String, t: &crate::appearance::theme::Theme) -> gpui::AnyE
         )
         .into_any_element()
 }
-
