@@ -65,9 +65,22 @@ src="$(git rev-parse --show-toplevel)"
 dst="$(dirname "$src")/pi-flash-$name"
 [ -e "$dst" ] && die "目标已存在：$dst"
 
+# 克隆源用本地路径（.git 对象硬链接，秒级），但克隆出来的 origin 不能留在
+# 本地路径上：黄金仓库是非裸仓、main 正被检出，推当前分支会被
+# receive.denyCurrentBranch 拒掉。所以先把真远端记下来，克隆后重指 origin，
+# 让「各克隆都直接推 origin」（见铁律 3）真的成立。
+real_remote="$(git -C "$src" remote get-url origin 2>/dev/null || true)"
+
 echo "==> 本地克隆（.git 对象硬链接，秒级）"
 echo "    $src → $dst"
 git clone --quiet "$src" "$dst"
+
+if [ -n "$real_remote" ]; then
+    echo "==> 重指 origin → 真远端：$real_remote"
+    git -C "$dst" remote set-url origin "$real_remote"
+else
+    echo "    警告：$src 没有 origin 远端，克隆的 origin 仍指本地路径，push 会被拒" >&2
+fi
 
 echo "==> 对齐 origin/main（尽力而为）"
 if ! git -C "$dst" pull --rebase --quiet; then
