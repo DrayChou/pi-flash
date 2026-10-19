@@ -110,6 +110,7 @@
   .dd-it.on::before { content: "✓"; color: var(--accent); font-weight: 700; }
   .dd-it .n { font-family: "JetBrains Mono", monospace; }
   .dd-it .d { margin-left: auto; font-size: 11px; color: var(--text-faint); }
+  .dd-sep { height: 1px; margin: 4px 0; background: var(--border); }
 
   .seg { display: flex; align-items: stretch; flex: none; border: 1px solid var(--border);
     border-radius: 6px; overflow: hidden; background: var(--bg-panel); }
@@ -171,7 +172,18 @@
           <div class="frm">
             <div class="row"><span class="nm">描述</span><span class="ct"><input type="text" style="width:100%" value="代码评审 · 正确性与边界"></span></div>
             <div class="row"><span class="nm">模型</span><span class="ct">
-              <button class="sel-btn" style="width:250px;justify-content:space-between">self-hosted/qwen3-next<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button>
+              <div class="dd" id="dd-model">
+                <button class="sel-btn dd-btn" type="button" style="width:250px;justify-content:space-between"><span id="dd-model-val">继承</span><svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button>
+                <div class="dd-menu">
+                  <div class="dd-it on" data-v="继承"><span class="n">继承</span></div>
+                  <div class="dd-sep"></div>
+                  <div class="dd-it on" data-v="self-hosted/qwen3-next"><span class="n">self-hosted/qwen3-next</span></div>
+                  <div class="dd-it" data-v="self-hosted/gpt-oss-120b"><span class="n">self-hosted/gpt-oss-120b</span></div>
+                  <div class="dd-it" data-v="deepseek/deepseek-chat"><span class="n">deepseek/deepseek-chat</span></div>
+                  <div class="dd-it" data-v="deepseek/deepseek-reasoner"><span class="n">deepseek/deepseek-reasoner</span></div>
+                  <div class="dd-it" data-v="zai/glm-5.3-flash"><span class="n">zai/glm-5.3-flash</span></div>
+                </div>
+              </div>
             </span></div>
             <div class="row"><span class="nm">工具权限</span><span class="ct">
               <div class="dd" id="dd-tools">
@@ -209,7 +221,7 @@
           <div class="frm ro">
             <div class="row"><span class="nm">描述</span><span class="ct"><input type="text" style="width:100%" value="只读探索 · 调研与定位" readonly></span></div>
             <div class="row"><span class="nm">模型</span><span class="ct">
-              <button class="sel-btn" style="width:250px;justify-content:space-between">继承默认<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button>
+              <button class="sel-btn" style="width:250px;justify-content:space-between">继承<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button>
             </span></div>
             <div class="row"><span class="nm">工具权限</span><span class="ct">
               <button class="sel-btn" style="width:250px;justify-content:space-between">read-only<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button>
@@ -252,7 +264,24 @@
     document.getElementById('dd-tools-val').textContent = it.dataset.v;
     dd.classList.remove('open');
   }));
-  document.addEventListener('click', () => dd.classList.remove('open'));
+  document.addEventListener('click', () => document.querySelectorAll('.dd').forEach(d => d.classList.remove('open')));
+
+  function bindDd(id, valId) {
+    const d = document.getElementById(id);
+    d.querySelector('.dd-btn').addEventListener('click', e => {
+      e.stopPropagation();
+      document.querySelectorAll('.dd').forEach(x => { if (x !== d) x.classList.remove('open'); });
+      d.classList.toggle('open');
+    });
+    d.querySelectorAll('.dd-it').forEach(it => it.addEventListener('click', () => {
+      d.querySelectorAll('.dd-it').forEach(x => x.classList.remove('on'));
+      it.classList.add('on');
+      document.getElementById(valId).textContent = it.dataset.v;
+      d.classList.remove('open');
+    }));
+  }
+  bindDd('dd-model', 'dd-model-val');
+  bindDd('dd-tools', 'dd-tools-val');
 </script>
 </body>
 </html>
