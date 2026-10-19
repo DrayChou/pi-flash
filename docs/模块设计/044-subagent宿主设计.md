@@ -18,7 +18,7 @@ profile 管理(CRUD + 开关)、孤儿恢复 UI(interrupted/resume)、v2 后台�
 |---|---|---|
 | 子代理进度流 | `tool_execution_update`(spawn 工具 onUpdate,details 带 sessionId/状态/token) | 渲染嵌套卡 |
 | 完整过程 | 子会话 JSONL 文件(路径在 details/entry) | 直读 + 跳转 |
-| 多代理聚合视图 | 扩展 `setWidget` | 宿主渲染 |
+| 多代理聚合视图 | 父会话文件的 descriptor entries(实时落盘) | 面板渲染——定稿见 [044-1-子代理面板](044-1-子代理面板.md)(setWidget 挂件方案已弃) |
 | 成本 | nested-call usage **逐层上卷**进父工具结果(0.99 原生) | ctx_tip 现有面板直接显示,零新代码 |
 | 孤儿 | 自定义 entry + `agent_settled.aborted`(1.1.0) | interrupted 标记 + resume 入口 |
 | 后台完成通知(v2) | `ctx.ui.notify`(fire-and-forget) | 消费并决定 followUp 策略 |
