@@ -13,6 +13,10 @@
 # 结束后跑 scripts/ship.sh <版本> <说明文件> 收尾（发版提交 → tag 推送触发
 # publish-npm.yml 自动发薄壳 → gh release create 挂资产）。
 # macOS 不发布（RELEASE.md §1，2026-10-12 所有者定夺）。
+#
+# ⛔ 本脚本绝不跑格式化：不在这里插任何 `cargo fmt` / rustfmt 步骤。发版阶段只做
+# 校验/构建/打包，源码必须保持「跑过测试的那一份」（理由与实测代价见
+# docs/agents/engineering.md §多 agent 风格不一致）。
 
 set -euo pipefail
 cd "$(dirname "$0")/.."

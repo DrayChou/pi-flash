@@ -16,6 +16,7 @@
 #
 # 保留的唯一用途（只读，不写盘）：
 #   scripts/fmt.sh --check <file.rs>...   诊断某文件离 rustfmt 输出还差多少
+#   scripts/fmt.sh --check --all          全仓只读扫描（统计用，不是门禁）
 #
 # 想要统一风格时的唯一姿势：**人工决策 + 单独一个 `style:` 提交**，且先想清楚
 # 是否真的值得（当前结论：不值得，见 docs/agents/engineering.md §格式化）。
@@ -34,10 +35,12 @@ print_usage() {
     cat <<'EOF'
 本仓不再跑 rustfmt（写盘格式化已下线）。
 
-唯一可用：
-  scripts/fmt.sh --check <file.rs>...   只读诊断：该文件是否符合 rustfmt 输出
+只读诊断（不写盘）：
+  scripts/fmt.sh --check <file.rs>...   看点名文件离 rustfmt 输出差多少
+  scripts/fmt.sh --check --all          全仓扫一遗（只出统计，用于「要不要做一次
+                                        性基线」这类决策，不是门禁）
 
-不接受写盘模式（文件列表 / 目录 / --all / -p 包名 等）——
+不接受写盘模式（文件列表 / 目录 / -p 包名 等）——
 本仓没有 rustfmt-clean 基线，格式化只会制造无关 diff，见 docs/agents/engineering.md。
 EOF
 }
@@ -48,14 +51,16 @@ if [ $# -eq 0 ]; then
 fi
 
 check_only=0
+all=0
 files=()
 
 for arg in "$@"; do
     case "$arg" in
         -h|--help) print_usage; exit 0 ;;
         --check) check_only=1 ;;
+        --all) all=1 ;;
         -*)
-            die "不认识的选项 $arg（本脚本只收 --check 和 .rs 文件路径）"
+            die "不认识的选项 $arg（本脚本只收 --check / --all 和 .rs 文件路径）"
             ;;
         *)
             [ -e "$arg" ] || die "文件不存在：$arg"
@@ -75,19 +80,35 @@ if [ "$check_only" -eq 0 ]; then
     die "本仓不再跑 rustfmt：写盘格式化已下线，不要用它给提交掺排版 diff"
 fi
 
+if [ "$all" -eq 1 ]; then
+    [ "${#files[@]}" -eq 0 ] || die "--all 与点名文件不要混用（要么全仓，要么点名）"
+    mapfile -t files < <(git ls-files '*.rs')
+fi
+
 if [ "${#files[@]}" -eq 0 ]; then
     print_usage
-    die "--check 需要点名具体 .rs 文件"
+    die "--check 需要点名具体 .rs 文件，或加 --all"
 fi
 
 # ---- 只读诊断 ----
 rc=0
+bad=0
 for f in "${files[@]}"; do
     if ! rustfmt --edition "$EDITION" --check "$f" >/dev/null 2>&1; then
-        echo "与 rustfmt 输出不一致：$f"
+        bad=$((bad + 1))
+        # 全仓模式只出统计（逐个刷 200 多行没意义）；点名模式列出文件名
+        if [ "$all" -eq 0 ]; then
+            echo "与 rustfmt 输出不一致：$f"
+        fi
         rc=1
     fi
 done
-[ "$rc" -eq 0 ] && echo "全部符合 rustfmt 输出（注意：本仓并不要求这一点）。"
+
+if [ "$all" -eq 1 ]; then
+    echo "全仓扫描：${#files[@]} 个 .rs，其中 $bad 个不符合 rustfmt 输出。"
+    echo "（注：crates/app/src/i18n.rs 永远计入不一致——TABLE 表行必须单行，见 engineering.md）"
+else
+    [ "$rc" -eq 0 ] && echo "全部符合 rustfmt 输出（注意：本仓并不要求这一点）。"
+fi
 echo "提示：本仓不跑 rustfmt；以上差异仅供人工判断，勿据此批量改写。"
 exit "$rc"
