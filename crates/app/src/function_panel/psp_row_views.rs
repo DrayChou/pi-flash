@@ -40,9 +40,13 @@ pub(crate) fn session_row_view(
     // 写入点是 SessionEvent::Changed 订阅（只在进程退出 / 手动压缩 / 换工具预设
     // 时发），正常一轮的 AgentStart/AgentSettled/AgentEnd 都不发 Changed →
     // 缓存恒空，状态槽的旋转圈再也不出现。回到渲染期直接扫常驻 runtime。
+    // 比较用 same_path（大小写不敏感）：pi 自报的会话路径可能带它自拼的
+    // group 大小写形态，Path 的 == 区分大小写会永假（转圈消失的真机回归）
     let running = chat.pool.runtimes.values().any(|rt| {
         let r = rt.read(cx);
-        r.file.as_deref() == Some(info.path.as_path())
+        r.file
+            .as_deref()
+            .is_some_and(|f| crate::services::workspace::same_path(f, &info.path))
             && (r.agent_running || r.state.as_ref().is_some_and(|s| s.is_streaming))
     });
     let title: SharedString = info

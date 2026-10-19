@@ -391,6 +391,10 @@ impl Chat {
     }
 
     pub(crate) fn open_session(&mut self, path: PathBuf, rename: bool, cx: &mut Context<Self>) {
+        // 入参可能带历史字符串形态（recents/last-open 存过 pi 自拼的 group
+        // 大小写）：先归一到扫描器形态再入池——pool key、侧栏行匹配、通知
+        // 点集合共用同一条字符串身份，形态分裂就会点行重复 spawn runtime
+        let path = pi_link::sessions::canonical_session_path(&path);
         // recents (003-session管理): opening is activity — promote to the
         // top of the recent-activity list (persist throttled)
         pi_link::recents::touch_recent(&path);
@@ -503,7 +507,12 @@ impl Chat {
             .pool
             .runtimes
             .get(&self.pool.active_key)
-            .map(|rt| rt.read(cx).file.as_deref() == Some(path.as_path()))
+            .map(|rt| {
+                rt.read(cx)
+                    .file
+                    .as_deref()
+                    .is_some_and(|f| same_path(f, &path))
+            })
             .unwrap_or(false);
         // tear down the runtime (abort + process kill; dropping the entity
         // clears the file handle on Windows before unlink)

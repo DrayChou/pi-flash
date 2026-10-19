@@ -134,6 +134,21 @@ impl SessionRuntime {
     /// 重开目标、recents）——落后一步就是「分支已生效、界面仍挂在父会话」。
     /// 磁盘侧探针也要同步重取：分支文件的内容已经不是父会话的了。
     pub(crate) fn follow_session_file(&mut self, f: PathBuf, cx: &mut Context<Self>) {
+        // 稳态轮末对账短路先走（same_path 大小写不敏感，零 IO）：已绑同文件
+        // 就不必再做下面的 on-disk 归一（每次 get_state 响应都会到这）
+        if self
+            .file
+            .as_deref()
+            .is_some_and(|cur| crate::services::workspace::same_path(cur, &f))
+        {
+            return;
+        }
+        // pi 自报路径可能是它按进程 cwd 自拼的 group 形态（--d--…），与磁盘
+        // 扫描的 on-disk 形态（--D--…）同目录不同字符串：先归一到扫描器
+        // 形态再对账——r.file / pool key / 通知点集合全靠这条字符串与侧栏
+        // 行对齐，原样绑定就是「行转圈/完成点永不亮」的根因（clone 分支
+        // 必经此处：pi 的 createBranchedSession 用自己的 sessionDir 造路径）。
+        let f = pi_link::sessions::canonical_session_path(&f);
         if self.file.as_deref() == Some(f.as_path()) {
             return;
         }
@@ -212,7 +227,6 @@ impl SessionRuntime {
         // branch_tree / fork 锚点由上面的 get_entries / get_tree 重建
         cx.notify();
     }
-
 }
 
 /// User-message entry ids along the root→leaf path (fork anchors for the
@@ -263,7 +277,7 @@ pub(crate) fn branch_name(base: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{branch_name, BRANCH_NAME_CHARS};
+    use super::{BRANCH_NAME_CHARS, branch_name};
 
     #[test]
     fn branch_name_truncates_to_20_chars() {
@@ -274,7 +288,10 @@ mod tests {
         let exactly20: String = "12345678901234567890".to_string();
         assert_eq!(branch_name(&exactly20), exactly20);
         // 超 20 字：截断 + "…"
-        assert_eq!(branch_name("123456789012345678901"), "12345678901234567890…");
+        assert_eq!(
+            branch_name("123456789012345678901"),
+            "12345678901234567890…"
+        );
         // 空标题：不发明名字（调用方跳过 set_session_name）
         assert_eq!(branch_name("   "), "");
         assert_eq!(BRANCH_NAME_CHARS, 20);

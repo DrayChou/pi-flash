@@ -76,6 +76,75 @@ pub fn group_name_for_cwd(cwd: &str) -> String {
     format!("--{encoded}--")
 }
 
+/// group 目录的 on-disk 形态：root 下按大小写不敏感找同名目录，返回
+/// read_dir 报告的名字。找不到（未建 / 自定义 session-dir 布局）→ 原样。
+///
+/// Windows 的 read_dir 保留**调用方传入**的父目录大小写：`list_for_cwd`
+/// 用 ws.cwd 拼 group（projects.json 里可能是小写 `d:`），整列行的 path
+/// 就跟着那个形态走——与 pi 自报 / 其他入口的形态互相失配。
+fn canonical_group_dir(root: &Path, group: &Path) -> PathBuf {
+    let Some(name) = group.file_name() else {
+        return group.to_path_buf();
+    };
+    let name_lc = name.to_string_lossy().to_lowercase();
+    let Ok(rd) = std::fs::read_dir(root) else {
+        return group.to_path_buf();
+    };
+    for entry in rd.flatten() {
+        let n = entry.file_name();
+        if n.to_string_lossy().to_lowercase() == name_lc {
+            return root.join(n);
+        }
+    }
+    group.to_path_buf()
+}
+
+/// 归一到「扫描器形态」的会话文件路径：sessions root + group 目录都取
+/// on-disk 大小写。pi 会按**进程 cwd** 自拼 session 目录（`--d--…`），
+/// 磁盘扫描拿到的是 on-disk 形态（`--D--…`）——NTFS 同一个目录、两串
+/// 不同的字符串，而 `Path` 相等比较区分大小写：原样绑定 pi 自报路径的
+/// 话，r.file / pool key / 通知点集合与侧栏行永远对不上（行转圈、完成
+/// 点、池命中全失灵）。所有「接受会话文件路径」的入口（follow_session_file /
+/// open_session）都先过这里。root 匹配与 group 名匹配均大小写不敏感
+/// （Windows 口径）；不在 root 下 / 结构不符 / group 不在盘上 → 原样返回。
+pub fn canonical_session_path_in(root: &Path, p: &Path) -> PathBuf {
+    let p_str = p.to_string_lossy();
+    let root_str = root.to_string_lossy();
+    // 大小写不敏感的前缀匹配：剩余段从**原串**切（保留原大小写）；
+    // get() 兜住极端 to_lowercase 变长字符的非边界切分，失败即原样
+    let rest = p_str
+        .strip_prefix(&*root_str)
+        .or_else(|| {
+            p_str.get(..root_str.len()).and_then(|head| {
+                head.to_lowercase()
+                    .eq(&root_str.to_lowercase())
+                    .then(|| p_str.get(root_str.len()..))
+                    .flatten()
+            })
+        })
+        .map(|r| r.trim_start_matches(['\\', '/']))
+        .filter(|r| !r.is_empty());
+    let Some(rest) = rest else {
+        return p.to_path_buf();
+    };
+    let Some((group, file)) = rest.split_once(['\\', '/']) else {
+        return p.to_path_buf();
+    };
+    if group.is_empty() || file.is_empty() {
+        return p.to_path_buf();
+    }
+    canonical_group_dir(root, &root.join(group)).join(file)
+}
+
+/// [`canonical_session_path_in`] over the default sessions root; root
+/// unavailable → as-is.
+pub fn canonical_session_path(p: &Path) -> PathBuf {
+    match sessions_root() {
+        Some(root) => canonical_session_path_in(&root, p),
+        None => p.to_path_buf(),
+    }
+}
+
 /// Home-relative sessions root (`~/.pi/agent/sessions`), honoring
 /// `PI_CODING_AGENT_SESSION_DIR` / `--session-dir` is left to callers that
 /// spawn pi; discovery here covers the default location.
@@ -188,7 +257,9 @@ impl Scanner {
     }
 
     fn load_index(&mut self) {
-        let Some(path) = self.index_path.clone() else { return };
+        let Some(path) = self.index_path.clone() else {
+            return;
+        };
         let Ok(Value::Object(obj)) = crate::config::read_json(&path) else {
             return;
         };
@@ -248,9 +319,12 @@ impl Scanner {
     /// Sessions of one project only: reads the cwd's group directory,
     /// skipping every other group's IO (semantic cwd filtering stays with
     /// the caller — the header `cwd` is authoritative, not the dir name).
+    /// group 段先归一到 on-disk 名：产出的 SessionInfo.path 恒为扫描器
+    /// 形态，不随调用方 cwd 字符串的大小写漂移。
     pub fn list_for_cwd(&mut self, cwd: &str, max: usize) -> Vec<SessionInfo> {
         let group = self.root.join(group_name_for_cwd(cwd));
         if group.is_dir() {
+            let group = canonical_group_dir(&self.root, &group);
             self.list_groups(&[group], max, &std::collections::HashSet::new())
         } else {
             Vec::new()
@@ -275,7 +349,9 @@ impl Scanner {
     ) -> Vec<SessionInfo> {
         let mut files: Vec<(SystemTime, PathBuf)> = Vec::new();
         for group in groups {
-            let Ok(rd) = std::fs::read_dir(group) else { continue };
+            let Ok(rd) = std::fs::read_dir(group) else {
+                continue;
+            };
             for f in rd.flatten() {
                 let path = f.path();
                 if exclude.contains(&path) {
@@ -380,10 +456,7 @@ fn read_tail(path: &Path, bytes: u64) -> String {
     };
     let len = f.metadata().map(|m| m.len()).unwrap_or(0);
     let window = len.min(bytes);
-    if f
-        .seek(SeekFrom::End(-(window as i64)))
-        .is_err()
-    {
+    if f.seek(SeekFrom::End(-(window as i64))).is_err() {
         return String::new();
     }
     let mut buf = Vec::with_capacity(window as usize);
@@ -523,7 +596,12 @@ fn preview_from_partial_line(line: &str) -> Option<String> {
 /// `count_bytes` 续读新增后缀即可；文件缩水（外部改写，非 pi 行为）才
 /// 全量重数。活跃会话文件每轮都在变，这里的增量化直接决定发送消息时
 /// 主线程重扫的卡顿。
-fn scan_file(path: &Path, modified: SystemTime, size: u64, prev: Option<&IndexEntry>) -> Option<IndexEntry> {
+fn scan_file(
+    path: &Path,
+    modified: SystemTime,
+    size: u64,
+    prev: Option<&IndexEntry>,
+) -> Option<IndexEntry> {
     let prefix = read_prefix(path, PREFIX_BYTES);
     let mut id = String::new();
     let mut cwd = String::new();
@@ -580,8 +658,7 @@ fn scan_file(path: &Path, modified: SystemTime, size: u64, prev: Option<&IndexEn
         return None;
     }
     // renames append `session_info` entries; the latest wins
-    let name = read_latest_session_info(path)
-        .and_then(|v| v["name"].as_str().map(str::to_string));
+    let name = read_latest_session_info(path).and_then(|v| v["name"].as_str().map(str::to_string));
     if preview.len() > 120 {
         // truncate at a char boundary
         let mut cut = 120;
@@ -681,7 +758,9 @@ pub fn read_tail_messages(path: &Path, tail_bytes: u64, max: usize) -> Vec<Value
     };
     let mut messages: Vec<Value> = Vec::new();
     for line in body.lines() {
-        let Ok(v) = crate::json::parse_value(line) else { continue };
+        let Ok(v) = crate::json::parse_value(line) else {
+            continue;
+        };
         if let Some(m) = renderable_message(&v) {
             messages.push(m);
         }
@@ -697,7 +776,9 @@ pub fn read_tail_messages(path: &Path, tail_bytes: u64, max: usize) -> Vec<Value
 /// a cheap upper bound for the leaf-chain integrity check — a false positive
 /// costs one full `read_leaf_messages` pass, never correctness.
 pub fn count_message_entries(path: &Path) -> u64 {
-    let Ok(data) = std::fs::read(path) else { return 0 };
+    let Ok(data) = std::fs::read(path) else {
+        return 0;
+    };
     const NEEDLE: &[u8] = b"\"type\":\"message\"";
     data.windows(NEEDLE.len()).filter(|&w| w == NEEDLE).count() as u64
 }
@@ -714,13 +795,17 @@ pub fn count_message_entries(path: &Path) -> u64 {
 /// up to `max`.
 pub fn read_leaf_messages(path: &Path, max: usize) -> Vec<Value> {
     use std::io::BufRead;
-    let Ok(file) = std::fs::File::open(path) else { return Vec::new() };
+    let Ok(file) = std::fs::File::open(path) else {
+        return Vec::new();
+    };
     let mut parent_of: HashMap<String, String> = HashMap::new();
     let mut messages: Vec<Value> = Vec::new();
     let mut anchor: Option<String> = None;
     for line in std::io::BufReader::new(file).lines() {
         let Ok(line) = line else { break };
-        let Ok(v) = crate::json::parse_value(&line) else { continue };
+        let Ok(v) = crate::json::parse_value(&line) else {
+            continue;
+        };
         if v["type"].as_str() == Some("session") {
             continue;
         }
@@ -735,7 +820,9 @@ pub fn read_leaf_messages(path: &Path, max: usize) -> Vec<Value> {
             }
         }
     }
-    let Some(anchor) = anchor else { return Vec::new() };
+    let Some(anchor) = anchor else {
+        return Vec::new();
+    };
     let mut on_chain: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut cur = Some(anchor);
     while let Some(id) = cur {
@@ -744,11 +831,7 @@ pub fn read_leaf_messages(path: &Path, max: usize) -> Vec<Value> {
         }
         cur = parent_of.get(&id).filter(|p| !p.is_empty()).cloned();
     }
-    messages.retain(|v| {
-        v["id"]
-            .as_str()
-            .is_some_and(|id| on_chain.contains(id))
-    });
+    messages.retain(|v| v["id"].as_str().is_some_and(|id| on_chain.contains(id)));
     if messages.len() > max {
         messages.drain(..messages.len() - max);
     }
@@ -887,7 +970,10 @@ pub struct SearchResponse {
 pub fn search_sessions_for_cwd(cwd: &str, query: &str) -> SearchResponse {
     match sessions_root() {
         Some(root) => search_sessions_in_dir(&root.join(group_name_for_cwd(cwd)), query),
-        None => SearchResponse { hits: Vec::new(), truncated: true },
+        None => SearchResponse {
+            hits: Vec::new(),
+            truncated: true,
+        },
     }
 }
 
@@ -932,7 +1018,9 @@ pub fn search_sessions_in_dir(group: &Path, query: &str) -> SearchResponse {
             resp.truncated = true;
             continue;
         }
-        let Ok(text) = String::from_utf8(bytes) else { continue };
+        let Ok(text) = String::from_utf8(bytes) else {
+            continue;
+        };
         let mut session_name: Option<String> = None;
         let mut preview = String::new();
         // (ts, role, before, match, after) gathered per file, assembled below
@@ -1062,7 +1150,11 @@ fn parse_iso_ts(v: &str) -> Option<i64> {
     let num = |r: std::ops::Range<usize>| -> Option<i64> { v.get(r)?.parse().ok() };
     let (y, mo, d) = (num(0..4)?, num(5..7)?, num(8..10)?);
     let (h, mi, se) = (num(11..13)?, num(14..16)?, num(17..19)?);
-    let ms = if b.len() >= 23 && b[19] == b'.' { num(20..23)? } else { 0 };
+    let ms = if b.len() >= 23 && b[19] == b'.' {
+        num(20..23)?
+    } else {
+        0
+    };
     // days since 1970-01-01 (Howard Hinnant's days_from_civil)
     let y = if mo <= 2 { y - 1 } else { y };
     let era = if y >= 0 { y } else { y - 399 } / 400;
@@ -1262,6 +1354,61 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// 行路径恒为 on-disk 形态：调用方 cwd 大小写漂移（projects.json 里的
+    /// 小写 `d:` vs 盘上的 `D:`）不得带进 SessionInfo.path——否则与 pi 自报
+    /// 路径 / 通知点集合互相失配（行转圈、完成点全哑的真机回归根因）。
+    #[test]
+    fn list_for_cwd_paths_are_on_disk_form() {
+        let root = temp_root("canon-list");
+        write_session(&root, "D:\\proj-canon", "c1", BODY);
+        let mut s = Scanner::open(&root);
+        let rows = s.list_for_cwd("d:\\proj-canon", 10);
+        assert_eq!(rows.len(), 1);
+        // write_session 用大写 cwd 建 group；小写 cwd 拉列表也必须产大写形态
+        assert_eq!(
+            rows[0].path,
+            root.join("--D--proj-canon--")
+                .join(rows[0].path.file_name().unwrap())
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// pi 按 cwd 自拼的 group 形态（小写段）→ on-disk 形态；幂等；
+    /// root 外 / 无 group 段 / group 不在盘上 → 原样返回。
+    #[test]
+    fn canonical_session_path_maps_reported_form_to_on_disk_group() {
+        let root = temp_root("canon");
+        let on_disk = root.join("--D--proj--");
+        std::fs::create_dir_all(&on_disk).unwrap();
+        let name = "2026-10-19T00-00-00-000Z_x.jsonl";
+        std::fs::write(on_disk.join(name), "{}\n").unwrap();
+        let reported = root.join("--d--proj--").join(name);
+        assert_eq!(
+            canonical_session_path_in(&root, &reported),
+            on_disk.join(name)
+        );
+        // 已是 on-disk 形态：幂等
+        assert_eq!(
+            canonical_session_path_in(&root, &on_disk.join(name)),
+            on_disk.join(name)
+        );
+        // root 外：原样
+        let outside = temp_root("canon-out").join("a.jsonl");
+        std::fs::write(&outside, "{}\n").unwrap();
+        assert_eq!(canonical_session_path_in(&root, &outside), outside);
+        let _ = std::fs::remove_dir_all(outside.parent().unwrap());
+        // root 本身 / 只有 group 段：原样
+        assert_eq!(canonical_session_path_in(&root, &root), root);
+        assert_eq!(
+            canonical_session_path_in(&root, &root.join("--D--proj--")),
+            root.join("--D--proj--")
+        );
+        // group 不在盘上：原样
+        let ghost = root.join("--e--nope--").join(name);
+        assert_eq!(canonical_session_path_in(&root, &ghost), ghost);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn list_skips_child_sessions_but_keeps_forks() {
         // 045：子代理会话靠自体内的 `subagent/child` marker 排除；pi 原生 fork
@@ -1306,8 +1453,13 @@ mod tests {
 
         // 子会话文件本身仍可解析，且 marker 被识别。
         let mtime = std::fs::metadata(&child).unwrap().modified().unwrap();
-        let entry = scan_file(&child, mtime, std::fs::metadata(&child).unwrap().len(), None)
-            .expect("child scan ok");
+        let entry = scan_file(
+            &child,
+            mtime,
+            std::fs::metadata(&child).unwrap().len(),
+            None,
+        )
+        .expect("child scan ok");
         assert!(entry.is_child(), "marker 应被识别为子会话");
         let fmtime = std::fs::metadata(&fork).unwrap().modified().unwrap();
         let fork_entry = scan_file(&fork, fmtime, std::fs::metadata(&fork).unwrap().len(), None)
@@ -1371,17 +1523,28 @@ mod tests {
             .unwrap();
 
         let second = s.list(10);
-        assert_eq!(second[0].message_count, base_count + 2, "完整行计入，半行不计");
+        assert_eq!(
+            second[0].message_count,
+            base_count + 2,
+            "完整行计入，半行不计"
+        );
         let mid_bytes = s.entries.get(&path).unwrap().count_bytes;
-        assert_eq!(mid_bytes, base_bytes + full.len() as u64, "计数终点停在半行之前");
+        assert_eq!(
+            mid_bytes,
+            base_bytes + full.len() as u64,
+            "计数终点停在半行之前"
+        );
 
         // 半行写完 → 下次扫描补计这一条
         std::fs::OpenOptions::new()
             .append(true)
             .open(&path)
             .unwrap()
-            .write_all("\"}}
-".as_bytes())
+            .write_all(
+                "\"}}
+"
+                .as_bytes(),
+            )
             .unwrap();
         let third = s.list(10);
         assert_eq!(third[0].message_count, base_count + 3, "补齐的行下次补计");
@@ -1462,7 +1625,9 @@ mod tests {
         assert_eq!(msgs.len(), 3, "capped at max");
         let last = msgs.last().unwrap()["message"]["content"].as_str().unwrap();
         assert_eq!(last, "m4");
-        let first = msgs.first().unwrap()["message"]["content"].as_str().unwrap();
+        let first = msgs.first().unwrap()["message"]["content"]
+            .as_str()
+            .unwrap();
         assert_eq!(first, "m2", "oldest of the window dropped first");
 
         // tiny window starting mid-line: first partial line discarded
@@ -1519,7 +1684,10 @@ mod name_tests {
             return;
         };
         let e = scan_file(&p, meta.modified().unwrap(), meta.len(), None).expect("session parsed");
-        eprintln!("parsed name={:?} preview={} count={}", e.name, e.preview, e.message_count);
+        eprintln!(
+            "parsed name={:?} preview={} count={}",
+            e.name, e.preview, e.message_count
+        );
         assert!(e.name.is_some(), "session_info name must be parsed");
     }
 }
@@ -1556,7 +1724,12 @@ mod leaf_chain_tests {
         let msgs = read_leaf_messages(&path, 100);
         let texts: Vec<String> = msgs
             .iter()
-            .map(|v| v["message"]["content"][0]["text"].as_str().unwrap_or("").to_string())
+            .map(|v| {
+                v["message"]["content"][0]["text"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string()
+            })
             .collect();
         assert_eq!(texts, vec!["hi", "first", "again", "stranded tail"]);
 
@@ -1564,7 +1737,12 @@ mod leaf_chain_tests {
         let trimmed = read_leaf_messages(&path, 2);
         let texts: Vec<String> = trimmed
             .iter()
-            .map(|v| v["message"]["content"][0]["text"].as_str().unwrap_or("").to_string())
+            .map(|v| {
+                v["message"]["content"][0]["text"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string()
+            })
             .collect();
         assert_eq!(texts, vec!["again", "stranded tail"]);
 
