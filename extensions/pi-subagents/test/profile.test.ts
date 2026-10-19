@@ -163,6 +163,34 @@ describe("profile loading", () => {
 		await writeFile(join(projectDir, "b.md"), "---\n---\n");
 		await writeFile(join(projectDir, "c.md"), "---\n---\n");
 
-		assert.deepEqual(await listProfiles({ globalDir, projectDir }), ["a", "b", "c"]);
+		assert.deepEqual(await listProfiles({ globalDir, projectDir }), ["a", "b", "c", "explorer"]);
+	});
+
+	it("falls back to the built-in explorer when no file exists", async () => {
+		const root = await mkdtemp(join(tmpdir(), "pi-subagents-"));
+		const paths = { globalDir: join(root, "missing"), projectDir: join(root, "also-missing") };
+		const profile = await loadProfile("explorer", paths);
+		assert.equal(profile.tools, "read-only");
+		assert.equal(profile.maxTurns, 0, "explorer is the unlimited tier");
+		assert.match(profile.appendSystemPrompt ?? "", /只读探索员/);
+		assert.equal(profile.source, "<builtin>");
+	});
+
+	it("a same-id custom file overrides the built-in", async () => {
+		const root = await mkdtemp(join(tmpdir(), "pi-subagents-"));
+		const globalDir = join(root, "global");
+		await mkdir(globalDir, { recursive: true });
+		await writeFile(join(globalDir, "explorer.md"), "---\ndescription: mine\n---\nmy body");
+		const profile = await loadProfile("explorer", { globalDir, projectDir: join(root, "missing") });
+		assert.equal(profile.description, "mine");
+		assert.equal(profile.appendSystemPrompt, "my body");
+	});
+
+	it("lists built-in ids even with no directories on disk", async () => {
+		const root = await mkdtemp(join(tmpdir(), "pi-subagents-"));
+		assert.deepEqual(
+			await listProfiles({ globalDir: join(root, "x"), projectDir: join(root, "y") }),
+			["explorer"],
+		);
 	});
 });

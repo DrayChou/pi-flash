@@ -6,6 +6,7 @@
  * rather than silently running with the parent's composition.
  */
 
+import { readdirSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -19,6 +20,26 @@ export const TOOL_TIERS: readonly ToolTier[] = ["inherit", "read-only", "default
 
 /** Default turn budget when neither the delegation call nor the profile sets one. */
 export const DEFAULT_MAX_TURNS = 100;
+
+/**
+ * Built-in profiles shipped with the extension (044-1 §0：内置 = 扩展代码内
+ * 常量，只读，同名自定义文件覆盖；自定义 > 内置与目录 shadow 同序)。
+ *
+ * 内容须与 PF Settings 页的内置清单逐字一致（crates/pi-link/src/agents.rs
+ * `builtin_agents`）——两侧各存一份，改动时同步。没有这份常量，委派模型
+ * 永远无从得知有哪些 profile 可点名（文件系统之外它看不见任何清单）。
+ */
+export const BUILTIN_PROFILE_DOCS: Readonly<Record<string, string>> = {
+	explorer: [
+		"---",
+		"description: 只读探索 · 调研与定位",
+		"tools: read-only",
+		"maxTurns: 0",
+		"---",
+		"你是只读探索员：调研代码、定位实现、回答问题。",
+		"不执行任何写操作。",
+	].join("\n"),
+};
 
 /**
  * Whitelist each tier resolves to before `createAgentSession`.
@@ -190,7 +211,8 @@ export function profileFromDocument(id: string, text: string, source: string): P
 	};
 }
 
-/** Load one profile by id; the project directory shadows the global one. */
+/** Load one profile by id; the project directory shadows the global one, and
+ * the built-in constant is the last fallback before failing. */
 export async function loadProfile(id: string, paths: ProfilePaths): Promise<Profile> {
 	if (!/^[A-Za-z0-9._-]+$/.test(id)) {
 		throw new SubagentError(SubagentErrorCode.PROFILE_INVALID, `invalid profile id: ${id}`);
@@ -204,12 +226,17 @@ export async function loadProfile(id: string, paths: ProfilePaths): Promise<Prof
 			throw asProfileError(error, file);
 		}
 	}
+	const doc = BUILTIN_PROFILE_DOCS[id];
+	if (doc !== undefined) {
+		return profileFromDocument(id, doc, "<builtin>");
+	}
 	throw new SubagentError(SubagentErrorCode.PROFILE_INVALID, `profile not found: ${id}`);
 }
 
-/** List profile ids from both directories; project entries win on collision. */
+/** List profile ids from both directories plus the built-ins; project entries
+ * win on collision (ids are unique regardless of which side provides them). */
 export async function listProfiles(paths: ProfilePaths): Promise<string[]> {
-	const ids = new Set<string>();
+	const ids = new Set<string>(Object.keys(BUILTIN_PROFILE_DOCS));
 	for (const dir of [paths.globalDir, paths.projectDir]) {
 		let entries: string[];
 		try {
@@ -219,6 +246,24 @@ export async function listProfiles(paths: ProfilePaths): Promise<string[]> {
 		}
 		for (const entry of entries) {
 			if (entry.endsWith(".md")) ids.add(entry.slice(0, -3));
+		}
+	}
+	return [...ids].sort();
+}
+
+/** Sync twin of {@link listProfiles} for tool-description building —
+ * `registerTool` takes a static string, so the delegation tool's list of
+ * nameable profiles is computed once at registration. Fresh sessions see
+ * newly written profile files (PF spawns one pi process per session). */
+export function listProfileIdsSync(paths: ProfilePaths): string[] {
+	const ids = new Set<string>(Object.keys(BUILTIN_PROFILE_DOCS));
+	for (const dir of [paths.globalDir, paths.projectDir]) {
+		try {
+			for (const entry of readdirSync(dir)) {
+				if (entry.endsWith(".md")) ids.add(entry.slice(0, -3));
+			}
+		} catch {
+			// dir missing: built-ins still count
 		}
 	}
 	return [...ids].sort();

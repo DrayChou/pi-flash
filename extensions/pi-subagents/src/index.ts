@@ -20,7 +20,7 @@ import { LocalProvider } from "./backends/local.ts";
 import { DESCRIPTOR_TYPE, parseDescriptor, reconcileOnStart, type SubagentDescriptor } from "./descriptor.ts";
 import { SubagentError, SubagentErrorCode } from "./errors.ts";
 import { SubagentManager } from "./manager.ts";
-import { TOOL_TIER_WHITELISTS, defaultProfilePaths, loadProfile } from "./profile.ts";
+import { TOOL_TIER_WHITELISTS, defaultProfilePaths, listProfileIdsSync, loadProfile } from "./profile.ts";
 import { DELEGATION_PARAMETERS, delegationDescription, runDelegation } from "./tool.ts";
 
 const DEFAULT_CAPACITY = 8;
@@ -256,7 +256,13 @@ export default function piSubagents(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: TOOL_NAME,
 		label: "Subagent",
-		description: delegationDescription({ inheritsParentContext: false, defaultProfile: undefined }),
+		description: delegationDescription({
+			inheritsParentContext: false,
+			// 模型靠这段描述知道有哪些 profile 可点名——不列出来，内置永远
+			// 没人用（文件系统之外它看不见任何清单）。注册期同步扫盘；PF 每
+			// 会话独立 spawn pi（cwd = 项目根），新建 profile 下次会话可见。
+			allowedProfiles: listProfileIdsSync(defaultProfilePaths(process.cwd())),
+		}),
 		promptSnippet: "Delegate a task to a child agent with its own session",
 		parameters: DELEGATION_PARAMETERS as unknown as never,
 		// 045 M2.1：声明后 codemode 脚本拿 structuredContent（而非文本），
