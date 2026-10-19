@@ -532,3 +532,53 @@ agent 回复的轮块却正常；同一个行为不该有两套写法。
   - 验证：短会话发消息 → 钉顶后轻滚一格，内容平滑上移不跳底；滚回底部
     恢复钉顶视图；上滚读历史时流式继续、视口不被拽走；长回复照常转跟尾；
     `cargo test -p app` chat_list 单测 + glue_geometry 几何锁全绿
+
+## 待验证（本轮修复）——subagent M4–M6 全量落地后的验证清单（新对话从这里接手）
+
+背景：subagent 四里程碑已完成并推送（M4 字段面 5bd517e→67dd15b 之间共 7 个
+提交；M5 Settings-子代理页 b41839a；M6 子代理面板 98011ef；warning 清理
+88ed6f3；内置 profile 落进运行时 67dd15b）。黄金仓已同步到 67dd15b，测试
+全绿（pi-link 165 / app 304 / 扩展 85）。**尚未做 UI 实测验收**（045-3
+验收清单未跑），用户刚 cargo run 起新版，准备实测时开新对话。
+
+### 本轮修过的坑（验证时注意回归）
+
+1. **agent-workspace.sh 克隆 origin 指错**（e15658b）：脚本用本地黄金仓
+   路径当克隆源，克隆的 origin 就指向本地路径，推当前分支被
+   receive.denyCurrentBranch 拒。已改为克隆后 remote set-url 重指黄金仓的
+   origin（GitHub）。现存克隆 pi-flash-m4 的 origin 已手工修正。
+2. **Settings-子代理页内置态输入框可敲字**（b41839a 内）：TextInput 无
+   禁用 API，原型 `.frm.ro { pointer-events:none }` 的等价实现 = 只读态
+   渲染静态文本（快照传值），非置灰可聚焦输入框。
+3. **parse_iso_secs 丢时区偏移**（98011ef 内，pi-link/subagent_catalog.rs）：
+   原实现 split 掉 `±HH:MM` 当没看见，已正经折算。
+4. **半行保护**（同上）：面板流式扫父会话 JSONL 时，尾部未写完的行不推进
+   offset，扩展 append 中途被读到不丢 descriptor。
+5. **内置 explorer 曾三处断裂**（67dd15b，最重要）：
+   - 扩展运行时无内置常量 → `profile:"explorer"` 直接 PROFILE_INVALID；
+   - 工具描述没传 allowedProfiles → 模型不知道有任何 profile 可点名；
+   - 不点名 = 裸委派（resolveComposition 返回 {model}，全继承委派者）。
+   现已修：BUILTIN_PROFILE_DOCS 进 profile.ts（内容与 pi-link/agents.rs
+   `builtin_agents` 逐字一致，**两处各存一份，改动必须同步**）；
+   loadProfile 文件未命中回落内置；注册工具时清单拼进描述（同步扫盘，
+   新建 profile 下次会话可见——PF 每会话独立 spawn pi）。
+   **语义（用户未最终拍板）**：不点名 = 裸委派兜底；点名 explorer = 只读
+   探索员。助手建议不设默认 profile，用户验证后再定。
+
+### 验证路径（045-3 清单的 UI 部分）
+
+- Settings → 子代理（导航第 5 项 user-round 图标）：新建/保存/删除自定义、
+  内置只读态、复制为自定义、损坏态红条+打开文件修复（手写坏 md 测）
+- 对话里「用 explorer 帮我调研 xxx」→ 子代理卡 + 面板行出现
+- 会话操作栏「子代理面板」按钮 → 浮层（LIST_W=400 宽、锚操作栏正下方）、
+  运行中徽标、整行点击开子会话 tab、外点/ESC/✕ 关
+- 徽标陈旧性已知取舍：面板关着时徽标显示缓存的上次运行数（open 标志与
+  Option 缓存分离，用户未表态；替代方案 = 关着也轮询，一直读盘）
+- maxTurns 软限实测：profile 设 50/指定 N，委派超限任务看 steer 收尾与
+  stopReason=max_turns 卡片「轮次用尽」
+- maxloop 委派参数：CLI 或对话里传 maxloop=3 验证优先级
+
+### 遗留
+
+- pif-ui 自动化断言未写（045-1 §7 收尾项）
+- 044-1 §6.3「内置 preset 清单」已定为 explorer，设计文档该行可更新
