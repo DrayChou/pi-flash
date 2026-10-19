@@ -25,10 +25,10 @@ use super::paths_sort::{extension_or_hidden_file_name, multiple_extensions};
 pub struct IconTheme {
     /// The icons used for directories.
     pub directory_icons: DirectoryIcons,
-/// The icons used for named directories.（Zed 主题字段全量保留；默认主题
-/// 为空表，接 named-folder 设置时启用）
-#[allow(dead_code)]
-pub named_directory_icons: HashMap<&'static str, DirectoryIcons>,
+    /// The icons used for named directories.（Zed 主题字段全量保留；默认主题
+    /// 为空表，接 named-folder 设置时启用）
+    #[allow(dead_code)]
+    pub named_directory_icons: HashMap<&'static str, DirectoryIcons>,
     /// The mapping of file stems to their associated icon keys.
     pub file_stems: HashMap<&'static str, &'static str>,
     /// The mapping of file suffixes to their associated icon keys.

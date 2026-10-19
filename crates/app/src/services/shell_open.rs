@@ -31,9 +31,7 @@ pub(crate) fn open_in_default_app(path: &Path) {
 pub(crate) fn open_in_explorer(path: &std::path::Path) {
     #[cfg(windows)]
     {
-        let _ = std::process::Command::new("explorer")
-            .arg(path)
-            .spawn();
+        let _ = std::process::Command::new("explorer").arg(path).spawn();
     }
     #[cfg(target_os = "macos")]
     {
@@ -60,7 +58,10 @@ pub(crate) fn reveal_in_explorer(path: &Path) {
         if path.is_dir() {
             let _ = std::process::Command::new("open").arg(path).spawn();
         } else {
-            let _ = std::process::Command::new("open").arg("-R").arg(path).spawn();
+            let _ = std::process::Command::new("open")
+                .arg("-R")
+                .arg(path)
+                .spawn();
         }
     }
 }

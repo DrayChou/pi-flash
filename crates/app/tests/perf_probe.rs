@@ -252,7 +252,10 @@ fn probe_code_parse_stages() {
 "#;
     let mut src = String::with_capacity(unit.len() * 2600);
     for i in 0..2600 {
-        src.push_str(unit.replace("generated_item", &format!("generated_item_{i}")).as_str());
+        src.push_str(
+            unit.replace("generated_item", &format!("generated_item_{i}"))
+                .as_str(),
+        );
     }
     let rope = ropey::Rope::from(src.as_str());
 
@@ -281,8 +284,16 @@ fn probe_code_parse_stages() {
     let d_from_u16 = t.elapsed();
     std::hint::black_box(acc);
 
-    println!("== 代码 parse 段（{} 行 / {} 字节） ==", rope.len_lines(ropey::LineType::LF), rope.len());
+    println!(
+        "== 代码 parse 段（{} 行 / {} 字节） ==",
+        rope.len_lines(ropey::LineType::LF),
+        rope.len()
+    );
     println!("SyntaxHighlighter::new(rust) {}", ms(d_new));
     println!("全文 tree-sitter parse       {}", ms(d_parse));
-    println!("utf16 换算 ×1000（文末）     to:{} from:{}", ms(d_to_u16), ms(d_from_u16));
+    println!(
+        "utf16 换算 ×1000（文末）     to:{} from:{}",
+        ms(d_to_u16),
+        ms(d_from_u16)
+    );
 }

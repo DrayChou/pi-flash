@@ -10,8 +10,6 @@ pub fn status_line(connected: bool, state: &str) -> String {
     }
 }
 
-
-
 pub fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -41,7 +39,15 @@ pub fn fmt_duration_ms(ms: i64) -> String {
     if secs < 60 {
         format!("{secs}s")
     } else {
-        format!("{}m{}", secs / 60, if secs % 60 > 0 { format!("{}s", secs % 60) } else { String::new() })
+        format!(
+            "{}m{}",
+            secs / 60,
+            if secs % 60 > 0 {
+                format!("{}s", secs % 60)
+            } else {
+                String::new()
+            }
+        )
     }
 }
 
@@ -78,14 +84,15 @@ pub fn read_branch(cwd: &Path) -> String {
         .to_string()
 }
 
-
 pub fn walk_files(cwd: &Path, depth: usize, cap: usize) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     fn rec(dir: &Path, rel: &str, depth: usize, cap: usize, out: &mut Vec<String>) {
         if depth == 0 || out.len() >= cap {
             return;
         }
-        let Ok(rd) = std::fs::read_dir(dir) else { return };
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            return;
+        };
         let mut entries: Vec<_> = rd.flatten().collect();
         entries.sort_by_key(|e| e.file_name());
         for e in entries {
@@ -93,15 +100,15 @@ pub fn walk_files(cwd: &Path, depth: usize, cap: usize) -> Vec<String> {
                 return;
             }
             let name = e.file_name().to_string_lossy().to_string();
-            if name.starts_with('.')
-                || name == "node_modules"
-                || name == "target"
-                || name == "dist"
+            if name.starts_with('.') || name == "node_modules" || name == "target" || name == "dist"
             {
                 continue;
             }
-            let rel_path =
-                if rel.is_empty() { name.clone() } else { format!("{rel}/{name}") };
+            let rel_path = if rel.is_empty() {
+                name.clone()
+            } else {
+                format!("{rel}/{name}")
+            };
             let is_dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
             if is_dir {
                 rec(&e.path(), &rel_path, depth - 1, cap, out);
@@ -133,7 +140,6 @@ pub fn mime_from_ext(path: &Path) -> String {
 /// `pi_link::estimate`（独立工具脚本 token-count 同源），这里转出口维持
 /// 既有调用面（session/mod.rs 的 glob use）。
 pub use pi_link::estimate::estimate_tokens;
-
 
 /// 千分位（pi-web usage 行的 toLocaleString parity）：785536 → "785,536"。
 pub fn fmt_thousand(n: u64) -> String {

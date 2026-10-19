@@ -9,7 +9,7 @@
 //! * `/新建` → 运行中回 `taskRunning`，否则建草稿后**回状态卡**（`case "new"`）
 
 use wxprobe::command::BOT_MENU_ORDER;
-use wxprobe::format::messages::{t, Lang};
+use wxprobe::format::messages::{Lang, t};
 use wxprobe::format::status::{status_card, status_line, status_state_value, status_task_line};
 
 /// 品牌标题 —— ZCode 原文是「ZCode 机器人命令：」，产品里**换成本应用名**

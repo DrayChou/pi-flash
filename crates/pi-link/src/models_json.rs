@@ -172,12 +172,21 @@ mod tests {
         ));
         assert_eq!(add_model(&mut doc, "glm"), 0);
         assert_eq!(add_model(&mut doc, "glm"), 1);
-        update_model(&mut doc, "glm", 1, json!({ "id": "glm-5.3", "reasoning": true }));
+        update_model(
+            &mut doc,
+            "glm",
+            1,
+            json!({ "id": "glm-5.3", "reasoning": true }),
+        );
         let entry = provider_entry(&doc, "glm").unwrap();
         assert_eq!(provider_models(entry).len(), 2);
         assert_eq!(entry["models"][1]["reasoning"], true);
         // replace flags
-        assert!(upsert_provider(&mut doc, "glm", json!({ "baseUrl": "https://y" })));
+        assert!(upsert_provider(
+            &mut doc,
+            "glm",
+            json!({ "baseUrl": "https://y" })
+        ));
         assert!(provider_entry(&doc, "glm").unwrap().get("models").is_none());
     }
 

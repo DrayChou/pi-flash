@@ -5,9 +5,8 @@
 //! 菜单共用组件（缩进 / 五角星设默认）。右栏详情 = API KEY 表单 + 通路
 //! 探查行 + 可用模型区（内置商）/ 自定义编辑器（表单头保存即写盘）。
 
-use super::*;
 use super::custom_models::{mj_add_panel, mj_model_editor, mj_provider_editor};
-
+use super::*;
 
 impl Chat {
     pub(crate) fn open_settings(&mut self, tab: u8, cx: &mut Context<Self>) {
@@ -52,10 +51,8 @@ impl Chat {
         enabled_set: &std::collections::HashSet<String>,
     ) -> (usize, usize) {
         let catalog = self.catalog_for(self.project());
-        let models: Vec<&pi_link::protocol::ModelInfo> = catalog
-            .iter()
-            .filter(|m| m.provider == provider)
-            .collect();
+        let models: Vec<&pi_link::protocol::ModelInfo> =
+            catalog.iter().filter(|m| m.provider == provider).collect();
         let enabled = models
             .iter()
             .filter(|m| {
@@ -69,12 +66,7 @@ impl Chat {
     /// 042 显示名排序键：`Provider显示名/model` 小写——菜单与「无默认回落
     /// 取第一」用同一把尺（设置页合并列表展示为三档分组，回落仍用本键）。
     pub(crate) fn mc_sort_key(m: &pi_link::protocol::ModelInfo) -> String {
-        format!(
-            "{}/{}",
-            crate::ui::provider_display_name(&m.provider),
-            m.id
-        )
-        .to_lowercase()
+        format!("{}/{}", crate::ui::provider_display_name(&m.provider), m.id).to_lowercase()
     }
 
     /// Display name of one catalog model ("name", falling back to
@@ -91,7 +83,8 @@ impl Chat {
     pub(crate) fn mc_sorted_enabled(&self) -> Vec<pi_link::protocol::ModelInfo> {
         let all_enabled = self.cfg.mc_state.all_enabled;
         let enabled: std::collections::HashSet<&str> = self
-            .cfg.mc_state
+            .cfg
+            .mc_state
             .enabled
             .iter()
             .map(|s| s.as_str())
@@ -137,21 +130,25 @@ impl Chat {
     pub(crate) fn new_session_default(&self) -> (Option<(String, String)>, Option<String>) {
         let catalog = self.catalog_for(self.project());
         let in_scope = |m: &pi_link::protocol::ModelInfo| {
-            self.cfg.mc_state.all_enabled
-                || {
-                    let r = format!("{}/{}", m.provider, m.id);
-                    self.cfg.mc_state.enabled.iter().any(|e| e == &r)
-                }
+            self.cfg.mc_state.all_enabled || {
+                let r = format!("{}/{}", m.provider, m.id);
+                self.cfg.mc_state.enabled.iter().any(|e| e == &r)
+            }
         };
         // pi: patterns that resolve to nothing fall back to every model
         let scope: Vec<&pi_link::protocol::ModelInfo> = {
             let scoped: Vec<_> = catalog.iter().filter(|m| in_scope(m)).collect();
-            if scoped.is_empty() { catalog.iter().collect() } else { scoped }
+            if scoped.is_empty() {
+                catalog.iter().collect()
+            } else {
+                scoped
+            }
         };
         // PF 默认在 scope 内才用；无默认/默认失效 → 显示名序第一个（与
         // 下列表排序同一把尺子）
         let default = self
-            .cfg.mc_default_model
+            .cfg
+            .mc_default_model
             .as_ref()
             .and_then(|(p, id)| {
                 scope
@@ -165,20 +162,25 @@ impl Chat {
                     .min_by_key(|m| Self::mc_sort_key(m))
                     .map(|m| (m.provider.clone(), m.id.clone()))
             });
-        let thinking = default.as_ref().and_then(|(p, id)| {
-            let r = format!("{p}/{id}");
-            self.cfg.mc_state
-                .pins
-                .iter()
-                .find(|(pr, _)| pr == &r)
-                .map(|(_, l)| l.clone())
-                .or_else(|| {
-                    self.cfg.mc_model_thinking
-                        .iter()
-                        .find(|(pr, _)| pr == &r)
-                        .map(|(_, l)| l.clone())
-                })
-        }).or_else(|| self.cfg.mc_default_thinking.clone());
+        let thinking = default
+            .as_ref()
+            .and_then(|(p, id)| {
+                let r = format!("{p}/{id}");
+                self.cfg
+                    .mc_state
+                    .pins
+                    .iter()
+                    .find(|(pr, _)| pr == &r)
+                    .map(|(_, l)| l.clone())
+                    .or_else(|| {
+                        self.cfg
+                            .mc_model_thinking
+                            .iter()
+                            .find(|(pr, _)| pr == &r)
+                            .map(|(_, l)| l.clone())
+                    })
+            })
+            .or_else(|| self.cfg.mc_default_thinking.clone());
         (default, thinking)
     }
 
@@ -249,9 +251,10 @@ impl Chat {
         if !edit.changed {
             return;
         }
-        if let Err(e) =
-            pi_link::config::write_enabled_models(&pi_link::config::settings_path(), edit.patterns.clone())
-        {
+        if let Err(e) = pi_link::config::write_enabled_models(
+            &pi_link::config::settings_path(),
+            edit.patterns.clone(),
+        ) {
             self.mc_set_error(&crate::i18n::tf("settings.write_failed", &[("e", e)]), cx);
             return;
         }
@@ -263,15 +266,30 @@ impl Chat {
 
     pub(crate) fn mc_toggle_model(&mut self, r: String, enable: bool, cx: &mut Context<Self>) {
         self.mc_clear_error(cx);
-        match models_config::set_models_enabled(self.cfg.mc_patterns.as_ref(), &self.mc_refs(), &[r], enable) {
+        match models_config::set_models_enabled(
+            self.cfg.mc_patterns.as_ref(),
+            &self.mc_refs(),
+            &[r],
+            enable,
+        ) {
             Ok(edit) => self.apply_pattern_edit(edit, cx),
             Err(_) => self.mc_set_error(tr("model.keep_one"), cx),
         }
     }
 
-    pub(crate) fn mc_toggle_provider(&mut self, provider: &str, enable: bool, cx: &mut Context<Self>) {
+    pub(crate) fn mc_toggle_provider(
+        &mut self,
+        provider: &str,
+        enable: bool,
+        cx: &mut Context<Self>,
+    ) {
         self.mc_clear_error(cx);
-        match models_config::set_provider_enabled(self.cfg.mc_patterns.as_ref(), &self.mc_refs(), provider, enable) {
+        match models_config::set_provider_enabled(
+            self.cfg.mc_patterns.as_ref(),
+            &self.mc_refs(),
+            provider,
+            enable,
+        ) {
             Ok(edit) => self.apply_pattern_edit(edit, cx),
             Err(_) => self.mc_set_error(tr("model.keep_one"), cx),
         }
@@ -289,7 +307,9 @@ impl Chat {
         services::workspace::set_default_model_pref(next.clone());
         self.cfg.mc_default_model = next;
         for (_, rt) in &self.pool.runtimes {
-            rt.update(cx, |r, _| r.default_model = self.cfg.mc_default_model.clone());
+            rt.update(cx, |r, _| {
+                r.default_model = self.cfg.mc_default_model.clone()
+            });
         }
         cx.notify();
     }
@@ -301,8 +321,11 @@ impl Chat {
             return;
         }
         // 051：明文 → 凭据库 + pf-auth.json 引用；高级引用原样；库不可用降级明文
-        match pi_link::pf_auth::store_catalog_key(&provider, key.trim(), &pi_link::credentials::KeyringVault)
-        {
+        match pi_link::pf_auth::store_catalog_key(
+            &provider,
+            key.trim(),
+            &pi_link::credentials::KeyringVault,
+        ) {
             Ok(pi_link::credentials::StoreMode::File) => {
                 self.mc_set_error(tr("conflict.vault_unavailable"), cx);
             }
@@ -364,7 +387,10 @@ impl Chat {
                 // 失败原因走详情错误条（错误条在保存/获取后短暂可见）
                 match &outcome {
                     pi_link::probe::ProbeOutcome::AuthRejected { status } => c.mc_set_error(
-                        &crate::i18n::tf("extensions.fetch_key_rejected", &[("s", status.to_string())]),
+                        &crate::i18n::tf(
+                            "extensions.fetch_key_rejected",
+                            &[("s", status.to_string())],
+                        ),
                         cx,
                     ),
                     pi_link::probe::ProbeOutcome::Unreachable { error } => c.mc_set_error(
@@ -383,7 +409,8 @@ impl Chat {
     /// Whether the provider has an api_key credential（detail 头部状态点用；
     /// 侧栏已改 provider logo，不再用凭据状态点缀行）。
     pub(crate) fn mc_configured(&self, provider: &str) -> bool {
-        self.cfg.mc_creds
+        self.cfg
+            .mc_creds
             .iter()
             .any(|(p, k)| p == provider && *k == pi_link::config::CredentialKind::ApiKey)
     }
@@ -404,7 +431,8 @@ impl Chat {
                     ti.set_value(saved.unwrap_or_default(), cx);
                     ti.set_masked(true, cx);
                 });
-                s.model_filter.update(cx, |ti, cx| ti.set_value(String::new(), cx));
+                s.model_filter
+                    .update(cx, |ti, cx| ti.set_value(String::new(), cx));
                 cx.notify();
             });
         }
@@ -449,7 +477,6 @@ impl Chat {
         self.mc_probe_start(provider, cx);
     }
 }
-
 
 // ---------------------------------------------------------------------------
 // view
@@ -498,12 +525,33 @@ pub(crate) fn mc_models_view(
     let enabled_set: std::collections::HashSet<String> =
         chat.cfg.mc_state.enabled.iter().cloned().collect();
     let sb = mc_models_sidebar(
-        chat, &weak.clone(), &enabled_set, enabled_filter, enabled_filter_value, t,
+        chat,
+        &weak.clone(),
+        &enabled_set,
+        enabled_filter,
+        enabled_filter_value,
+        t,
     );
     let detail = mc_models_detail(
-        chat, &weak.clone(), &selected, key_input, key_visible, model_filter,
-        model_filter_value, mj_name, mj_base, mj_key, mj_id, mj_mname, mj_ctx,
-        mj_api, mj_reasoning, &detail_error, &enabled_set, free_only, t,
+        chat,
+        &weak.clone(),
+        &selected,
+        key_input,
+        key_visible,
+        model_filter,
+        model_filter_value,
+        mj_name,
+        mj_base,
+        mj_key,
+        mj_id,
+        mj_mname,
+        mj_ctx,
+        mj_api,
+        mj_reasoning,
+        &detail_error,
+        &enabled_set,
+        free_only,
+        t,
     );
     div()
         .flex()
@@ -569,13 +617,19 @@ fn mc_models_sidebar(
         String::new()
     };
     let label = |m: &pi_link::protocol::ModelInfo| {
-        if m.name.is_empty() { m.id.clone() } else { m.name.clone() }
+        if m.name.is_empty() {
+            m.id.clone()
+        } else {
+            m.name.clone()
+        }
     };
     let hits = |m: &pi_link::protocol::ModelInfo, p: &str| {
         q.is_empty()
             || m.id.to_lowercase().contains(&q)
             || m.name.to_lowercase().contains(&q)
-            || crate::ui::provider_display_name(p).to_lowercase().contains(&q)
+            || crate::ui::provider_display_name(p)
+                .to_lowercase()
+                .contains(&q)
     };
 
     // ---- 行序：Provider 行 + 其下启用模型行（组内显示名序）----------------
@@ -628,7 +682,8 @@ fn mc_models_sidebar(
     // 行距统一：全表（Provider 行 + 模型行）同一行高，严格等距
     let row_h = (f32::from(crate::appearance::ui_size(11.)) + 19.).max(30.);
     let default_ref = chat
-        .cfg.mc_default_model
+        .cfg
+        .mc_default_model
         .as_ref()
         .map(|(p, id)| format!("{p}/{id}"));
     let pins = chat.cfg.mc_state.pins.clone();
@@ -718,12 +773,7 @@ fn mc_models_sidebar(
         .w(px(LIST_W))
         .child(mc_add_action(weak))
         .when(show_filter, |d| {
-            d.child(
-                div()
-                    .px(px(15.))
-                    .pb(px(4.))
-                    .child(enabled_filter.clone()),
-            )
+            d.child(div().px(px(15.)).pb(px(4.)).child(enabled_filter.clone()))
         })
         .child(list)
         .into_any_element()
@@ -814,15 +864,21 @@ fn mc_models_detail(
 ) -> gpui::AnyElement {
     // custom provider / model editors
     if let Some(name) = selected.strip_prefix("mj:p:") {
-        return mj_provider_editor(
-            chat, weak, name, mj_name, mj_base, mj_key, mj_api, error, t,
-        );
+        return mj_provider_editor(chat, weak, name, mj_name, mj_base, mj_key, mj_api, error, t);
     }
     if let Some(rest) = selected.strip_prefix("mj:m:") {
         if let Some((name, ix)) = rest.rsplit_once(':') {
             if let Ok(ix) = ix.parse::<usize>() {
                 return mj_model_editor(
-                    weak, name, ix, mj_id, mj_mname, mj_ctx, mj_reasoning, error, t,
+                    weak,
+                    name,
+                    ix,
+                    mj_id,
+                    mj_mname,
+                    mj_ctx,
+                    mj_reasoning,
+                    error,
+                    t,
                 );
             }
         }
@@ -929,7 +985,8 @@ fn mc_models_detail(
                     false,
                     move |c, cx| {
                         let key = c
-                            .dlg.settings
+                            .dlg
+                            .settings
                             .as_ref()
                             .map(|st| st.read(cx).key_input.clone())
                             .map(|input| input.read(cx).value().to_string())
@@ -948,10 +1005,17 @@ fn mc_models_detail(
 
     // 可用模型区 + 底部（detail_shell 收尾）
     mc_enabled_section(
-        chat, weak, &provider, &models, enabled_set, model_filter, model_filter_value,
-        free_only, detail,
+        chat,
+        weak,
+        &provider,
+        &models,
+        enabled_set,
+        model_filter,
+        model_filter_value,
+        free_only,
+        detail,
     )
-        .into_any_element()
+    .into_any_element()
 }
 
 /// 可用模型区（EnabledModelsSection parity）：标题+计数+只看free开关+批量钮
@@ -996,7 +1060,10 @@ fn mc_enabled_section(
             .gap(px(8.))
             .child(section_title(&crate::i18n::tf(
                 "models.available_count",
-                &[("enabled", enabled_count.to_string()), ("total", models.len().to_string())],
+                &[
+                    ("enabled", enabled_count.to_string()),
+                    ("total", models.len().to_string()),
+                ],
             )))
             .child(div().flex_1())
             .child({
@@ -1063,10 +1130,9 @@ fn mc_enabled_section(
             let hit = q.is_empty()
                 || m.id.to_lowercase().contains(&q)
                 || m.name.to_lowercase().contains(&q);
-            hit
-                && (!free_only
-                    || m.id.to_lowercase().contains("free")
-                    || m.name.to_lowercase().contains("free"))
+            hit && (!free_only
+                || m.id.to_lowercase().contains("free")
+                || m.name.to_lowercase().contains("free"))
         })
         .cloned()
         .collect();
@@ -1143,9 +1209,9 @@ fn mc_enabled_section(
                                 .text_ellipsis()
                                 .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                                     // click the id to copy the ref
-                                    cx.write_to_clipboard(
-                                        gpui::ClipboardItem::new_string(ref_click.clone()),
-                                    );
+                                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+                                        ref_click.clone(),
+                                    ));
                                 })
                                 .child(SharedString::from(m.id.clone())),
                         ),
@@ -1185,10 +1251,7 @@ pub(crate) fn remove_provider_confirm_overlay(
     let provider = chat.cfg.mc_remove_confirm.clone()?;
     let name = crate::ui::provider_display_name(&provider).to_string();
     let weak = cx.entity().downgrade();
-    let message = crate::i18n::tf(
-        "extensions.remove_key_confirm",
-        &[("name", name)],
-    );
+    let message = crate::i18n::tf("extensions.remove_key_confirm", &[("name", name)]);
     Some(crate::ui::overlay::confirm(
         &chat.dlg.dialog_focus,
         message,
@@ -1217,7 +1280,6 @@ impl Chat {
             .map(|m| format!("{}/{}", m.provider, m.id))
             .collect()
     }
-
 
     /// 042 ProviderPicker 弹窗构造：搜索输入每敲一字通知重渲染（清单按值
     /// 过滤在渲染期读取快照）。ESC 交给浮层公共基座，这里只兜输入框内路径。
@@ -1257,9 +1319,16 @@ impl Chat {
     /// 042【移除】墓碑在此统一过滤（composer 模型菜单 / 设置列表 / 新会话
     /// 默认回落 / remote /模型 全走本口）——移除只删 PF 账本与凭据，pi 侧
     /// 目录缓存与 auth.json 不归 PF 管，数据面原样保留、展示层除名。
-    pub(crate) fn catalog_for(&self, cwd: Option<&std::path::Path>) -> Vec<pi_link::protocol::ModelInfo> {
+    pub(crate) fn catalog_for(
+        &self,
+        cwd: Option<&std::path::Path>,
+    ) -> Vec<pi_link::protocol::ModelInfo> {
         let raw = cwd
-            .and_then(|c| self.pool.models_by_cwd.get(&c.to_string_lossy().to_string()))
+            .and_then(|c| {
+                self.pool
+                    .models_by_cwd
+                    .get(&c.to_string_lossy().to_string())
+            })
             .map(|v| v.as_slice())
             .filter(|v| !v.is_empty())
             .unwrap_or(self.pool.globals.models.as_slice());
@@ -1276,7 +1345,8 @@ impl Chat {
     pub(crate) fn refresh_provider_catalog(&mut self, provider: &str) {
         let fresh = pi_link::catalog::disk_models();
         let mut g: Vec<_> = self
-            .pool.globals
+            .pool
+            .globals
             .models
             .iter()
             .filter(|m| m.provider != provider)
@@ -1286,14 +1356,17 @@ impl Chat {
         self.pool.globals.models = pi_link::catalog::dedupe(g);
         let cwd_key = self.project_key();
         let mut m: Vec<_> = self
-            .pool.models_by_cwd
+            .pool
+            .models_by_cwd
             .remove(&cwd_key)
             .unwrap_or_default()
             .into_iter()
             .filter(|x| x.provider != provider)
             .collect();
         m.extend(fresh);
-        self.pool.models_by_cwd.insert(cwd_key, pi_link::catalog::dedupe(m));
+        self.pool
+            .models_by_cwd
+            .insert(cwd_key, pi_link::catalog::dedupe(m));
     }
 
     /// Picker fallback: catalog entry for the active session's cwd is empty →
@@ -1310,7 +1383,8 @@ impl Chat {
             )
         };
         if self
-            .pool.models_by_cwd
+            .pool
+            .models_by_cwd
             .get(&cwd_key)
             .is_some_and(|v| !v.is_empty())
         {
@@ -1325,15 +1399,12 @@ impl Chat {
         // active is a draft: any other live runtime of the same cwd answers too
         for (_, rt) in &self.pool.runtimes {
             let r = rt.read(cx);
-            if r.cwd.to_string_lossy().to_string() == cwd_key
-                && r.agent.session.is_some()
-            {
+            if r.cwd.to_string_lossy().to_string() == cwd_key && r.agent.session.is_some() {
                 r.rpc(&pi_link::protocol::Command::GetAvailableModels);
                 return;
             }
         }
     }
-
 }
 
 /// 042：provider 通路探查状态（保存 key 自动一次 + 详情页【重新探查】）。

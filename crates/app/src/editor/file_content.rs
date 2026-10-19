@@ -307,7 +307,10 @@ mod tests {
             assert_eq!(decoded.text, expected);
             assert_eq!(decoded.encoding, encoding);
             assert!(decoded.has_bom);
-            assert_eq!(encode_text(decoded.text, decoded.encoding, decoded.has_bom), bytes);
+            assert_eq!(
+                encode_text(decoded.text, decoded.encoding, decoded.has_bom),
+                bytes
+            );
         }
     }
 

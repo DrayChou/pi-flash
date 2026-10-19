@@ -7,7 +7,12 @@ pub(crate) fn mc_about_view() -> gpui::AnyElement {
     let t = T();
     let mut col = div().id("mc-about").flex().flex_col();
 
-    col = col.child(set_row(tr("about.author"), "", value_el(tr("about.author_name").to_string(), true), t));
+    col = col.child(set_row(
+        tr("about.author"),
+        "",
+        value_el(tr("about.author_name").to_string(), true),
+        t,
+    ));
     col = col.child(set_row(
         tr("about.version"),
         "",
@@ -16,7 +21,10 @@ pub(crate) fn mc_about_view() -> gpui::AnyElement {
             .items_center()
             .gap(px(6.))
             .child(icon("logo-marks", 28., t.accent))
-            .child(value_el(format!("Pi-Flash v{}", env!("CARGO_PKG_VERSION")), true))
+            .child(value_el(
+                format!("Pi-Flash v{}", env!("CARGO_PKG_VERSION")),
+                true,
+            ))
             .into_any_element(),
         t,
     ));

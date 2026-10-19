@@ -136,7 +136,13 @@ pub fn classify(value: &str) -> StoreMode {
 pub fn env_var_name(provider: &str) -> String {
     let base: String = provider
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_uppercase() } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_uppercase()
+            } else {
+                '_'
+            }
+        })
         .collect();
     let base = base.trim_matches('_');
     let mut name = format!("PF_KEY_{}", if base.is_empty() { "X" } else { base });
@@ -295,7 +301,10 @@ mod tests {
     fn official_env_table_hits_known_misses_unknown() {
         assert_eq!(official_env_name("deepseek"), Some("DEEPSEEK_API_KEY"));
         assert_eq!(official_env_name("anthropic"), Some("ANTHROPIC_API_KEY"));
-        assert_eq!(official_env_name("zai-coding-cn"), Some("ZAI_CODING_CN_API_KEY"));
+        assert_eq!(
+            official_env_name("zai-coding-cn"),
+            Some("ZAI_CODING_CN_API_KEY")
+        );
         assert_eq!(official_env_name("glm"), None); // pi 官方表就没有 glm：诚实降级，不猜
     }
 
@@ -341,7 +350,10 @@ mod tests {
         assert!(env.contains(&("DEEPSEEK_API_KEY".into(), "sk-ds".into())));
         assert!(env.contains(&("OPENAI_API_KEY".into(), "sk-plain-fallback".into())));
         assert!(env.contains(&("PF_KEY_MY_GW".into(), "sk-gw".into())));
-        assert!(!env.iter().any(|(n, _)| n == "GROQ_API_KEY"), "缺凭据库条目的应跳过");
+        assert!(
+            !env.iter().any(|(n, _)| n == "GROQ_API_KEY"),
+            "缺凭据库条目的应跳过"
+        );
         assert_eq!(env.len(), 3);
         let _ = std::fs::remove_file(&pf);
         let _ = std::fs::remove_file(&mp);

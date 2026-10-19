@@ -221,7 +221,11 @@ fn collect_edge(
 ) {
     let b = src.as_bytes();
     // 左走从内容首字符的前一字节开始；右走从内容末（排他）开始。
-    let mut pos = if dir < 0 { from as i64 - 1 } else { from as i64 };
+    let mut pos = if dir < 0 {
+        from as i64 - 1
+    } else {
+        from as i64
+    };
     let mut got = 0usize;
     while got < demand {
         if pos < 0 || pos as usize >= b.len() {
@@ -242,11 +246,7 @@ fn collect_edge(
 
 /// 行内 code：双假设验证 range 语义（含反引号 / 不含反引号）。
 /// 验证失败 → 不折叠不加样式（保守）。返回是否成立。
-fn code_container(
-    src: &str,
-    range: &Range<usize>,
-    spans: &mut Vec<Span>,
-) -> Option<Container> {
+fn code_container(src: &str, range: &Range<usize>, spans: &mut Vec<Span>) -> Option<Container> {
     let b = src.as_bytes();
     if range.len() >= 2 && b[range.start] == b'`' && b[range.end - 1] == b'`' {
         // range 含定界符
@@ -336,11 +336,7 @@ fn scan_headings(
         }
 
         if in_fence.is_none() && indent <= 3 {
-            let hashes = line
-                .iter()
-                .skip(indent)
-                .take_while(|&&c| c == b'#')
-                .count();
+            let hashes = line.iter().skip(indent).take_while(|&&c| c == b'#').count();
             if (1..=6).contains(&hashes) {
                 let after = indent + hashes;
                 let (prefix, content_start) = if after == line.len() {
@@ -498,7 +494,7 @@ mod tests {
     fn plain_text_untouched() {
         for src in ["", "hello", "a_b_c", "1 * 2 * 3", "snake_case_name"] {
             let (spans, cs, _) = parse(src);
-        let folds = flat_folds(&cs);
+            let folds = flat_folds(&cs);
             assert!(spans.is_empty(), "{src} 不该有 span");
             assert!(folds.is_empty(), "{src} 不该有 fold");
         }

@@ -17,7 +17,10 @@
 
 use std::rc::Rc;
 
-use gpui::{App, Context, Entity, FocusHandle, ParentElement, Render, SharedString, Styled, Window, div, prelude::*};
+use gpui::{
+    App, Context, Entity, FocusHandle, ParentElement, Render, SharedString, Styled, Window, div,
+    prelude::*,
+};
 use gpui_component::input::{InputEvent, InputState, TextInput as GpInput};
 
 use crate::appearance::theme::theme as T;
@@ -60,7 +63,6 @@ const PLACEHOLDER_TOP: f32 = 5.;
 /// 必须与 vendor/gpui-component/src/input/text_input.rs 的 LINE_HEIGHT 同值，
 /// 字号（面板 vs 会话）不同时基线才不会跑。
 const COMPOSER_LINE_HEIGHT_REMS: f32 = 1.25;
-
 
 /// fires after every user value mutation (typing, paste, IME commit)
 pub type Changed = Rc<dyn Fn(&str, &mut App)>;
@@ -215,11 +217,7 @@ impl ComposerInput {
         }
     }
 
-    fn ensure_state(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Entity<InputState> {
+    fn ensure_state(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Entity<InputState> {
         if let Some(state) = &self.state {
             return state.clone();
         }
@@ -350,7 +348,11 @@ impl Render for ComposerInput {
                 .border_color(gpui::rgba(((t.accent as u64) << 8) as u32 | 0x4d))
                 .bg(rgb(t.bg_selected))
                 .child(crate::ui::icon(
-                    if *skill { "wand" } else { "icon-terminal-solid" },
+                    if *skill {
+                        "wand"
+                    } else {
+                        "icon-terminal-solid"
+                    },
                     13.,
                     t.accent,
                 ))

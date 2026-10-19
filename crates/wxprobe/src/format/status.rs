@@ -4,7 +4,7 @@
 //! 远端连接态）在 P3 的 `pipeline.rs` 里接 pi 会话状态。
 //! 逐行对齐 ZCode `botsService.ts:4593-4624` 与 `statusFormatting.ts`。
 
-use super::messages::{t, Lang};
+use super::messages::{Lang, t};
 
 /// ZCode `formatStatusLine`（`botsService.ts:4593`）：`"<标签>: <值>"`。
 pub fn status_line(lang: Lang, label: &str, value: &str) -> String {
@@ -138,11 +138,7 @@ mod tests {
             "25h 必须取模成 1d 1h，不能是 1d 25h"
         );
         assert_eq!(task_running_duration(86_400_000), "1d");
-        assert_eq!(
-            task_running_duration(90_061_001),
-            "1d 1h 1m 1s",
-            "全级取模"
-        );
+        assert_eq!(task_running_duration(90_061_001), "1d 1h 1m 1s", "全级取模");
     }
 
     #[test]
@@ -150,7 +146,11 @@ mod tests {
         let card = status_card(&[
             status_line(Lang::ZhCn, "工作区", "pi-flash"),
             "------".to_string(),
-            status_line(Lang::ZhCn, "状态", &status_state_value(Lang::ZhCn, "running")),
+            status_line(
+                Lang::ZhCn,
+                "状态",
+                &status_state_value(Lang::ZhCn, "running"),
+            ),
         ]);
         assert_eq!(card, "工作区: pi-flash\n------\n状态: ⏳ 运行中");
     }

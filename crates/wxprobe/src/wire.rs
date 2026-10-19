@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::Engine as _;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use ureq::Agent;
 
 pub const ILINK_BASE: &str = "https://ilinkai.weixin.qq.com";
@@ -54,7 +54,12 @@ impl Wire {
     }
 
     /// 扫码：`GET /ilink/bot/<path>?<query>`，无鉴权。
-    pub fn get_qr(&mut self, tag: &str, path: &str, query: &[(&str, &str)]) -> Result<Value, String> {
+    pub fn get_qr(
+        &mut self,
+        tag: &str,
+        path: &str,
+        query: &[(&str, &str)],
+    ) -> Result<Value, String> {
         let url = format!("{ILINK_BASE}{API_PREFIX}{path}");
         let mut req = self.qr.get(&url).header("iLink-App-ClientVersion", "1");
         for (k, v) in query {
@@ -130,8 +135,8 @@ impl Wire {
         if !(200..300).contains(&status) {
             return Err(format!("{tag}: HTTP {status}: {}", truncate(&text, 400)));
         }
-        let value: Value =
-            serde_json::from_str(&text).map_err(|e| format!("{tag}: 非 JSON 响应 {e}: {}", truncate(&text, 400)))?;
+        let value: Value = serde_json::from_str(&text)
+            .map_err(|e| format!("{tag}: 非 JSON 响应 {e}: {}", truncate(&text, 400)))?;
         check_ret(&value)?;
         Ok(unwrap_data(value))
     }

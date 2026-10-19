@@ -51,7 +51,8 @@ fn is_record(value: &Value) -> bool {
 
 /// ZCode `readFirstStringField`：**只认字符串**，数字/布尔一概跳过。
 fn read_first_string_field(value: &Value, keys: &[&str]) -> Option<String> {
-    keys.iter().find_map(|k| value.get(*k).and_then(Value::as_str).map(str::to_string))
+    keys.iter()
+        .find_map(|k| value.get(*k).and_then(Value::as_str).map(str::to_string))
 }
 
 const BEFORE_KEYS: [&str; 4] = ["old_string", "oldString", "oldText", "before"];
@@ -104,7 +105,12 @@ fn kind_matches_change(kind: &str) -> bool {
 }
 
 /// ZCode `getChangeStat`：只有 edit 族 kind 才统计行数增删。
-fn get_change_stat(kind: &str, input: &Value, output: Option<&Value>, raw: Option<&Value>) -> Option<ChangeStat> {
+fn get_change_stat(
+    kind: &str,
+    input: &Value,
+    output: Option<&Value>,
+    raw: Option<&Value>,
+) -> Option<ChangeStat> {
     if !kind_matches_change(kind) {
         return None;
     }
@@ -142,12 +148,7 @@ fn get_input_summary(input: &Value) -> Option<String> {
 
 /// ZCode `getCompactToolCallSummary`（`tool-call-summary.ts:207`）。
 pub fn get_compact_tool_call_summary(source: ToolCallSummarySource<'_>) -> ToolCallSummary {
-    let change_stat = get_change_stat(
-        source.kind,
-        source.input,
-        source.output,
-        source.raw,
-    );
+    let change_stat = get_change_stat(source.kind, source.input, source.output, source.raw);
     let primary_text = source
         .title
         .map(normalize_display_text)
@@ -206,12 +207,16 @@ mod tests {
     #[test]
     fn input_summary_prefers_command_then_path() {
         assert_eq!(
-            summary("bash", json!({ "command": "  npm   test  " })).secondary_text.as_deref(),
+            summary("bash", json!({ "command": "  npm   test  " }))
+                .secondary_text
+                .as_deref(),
             Some("npm test"),
             "连续空白压成单空格"
         );
         assert_eq!(
-            summary("edit", json!({ "path": "/a/b.rs", "command": "x" })).secondary_text.as_deref(),
+            summary("edit", json!({ "path": "/a/b.rs", "command": "x" }))
+                .secondary_text
+                .as_deref(),
             Some("x"),
             "字段优先级：command 排在 path 之前"
         )
@@ -233,15 +238,25 @@ mod tests {
         let s = summary("edit", before_after.clone());
         assert_eq!(
             s.change_stat,
-            Some(ChangeStat { added: 3, removed: 2 }),
+            Some(ChangeStat {
+                added: 3,
+                removed: 2
+            }),
             "末尾换行不计行：'a\\nb\\n' 是 2 行，'a\\nb\\nc\\n' 是 3 行"
         );
         assert_eq!(
             summary("multi_edit", before_after.clone()).change_stat,
-            Some(ChangeStat { added: 3, removed: 2 }),
+            Some(ChangeStat {
+                added: 3,
+                removed: 2
+            }),
             "multi_edit 命中 multi.?edit"
         );
-        assert_eq!(summary("read", before_after).change_stat, None, "非 edit 族不统计");
+        assert_eq!(
+            summary("read", before_after).change_stat,
+            None,
+            "非 edit 族不统计"
+        );
     }
 
     #[test]
@@ -250,7 +265,13 @@ mod tests {
             "patch",
             json!({ "metadata": { "filediff": { "old_string": "x\n", "new_string": "y\nz\n" } } }),
         );
-        assert_eq!(s.change_stat, Some(ChangeStat { added: 2, removed: 1 }));
+        assert_eq!(
+            s.change_stat,
+            Some(ChangeStat {
+                added: 2,
+                removed: 1
+            })
+        );
     }
 
     #[test]

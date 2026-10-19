@@ -1,11 +1,7 @@
 //! 消息模型层：Role/Msg/MsgMeta 类型、toolResult 合并、tail 窗口解码
 //! （msgs_from_tail）与元数据计算。纯数据 + 纯函数，无渲染。
 
-
-
-use pi_link::protocol::{content_blocks, Block, Usage};
-
-
+use pi_link::protocol::{Block, Usage, content_blocks};
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub(crate) enum Role {
@@ -125,15 +121,25 @@ pub(crate) fn merge_tool_result(
         .blocks
         .iter()
         .rposition(|b| matches!(b, Block::ToolCall { id, .. } if tool_call_id == Some(id.as_str())))
-        .or_else(|| msg.blocks.iter().rposition(|b| matches!(b, Block::ToolCall { .. })));
+        .or_else(|| {
+            msg.blocks
+                .iter()
+                .rposition(|b| matches!(b, Block::ToolCall { .. }))
+        });
     // pi-web {n}s duration = result arrival − message start (rounded s)
     let duration_s = match (result_ts, msg.ts) {
         (Some(r), Some(start)) => Some(((r - start).max(0)) / 1000),
         _ => None,
     };
     if let Some(ix) = ix {
-        if let Some(Block::ToolCall { result, is_error: err, images: imgs, duration_s: dur, details: det, .. }) =
-            msg.blocks.get_mut(ix)
+        if let Some(Block::ToolCall {
+            result,
+            is_error: err,
+            images: imgs,
+            duration_s: dur,
+            details: det,
+            ..
+        }) = msg.blocks.get_mut(ix)
         {
             result.push_str(text);
             *err = is_error;
@@ -239,7 +245,9 @@ pub(crate) fn msgs_from_tail(values: Vec<serde_json::Value>) -> Vec<Msg> {
         let role = m["role"].as_str().unwrap_or("");
         let blocks = content_blocks(&m["content"]);
         let usage = Usage::parse(&m["usage"]);
-        let ts = m["timestamp"].as_i64().or_else(|| parse_iso_ms(&v["timestamp"]));
+        let ts = m["timestamp"]
+            .as_i64()
+            .or_else(|| parse_iso_ms(&v["timestamp"]));
         let entry_ts = parse_iso_ms(&v["timestamp"]);
         match role {
             "user" => out.push(Msg {
@@ -380,7 +388,9 @@ mod tail_tests {
 
     #[test]
     fn iso_entry_timestamp_falls_back() {
-        let vals = vec![json!({"type":"message","timestamp":"2026-09-27T01:02:03.456Z","message":{"role":"user","content":"hi"}})];
+        let vals = vec![
+            json!({"type":"message","timestamp":"2026-09-27T01:02:03.456Z","message":{"role":"user","content":"hi"}}),
+        ];
         let msgs = msgs_from_tail(vals);
         assert_eq!(msgs[0].ts, Some(1790470923456));
     }

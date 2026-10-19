@@ -11,11 +11,12 @@
 //! tab ●→✓ 答完标记、确认 [n/N] 门控、Tab/Enter/数字键键盘模型。
 //! 视觉 = tmp/ask-user-redesign.html 评审稿（MIST 主题逐值对译）。
 
-use gpui::{hsla, rgb, FontWeight, MouseButton, SharedString, div, px, prelude::FluentBuilder as _};
+use gpui::{
+    FontWeight, MouseButton, SharedString, div, hsla, prelude::FluentBuilder as _, px, rgb,
+};
 
 use crate::*;
 use pi_link::protocol::{Block, ExtUiMethod, ExtensionUiRequest};
-
 
 // ---------------------------------------------------------------------------
 // 状态
@@ -131,7 +132,10 @@ pub(crate) fn parse_from_transcript(rt: &session::runtime::SessionRuntime) -> Op
         }
         for b in msg.blocks.iter().rev() {
             let Block::ToolCall {
-                name, args, args_partial, ..
+                name,
+                args,
+                args_partial,
+                ..
             } = b
             else {
                 continue;
@@ -159,7 +163,10 @@ fn parse_args(args: &str) -> Option<AskCard> {
             return None;
         }
         let header = str_field(q, "header");
-        let multi = q.get("multiSelect").and_then(|x| x.as_bool()).unwrap_or(false);
+        let multi = q
+            .get("multiSelect")
+            .and_then(|x| x.as_bool())
+            .unwrap_or(false);
         let opts_v = q.get("options")?.as_array()?;
         if opts_v.is_empty() || opts_v.len() > 12 {
             return None;
@@ -176,7 +183,11 @@ fn parse_args(args: &str) -> Option<AskCard> {
                 .and_then(|x| x.as_str())
                 .map(|s| s.to_string())
                 .filter(|s| !s.trim().is_empty());
-            options.push(AskOpt { label, desc, preview });
+            options.push(AskOpt {
+                label,
+                desc,
+                preview,
+            });
         }
         let sel = vec![false; options.len()];
         questions.push(AskQ {
@@ -290,7 +301,9 @@ impl Chat {
 
     /// tab 切换：把输入框现值存回旧题，再载入新题的自定义文本
     pub(crate) fn ask_switch_tab(&mut self, i: usize, cx: &mut Context<Self>) {
-        let Some(card) = self.aux.ask.as_mut() else { return };
+        let Some(card) = self.aux.ask.as_mut() else {
+            return;
+        };
         if i >= card.questions.len() || i == card.active {
             return;
         }
@@ -299,13 +312,17 @@ impl Chat {
         card.questions[cur].other_text = val;
         let load = card.questions[i].other_text.clone();
         card.active = i;
-        self.aux.ask_input.update(cx, |ti, cx| ti.set_value(load, cx));
+        self.aux
+            .ask_input
+            .update(cx, |ti, cx| ti.set_value(load, cx));
         cx.notify();
     }
 
     /// 选项点选：单选互斥（可反选），多选切换；清空本题自定义态（AskCard 语义）
     pub(crate) fn ask_toggle_option(&mut self, o: usize, cx: &mut Context<Self>) {
-        let Some(card) = self.aux.ask.as_mut() else { return };
+        let Some(card) = self.aux.ask.as_mut() else {
+            return;
+        };
         let q = &mut card.questions[card.active];
         if o >= q.options.len() {
             return;
@@ -321,7 +338,9 @@ impl Chat {
             if q.sel[o] {
                 q.other_sel = false;
                 q.other_text.clear();
-                self.aux.ask_input.update(cx, |ti, cx| ti.set_value(String::new(), cx));
+                self.aux
+                    .ask_input
+                    .update(cx, |ti, cx| ti.set_value(String::new(), cx));
             }
         }
         cx.notify();
@@ -329,7 +348,9 @@ impl Chat {
 
     /// 「自定义答案」行点选：单选清选项；聚焦输入框
     pub(crate) fn ask_other_click(&mut self, window: &mut gpui::Window, cx: &mut Context<Self>) {
-        let Some(card) = self.aux.ask.as_mut() else { return };
+        let Some(card) = self.aux.ask.as_mut() else {
+            return;
+        };
         let q = &mut card.questions[card.active];
         q.other_sel = true;
         if !q.multi {
@@ -344,7 +365,9 @@ impl Chat {
 
     /// Tab 键：切下一题
     pub(crate) fn ask_tab_key(&mut self, cx: &mut Context<Self>) {
-        let Some(card) = self.aux.ask.as_ref() else { return };
+        let Some(card) = self.aux.ask.as_ref() else {
+            return;
+        };
         if card.active + 1 < card.questions.len() {
             self.ask_switch_tab(card.active + 1, cx);
         }
@@ -352,7 +375,9 @@ impl Chat {
 
     /// Enter：未答完跳到下一未答题；全部答完 = 确认提交（AskCard 同款）
     pub(crate) fn ask_enter(&mut self, cx: &mut Context<Self>) {
-        let Some(card) = self.aux.ask.as_ref() else { return };
+        let Some(card) = self.aux.ask.as_ref() else {
+            return;
+        };
         if card.questions.iter().all(|q| q.answered()) {
             self.ask_confirm(cx);
             return;
@@ -369,7 +394,9 @@ impl Chat {
 
     /// 数字键 1-4 直选当前题选项
     pub(crate) fn ask_digit(&mut self, d: usize, cx: &mut Context<Self>) {
-        let Some(card) = self.aux.ask.as_ref() else { return };
+        let Some(card) = self.aux.ask.as_ref() else {
+            return;
+        };
         let q = &card.questions[card.active];
         if d < q.options.len() {
             self.ask_toggle_option(d, cx);
@@ -380,7 +407,9 @@ impl Chat {
     pub(crate) fn ask_confirm(&mut self, cx: &mut Context<Self>) {
         // ① 卡内状态收尾（不触碰 ext_send）
         let (resp, finished) = {
-            let Some(card) = self.aux.ask.as_mut() else { return };
+            let Some(card) = self.aux.ask.as_mut() else {
+                return;
+            };
             if !card.questions.iter().all(|q| q.answered()) {
                 return;
             }
@@ -414,7 +443,9 @@ impl Chat {
 
     /// 取消整卷（Esc / 取消钮 / 点外）：挂起请求回 cancelled，包侧整卷 DECLINE
     pub(crate) fn ask_cancel(&mut self, cx: &mut Context<Self>) {
-        let Some(mut card) = self.aux.ask.take() else { return };
+        let Some(mut card) = self.aux.ask.take() else {
+            return;
+        };
         if let Some(req) = card.pending.take() {
             self.ext_send(&req, None, None, true, cx);
         }
@@ -475,7 +506,11 @@ pub(crate) fn render_ask_card(chat: &mut Chat, weak: &gpui::WeakEntity<Chat>) ->
 
     // ---- 题面（qcol + 可选预览栏） ----
     let with_pv = q.has_preview();
-    let mut qcol = div().flex().flex_col().gap(px(11.)).map(|d| if with_pv { d.w(px(400.)) } else { d.w_full() });
+    let mut qcol = div()
+        .flex()
+        .flex_col()
+        .gap(px(11.))
+        .map(|d| if with_pv { d.w(px(400.)) } else { d.w_full() });
     qcol = qcol.child(
         div()
             .text_size(crate::appearance::ui_size(15.))
@@ -544,7 +579,13 @@ fn ask_tab_bar(
     weak: &gpui::WeakEntity<Chat>,
     t: &crate::appearance::theme::Theme,
 ) -> gpui::Div {
-    let mut tabs = div().flex().gap(px(5.)).items_center().pb(px(10.)).border_b_1().border_color(rgb(t.bg_selected));
+    let mut tabs = div()
+        .flex()
+        .gap(px(5.))
+        .items_center()
+        .pb(px(10.))
+        .border_b_1()
+        .border_color(rgb(t.bg_selected));
     for (i, tq) in card.questions.iter().enumerate() {
         let answered = tq.answered();
         let active = i == card.active;
@@ -566,24 +607,19 @@ fn ask_tab_bar(
             .font_weight(FontWeight::SEMIBOLD)
             .font_family(crate::editor::markdown::MONO_FAMILY)
             .cursor_pointer()
-            .child(
-                div()
-                    .size(px(6.))
-                    .rounded_full()
-                    .map(|d| {
-                        if answered {
-                            if active {
-                                d.bg(rgb(t.accent_contrast))
-                            } else {
-                                d.bg(rgb(t.accent))
-                            }
-                        } else if active {
-                            d.border_1().border_color(rgb(t.accent_contrast))
-                        } else {
-                            d.border_1().border_color(rgb(t.text_faint))
-                        }
-                    }),
-            )
+            .child(div().size(px(6.)).rounded_full().map(|d| {
+                if answered {
+                    if active {
+                        d.bg(rgb(t.accent_contrast))
+                    } else {
+                        d.bg(rgb(t.accent))
+                    }
+                } else if active {
+                    d.border_1().border_color(rgb(t.accent_contrast))
+                } else {
+                    d.border_1().border_color(rgb(t.text_faint))
+                }
+            }))
             .child(SharedString::from(label))
             .map(|d| {
                 if active {
@@ -595,7 +631,8 @@ fn ask_tab_bar(
                         .text_color(rgb(t.accent_hover))
                         .hover(|s| s.bg(accent_tint(0.14)))
                 } else {
-                    d.text_color(rgb(t.text_muted)).hover(|s| s.bg(rgb(t.bg_hover)))
+                    d.text_color(rgb(t.text_muted))
+                        .hover(|s| s.bg(rgb(t.bg_hover)))
                 }
             })
             .on_mouse_down(MouseButton::Left, move |_, _, cx| {
@@ -610,28 +647,24 @@ fn ask_tab_bar(
     // 右上角 X 关闭钮（点 × = 取消整卷；快捷键说明全部沉底）
     let weak_close = weak.clone();
     tabs.child(
-        div()
-            .flex_1()
-            .flex()
-            .justify_end()
-            .child(
-                div()
-                    .id("ask-close")
-                    .size(px(34.))
-                    .mt(px(-2.))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(8.))
-                    .text_size(crate::appearance::ui_size(20.))
-                    .text_color(rgb(t.text_faint))
-                    .cursor_pointer()
-                    .hover(|s| s.bg(rgb(t.bg_hover)).text_color(rgb(t.text)))
-                    .child(tr("action.close"))
-                    .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                        let _ = weak_close.update(cx, |c, cx| c.ask_cancel(cx));
-                    }),
-            ),
+        div().flex_1().flex().justify_end().child(
+            div()
+                .id("ask-close")
+                .size(px(34.))
+                .mt(px(-2.))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(8.))
+                .text_size(crate::appearance::ui_size(20.))
+                .text_color(rgb(t.text_faint))
+                .cursor_pointer()
+                .hover(|s| s.bg(rgb(t.bg_hover)).text_color(rgb(t.text)))
+                .child(tr("action.close"))
+                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                    let _ = weak_close.update(cx, |c, cx| c.ask_cancel(cx));
+                }),
+        ),
     )
 }
 
@@ -674,7 +707,10 @@ fn ask_option_rows(
                         if sel {
                             d.bg(rgb(t.accent)).text_color(rgb(t.accent_contrast))
                         } else {
-                            d.border_1().border_color(rgb(t.bg_selected)).bg(rgb(t.bg)).text_color(rgb(t.text_faint))
+                            d.border_1()
+                                .border_color(rgb(t.bg_selected))
+                                .bg(rgb(t.bg))
+                                .text_color(rgb(t.text_faint))
                         }
                     }),
             )
@@ -702,7 +738,8 @@ fn ask_option_rows(
                 if sel {
                     d.bg(accent_tint(0.08)).border_color(accent_tint(0.35))
                 } else {
-                    d.border_color(gpui::hsla(0., 0., 0., 0.)).hover(|s| s.bg(rgb(t.bg_hover)))
+                    d.border_color(gpui::hsla(0., 0., 0., 0.))
+                        .hover(|s| s.bg(rgb(t.bg_hover)))
                 }
             })
             .on_mouse_down(MouseButton::Left, move |_, _, cx| {
@@ -741,7 +778,9 @@ fn ask_other_row(
             if q.other_sel {
                 d.bg(accent_tint(0.08)).border_color(accent_tint(0.35))
             } else {
-                d.border_color(rgb(t.bg_selected)).bg(rgb(t.bg)).hover(|s| s.bg(rgb(t.bg_hover)))
+                d.border_color(rgb(t.bg_selected))
+                    .bg(rgb(t.bg))
+                    .hover(|s| s.bg(rgb(t.bg_hover)))
             }
         })
         .on_mouse_down(MouseButton::Left, move |ev, window, cx| {
@@ -921,7 +960,10 @@ fn option_mark(multi: bool, sel: bool, t: &crate::appearance::theme::Theme) -> g
             })
             .into_any_element()
     } else {
-        base.border_1().border_color(rgb(t.border)).bg(rgb(t.bg)).into_any_element()
+        base.border_1()
+            .border_color(rgb(t.border))
+            .bg(rgb(t.bg))
+            .into_any_element()
     }
 }
 

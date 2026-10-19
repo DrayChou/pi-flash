@@ -10,14 +10,22 @@ use super::*;
 
 /// 侧栏条目键：`g:name`（043 起只列全局；键格式保留 scope 前缀兼容旧 state）。
 pub(crate) fn section_key(s: &ServerEntry) -> String {
-    format!("{}:{}", if s.scope == Scope::Project { "p" } else { "g" }, s.name)
+    format!(
+        "{}:{}",
+        if s.scope == Scope::Project { "p" } else { "g" },
+        s.name
+    )
 }
 
 impl Chat {
     /// 编辑回填数据：选中行 → (名称, 原始 JSON)。原始 JSON 保 env 值与
     /// 未知字段（ServerEntry 重建会丢）。
     pub(crate) fn mcp_backfill_data(&self, key: &str) -> Option<(String, String)> {
-        let e = self.cfg.mcp_servers.iter().find(|s| section_key(s) == key)?;
+        let e = self
+            .cfg
+            .mcp_servers
+            .iter()
+            .find(|s| section_key(s) == key)?;
         let raw = pi_link::mcp::raw_entry(&e.file, &e.name).ok().flatten()?;
         let text = serde_json::to_string_pretty(&raw).ok()?;
         Some((e.name.clone(), text))
@@ -64,7 +72,12 @@ impl Chat {
     pub(crate) fn mcp_bulk(&mut self, enable: bool, cx: &mut Context<Self>) {
         self.mc_clear_error(cx);
         let mut failed = 0usize;
-        for entry in self.cfg.mcp_servers.iter().filter(|s| s.scope == Scope::Global) {
+        for entry in self
+            .cfg
+            .mcp_servers
+            .iter()
+            .filter(|s| s.scope == Scope::Global)
+        {
             if entry.enabled == enable {
                 continue;
             }
@@ -74,7 +87,10 @@ impl Chat {
             }
         }
         if failed > 0 {
-            self.mc_set_error(&crate::i18n::tf("mcp.failed_count", &[("count", failed.to_string())]), cx);
+            self.mc_set_error(
+                &crate::i18n::tf("mcp.failed_count", &[("count", failed.to_string())]),
+                cx,
+            );
         }
         self.reload_settings_panel();
         cx.notify();
@@ -84,7 +100,9 @@ impl Chat {
     /// mcp.json（粘贴 JSON 里的 exposure 等字段原样保留）。043：一切改动
     /// 只对新会话生效。
     pub(crate) fn mcp_save_submit(&mut self, cx: &mut Context<Self>) {
-        let Some(st) = self.dlg.settings.clone() else { return };
+        let Some(st) = self.dlg.settings.clone() else {
+            return;
+        };
         let (text, name_override, section) = {
             let s = st.read(cx);
             (
@@ -98,9 +116,14 @@ impl Chat {
             return self.mc_set_error(tr("mcp.form_placeholder"), cx);
         }
         let (name, config) = match pi_link::mcp::parse_server_input(&text) {
-            Ok((suggested, config, _)) => {
-                (if name_override.is_empty() { suggested } else { name_override }, config)
-            }
+            Ok((suggested, config, _)) => (
+                if name_override.is_empty() {
+                    suggested
+                } else {
+                    name_override
+                },
+                config,
+            ),
             Err(e) => return self.mc_set_error(&e, cx),
         };
         if !pi_link::mcp::valid_name(&name) {
@@ -109,7 +132,8 @@ impl Chat {
         let path = pi_link::mcp::global_path();
         // 编辑模式且改了名 → 删旧条目（旧条目必在全局文件）
         if let Some(old) = self
-            .cfg.mcp_servers
+            .cfg
+            .mcp_servers
             .iter()
             .find(|s| section_key(s) == section && s.scope == Scope::Global)
             .cloned()
@@ -124,7 +148,8 @@ impl Chat {
             Ok(_) => {
                 self.reload_settings_panel();
                 let key = self
-                    .cfg.mcp_servers
+                    .cfg
+                    .mcp_servers
                     .iter()
                     .find(|s| s.name == name && s.scope == Scope::Global)
                     .map(section_key)
@@ -152,8 +177,10 @@ pub(crate) fn mcp_apply_backfill(
             s.mcp_add.update(cx, |ti, cx| ti.set_value(text, cx));
         }
         None => {
-            s.mcp_name.update(cx, |ti, cx| ti.set_value(String::new(), cx));
-            s.mcp_add.update(cx, |ti, cx| ti.set_value(String::new(), cx));
+            s.mcp_name
+                .update(cx, |ti, cx| ti.set_value(String::new(), cx));
+            s.mcp_add
+                .update(cx, |ti, cx| ti.set_value(String::new(), cx));
         }
     }
 }
@@ -171,7 +198,13 @@ pub(crate) fn mc_mcp_view(
 ) -> gpui::AnyElement {
     let sb = mcp_sidebar(chat, weak, section);
     let detail = mcp_form(
-        chat, weak, section, mcp_add_input, mcp_add_value, mcp_name, error,
+        chat,
+        weak,
+        section,
+        mcp_add_input,
+        mcp_add_value,
+        mcp_name,
+        error,
     );
     div()
         .flex()
@@ -185,16 +218,13 @@ pub(crate) fn mc_mcp_view(
 
 /// 侧栏：全局一组（总开关 + 单独开关）。043：项目配置不管理，无底部按钮
 /// ——点已选中的行回到新增表单。
-fn mcp_sidebar(
-    chat: &Chat,
-    weak: &gpui::WeakEntity<Chat>,
-    section: &str,
-) -> gpui::AnyElement {
+fn mcp_sidebar(chat: &Chat, weak: &gpui::WeakEntity<Chat>, section: &str) -> gpui::AnyElement {
     let t = T();
     // px7 + 行内 px8 = 内容左右 15px（与右侧详情 p15 等距，040 扩展页定稿）
     let mut list = sidebar_list().px(px(7.));
     let items: Vec<&ServerEntry> = chat
-        .cfg.mcp_servers
+        .cfg
+        .mcp_servers
         .iter()
         .filter(|s| s.scope == Scope::Global)
         .collect();
@@ -209,8 +239,8 @@ fn mcp_sidebar(
             SwitchMark::from_counts(enabled, total),
             total == 0,
             move |c, cx| c.mcp_bulk(enabled != total, cx),
-        ),
-    )));
+        )),
+    ));
     for entry in items {
         let key = section_key(entry);
         let active = key == section;
@@ -224,7 +254,11 @@ fn mcp_sidebar(
                 .bg(rgb(t.bg))
                 .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                     // 点已选中的行 → 回新增表单（043：无「添加 MCP」按钮）
-                    let next = if active { "__mcp_add__".to_string() } else { row_key.clone() };
+                    let next = if active {
+                        "__mcp_add__".to_string()
+                    } else {
+                        row_key.clone()
+                    };
                     let _ = weak_item.update(cx, |c, cx| c.mcp_select(next, cx));
                 })
                 .child(status_dot(if entry.enabled { t.accent } else { t.border }))
@@ -262,8 +296,10 @@ fn mcp_sidebar(
     }
 
     // 列表底色压平（040：与页面同色，选中态只靠字重字色）
-    let shell =
-        sidebar_shell("mc-sidebar").w(px(LIST_W)).bg(rgb(t.bg)).child(list);
+    let shell = sidebar_shell("mc-sidebar")
+        .w(px(LIST_W))
+        .bg(rgb(t.bg))
+        .child(list);
     shell.into_any_element()
 }
 
@@ -280,7 +316,8 @@ fn mcp_form(
 ) -> gpui::AnyElement {
     let t = T();
     let editing = chat
-        .cfg.mcp_servers
+        .cfg
+        .mcp_servers
         .iter()
         .find(|s| section_key(s) == section && s.scope == Scope::Global)
         .cloned();
@@ -305,19 +342,28 @@ fn mcp_form(
                 .child(section_title(&tr("mcp.field_name")))
                 .child(div().flex_1())
                 .children(editing.clone().map(|e| {
-                    config_button("mcp-remove", weak, &tr("action.remove"), Btn::Danger, true, false,
-                        move |c, cx| c.mcp_remove(e.clone(), cx))
+                    config_button(
+                        "mcp-remove",
+                        weak,
+                        &tr("action.remove"),
+                        Btn::Danger,
+                        true,
+                        false,
+                        move |c, cx| c.mcp_remove(e.clone(), cx),
+                    )
                 }))
-                .child(config_button("mcp-save", weak, &tr("action.save"), Btn::Primary, false, mcp_add_value.trim().is_empty(), |c, cx| {
-                    c.mcp_save_submit(cx)
-                })),
+                .child(config_button(
+                    "mcp-save",
+                    weak,
+                    &tr("action.save"),
+                    Btn::Primary,
+                    false,
+                    mcp_add_value.trim().is_empty(),
+                    |c, cx| c.mcp_save_submit(cx),
+                )),
         )
         // 第二行：名称输入（全宽）
-        .child(
-            div()
-                .mb(px(10.))
-                .child(mcp_name.clone()),
-        )
+        .child(div().mb(px(10.)).child(mcp_name.clone()))
         // 第三行：服务配置标签
         .child(section_title(&tr("mcp.form_title")));
     if let Some(err) = error {

@@ -6,11 +6,14 @@ use crate::*;
 use gpui::{MouseButton, SharedString, div, px, rgb};
 
 use crate::Chat;
-use crate::i18n::tr;
 use crate::appearance::theme::theme as T;
+use crate::i18n::tr;
 
 /// One extension widget block (mono lines, pi-web widget rendering).
-pub(crate) fn render_ext_widget(lines: &[String], t: &crate::appearance::theme::Theme) -> gpui::AnyElement {
+pub(crate) fn render_ext_widget(
+    lines: &[String],
+    t: &crate::appearance::theme::Theme,
+) -> gpui::AnyElement {
     let text: String = lines.join("\n");
     div()
         .w_full()
@@ -68,14 +71,23 @@ pub(crate) fn render_ext_dialog(
                 .collect();
             (
                 title.clone(),
-                div().flex().flex_col().gap_1().children(opts).into_any_element(),
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .children(opts)
+                    .into_any_element(),
             )
         }
         ExtUiMethod::Confirm { title, message } => {
             let msg: SharedString = message.clone().into();
             (
                 title.clone(),
-                div().text_size(crate::appearance::ui_size(12.)).text_color(rgb(t.text_muted)).child(msg).into_any_element(),
+                div()
+                    .text_size(crate::appearance::ui_size(12.))
+                    .text_color(rgb(t.text_muted))
+                    .child(msg)
+                    .into_any_element(),
             )
         }
         ExtUiMethod::Input { title, .. } | ExtUiMethod::Editor { title, .. } => {
@@ -175,7 +187,11 @@ pub(crate) fn render_ext_dialog(
                                 .into_any_element()
                         }))
                         .children((!is_select).then(|| {
-                            let label = if is_confirm { tr("action.yes") } else { tr("action.submit") };
+                            let label = if is_confirm {
+                                tr("action.yes")
+                            } else {
+                                tr("action.submit")
+                            };
                             div()
                                 .id("ext-ok")
                                 .px_3()
@@ -214,7 +230,6 @@ pub(crate) fn render_ext_dialog(
 // ---------------------------------------------------------------------------
 
 impl Chat {
-
     // -----------------------------------------------------------------------
     // extension UI protocol (rpc-mode extension_ui_request surface)
     // -----------------------------------------------------------------------
@@ -236,24 +251,44 @@ impl Chat {
             return;
         }
         match req.method {
-            ExtUiMethod::SetStatus { status_key, status_text } => {
+            ExtUiMethod::SetStatus {
+                status_key,
+                status_text,
+            } => {
                 match status_text {
                     Some(text) if !text.is_empty() => {
-                        if let Some(item) = self.aux.ext_status.iter_mut().find(|(k, _)| *k == status_key) {
+                        if let Some(item) = self
+                            .aux
+                            .ext_status
+                            .iter_mut()
+                            .find(|(k, _)| *k == status_key)
+                        {
                             item.1 = text;
                         } else {
                             self.aux.ext_status.push((status_key, text));
                         }
                     }
-                    _ => self.aux.ext_status.retain(|(k, _): &(String, String)| *k != status_key),
+                    _ => self
+                        .aux
+                        .ext_status
+                        .retain(|(k, _): &(String, String)| *k != status_key),
                 }
                 cx.notify();
             }
-            ExtUiMethod::SetWidget { widget_key, widget_lines, placement } => {
+            ExtUiMethod::SetWidget {
+                widget_key,
+                widget_lines,
+                placement,
+            } => {
                 let above = placement.as_deref() != Some("belowEditor");
                 match widget_lines {
                     Some(lines) if !lines.is_empty() => {
-                        if let Some(w) = self.aux.ext_widgets.iter_mut().find(|(k, _, _)| *k == widget_key) {
+                        if let Some(w) = self
+                            .aux
+                            .ext_widgets
+                            .iter_mut()
+                            .find(|(k, _, _)| *k == widget_key)
+                        {
                             w.1 = lines;
                             w.2 = above;
                         } else {
@@ -264,7 +299,10 @@ impl Chat {
                 }
                 cx.notify();
             }
-            ExtUiMethod::Notify { message, notify_type } => {
+            ExtUiMethod::Notify {
+                message,
+                notify_type,
+            } => {
                 let ty = match notify_type.as_deref() {
                     Some("warning") => 1,
                     Some("error") => 2,
@@ -298,9 +336,10 @@ impl Chat {
                     _ => String::new(),
                 };
                 let placeholder = match &blocking {
-                    ExtUiMethod::Input { placeholder: Some(p), .. } => {
-                        Some(SharedString::from(p.clone()))
-                    }
+                    ExtUiMethod::Input {
+                        placeholder: Some(p),
+                        ..
+                    } => Some(SharedString::from(p.clone())),
                     _ => None,
                 };
                 let input = self.aux.ext_input.clone();
@@ -342,12 +381,14 @@ impl Chat {
     ) {
         // 桌面端先应答 → 微信端放弃同一请求（060 §8 档 2 不重复消费）
         self.aux.remote.clear_pending(&req.id);
-        self.rt().read(cx).rpc(&pi_link::protocol::Command::ExtensionUiResponse {
-            id: req.id.clone(),
-            value,
-            confirmed,
-            cancelled,
-        });
+        self.rt()
+            .read(cx)
+            .rpc(&pi_link::protocol::Command::ExtensionUiResponse {
+                id: req.id.clone(),
+                value,
+                confirmed,
+                cancelled,
+            });
         cx.notify();
     }
 }

@@ -6,15 +6,14 @@
 //! 依赖 `getPermissionRequestPreview`（`shared/permission-request-preview.ts`，
 //! 366 行，PC 端 `PermissionDialog` 同源），留到切片 4 与其余文案一起搬。
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use super::messages::{t, tf, Lang};
-use super::summary::{
-    get_compact_tool_call_summary, normalize_display_text, ToolCallSummary,
-    ToolCallSummarySource,
-};
+use super::messages::{Lang, t, tf};
 use super::permission::{
-    get_permission_request_preview, ChangeKind, PermissionRequest, PermissionRequestPreview, Scope,
+    ChangeKind, PermissionRequest, PermissionRequestPreview, Scope, get_permission_request_preview,
+};
+use super::summary::{
+    ToolCallSummary, ToolCallSummarySource, get_compact_tool_call_summary, normalize_display_text,
 };
 
 /// ZCode `replyFormatter.ts:48-52` 的四个上限。
@@ -166,7 +165,10 @@ pub fn format_bot_diff_count(stat: &DiffStat) -> String {
 // ── 摘要行 ────────────────────────────────────────────────────────
 
 /// ZCode `normalizeToolCallSummaryInput`：只有 `kind === "edit"` 才把路径相对化。
-fn normalize_tool_call_summary_input(tool_call: &BotReplyToolCallState, workspace: Option<&str>) -> Value {
+fn normalize_tool_call_summary_input(
+    tool_call: &BotReplyToolCallState,
+    workspace: Option<&str>,
+) -> Value {
     let Some(obj) = tool_call.input.as_object() else {
         return tool_call.input.clone();
     };
@@ -176,7 +178,10 @@ fn normalize_tool_call_summary_input(tool_call: &BotReplyToolCallState, workspac
     let mut next = obj.clone();
     for key in ["path", "file_path", "filePath"] {
         if let Some(value) = next.get(key).and_then(Value::as_str) {
-            next.insert(key.to_string(), json!(to_workspace_relative_path(value, workspace)));
+            next.insert(
+                key.to_string(),
+                json!(to_workspace_relative_path(value, workspace)),
+            );
         }
     }
     Value::Object(next)
@@ -318,7 +323,11 @@ pub fn format_bot_change_summary(change_summary: &ChangeSummary, lang: Lang) -> 
         let overflow = change_summary.files.len() - MAX_TOOL_SUMMARY_ITEMS;
         lines.push(format!(
             "- {}",
-            tf(lang, "还有 {count} 个文件", &[("count", &overflow.to_string())])
+            tf(
+                lang,
+                "还有 {count} 个文件",
+                &[("count", &overflow.to_string())]
+            )
         ));
     }
     lines.join("\n")
@@ -338,7 +347,11 @@ pub fn split_long_reply_text(text: &str) -> Vec<String> {
 
     while chars.len() > MAX_REPLY_MESSAGE_LENGTH {
         // ZCode 的 fromIndex 是 3500（含），这里取 0..=3500 这段找断点。
-        let window: Vec<char> = chars.iter().take(MAX_REPLY_MESSAGE_LENGTH + 1).copied().collect();
+        let window: Vec<char> = chars
+            .iter()
+            .take(MAX_REPLY_MESSAGE_LENGTH + 1)
+            .copied()
+            .collect();
         let newline = window.iter().rposition(|c| *c == '\n');
         let space = window.iter().rposition(|c| *c == ' ');
         let breakpoint: isize = match (newline, space) {
@@ -433,7 +446,9 @@ fn contains_word_case_insensitive(haystack: &str, word: &str) -> bool {
 }
 
 pub(crate) fn contains_any_word(haystack: &str, words: &[&str]) -> bool {
-    words.iter().any(|word| contains_case_insensitive_any(haystack, word))
+    words
+        .iter()
+        .any(|word| contains_case_insensitive_any(haystack, word))
 }
 
 fn contains_case_insensitive_any(haystack: &str, word: &str) -> bool {
@@ -490,14 +505,18 @@ pub fn format_edit_permission_kind_label(
 
     if contains_any_word(
         &normalized,
-        &["delete", "deleted", "remove", "removed", "erase", "erased", "unlink", "rm"],
+        &[
+            "delete", "deleted", "remove", "removed", "erase", "erased", "unlink", "rm",
+        ],
     ) {
         return t(lang, "删除中");
     }
     if file_change_type == Some(ChangeKind::Add)
         || contains_any_word(
             &normalized,
-            &["write", "wrote", "create", "created", "add", "added", "save", "saved", "new"],
+            &[
+                "write", "wrote", "create", "created", "add", "added", "save", "saved", "new",
+            ],
         )
     {
         return t(lang, "写入中");
@@ -515,8 +534,7 @@ fn format_permission_request_title(
     lang: Lang,
     workspace: Option<&str>,
 ) -> String {
-    if request.kind != "edit" || (preview.scope != Scope::File && preview.file_changes.is_empty())
-    {
+    if request.kind != "edit" || (preview.scope != Scope::File && preview.file_changes.is_empty()) {
         return preview.title.clone();
     }
     let label = format_edit_permission_kind_label(request, preview, lang);
@@ -618,8 +636,15 @@ mod tests {
     fn truncate_text_splits_at_max_minus_three() {
         assert_eq!(truncate_text("abc", 160), "abc");
         let long = "x".repeat(160);
-        assert_eq!(truncate_text(&long, 160), long, "恰好等于上限时原样返回（ZCode 是 > 才切）");
-        assert_eq!(truncate_text(&"x".repeat(161), 160), "x".repeat(157) + "...");
+        assert_eq!(
+            truncate_text(&long, 160),
+            long,
+            "恰好等于上限时原样返回（ZCode 是 > 才切）"
+        );
+        assert_eq!(
+            truncate_text(&"x".repeat(161), 160),
+            "x".repeat(157) + "..."
+        );
         assert_eq!(truncate_text(&"x".repeat(161), 160).chars().count(), 160);
     }
 
@@ -668,20 +693,50 @@ mod tests {
 
     #[test]
     fn diff_count_only_non_zero_sides() {
-        assert_eq!(format_bot_diff_count(&DiffStat { added: 8, removed: 0 }), "🟢 `+8`");
-        assert_eq!(format_bot_diff_count(&DiffStat { added: 0, removed: 3 }), "🔴 `-3`");
         assert_eq!(
-            format_bot_diff_count(&DiffStat { added: 8, removed: 3 }),
+            format_bot_diff_count(&DiffStat {
+                added: 8,
+                removed: 0
+            }),
+            "🟢 `+8`"
+        );
+        assert_eq!(
+            format_bot_diff_count(&DiffStat {
+                added: 0,
+                removed: 3
+            }),
+            "🔴 `-3`"
+        );
+        assert_eq!(
+            format_bot_diff_count(&DiffStat {
+                added: 8,
+                removed: 3
+            }),
             "🟢 `+8` 🔴 `-3`"
         );
-        assert_eq!(format_bot_diff_count(&DiffStat { added: 0, removed: 0 }), "");
+        assert_eq!(
+            format_bot_diff_count(&DiffStat {
+                added: 0,
+                removed: 0
+            }),
+            ""
+        );
     }
 
     #[test]
     fn tool_status_mapping_including_stopped_falling_through() {
-        assert_eq!(format_tool_status(Some(ToolStatus::Completed), None, Lang::ZhCn), "完成");
-        assert_eq!(format_tool_status(Some(ToolStatus::Denied), None, Lang::ZhCn), "已拒绝");
-        assert_eq!(format_tool_status(Some(ToolStatus::InProgress), None, Lang::En), "Running");
+        assert_eq!(
+            format_tool_status(Some(ToolStatus::Completed), None, Lang::ZhCn),
+            "完成"
+        );
+        assert_eq!(
+            format_tool_status(Some(ToolStatus::Denied), None, Lang::ZhCn),
+            "已拒绝"
+        );
+        assert_eq!(
+            format_tool_status(Some(ToolStatus::InProgress), None, Lang::En),
+            "Running"
+        );
         assert_eq!(
             format_tool_status(Some(ToolStatus::Failed), Some("boom  "), Lang::ZhCn),
             "失败: boom",
@@ -715,8 +770,7 @@ mod tests {
         tc.status = Some(ToolStatus::Completed);
         let line = format_bot_tool_call_summary_line(&tc, Lang::ZhCn, Some("/ws"));
         assert_eq!(
-            line,
-            "- 完成 · Edit · `a.rs` · 🟢 `+3` 🔴 `-2`",
+            line, "- 完成 · Edit · `a.rs` · 🟢 `+3` 🔴 `-2`",
             "edit kind 才做路径相对化与增删统计"
         );
     }
@@ -731,7 +785,9 @@ mod tests {
         ] {
             assert!(is_bot_tool_call_reply_terminal(Some(s)), "{s:?} 应是终态");
         }
-        assert!(!is_bot_tool_call_reply_terminal(Some(ToolStatus::InProgress)));
+        assert!(!is_bot_tool_call_reply_terminal(Some(
+            ToolStatus::InProgress
+        )));
         assert!(!is_bot_tool_call_reply_terminal(None));
     }
 
@@ -742,8 +798,16 @@ mod tests {
             added: 5,
             removed: 1,
             files: vec![
-                FileChange { path: "src/a.rs".into(), added: 3, removed: 1 },
-                FileChange { path: "src/b.rs".into(), added: 2, removed: 0 },
+                FileChange {
+                    path: "src/a.rs".into(),
+                    added: 3,
+                    removed: 1,
+                },
+                FileChange {
+                    path: "src/b.rs".into(),
+                    added: 2,
+                    removed: 0,
+                },
             ],
         };
         assert_eq!(
@@ -755,7 +819,10 @@ mod tests {
             "Change summary: 2 files, 🟢 `+5` 🔴 `-1`\n- `src/a.rs` (🟢 `+3` 🔴 `-1`)\n- `src/b.rs` (🟢 `+2`)",
             "en 头行是硬编码模板，不是 zh 的译文"
         );
-        assert_eq!(format_bot_change_summary(&ChangeSummary::default(), Lang::ZhCn), "");
+        assert_eq!(
+            format_bot_change_summary(&ChangeSummary::default(), Lang::ZhCn),
+            ""
+        );
     }
 
     #[test]
@@ -767,10 +834,22 @@ mod tests {
                 removed: 0,
             })
             .collect();
-        let summary = ChangeSummary { file_count: 12, added: 12, removed: 0, files };
+        let summary = ChangeSummary {
+            file_count: 12,
+            added: 12,
+            removed: 0,
+            files,
+        };
         let text = format_bot_change_summary(&summary, Lang::ZhCn);
-        assert_eq!(text.lines().count(), 1 + 10 + 1, "头行 + 10 个文件 + 溢出行");
-        let overflow = format!("- {}", tf(Lang::ZhCn, "还有 {count} 个文件", &[("count", "2")]));
+        assert_eq!(
+            text.lines().count(),
+            1 + 10 + 1,
+            "头行 + 10 个文件 + 溢出行"
+        );
+        let overflow = format!(
+            "- {}",
+            tf(Lang::ZhCn, "还有 {count} 个文件", &[("count", "2")])
+        );
         assert!(text.ends_with(&overflow), "{text}");
     }
 
@@ -800,7 +879,10 @@ mod tests {
 
     #[test]
     fn split_keeps_short_text_whole_and_trims() {
-        assert_eq!(split_long_reply_text("  hello  "), vec!["hello".to_string()]);
+        assert_eq!(
+            split_long_reply_text("  hello  "),
+            vec!["hello".to_string()]
+        );
         assert!(split_long_reply_text("").is_empty());
         let near = "a".repeat(3500);
         assert_eq!(split_long_reply_text(&near).len(), 1, "等于上限不切");
@@ -820,7 +902,9 @@ mod tests {
     #[test]
     fn blocks_are_chunked_in_order() {
         let blocks = vec![
-            BotAssistantReplyBlock::Content { content: "第一段".into() },
+            BotAssistantReplyBlock::Content {
+                content: "第一段".into(),
+            },
             BotAssistantReplyBlock::ToolCall {
                 tool_call: {
                     let mut tc = tool_call("bash", json!({ "command": "ls" }));
@@ -833,7 +917,11 @@ mod tests {
                     file_count: 1,
                     added: 2,
                     removed: 0,
-                    files: vec![FileChange { path: "a.rs".into(), added: 2, removed: 0 }],
+                    files: vec![FileChange {
+                        path: "a.rs".into(),
+                        added: 2,
+                        removed: 0,
+                    }],
                 },
             },
         ];
@@ -841,7 +929,10 @@ mod tests {
         assert_eq!(messages.len(), 3);
         assert_eq!(messages[0], "第一段");
         assert_eq!(messages[1], "工具调用：\n- 完成 · Bash · `ls`");
-        assert_eq!(messages[2], "变更摘要：1 个文件，🟢 `+2`\n- `a.rs` (🟢 `+2`)");
+        assert_eq!(
+            messages[2],
+            "变更摘要：1 个文件，🟢 `+2`\n- `a.rs` (🟢 `+2`)"
+        );
     }
 
     #[test]
@@ -878,7 +969,10 @@ mod tests {
         );
         // fileChange.type = add 直接判写入
         assert_eq!(
-            label(&mk("edit a.rs", json!({ "changes": { "a.rs": { "type": "add" } } }))),
+            label(&mk(
+                "edit a.rs",
+                json!({ "changes": { "a.rs": { "type": "add" } } })
+            )),
             "写入中"
         );
         // update 词表

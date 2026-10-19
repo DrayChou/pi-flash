@@ -26,10 +26,14 @@ impl Chat {
 
     /// 光标前的 @ token（含字节起点/查询词/引号形态）。与 active_menu 不同，
     /// 这里不看 menu_dismissed——确认补全需要 token 位置本身。
-    pub(crate) fn at_token(&self, cx: &gpui::App) -> Option<crate::services::at_file::AtQueryMatch> {
+    pub(crate) fn at_token(
+        &self,
+        cx: &gpui::App,
+    ) -> Option<crate::services::at_file::AtQueryMatch> {
         let input = &self.composer.input;
         let mut cursor = self
-            .composer.composer
+            .composer
+            .composer
             .as_ref()
             .map(|c| c.read(cx).cursor(cx))
             .unwrap_or(input.len())
@@ -45,7 +49,8 @@ impl Chat {
             Some(MenuKind::Slash) => {
                 let q = self.composer.input[1..].to_lowercase();
                 // 命令清单 = 会话进程答案优先，否则启动装载的（项目 skill + 扩展缓存）
-                self.slash_commands(cx).iter()
+                self.slash_commands(cx)
+                    .iter()
                     .filter(|c| q.is_empty() || c.name.to_lowercase().starts_with(&q))
                     .take(60)
                     .map(|c| MenuItem {
@@ -67,16 +72,22 @@ impl Chat {
                 // 记忆化：同一份 entries（Arc 身份）+ 同查询词直接复用上次
                 // 过滤——@ 菜单打开期间每次渲染都会走到这里，全量打分只该
                 // 在输入或索引变化时发生。渲染期 &self，写缓存走 RefCell
-                let hit = self.composer.at_filter_cache.borrow().as_ref().is_some_and(
-                    |(arc, q, _)| std::sync::Arc::ptr_eq(arc, &entry.entries) && q == &query,
-                );
+                let hit =
+                    self.composer
+                        .at_filter_cache
+                        .borrow()
+                        .as_ref()
+                        .is_some_and(|(arc, q, _)| {
+                            std::sync::Arc::ptr_eq(arc, &entry.entries) && q == &query
+                        });
                 if !hit {
                     let hits =
                         crate::services::at_file::filter_file_entries(&entry.entries, &query);
                     *self.composer.at_filter_cache.borrow_mut() =
                         Some((entry.entries.clone(), query, hits));
                 }
-                self.composer.at_filter_cache
+                self.composer
+                    .at_filter_cache
                     .borrow()
                     .as_ref()
                     .map(|(_, _, v)| v.clone())
@@ -106,12 +117,18 @@ impl Chat {
                 let Some(m) = self.at_token(cx) else { return };
                 // pi-web applyAtCompletion：只替换 @token（保留光标后的文本），
                 // 插入形态见 build_at_insert_text（目录不闭合 → 菜单继续钻取）
-                let (text, cur_off) = crate::services::at_file::build_at_insert_text(&insert, is_dir);
+                let (text, cur_off) =
+                    crate::services::at_file::build_at_insert_text(&insert, is_dir);
                 let mut v = String::new();
                 v.push_str(&self.composer.input[..m.start]);
                 v.push_str(&text);
                 let cursor_byte = m.start + cur_off;
-                let tail = self.composer.composer.as_ref().map(|c| c.read(cx).cursor(cx)).unwrap_or(self.composer.input.len());
+                let tail = self
+                    .composer
+                    .composer
+                    .as_ref()
+                    .map(|c| c.read(cx).cursor(cx))
+                    .unwrap_or(self.composer.input.len());
                 let mut tail = tail.min(self.composer.input.len());
                 while tail > 0 && !self.composer.input.is_char_boundary(tail) {
                     tail -= 1;
@@ -124,7 +141,9 @@ impl Chat {
             None => {}
         }
         self.composer.menu_ix = 0;
-        self.composer.menu_scroll.set_offset(gpui::point(px(0.), px(0.)));
+        self.composer
+            .menu_scroll
+            .set_offset(gpui::point(px(0.), px(0.)));
         cx.notify();
     }
 }
@@ -162,7 +181,10 @@ pub(crate) fn slash_menu_view(
         } else {
             (None, name.clone())
         };
-        let display_name = name_part.strip_prefix("skill:").unwrap_or(&name_part).to_string();
+        let display_name = name_part
+            .strip_prefix("skill:")
+            .unwrap_or(&name_part)
+            .to_string();
         let dir_el = dir_part.map(|dir| {
             div()
                 .font_family(crate::editor::markdown::MONO_FAMILY)
@@ -219,7 +241,11 @@ pub(crate) fn slash_menu_view(
                 .into_any_element()
             } else {
                 crate::ui::icon(
-                    if name.starts_with("skill:") { "wand" } else { "icon-terminal-solid" },
+                    if name.starts_with("skill:") {
+                        "wand"
+                    } else {
+                        "icon-terminal-solid"
+                    },
                     13.,
                     if active { t.accent } else { t.text_dim },
                 )
@@ -343,11 +369,7 @@ pub(crate) fn slash_menu_view(
                                 }),
                         );
                     } else {
-                        scroll = scroll
-                            .flex()
-                            .flex_col()
-                            .gap(px(8.))
-                            .children(cards);
+                        scroll = scroll.flex().flex_col().gap(px(8.)).children(cards);
                     }
                     scroll
                 })

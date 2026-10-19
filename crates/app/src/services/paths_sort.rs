@@ -12,7 +12,10 @@ use std::path::Path;
 // natural_sort / natural_sort_no_tiebreak）
 // ---------------------------------------------------------------------------
 
-fn compare_numeric_segments<I>(a_iter: &mut std::iter::Peekable<I>, b_iter: &mut std::iter::Peekable<I>) -> Ordering
+fn compare_numeric_segments<I>(
+    a_iter: &mut std::iter::Peekable<I>,
+    b_iter: &mut std::iter::Peekable<I>,
+) -> Ordering
 where
     I: Iterator<Item = char>,
 {
@@ -94,7 +97,10 @@ pub fn natural_sort(a: &str, b: &str) -> Ordering {
                         ordering => return ordering,
                     }
                 } else {
-                    match a_char.to_ascii_lowercase().cmp(&b_char.to_ascii_lowercase()) {
+                    match a_char
+                        .to_ascii_lowercase()
+                        .cmp(&b_char.to_ascii_lowercase())
+                    {
                         Ordering::Equal => {
                             a_iter.next();
                             b_iter.next();
@@ -269,7 +275,9 @@ pub fn compare_entry_names(
             name_cmp.then_with(|| {
                 if a_is_file && b_is_file {
                     match order {
-                        SortOrder::Unicode => a_ext.unwrap_or_default().cmp(b_ext.unwrap_or_default()),
+                        SortOrder::Unicode => {
+                            a_ext.unwrap_or_default().cmp(b_ext.unwrap_or_default())
+                        }
                         _ => {
                             let a_ext_str = a_ext.unwrap_or_default().to_lowercase();
                             let b_ext_str = b_ext.unwrap_or_default().to_lowercase();
@@ -463,13 +471,7 @@ mod tests {
         assert_eq!(natural_sort("File_a1", "File_A1"), Ordering::Less);
     }
 
-    fn cmp(
-        a: &str,
-        a_is_file: bool,
-        b: &str,
-        b_is_file: bool,
-        mode: SortMode,
-    ) -> Ordering {
+    fn cmp(a: &str, a_is_file: bool, b: &str, b_is_file: bool, mode: SortMode) -> Ordering {
         compare_entry_names((a, a_is_file), (b, b_is_file), mode, SortOrder::Default)
     }
 
@@ -478,13 +480,22 @@ mod tests {
         use SortMode::*;
         // 目录先（DirectoriesFirst）
         assert_eq!(cmp("z", false, "a", true, DirectoriesFirst), Ordering::Less);
-        assert_eq!(cmp("a", true, "z", false, DirectoriesFirst), Ordering::Greater);
+        assert_eq!(
+            cmp("a", true, "z", false, DirectoriesFirst),
+            Ordering::Greater
+        );
         // 数字按值
         assert_eq!(cmp("2", true, "10", true, DirectoriesFirst), Ordering::Less);
         // stem 相同比扩展名（Zed 语义：a.md < a.txt）
-        assert_eq!(cmp("a.md", true, "a.txt", true, DirectoriesFirst), Ordering::Less);
+        assert_eq!(
+            cmp("a.md", true, "a.txt", true, DirectoriesFirst),
+            Ordering::Less
+        );
         // 大小写不敏感，小写优先
-        assert_eq!(cmp("B", true, "a", true, DirectoriesFirst), Ordering::Greater);
+        assert_eq!(
+            cmp("B", true, "a", true, DirectoriesFirst),
+            Ordering::Greater
+        );
         assert_eq!(cmp("a", true, "A", true, DirectoriesFirst), Ordering::Less);
         // Mixed：文件目录混排，同名时文件靠后
         assert_eq!(cmp("z", true, "a", false, Mixed), Ordering::Greater);

@@ -11,7 +11,7 @@
 //! - 自定义商按 models.json 的 `baseUrl` + `api` 走同一构造规则。
 //! - 结果只驱动 UI 状态点，不回滚保存——可能是网络问题，key 留着。
 
-use crate::credentials::{classify, pf_ref, StoreMode, SecretVault};
+use crate::credentials::{SecretVault, StoreMode, classify, pf_ref};
 use std::time::Duration;
 
 /// 列模型请求的鉴权样式（决定头形状）。
@@ -46,21 +46,53 @@ pub enum ProbeOutcome {
 pub fn catalog_target(provider: &str) -> Option<(&'static str, Auth)> {
     const TABLE: &[(&str, &str, Auth)] = &[
         ("openai", "https://api.openai.com/v1/models", Auth::Bearer),
-        ("deepseek", "https://api.deepseek.com/v1/models", Auth::Bearer),
-        ("anthropic", "https://api.anthropic.com/v1/models", Auth::Anthropic),
+        (
+            "deepseek",
+            "https://api.deepseek.com/v1/models",
+            Auth::Bearer,
+        ),
+        (
+            "anthropic",
+            "https://api.anthropic.com/v1/models",
+            Auth::Anthropic,
+        ),
         (
             "google",
             "https://generativelanguage.googleapis.com/v1beta/models",
             Auth::Google,
         ),
-        ("openrouter", "https://openrouter.ai/api/v1/models", Auth::Bearer),
-        ("groq", "https://api.groq.com/openai/v1/models", Auth::Bearer),
-        ("cerebras", "https://api.cerebras.ai/v1/models", Auth::Bearer),
+        (
+            "openrouter",
+            "https://openrouter.ai/api/v1/models",
+            Auth::Bearer,
+        ),
+        (
+            "groq",
+            "https://api.groq.com/openai/v1/models",
+            Auth::Bearer,
+        ),
+        (
+            "cerebras",
+            "https://api.cerebras.ai/v1/models",
+            Auth::Bearer,
+        ),
         ("mistral", "https://api.mistral.ai/v1/models", Auth::Bearer),
         ("xai", "https://api.x.ai/v1/models", Auth::Bearer),
-        ("moonshotai", "https://api.moonshot.ai/v1/models", Auth::Bearer),
-        ("moonshotai-cn", "https://api.moonshot.cn/v1/models", Auth::Bearer),
-        ("together", "https://api.together.xyz/v1/models", Auth::Bearer),
+        (
+            "moonshotai",
+            "https://api.moonshot.ai/v1/models",
+            Auth::Bearer,
+        ),
+        (
+            "moonshotai-cn",
+            "https://api.moonshot.cn/v1/models",
+            Auth::Bearer,
+        ),
+        (
+            "together",
+            "https://api.together.xyz/v1/models",
+            Auth::Bearer,
+        ),
         (
             "fireworks",
             "https://api.fireworks.ai/inference/v1/models",
@@ -132,7 +164,9 @@ pub fn custom_probe_key(api_key: &str, vault: &dyn SecretVault) -> Option<String
 /// `context_window`/`inputTokenLimit`；解不出按空目录计。
 pub fn probe(url: &str, auth: Auth, key: &str) -> ProbeOutcome {
     let started = std::time::Instant::now();
-    let agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(20)).build();
+    let agent = ureq::AgentBuilder::new()
+        .timeout(Duration::from_secs(20))
+        .build();
     let req = agent.get(url);
     let req = match auth {
         Auth::Bearer => req.set("Authorization", &format!("Bearer {key}")),
@@ -147,10 +181,16 @@ pub fn probe(url: &str, auth: Auth, key: &str) -> ProbeOutcome {
             return if status == 401 || status == 403 {
                 ProbeOutcome::AuthRejected { status }
             } else {
-                ProbeOutcome::Unreachable { error: format!("HTTP {status}") }
+                ProbeOutcome::Unreachable {
+                    error: format!("HTTP {status}"),
+                }
             };
         }
-        Err(e) => return ProbeOutcome::Unreachable { error: e.to_string() },
+        Err(e) => {
+            return ProbeOutcome::Unreachable {
+                error: e.to_string(),
+            };
+        }
     };
     let latency_ms = started.elapsed().as_millis() as u64;
     let body = resp
@@ -171,7 +211,11 @@ pub fn probe(url: &str, auth: Auth, key: &str) -> ProbeOutcome {
         .unwrap_or_default();
     let models = entries.len();
     let catalog = entries.iter().filter_map(parse_entry).collect();
-    ProbeOutcome::Ok { models, latency_ms, catalog }
+    ProbeOutcome::Ok {
+        models,
+        latency_ms,
+        catalog,
+    }
 }
 
 /// 单条模型目录项的 best-effort 解析（各家 /models 字段形状不一）。
@@ -253,7 +297,10 @@ mod tests {
         mem.insert("PF_KEY_DEEPSEEK".to_string(), "sk-vault".to_string());
         let vault = crate::credentials::MemVault(std::sync::Mutex::new(mem));
         assert_eq!(catalog_probe_key("nosuch", &vault), None);
-        assert_eq!(custom_probe_key("sk-plain", &vault), Some("sk-plain".into()));
+        assert_eq!(
+            custom_probe_key("sk-plain", &vault),
+            Some("sk-plain".into())
+        );
         assert_eq!(custom_probe_key("$OTHER_VAR", &vault), None);
         assert_eq!(custom_probe_key("!cmd", &vault), None);
     }
@@ -284,7 +331,9 @@ mod tests {
         assert_eq!(m.context_window, None);
         assert!(parse_entry(&serde_json::json!({ "object": "model" })).is_none());
         assert_eq!(
-            parse_entry(&serde_json::json!({ "id": "x", "name": "x" })).unwrap().name,
+            parse_entry(&serde_json::json!({ "id": "x", "name": "x" }))
+                .unwrap()
+                .name,
             ""
         );
     }

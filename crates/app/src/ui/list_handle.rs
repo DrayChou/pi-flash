@@ -7,7 +7,7 @@
 //! 符号约定与 ScrollHandle 一致（负 y），本适配器原样转接——拖拽期间
 //! 高度测量稳定（scrollbar_drag_* 由 Scrollbar 不经此调用，暂不需要）。
 
-use gpui::{px, size, ListState, Pixels, Point, Size};
+use gpui::{ListState, Pixels, Point, Size, px, size};
 use gpui_component::scroll::ScrollHandleOffsetable;
 
 /// ListState 的 Scrollbar 句柄视图（Clone 便宜：ListState 本就是 Rc）。
@@ -28,8 +28,7 @@ impl ScrollHandleOffsetable for ListStateHandle {
         // 与 ScrollHandle::content_size（max_offset + bounds.size）同构
         size(
             px(0.),
-            self.0.max_offset_for_scrollbar().height
-                + self.0.viewport_bounds().size.height,
+            self.0.max_offset_for_scrollbar().height + self.0.viewport_bounds().size.height,
         )
     }
 }

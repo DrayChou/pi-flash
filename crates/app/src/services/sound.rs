@@ -45,11 +45,7 @@ fn envelope(t: f64, len: f64) -> f64 {
 
 /// 总时长（秒）：第二个音开始时刻 + 最长泛音衰减时长。
 fn total_duration() -> f64 {
-    TONE_OFFSET
-        + PARTIAL_DECAYS
-            .iter()
-            .copied()
-            .fold(0.0_f64, f64::max)
+    TONE_OFFSET + PARTIAL_DECAYS.iter().copied().fold(0.0_f64, f64::max)
 }
 
 /// 合成暖木琴双音提示音，返回 16-bit PCM mono WAV 字节。
@@ -142,7 +138,10 @@ mod tests {
         // fmt: PCM(1) / mono(1) / 44100 / byte rate / block align / 16 bit
         assert_eq!(u16::from_le_bytes([w[20], w[21]]), 1);
         assert_eq!(u16::from_le_bytes([w[22], w[23]]), 1);
-        assert_eq!(u32::from_le_bytes([w[24], w[25], w[26], w[27]]), SAMPLE_RATE);
+        assert_eq!(
+            u32::from_le_bytes([w[24], w[25], w[26], w[27]]),
+            SAMPLE_RATE
+        );
         assert_eq!(u16::from_le_bytes([w[34], w[35]]), 16);
         let data_len = u32::from_le_bytes([w[40], w[41], w[42], w[43]]) as usize;
         assert_eq!(w.len(), 44 + data_len);

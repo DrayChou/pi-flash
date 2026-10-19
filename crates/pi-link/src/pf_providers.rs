@@ -9,12 +9,10 @@
 
 use std::path::Path;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::config::{parse_lenient, write_json_private};
-use crate::credentials::{
-    classify, env_var_name, pf_ref, SecretVault, StoreMode,
-};
+use crate::credentials::{SecretVault, StoreMode, classify, env_var_name, pf_ref};
 
 pub const EXT_TEMPLATE_VERSION: &str = "v1";
 
@@ -57,13 +55,17 @@ pub fn sanitize(doc: &mut Value) {
     let names: Vec<String> = providers.keys().cloned().collect();
     for name in names {
         let keep = providers.get_mut(&name).is_some_and(|entry| {
-            let Some(map) = entry.as_object_mut() else { return false };
+            let Some(map) = entry.as_object_mut() else {
+                return false;
+            };
             // 模型条目：只留 id 为非空字符串的（051 事故根治点）
             if let Some(Value::Array(arr)) = map.remove("models") {
                 let kept: Vec<Value> = arr
                     .into_iter()
                     .filter(|m| {
-                        m.get("id").and_then(|v| v.as_str()).is_some_and(|s| !s.is_empty())
+                        m.get("id")
+                            .and_then(|v| v.as_str())
+                            .is_some_and(|s| !s.is_empty())
                     })
                     .collect();
                 if !kept.is_empty() {
@@ -81,8 +83,14 @@ pub fn sanitize(doc: &mut Value) {
 /// provider 条目是否有保留价值（净化判据）。**apiKey 不算内容**——只有
 /// apiKey 的裸条目是旧版 catch-all 写入的垃圾，复制迁移同样跳过它。
 fn entry_has_content(entry: &Value) -> bool {
-    let Some(map) = entry.as_object() else { return false };
-    let has_text = |k: &str| map.get(k).and_then(|v| v.as_str()).is_some_and(|s| !s.is_empty());
+    let Some(map) = entry.as_object() else {
+        return false;
+    };
+    let has_text = |k: &str| {
+        map.get(k)
+            .and_then(|v| v.as_str())
+            .is_some_and(|s| !s.is_empty())
+    };
     if has_text("baseUrl") || has_text("api") || has_text("name") {
         return true;
     }
@@ -93,7 +101,9 @@ fn entry_has_content(entry: &Value) -> bool {
         .and_then(|v| v.as_array())
         .is_some_and(|arr| {
             arr.iter().any(|m| {
-                m.get("id").and_then(|v| v.as_str()).is_some_and(|s| !s.is_empty())
+                m.get("id")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|s| !s.is_empty())
             })
         })
 }
@@ -212,15 +222,22 @@ pub fn ensure_extension_template() -> Result<(), String> {
 /// 有 baseUrl，或有非空 id 的模型。apiKey-only 的裸条目是旧版 catch-all
 /// 写进去的垃圾（其 key 已在 pf-auth/凭据库），跳过。
 fn is_custom_content(entry: &Value) -> bool {
-    if entry.get("baseUrl").and_then(|v| v.as_str()).is_some_and(|s| !s.is_empty()) {
+    if entry
+        .get("baseUrl")
+        .and_then(|v| v.as_str())
+        .is_some_and(|s| !s.is_empty())
+    {
         return true;
     }
     entry
         .get("models")
         .and_then(|v| v.as_array())
         .is_some_and(|arr| {
-            arr.iter()
-                .any(|m| m.get("id").and_then(|v| v.as_str()).is_some_and(|s| !s.is_empty()))
+            arr.iter().any(|m| {
+                m.get("id")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|s| !s.is_empty())
+            })
         })
 }
 
@@ -248,11 +265,16 @@ pub fn adopt_from_models_json_at(
         }
         let mut copy = entry.clone();
         // 复制进来的明文 key 立即迁凭据库（自己的文件，可放心引用化）
-        if let Some(key) = copy.get("apiKey").and_then(|v| v.as_str()).map(str::to_string) {
+        if let Some(key) = copy
+            .get("apiKey")
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+        {
             if classify(&key) == StoreMode::File {
                 let var = env_var_name(&name);
                 if vault.set(&var, &key).is_ok() {
-                    copy.as_object_mut().unwrap()
+                    copy.as_object_mut()
+                        .unwrap()
                         .insert("apiKey".into(), json!(format!("${var}")));
                 }
             }
@@ -339,8 +361,14 @@ mod tests {
         write_at(&p, &doc).unwrap();
         let raw = std::fs::read_to_string(&p).unwrap();
         let back: Value = serde_json::from_str(&raw).unwrap();
-        assert!(back.pointer("/providers/gw/models").is_none(), "空 id 条目不得落盘");
-        assert_eq!(back.pointer("/providers/gw/baseUrl").unwrap(), "https://x/v1");
+        assert!(
+            back.pointer("/providers/gw/models").is_none(),
+            "空 id 条目不得落盘"
+        );
+        assert_eq!(
+            back.pointer("/providers/gw/baseUrl").unwrap(),
+            "https://x/v1"
+        );
         clean(&p);
     }
 
@@ -352,13 +380,17 @@ mod tests {
         let mode = set_provider_key(&mut entry, "my-gw", "sk-secret", &v).unwrap();
         assert_eq!(mode, Some(StoreMode::Vault));
         assert_eq!(entry["apiKey"], format!("${}", env_var_name("my-gw")));
-        assert_eq!(v.get(&env_var_name("my-gw")).unwrap().as_deref(), Some("sk-secret"));
+        assert_eq!(
+            v.get(&env_var_name("my-gw")).unwrap().as_deref(),
+            Some("sk-secret")
+        );
         // 高级引用原样
         let mode = set_provider_key(&mut entry, "my-gw", "!cmd", &v).unwrap();
         assert_eq!(mode, Some(StoreMode::Ref));
         assert_eq!(entry["apiKey"], "!cmd");
         // 降级
-        let mode = set_provider_key(&mut entry, "my-gw", "sk-2", &crate::credentials::FailVault).unwrap();
+        let mode =
+            set_provider_key(&mut entry, "my-gw", "sk-2", &crate::credentials::FailVault).unwrap();
         assert_eq!(mode, Some(StoreMode::File));
         assert_eq!(entry["apiKey"], "sk-2");
         // 空串清除
@@ -390,17 +422,30 @@ mod tests {
         let before = std::fs::read_to_string(&pi_models).unwrap();
         let v = MemVault::default();
         let n = adopt_from_models_json_at(&ledger, &pi_models, &marker, &v).unwrap();
-        assert_eq!(n, 1, "只复制有 baseUrl/非空 id 模型的真自定义；apiKey-only 与空壳跳过");
+        assert_eq!(
+            n, 1,
+            "只复制有 baseUrl/非空 id 模型的真自定义；apiKey-only 与空壳跳过"
+        );
         // pi 文件字节不动
-        assert_eq!(std::fs::read_to_string(&pi_models).unwrap(), before, "models.json 必须字节不变");
+        assert_eq!(
+            std::fs::read_to_string(&pi_models).unwrap(),
+            before,
+            "models.json 必须字节不变"
+        );
         // 复制进来的明文 key 已凭据库化
         let doc = read_at(&ledger).unwrap();
         let var = env_var_name("my-gw");
-        assert_eq!(doc.pointer("/providers/my-gw/apiKey").unwrap(), &json!(format!("${var}")));
+        assert_eq!(
+            doc.pointer("/providers/my-gw/apiKey").unwrap(),
+            &json!(format!("${var}"))
+        );
         assert_eq!(v.get(&var).unwrap().as_deref(), Some("sk-plain"));
         assert!(!doc.pointer("/providers/zai-coding-cn").is_some());
         // 幂等：marker 生效
-        assert_eq!(adopt_from_models_json_at(&ledger, &pi_models, &marker, &v).unwrap(), 0);
+        assert_eq!(
+            adopt_from_models_json_at(&ledger, &pi_models, &marker, &v).unwrap(),
+            0
+        );
         clean(&ledger);
         clean(&pi_models);
         clean(&marker);
@@ -412,6 +457,10 @@ mod tests {
         assert!(t.contains("registerProvider(id, cfg)"), "逐个注册");
         assert!(t.contains("\"./providers.json\""), "从同目录账本读配置");
         assert!(t.contains("export default function"), "扩展工厂默认导出");
-        assert_eq!(extension_template(), t, "模板内容稳定（版本化重写依赖一致性比较）");
+        assert_eq!(
+            extension_template(),
+            t,
+            "模板内容稳定（版本化重写依赖一致性比较）"
+        );
     }
 }

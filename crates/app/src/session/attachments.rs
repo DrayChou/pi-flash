@@ -14,7 +14,11 @@ fn attached_image_from_bytes(mime: String, bytes: Vec<u8>) -> AttachedImage {
     let data_b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
     let thumb = crate::session::messages::mime_to_image_format(&mime)
         .map(|f| std::sync::Arc::new(gpui::Image::from_bytes(f, bytes)));
-    AttachedImage { data_b64, mime, thumb }
+    AttachedImage {
+        data_b64,
+        mime,
+        thumb,
+    }
 }
 
 impl Chat {
@@ -37,9 +41,12 @@ impl Chat {
             };
             let _ = this.update(cx, |chat, cx| {
                 for path in paths {
-                    let Ok(bytes) = std::fs::read(&path) else { continue };
+                    let Ok(bytes) = std::fs::read(&path) else {
+                        continue;
+                    };
                     let mime = mime_from_ext(&path);
-                    chat.composer.pending_images
+                    chat.composer
+                        .pending_images
                         .push(attached_image_from_bytes(mime, bytes));
                 }
                 if !chat.composer.pending_images.is_empty() {
@@ -75,10 +82,13 @@ impl Chat {
             _ => return true,
         };
         let bytes = image.bytes;
-        if bytes.len() > MAX_IMAGE_BYTES || self.composer.pending_images.len() >= MAX_ATTACHED_IMAGES {
+        if bytes.len() > MAX_IMAGE_BYTES
+            || self.composer.pending_images.len() >= MAX_ATTACHED_IMAGES
+        {
             return true;
         }
-        self.composer.pending_images
+        self.composer
+            .pending_images
             .push(attached_image_from_bytes(mime.into(), bytes));
         cx.notify();
         true

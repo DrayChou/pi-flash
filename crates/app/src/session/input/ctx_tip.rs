@@ -1,7 +1,5 @@
 //! composer 上下文用量：环悬停状态机、详情卡与用量面板（v58 响应式）。
 
-
-
 use gpui::{AnimationExt, Context, MouseButton, SharedString, div, prelude::*, px, relative, rgb};
 
 use crate::Chat;
@@ -11,12 +9,7 @@ use crate::services::format::fmt_thousand;
 /// 悬停标志更新 + 淡出状态机（乱序免疫）：只按 (was_open, open) 转移，
 /// 环→面板交接时两个 hover 事件无论先后都收敛到正确状态。双面全空才
 /// 开始淡出（200ms 定时器到期清除，守卫时刻戳防旧定时器误杀新一轮）。
-pub(super) fn ctx_tip_hover(
-    chat: &mut Chat,
-    ring: bool,
-    entered: bool,
-    cx: &mut Context<Chat>,
-) {
+pub(super) fn ctx_tip_hover(chat: &mut Chat, ring: bool, entered: bool, cx: &mut Context<Chat>) {
     let was_open = chat.dlg.ctx_tip_ring_hover || chat.dlg.ctx_tip_panel_hover;
     if ring {
         chat.dlg.ctx_tip_ring_hover = entered;
@@ -58,14 +51,20 @@ pub(super) fn ctx_tip_element(
     t: &'static crate::appearance::theme::Theme,
     cx: &mut Context<Chat>,
 ) -> Option<gpui::AnyElement> {
-    let visible =
-        chat.dlg.ctx_tip_ring_hover || chat.dlg.ctx_tip_panel_hover || chat.dlg.ctx_tip_closing.is_some();
+    let visible = chat.dlg.ctx_tip_ring_hover
+        || chat.dlg.ctx_tip_panel_hover
+        || chat.dlg.ctx_tip_closing.is_some();
     if !visible {
         return None;
     }
     let (stats, sys, compacting, can_compact) = {
         let r = chat.rt().read(cx);
-        (r.stats.clone(), r.sys.clone(), r.compacting, r.can_compact())
+        (
+            r.stats.clone(),
+            r.sys.clone(),
+            r.compacting,
+            r.can_compact(),
+        )
     };
     let closing = chat.dlg.ctx_tip_closing.is_some();
     // 入口行点亮态（2026-10-16 自会话功能栏迁入）：对应弹窗开着亮 accent
@@ -163,7 +162,14 @@ fn ctx_usage_panel(
         .flex_col()
         .gap(px(12.))
         .children(body)
-        .child(ctx_bottom_actions(sys_open, tools_open, compacting, can_compact, t, cx))
+        .child(ctx_bottom_actions(
+            sys_open,
+            tools_open,
+            compacting,
+            can_compact,
+            t,
+            cx,
+        ))
 }
 
 /// 底部动作排（2026-10-16 二稿，用户定夺）：系统提示词 / 会话工具集 /
@@ -289,17 +295,17 @@ fn ctx_section(
 /// 二列数据网格（用户定夺：面板 420 宽、每行 2 列砍高度）：cells 按行
 /// 填充，每格半宽，左格 pr 出列缝——两列的百分比值各自贴半宽右缘对齐。
 fn ctx_grid2(cells: Vec<gpui::Div>) -> gpui::AnyElement {
-    div().flex().flex_wrap().gap_y(px(8.)).children(
-        cells
-            .into_iter()
-            .enumerate()
-            .map(|(i, c)| {
-                div()
-                    .w(relative(0.5))
-                    .when(i % 2 == 0, |d| d.pr(px(16.)))
-                    .child(c.w_full())
-            }),
-    ).into_any_element()
+    div()
+        .flex()
+        .flex_wrap()
+        .gap_y(px(8.))
+        .children(cells.into_iter().enumerate().map(|(i, c)| {
+            div()
+                .w(relative(0.5))
+                .when(i % 2 == 0, |d| d.pr(px(16.)))
+                .child(c.w_full())
+        }))
+        .into_any_element()
 }
 
 /// 分类占比文案：一位小数，尾数 .0 去掉（59.7% / 2%）。
@@ -341,7 +347,11 @@ fn cat_rows(
         .collect();
     let msgs = context_total.saturating_sub(est.iter().sum());
     if msgs > 0 {
-        rows.push((tr("stats.messages"), crate::appearance::theme::CTX_MESSAGES_COLOR, msgs));
+        rows.push((
+            tr("stats.messages"),
+            crate::appearance::theme::CTX_MESSAGES_COLOR,
+            msgs,
+        ));
     }
     rows.sort_by(|a, b| b.2.cmp(&a.2));
     rows
@@ -362,10 +372,12 @@ fn ctx_capacity_block(
 ) -> gpui::Div {
     let ctx_total = s.context_tokens.unwrap_or(0);
     // 标题行右值：已用/窗口（百分比），窗口未知只给已用
-    let bar_pct = s.context_percent.or_else(|| match (s.context_tokens, s.context_window) {
-        (Some(tk), Some(w)) if w > 0 => Some(tk as f64 / w as f64 * 100.),
-        _ => None,
-    });
+    let bar_pct = s
+        .context_percent
+        .or_else(|| match (s.context_tokens, s.context_window) {
+            (Some(tk), Some(w)) if w > 0 => Some(tk as f64 / w as f64 * 100.),
+            _ => None,
+        });
     // 右值：末字用 ASCII 半角字符（`%` 与 `)`），全角 `）` 自带半个字身的
     // 右空白，会让首行墨迹比下面各行的右缘内缩 ~6px（2026-10-16 用户指出的
     // 「最上面一行右侧没对齐」）；`/` 两侧同样不留空格。
@@ -420,7 +432,9 @@ fn ctx_capacity_block(
         );
     }
     // 分类占比行（系统态已加载且官方总量已知才画；否则退回旧两行）
-    let cats = sys.filter(|_| ctx_total > 0).map(|sys| cat_rows(sys, ctx_total));
+    let cats = sys
+        .filter(|_| ctx_total > 0)
+        .map(|sys| cat_rows(sys, ctx_total));
     match cats {
         Some(rows) if !rows.is_empty() => {
             ctx = ctx.child(ctx_grid2(
@@ -516,7 +530,8 @@ fn ctx_tokens_cost_parts(
                     )),
             ),
     ]);
-    let cost_rows = vec![ctx_row(tr("stats.total_cost"), format!("${:.4}", s.cost), t).into_any_element()];
+    let cost_rows =
+        vec![ctx_row(tr("stats.total_cost"), format!("${:.4}", s.cost), t).into_any_element()];
     vec![
         ctx_section(tr("stats.tokens_total"), vec![token_grid], t),
         ctx_section(tr("stats.cost"), cost_rows, t),
@@ -535,7 +550,11 @@ fn ctx_compact_button(
     // 「压 缩」字间插窄空格（gpui 无 letter_spacing，字符串层处理；
     // 「压缩中…」多字，保持原样不插）
     let compact_label = {
-        let raw = if compacting { tr("status.compacting") } else { tr("action.compact") };
+        let raw = if compacting {
+            tr("status.compacting")
+        } else {
+            tr("action.compact")
+        };
         let mut cs = raw.chars();
         match (cs.next(), cs.next(), cs.next()) {
             (Some(a), Some(b), None) => format!("{a}\u{2009}{b}"),
@@ -563,16 +582,23 @@ fn ctx_compact_button(
         .text_size(crate::appearance::ui_size(12.))
         .when(can_compact, |s| s.cursor_pointer())
         .text_color(rgb(fg))
-        .hover(move |s| if can_compact { s.bg(rgb(t.bg_hover)) } else { s })
-        .on_mouse_down(MouseButton::Left, cx.listener(
-            |this, _: &gpui::MouseDownEvent, _w, cx| {
+        .hover(move |s| {
+            if can_compact {
+                s.bg(rgb(t.bg_hover))
+            } else {
+                s
+            }
+        })
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(|this, _: &gpui::MouseDownEvent, _w, cx| {
                 // 双重守卫：按钮禁用态之外再查一次 runtime（agent
                 // 跑动中 compact 会中止当前 turn）
                 if this.rt().read(cx).can_compact() {
                     this.rt().update(cx, |r, cx| r.compact(cx));
                 }
-            },
-        ))
+            }),
+        )
         .child(crate::ui::icon("icon-compress", 13., fg))
         .child(SharedString::from(compact_label))
 }

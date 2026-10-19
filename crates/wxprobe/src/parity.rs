@@ -10,22 +10,22 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
+use crate::format::menu::{
+    DisplayKind, MenuOption, display_kind, is_reject, option_description, option_index,
+    option_label, render_selection, sort_options,
+};
 use crate::format::messages::Lang;
-use crate::format::permission::{get_permission_request_preview, PermissionRequest};
+use crate::format::permission::{PermissionRequest, get_permission_request_preview};
 use crate::format::reply::{
+    BotAssistantReplyBlock, BotReplyToolCallState, ChangeSummary, FileChange, ToolStatus,
     extract_bot_assistant_response_messages, format_bot_assistant_reply_blocks,
     format_bot_permission_request_summary, format_bot_tool_call_reply,
-    format_bot_tool_call_summary_line, is_bot_tool_call_reply_terminal, BotAssistantReplyBlock,
-    BotReplyToolCallState, ChangeSummary, FileChange, ToolStatus,
+    format_bot_tool_call_summary_line, is_bot_tool_call_reply_terminal,
 };
 use crate::format::status::{status_task_line, task_running_duration};
-use crate::format::summary::{get_compact_tool_call_summary, ToolCallSummarySource};
-use crate::format::menu::{
-    display_kind, is_reject, option_description, option_index, option_label, render_selection,
-    sort_options, DisplayKind, MenuOption,
-};
+use crate::format::summary::{ToolCallSummarySource, get_compact_tool_call_summary};
 
 fn parity_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("parity")
@@ -315,13 +315,14 @@ pub fn run(update: bool) -> Result<(), String> {
     let cases_path = dir.join("cases.json");
     let golden_path = dir.join("golden.jsonl");
 
-    let cases: Vec<Value> = serde_json::from_str(&fs::read_to_string(&cases_path).map_err(|e| {
-        format!(
-            "读 {} 失败: {e}（先 `python prep_parity.py` 生成，或确认 ZCode 仓库在位）",
-            cases_path.display()
-        )
-    })?)
-    .map_err(|e| format!("cases.json 解析失败: {e}"))?;
+    let cases: Vec<Value> =
+        serde_json::from_str(&fs::read_to_string(&cases_path).map_err(|e| {
+            format!(
+                "读 {} 失败: {e}（先 `python prep_parity.py` 生成，或确认 ZCode 仓库在位）",
+                cases_path.display()
+            )
+        })?)
+        .map_err(|e| format!("cases.json 解析失败: {e}"))?;
 
     let mut outputs: Vec<Value> = Vec::with_capacity(cases.len());
     for case in &cases {
@@ -388,9 +389,6 @@ pub fn run(update: bool) -> Result<(), String> {
         );
         Ok(())
     } else {
-        Err(format!(
-            "对拍失败：{mismatch}/{} 条不一致",
-            outputs.len()
-        ))
+        Err(format!("对拍失败：{mismatch}/{} 条不一致", outputs.len()))
     }
 }

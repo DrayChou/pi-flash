@@ -4,10 +4,7 @@
 
 use super::*;
 
-pub(crate) fn mc_misc_view(
-    _chat: &mut Chat,
-    weak: &gpui::WeakEntity<Chat>,
-) -> gpui::AnyElement {
+pub(crate) fn mc_misc_view(_chat: &mut Chat, weak: &gpui::WeakEntity<Chat>) -> gpui::AnyElement {
     let t = T();
     let mut col = div().id("mc-misc").flex().flex_col();
 
@@ -136,7 +133,8 @@ pub(crate) fn mc_misc_view(
                         s.auto_update = Some(on);
                         crate::services::workspace::save_app_settings(&s);
                         // 关→开：立即补一次检查（Idle 才发，避免与进行中的流程叠加）
-                        if on && matches!(c.aux.update, crate::services::updater::UpdateState::Idle) {
+                        if on && matches!(c.aux.update, crate::services::updater::UpdateState::Idle)
+                        {
                             c.spawn_update_check(cx);
                         }
                         cx.notify();
@@ -199,7 +197,11 @@ fn window_row(
                 .rounded(px(5.))
                 .border_1()
                 .border_color(if active { rgb(t.accent) } else { rgb(t.border) })
-                .bg(if active { rgb(t.bg_selected) } else { rgb(t.bg_panel) })
+                .bg(if active {
+                    rgb(t.bg_selected)
+                } else {
+                    rgb(t.bg_panel)
+                })
                 .flex()
                 .items_center()
                 .justify_center()
@@ -256,7 +258,11 @@ fn collapse_row(
                 .rounded(px(5.))
                 .border_1()
                 .border_color(if active { rgb(t.accent) } else { rgb(t.border) })
-                .bg(if active { rgb(t.bg_selected) } else { rgb(t.bg_panel) })
+                .bg(if active {
+                    rgb(t.bg_selected)
+                } else {
+                    rgb(t.bg_panel)
+                })
                 .flex()
                 .items_center()
                 .justify_center()
@@ -472,4 +478,3 @@ fn switch(
     let _ = t; // 配色统一走 theme 语义，入参保留兼容既有调用点
     switch_base(id, on, false, apply)
 }
-

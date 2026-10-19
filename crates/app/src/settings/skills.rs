@@ -223,18 +223,26 @@ pub(crate) fn mc_skills_view(
                         .text_size(crate::appearance::ui_size(11.))
                         .text_color(rgb(t.text_dim))
                         .child(SharedString::from(crate::i18n::tf(
-                        "skills.description_tokens",
-                        &[
-                            ("desc", if visible {
-                                crate::services::format::fmt_thousand(
-                                    pi_link::skills::prompt_tokens(sk),
-                                )
-                            } else {
-                                "—".to_string()
-                            }),
-                            ("tokens", crate::services::format::fmt_thousand(pi_link::skills::body_tokens(sk))),
-                        ],
-                    ))),
+                            "skills.description_tokens",
+                            &[
+                                (
+                                    "desc",
+                                    if visible {
+                                        crate::services::format::fmt_thousand(
+                                            pi_link::skills::prompt_tokens(sk),
+                                        )
+                                    } else {
+                                        "—".to_string()
+                                    },
+                                ),
+                                (
+                                    "tokens",
+                                    crate::services::format::fmt_thousand(
+                                        pi_link::skills::body_tokens(sk),
+                                    ),
+                                ),
+                            ],
+                        ))),
                 ))
                 .child(note(if visible {
                     tr("skills.injected")

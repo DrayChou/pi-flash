@@ -15,10 +15,10 @@ pub mod vlist;
 
 pub use button::{BtnSize, BtnVariant, button, button_base};
 pub use composer_input::ComposerInput;
-pub use dropdown::{dropdown, DropdownState};
-pub use vlist::{VListHeight, vlist};
+pub use dropdown::{DropdownState, dropdown};
 pub use text_input::TextInput;
 pub use tooltip::WithTip;
+pub use vlist::{VListHeight, vlist};
 
 use gpui::{Animation, AnimationExt, SharedString, Styled, prelude::*};
 
@@ -37,7 +37,6 @@ pub trait ScrollAxisExt: gpui::InteractiveElement {
     }
 }
 impl<E: gpui::InteractiveElement> ScrollAxisExt for E {}
-
 
 /// Embedded-SVG icon (`crates/app/assets/icons/{name}.svg`).
 pub fn icon(name: &'static str, size: f32, color: u32) -> gpui::AnyElement {
@@ -172,7 +171,11 @@ pub fn provider_icon(id: &str, size: f32, color: u32) -> gpui::AnyElement {
         .filter_map(|p| p.chars().next())
         .flat_map(|c| c.to_uppercase())
         .collect();
-    let label = if label.is_empty() { "?".to_string() } else { label };
+    let label = if label.is_empty() {
+        "?".to_string()
+    } else {
+        label
+    };
     let t = crate::appearance::theme::theme();
     gpui::div()
         .w(gpui::px(size))
@@ -189,7 +192,6 @@ pub fn provider_icon(id: &str, size: f32, color: u32) -> gpui::AnyElement {
         .child(SharedString::from(label))
         .into_any_element()
 }
-
 
 /// icon hover 动效（v55 统一规格）：悬停上抬 1px + 放大 6%，120ms。
 /// 仅用于**可交互图标按钮**；静态/状态图标用 icon()。
@@ -282,21 +284,17 @@ impl gpui::Element for HoverIcon {
         _cx: &mut gpui::App,
     ) {
         let _ = request_layout;
-        let hovered = prepaint
-            .as_ref()
-            .is_some_and(|h| h.is_hovered(window));
+        let hovered = prepaint.as_ref().is_some_and(|h| h.is_hovered(window));
         // 无条件挂 mousemove 监听（paint 期注册）：悬停中标脏保持续渲染，
         // 离开悬停的那次 move 也经它触发重绘（refresh 幂等合帧，开销即
         // gpui 自身 hover 样式的同款成本）
         if let Some(hitbox) = prepaint.as_ref() {
             let probe = hitbox.clone();
-            window.on_mouse_event(
-                move |_: &gpui::MouseMoveEvent, phase, window, _cx| {
-                    if phase == gpui::DispatchPhase::Capture && probe.is_hovered(window) {
-                        window.refresh();
-                    }
-                },
-            );
+            window.on_mouse_event(move |_: &gpui::MouseMoveEvent, phase, window, _cx| {
+                if phase == gpui::DispatchPhase::Capture && probe.is_hovered(window) {
+                    window.refresh();
+                }
+            });
         }
         // 与 Svg::Transformation::into_matrix 同式的矩阵：绕中心 scale，再平移
         let sf = window.scale_factor();
@@ -317,7 +315,13 @@ impl gpui::Element for HoverIcon {
             gpui::ScaledPixels::from(-cx),
             gpui::ScaledPixels::from(-cy),
         ));
-        let _ = window.paint_svg(bounds, self.path.clone(), matrix, gpui::rgb(self.color).into(), _cx);
+        let _ = window.paint_svg(
+            bounds,
+            self.path.clone(),
+            matrix,
+            gpui::rgb(self.color).into(),
+            _cx,
+        );
     }
 }
 
@@ -410,11 +414,9 @@ pub fn spinner(size: f32, color: u32) -> gpui::AnyElement {
             "spin",
             Animation::new(std::time::Duration::from_millis(900)).repeat(),
             |el, delta| {
-                el.with_transformation(
-                    gpui::Transformation::rotate(gpui::radians(
-                        delta * std::f32::consts::TAU,
-                    )),
-                )
+                el.with_transformation(gpui::Transformation::rotate(gpui::radians(
+                    delta * std::f32::consts::TAU,
+                )))
             },
         )
         .into_any_element()

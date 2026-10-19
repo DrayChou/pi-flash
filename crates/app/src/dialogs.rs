@@ -7,29 +7,25 @@ use std::path::PathBuf;
 
 use gpui::{App, Div, MouseButton, SharedString, div, px, relative, rgb};
 
-use crate::Dialog;
 use crate::Chat;
+use crate::Dialog;
 use crate::TextInput;
-use crate::i18n::{tf, tr};
-use crate::session::model_picker::RegistryState;
-use crate::services::format::time_ago;
 use crate::appearance::theme;
+use crate::i18n::{tf, tr};
+use crate::services::format::time_ago;
+use crate::session::model_picker::RegistryState;
 use crate::ui::{icon, icon_hover, icon_path};
 
 /// 弹窗公共外壳 = `ui::overlay::layer`（遮挡/外点关闭/ESC 关闭三条全局规则
 /// 的唯一实现）+ 居中排布 + 卡片停传播。参数 `chat` 只用来取浮层焦点。
 fn dialog_shell(chat: &Chat, weak: &gpui::WeakEntity<Chat>, panel: Div) -> Div {
     let weak_bg = weak.clone();
-    crate::ui::overlay::layer(
-        true,
-        Some(&chat.dlg.dialog_focus),
-        move |_w, cx| {
-            let _ = weak_bg.update(cx, |c, cx| {
-                c.dlg.dialog = None;
-                cx.notify();
-            });
-        },
-    )
+    crate::ui::overlay::layer(true, Some(&chat.dlg.dialog_focus), move |_w, cx| {
+        let _ = weak_bg.update(cx, |c, cx| {
+            c.dlg.dialog = None;
+            cx.notify();
+        });
+    })
     .flex()
     .items_center()
     .justify_center()
@@ -43,42 +39,45 @@ pub(crate) fn render_dialogs(
     t: &theme::Theme,
     cx: &App,
 ) -> Div {
-        // dialogs mount as a CHILD of the chat root — on top of the content,
-        // never replacing it (replacing the root blanks the whole UI behind
-        // the dialog; settings parity = content stays visible beneath)
-            if let Some(Dialog::ProviderPicker { input, scroll }) = chat.dlg.dialog.as_ref() {
-                root = root.child(render_provider_picker(chat, weak, input, scroll, t, cx));
-            }
-            if let Some(Dialog::GitDiff { path, patch }) = chat.dlg.dialog.as_ref() {
-                root = root.child(render_git_diff(chat, weak, path, patch, t, cx));
-            }
-            if let Some(Dialog::SessionSearch { input }) = chat.dlg.dialog.as_ref() {
-                root = root.child(render_session_search(chat, weak, input, t, cx));
-            }
-            if let Some(Dialog::ProjectPicker { input, fresh, scroll }) = chat.dlg.dialog.as_ref() {
-                root = root.child(render_project_picker(chat, weak, input, *fresh, scroll, t, cx));
-            }
-            if let Some(Dialog::ImagePreview { image }) = chat.dlg.dialog.as_ref() {
-                root = root.child(render_image_preview(chat, weak, image, t));
-            }
-            if let Some(Dialog::SessionInfo { kind }) = chat.dlg.dialog.as_ref() {
-                root = root.child(crate::top_panels::session_info_dialog(
-                    *kind,
-                    chat,
-                    weak,
-                    t,
-                    cx,
-                ));
-            }
-            if let Some(Dialog::FileDirty { paths }) = chat.dlg.dialog.as_ref() {
-                root = root.child(render_file_dirty(chat, weak, paths, t));
-            }
-            if let Some(Dialog::WxQr) = chat.dlg.dialog.as_ref() {
-                root = root.child(crate::remote_control::render_wx_qr(chat, weak, t));
-            }
-            if let Some(Dialog::FileSearch { input, scroll }) = chat.dlg.dialog.as_ref() {
-                root = root.child(render_file_search(chat, weak, input, scroll, t, cx));
-            }
+    // dialogs mount as a CHILD of the chat root — on top of the content,
+    // never replacing it (replacing the root blanks the whole UI behind
+    // the dialog; settings parity = content stays visible beneath)
+    if let Some(Dialog::ProviderPicker { input, scroll }) = chat.dlg.dialog.as_ref() {
+        root = root.child(render_provider_picker(chat, weak, input, scroll, t, cx));
+    }
+    if let Some(Dialog::GitDiff { path, patch }) = chat.dlg.dialog.as_ref() {
+        root = root.child(render_git_diff(chat, weak, path, patch, t, cx));
+    }
+    if let Some(Dialog::SessionSearch { input }) = chat.dlg.dialog.as_ref() {
+        root = root.child(render_session_search(chat, weak, input, t, cx));
+    }
+    if let Some(Dialog::ProjectPicker {
+        input,
+        fresh,
+        scroll,
+    }) = chat.dlg.dialog.as_ref()
+    {
+        root = root.child(render_project_picker(
+            chat, weak, input, *fresh, scroll, t, cx,
+        ));
+    }
+    if let Some(Dialog::ImagePreview { image }) = chat.dlg.dialog.as_ref() {
+        root = root.child(render_image_preview(chat, weak, image, t));
+    }
+    if let Some(Dialog::SessionInfo { kind }) = chat.dlg.dialog.as_ref() {
+        root = root.child(crate::top_panels::session_info_dialog(
+            *kind, chat, weak, t, cx,
+        ));
+    }
+    if let Some(Dialog::FileDirty { paths }) = chat.dlg.dialog.as_ref() {
+        root = root.child(render_file_dirty(chat, weak, paths, t));
+    }
+    if let Some(Dialog::WxQr) = chat.dlg.dialog.as_ref() {
+        root = root.child(crate::remote_control::render_wx_qr(chat, weak, t));
+    }
+    if let Some(Dialog::FileSearch { input, scroll }) = chat.dlg.dialog.as_ref() {
+        root = root.child(render_file_search(chat, weak, input, scroll, t, cx));
+    }
     root
 }
 
@@ -105,7 +104,11 @@ fn render_file_search(
     } else if chat.ws.file_search_hits.is_empty() {
         tr("composer.no_matching_files").into()
     } else {
-        crate::i18n::tf("file_tree.files", &[("n", chat.ws.file_search_hits.len().to_string())]).into()
+        crate::i18n::tf(
+            "file_tree.files",
+            &[("n", chat.ws.file_search_hits.len().to_string())],
+        )
+        .into()
     };
     let cwd_base = chat.ws.cwd.clone().unwrap_or_default();
     let cwd = cwd_base.clone();
@@ -141,7 +144,11 @@ fn render_file_search(
                 })
                 // get_icon 返回完整资产路径，须走 icon_path（icon 会再拼
                 // icons/ 前缀，拼出不存在路径 → 14px 空白占位，2026-10-14）
-                .child(icon_path(crate::services::file_icons::get_icon(&abs), 14., t.text_dim))
+                .child(icon_path(
+                    crate::services::file_icons::get_icon(&abs),
+                    14.,
+                    t.text_dim,
+                ))
                 .child(
                     div()
                         .flex_shrink_0()
@@ -253,10 +260,7 @@ fn render_file_dirty(
             let more = if many.len() > 3 { " …" } else { "" };
             format!(
                 "{} {}{}",
-                tf(
-                    "conflict.unsaved_n_files",
-                    &[("n", many.len().to_string())]
-                ),
+                tf("conflict.unsaved_n_files", &[("n", many.len().to_string())]),
                 shown.join("、"),
                 more
             )
@@ -274,9 +278,7 @@ fn render_file_dirty(
             .when(accent, |d| {
                 d.bg(rgb(t.accent)).text_color(rgb(t.accent_contrast))
             })
-            .when(!accent, |d| {
-                d.border_1().border_color(rgb(t.border))
-            })
+            .when(!accent, |d| d.border_1().border_color(rgb(t.border)))
             .hover(|s| s.bg(rgb(t.bg_hover)))
             .child(SharedString::from(label.to_string()))
     };
@@ -305,9 +307,10 @@ fn render_file_dirty(
                 div()
                     .text_size(crate::appearance::ui_size(12.))
                     .text_color(rgb(t.text_dim))
-                    .child(SharedString::from(
-                        format!("{} {name}", tr("conflict.unsaved_list")),
-                    )),
+                    .child(SharedString::from(format!(
+                        "{} {name}",
+                        tr("conflict.unsaved_list")
+                    ))),
             )
             .child(
                 div()
@@ -326,9 +329,8 @@ fn render_file_dirty(
                         ),
                     )
                     .child(
-                        btn("fv-dirty-drop", tr("conflict.close_without_saving"), false).on_mouse_down(
-                            gpui::MouseButton::Left,
-                            move |_, _, cx| {
+                        btn("fv-dirty-drop", tr("conflict.close_without_saving"), false)
+                            .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
                                 let _ = weak_drop.update(cx, |c, cx| {
                                     // 不保存关闭 = 整批丢弃（批量收拢时对全部
                                     // 脏文件生效；单关时集合只有一个）
@@ -338,8 +340,7 @@ fn render_file_dirty(
                                     c.dlg.dialog = None;
                                     cx.notify();
                                 });
-                            },
-                        ),
+                            }),
                     )
                     .child(
                         btn("fv-dirty-save", tr("conflict.save_and_close"), true).on_mouse_down(
@@ -370,7 +371,14 @@ fn render_file_dirty(
 /// 服务（自定义组已移除：PF 只提供内置 + 订阅，存量自定义商走左栏合并
 /// 列表既有编辑器）；组内保持 registry 原始顺序不排序，已配置的 provider
 /// 不列（pi-web !configured / !loggedIn 同款）。
-fn render_provider_picker(chat: &Chat, weak: &gpui::WeakEntity<Chat>, input: &gpui::Entity<TextInput>, scroll: &gpui::ScrollHandle, t: &theme::Theme, cx: &App) -> Div {
+fn render_provider_picker(
+    chat: &Chat,
+    weak: &gpui::WeakEntity<Chat>,
+    input: &gpui::Entity<TextInput>,
+    scroll: &gpui::ScrollHandle,
+    t: &theme::Theme,
+    cx: &App,
+) -> Div {
     let q = input.read(cx).value().trim().to_lowercase();
 
     let dump = chat.cfg.provider_registry.clone();
@@ -537,11 +545,7 @@ fn render_provider_picker(chat: &Chat, weak: &gpui::WeakEntity<Chat>, input: &gp
                 .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                     let _ = weak_card.update(cx, |c, cx| {
                         // OAuth 登录缓行（051/beads pi-flash-1cb）：提示不关弹窗
-                        c.set_status(
-                            crate::i18n::tr("model.oauth_unavailable")
-                                .to_string(),
-                            cx,
-                        );
+                        c.set_status(crate::i18n::tr("model.oauth_unavailable").to_string(), cx);
                     });
                 })
                 .flex()
@@ -604,80 +608,86 @@ fn render_provider_picker(chat: &Chat, weak: &gpui::WeakEntity<Chat>, input: &gp
 /// 013 sessionSearchDialog + sessionSearchResultView: query on top, results
 /// grouped by session below; a row click switches sessions and reveals the
 /// GitDiff dialog surface (extracted from render_dialogs).
-fn render_git_diff(chat: &Chat, weak: &gpui::WeakEntity<Chat>, path: &PathBuf, patch: &String, t: &theme::Theme, _cx: &App) -> Div {
-                let path_text: SharedString = path.to_string_lossy().to_string().into();
-                let mut body = patch.clone();
-                if body.chars().count() > 60000 {
-                    body = body.chars().take(60000).collect();
-                    body.push_str("\n\n\u{2026} (truncated)");
-                }
-                let panel = div()
-                                .w(px(760.))
-                                .max_h(px(640.))
-                                .bg(rgb(t.bg_panel))
-                                .border_1()
-                                .border_color(rgb(t.border))
-                                .rounded(px(10.))
-                                .p_4()
-                                .flex()
-                                .flex_col()
-                                .gap_2()
-                                .shadow_lg()
-                                .child(
-                                    div()
-                                        .flex()
-                                        .items_center()
-                                        .justify_between()
-                                        .child(
-                                            div()
-                                                .flex()
-                                                .items_center()
-                                                .gap_2()
-                                                .child(icon_hover("git-branch", 12., t.accent))
-                                                .child(
-                                                    div()
-                                                        // §2 mono 辅助标签档（原 text_xs 裸字号）
-                                                        .text_size(crate::appearance::ui_size(11.))
-                                                        .font_family(crate::editor::markdown::MONO_FAMILY)
-                                                        .text_color(rgb(t.text_muted))
-                                                        .child(path_text),
-                                                ),
-                                        )
-                                        .child(
-                                            div()
-                                                .id("diff-close")
-                                                .px_2()
-                                                .cursor_pointer()
-                                                .text_color(rgb(t.text_muted))
-                                                .hover(|s| s.text_color(rgb(t.text)))
-                                                .on_mouse_down(MouseButton::Left, {
-                                                    let weak = weak.clone();
-                                                    move |_, _, cx| {
-                                                        let _ = weak.update(cx, |c, cx| {
-                                                            c.dlg.dialog = None;
-                                                            cx.notify();
-                                                        });
-                                                    }
-                                                })
-                                                .child(icon_hover("x", 13., t.text_muted)),
-                                        ),
-                                )
-                                .child(
-                                    div()
-                                        .flex_1()
-                                        .max_h(px(520.))
-                                        .overflow_hidden()
-                                        .p_2()
-                                        .rounded(px(6.))
-                                        .bg(rgb(t.bg))
-                                        .font_family(crate::editor::markdown::MONO_FAMILY)
-                                        .text_size(crate::appearance::ui_size(11.))
-                                        .text_color(rgb(t.text))
-                                        .child(SharedString::from(body)),
-                                );
-                dialog_shell(chat, weak, panel)
+fn render_git_diff(
+    chat: &Chat,
+    weak: &gpui::WeakEntity<Chat>,
+    path: &PathBuf,
+    patch: &String,
+    t: &theme::Theme,
+    _cx: &App,
+) -> Div {
+    let path_text: SharedString = path.to_string_lossy().to_string().into();
+    let mut body = patch.clone();
+    if body.chars().count() > 60000 {
+        body = body.chars().take(60000).collect();
+        body.push_str("\n\n\u{2026} (truncated)");
+    }
+    let panel = div()
+        .w(px(760.))
+        .max_h(px(640.))
+        .bg(rgb(t.bg_panel))
+        .border_1()
+        .border_color(rgb(t.border))
+        .rounded(px(10.))
+        .p_4()
+        .flex()
+        .flex_col()
+        .gap_2()
+        .shadow_lg()
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .child(icon_hover("git-branch", 12., t.accent))
+                        .child(
+                            div()
+                                // §2 mono 辅助标签档（原 text_xs 裸字号）
+                                .text_size(crate::appearance::ui_size(11.))
+                                .font_family(crate::editor::markdown::MONO_FAMILY)
+                                .text_color(rgb(t.text_muted))
+                                .child(path_text),
+                        ),
+                )
+                .child(
+                    div()
+                        .id("diff-close")
+                        .px_2()
+                        .cursor_pointer()
+                        .text_color(rgb(t.text_muted))
+                        .hover(|s| s.text_color(rgb(t.text)))
+                        .on_mouse_down(MouseButton::Left, {
+                            let weak = weak.clone();
+                            move |_, _, cx| {
+                                let _ = weak.update(cx, |c, cx| {
+                                    c.dlg.dialog = None;
+                                    cx.notify();
+                                });
+                            }
+                        })
+                        .child(icon_hover("x", 13., t.text_muted)),
+                ),
+        )
+        .child(
+            div()
+                .flex_1()
+                .max_h(px(520.))
+                .overflow_hidden()
+                .p_2()
+                .rounded(px(6.))
+                .bg(rgb(t.bg))
+                .font_family(crate::editor::markdown::MONO_FAMILY)
+                .text_size(crate::appearance::ui_size(11.))
+                .text_color(rgb(t.text))
+                .child(SharedString::from(body)),
+        );
+    dialog_shell(chat, weak, panel)
 }
-
 
 /// composer 缩略图点击大图预览（v58）：dialog_shell 金标准外壳（点外关闭
 /// /ESC/遮挡），图片居中按 max 限宽高等比缩放（messages.rs 结果图同款，
@@ -704,13 +714,10 @@ fn render_image_preview(
         .rounded(px(10.))
         .p_2()
         .shadow_lg()
-        .child(
-            crate::session::messages::fitted_image(image.clone(), 1040., 680.).rounded(px(6.)),
-        )
+        .child(crate::session::messages::fitted_image(image.clone(), 1040., 680.).rounded(px(6.)))
         .child(div().absolute().top(px(6.)).right(px(6.)).child(close));
     dialog_shell(chat, weak, panel)
 }
-
 
 /// 004 projectManager 打开项目菜单：500×500 居中卡片——顶部搜索框，
 /// 【打开文件夹】行（走 psp 目录选择器），下面是最近 30 天活动项目列表
@@ -758,13 +765,9 @@ fn render_project_picker(
         let path = p.path.clone();
         let weak_row = weak.clone();
         let name: SharedString = p.name.clone().into();
-        let selected = chat
-            .ws
-            .cwd
-            .as_deref()
-            .is_some_and(|cur| {
-                crate::services::workspace::same_ws(&p.path.to_string_lossy(), &cur.to_string_lossy())
-            });
+        let selected = chat.ws.cwd.as_deref().is_some_and(|cur| {
+            crate::services::workspace::same_ws(&p.path.to_string_lossy(), &cur.to_string_lossy())
+        });
         rows.push(
             div()
                 .id(SharedString::from(format!("proj-{row_ix}")))
@@ -865,7 +868,12 @@ fn render_project_picker(
         .child(input.clone())
         .child(open_folder)
         // 打开文件夹与项目列表之间的分隔线（用户 2026-10-07 定稿）
-        .child(div().h(px(1.)).w_full().bg(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x66))))
+        .child(
+            div()
+                .h(px(1.))
+                .w_full()
+                .bg(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x66))),
+        )
         // 列表吃满剩余高度：flex_1 + min_h_0 才会真的收缩滚动（工具定义
         // 列表同款）；滚动条 = ZED Regular 移植（可滚动即常显），absolute
         // 盖在滚动容器右缘、不随内容滚
@@ -901,7 +909,6 @@ fn render_project_picker(
     dialog_shell(chat, weak, panel)
 }
 
-
 /// matched message (pi-web SessionSearch, dialog-mounted per 013).
 fn render_session_search(
     chat: &Chat,
@@ -917,7 +924,9 @@ fn render_session_search(
     } else if chat.psp.search_hits.is_empty() {
         tr("session_search.no_match").into()
     } else {
-        tr("dialogs.search_results").replace("{}", &chat.psp.search_hits.len().to_string()).into()
+        tr("dialogs.search_results")
+            .replace("{}", &chat.psp.search_hits.len().to_string())
+            .into()
     };
     let mut results = div().flex().flex_col();
     let mut last_session: Option<PathBuf> = None;
@@ -990,9 +999,7 @@ fn render_session_search(
                             div()
                                 .px_0p5()
                                 .rounded(px(3.))
-                                .bg(gpui::hsla(
-                                    0., 0., 0.5, 0.15,
-                                ))
+                                .bg(gpui::hsla(0., 0., 0.5, 0.15))
                                 .text_color(rgb(t.accent))
                                 .font_weight(gpui::FontWeight::SEMIBOLD)
                                 .child(SharedString::from(hit.match_text.clone())),
@@ -1002,34 +1009,38 @@ fn render_session_search(
         );
     }
     let panel = div()
-                    .w(px(620.))
-                    .max_h(px(640.))
-                    .bg(rgb(t.bg_panel))
-                    .border_1()
-                    .border_color(rgb(t.border))
-                    .rounded(px(10.))
-                    .p_3()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .shadow_lg()
-                    .on_mouse_down(MouseButton::Left, |_, _, cx| {
-                        cx.stop_propagation();
-                    })
-                    .child(input.clone())
-                    .child({
-                        let label: SharedString = if chat.psp.search_truncated {
-                            format!("{status} · {partial}", partial = tr("session_search.partial")).into()
-                        } else {
-                            status
-                        };
-                        div()
-                            .px_1()
-                            // §2 状态辅助档（原 text_xs 裸字号）
-                            .text_size(crate::appearance::ui_size(11.))
-                            .text_color(rgb(t.text_dim))
-                            .child(label)
-                    })
+        .w(px(620.))
+        .max_h(px(640.))
+        .bg(rgb(t.bg_panel))
+        .border_1()
+        .border_color(rgb(t.border))
+        .rounded(px(10.))
+        .p_3()
+        .flex()
+        .flex_col()
+        .gap_2()
+        .shadow_lg()
+        .on_mouse_down(MouseButton::Left, |_, _, cx| {
+            cx.stop_propagation();
+        })
+        .child(input.clone())
+        .child({
+            let label: SharedString = if chat.psp.search_truncated {
+                format!(
+                    "{status} · {partial}",
+                    partial = tr("session_search.partial")
+                )
+                .into()
+            } else {
+                status
+            };
+            div()
+                .px_1()
+                // §2 状态辅助档（原 text_xs 裸字号）
+                .text_size(crate::appearance::ui_size(11.))
+                .text_color(rgb(t.text_dim))
+                .child(label)
+        })
         .child(
             div()
                 .id("search-results")
@@ -1049,16 +1060,18 @@ fn render_session_search(
 impl Chat {
     pub(crate) fn open_git_diff(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         // 无项目态：没有 git 仓库可 diff（git 面本为空，防御）
-        let Some(cwd) = self.ws.cwd.clone() else { return };
+        let Some(cwd) = self.ws.cwd.clone() else {
+            return;
+        };
         let untracked = self
-            .ws.git_files
+            .ws
+            .git_files
             .iter()
             .any(|f| f.path == path && f.status == GitStatus::Untracked);
         let patch = git_file_diff(&cwd, &path, untracked);
         self.dlg.dialog = Some(Dialog::GitDiff { path, patch });
         cx.notify();
     }
-
 
     /// 004 projectManager 打开项目菜单（触发：psp 打开项目 icon / 012 新会话页
     /// 操作栏）：搜索框 + 【打开文件夹】 + 最近 30 天活动项目列表。列表后台
@@ -1116,10 +1129,9 @@ impl Chat {
                 // 无项目态没有「当前项目」，不兜底
                 if let Some(cwd) = c.ws.cwd.clone() {
                     let cwd_key = cwd.to_string_lossy().to_string();
-                    if !entries
-                        .iter()
-                        .any(|p| crate::services::workspace::same_ws(&p.path.to_string_lossy(), &cwd_key))
-                    {
+                    if !entries.iter().any(|p| {
+                        crate::services::workspace::same_ws(&p.path.to_string_lossy(), &cwd_key)
+                    }) {
                         let name = cwd
                             .file_name()
                             .map(|n| n.to_string_lossy().to_string())
@@ -1143,8 +1155,7 @@ impl Chat {
     /// **直接子行**跟随（行挂法见 render_project_picker）。
     pub(crate) fn project_move_sel(&mut self, delta: i32, cx: &mut Context<Self>) {
         let max = project_visible(self).len();
-        let next =
-            ((self.psp.project_sel.min(max) as i32) + delta).clamp(0, max as i32) as usize;
+        let next = ((self.psp.project_sel.min(max) as i32) + delta).clamp(0, max as i32) as usize;
         if next == self.psp.project_sel {
             return;
         }
@@ -1181,15 +1192,12 @@ impl Chat {
     pub(crate) fn project_sel_default(&self) -> usize {
         let visible = project_visible(self);
         let cur = visible.iter().position(|&ix| {
-            self.ws
-                .cwd
-                .as_deref()
-                .is_some_and(|cur| {
-                    crate::services::workspace::same_ws(
-                        &self.psp.project_hits[ix].path.to_string_lossy(),
-                        &cur.to_string_lossy(),
-                    )
-                })
+            self.ws.cwd.as_deref().is_some_and(|cur| {
+                crate::services::workspace::same_ws(
+                    &self.psp.project_hits[ix].path.to_string_lossy(),
+                    &cur.to_string_lossy(),
+                )
+            })
         });
         match cur {
             Some(row) => row + 1,
@@ -1247,17 +1255,16 @@ impl Chat {
             cx.background_executor()
                 .timer(std::time::Duration::from_millis(300))
                 .await;
-            let cancelled = weak.update(cx, |c, _| c.psp.search_gen != epoch).unwrap_or(true);
+            let cancelled = weak
+                .update(cx, |c, _| c.psp.search_gen != epoch)
+                .unwrap_or(true);
             if cancelled {
                 return;
             }
             let needle2 = needle.clone();
             let resp = cx
                 .background_spawn(async move {
-                    pi_link::sessions::search_sessions_for_cwd(
-                        &cwd.to_string_lossy(),
-                        &needle2,
-                    )
+                    pi_link::sessions::search_sessions_for_cwd(&cwd.to_string_lossy(), &needle2)
                 })
                 .await;
             let _ = weak.update(cx, |c, cx| {

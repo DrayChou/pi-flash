@@ -1,11 +1,9 @@
 //! 文档预览模式（doc mode）：DOC_MODE/IMG_BASE 开关、wiki 图片展开、
 //! 文档渲染入口（render_doc_item/render_preview_body）与活动装饰同步。
 
-use gpui::{
-    AnyElement, div, prelude::*, px, rgb,
-};
-use crate::appearance::theme::Theme;
 use super::*;
+use crate::appearance::theme::Theme;
+use gpui::{AnyElement, div, prelude::*, px, rgb};
 use std::path::PathBuf;
 
 static DOC_MODE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -87,13 +85,19 @@ pub(super) fn html_block_doc(h: &str) -> Vec<MdBlock> {
     let mut out = Vec::new();
     let mut rest = h;
     while let Some(pos) = rest.find("<img") {
-        let Some(end) = rest[pos..].find('>') else { break };
+        let Some(end) = rest[pos..].find('>') else {
+            break;
+        };
         let tag = &rest[pos..=pos + end];
         if let Some(url) = attr(tag, "src") {
             let width = attr(tag, "width")
                 .map(|w| w.trim().trim_end_matches("px").trim().to_string())
                 .and_then(|w| w.parse::<f32>().ok());
-            out.push(MdBlock::Image { url, width, alt: Vec::new() });
+            out.push(MdBlock::Image {
+                url,
+                width,
+                alt: Vec::new(),
+            });
         }
         rest = &rest[pos + end + 1..];
     }
@@ -108,15 +112,23 @@ pub(super) fn html_block_doc(h: &str) -> Vec<MdBlock> {
             _ => {}
         }
     }
-    let text = text.split('\n').map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join("\n");
+    let text = text
+        .split('\n')
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
     if !text.is_empty() {
         out.push(MdBlock::Paragraph {
-            runs: vec![Run { text, style: Style::Normal, url: None }],
+            runs: vec![Run {
+                text,
+                style: Style::Normal,
+                url: None,
+            }],
         });
     }
     out
 }
-
 
 /// 文档预览虚拟化（抄 zed thread_view 的 list 架构，v60）：文件预览不再
 /// 一次性构建整棵元素树（progress.md 784 块全量构建 ≈ 30ms/帧，滚动必
@@ -177,12 +189,10 @@ fn expand_wiki_images(src: &str) -> String {
 /// 整行恰为一条图片引用：`![[…]]` 或 `![](…)`（闭合到行尾）。
 fn is_standalone_image_ref(line: &str) -> bool {
     if let Some(rest) = line.strip_prefix("![[") {
-        return rest.ends_with("]]" ) && !rest.contains('\n');
+        return rest.ends_with("]]") && !rest.contains('\n');
     }
     if let Some(rest) = line.strip_prefix("![](") {
-        return rest.ends_with(')')
-            && !rest.contains("![](")
-            && !rest.contains('\n');
+        return rest.ends_with(')') && !rest.contains("![](") && !rest.contains('\n');
     }
     false
 }
@@ -197,7 +207,7 @@ fn expand_wiki_line(line: &str) -> String {
         };
         out.push_str(&rest[..s]);
         let after = &rest[s + 3..];
-        let Some(e) = after.find("]]" ) else {
+        let Some(e) = after.find("]]") else {
             // 无闭合：原样保留剩余部分
             out.push_str(&rest[s..]);
             break;
@@ -371,7 +381,9 @@ pub(crate) fn render_preview_body(
         // 082 三期：预览键盘滚动（绑定见 main.rs MdPreview 上下文）。
         // 方向键 = 3 行步进，翻页 = 85% 视口；Home/End 到首/尾
         .on_action(cx.listener(|this, _: &crate::PreviewUp, window, cx| {
-            this.ws.md_preview_list.scroll_by(-window.line_height() * 3.);
+            this.ws
+                .md_preview_list
+                .scroll_by(-window.line_height() * 3.);
             cx.notify();
         }))
         .on_action(cx.listener(|this, _: &crate::PreviewDown, window, cx| {
@@ -379,17 +391,22 @@ pub(crate) fn render_preview_body(
             cx.notify();
         }))
         .on_action(cx.listener(|this, _: &crate::PreviewPageUp, window, cx| {
-            this.ws.md_preview_list.scroll_by(-window.viewport_size().height * 0.85);
+            this.ws
+                .md_preview_list
+                .scroll_by(-window.viewport_size().height * 0.85);
             cx.notify();
         }))
         .on_action(cx.listener(|this, _: &crate::PreviewPageDown, window, cx| {
-            this.ws.md_preview_list.scroll_by(window.viewport_size().height * 0.85);
+            this.ws
+                .md_preview_list
+                .scroll_by(window.viewport_size().height * 0.85);
             cx.notify();
         }))
         .on_action(cx.listener(|this, _: &crate::PreviewHome, _window, cx| {
-            this.ws
-                .md_preview_list
-                .scroll_to(gpui::ListOffset { item_ix: 0, offset_in_item: px(0.) });
+            this.ws.md_preview_list.scroll_to(gpui::ListOffset {
+                item_ix: 0,
+                offset_in_item: px(0.),
+            });
             cx.notify();
         }))
         .on_action(cx.listener(|this, _: &crate::PreviewEnd, _window, cx| {
@@ -411,7 +428,8 @@ pub(crate) fn render_preview_body(
         .when(
             chat.ws.md_preview_list.max_offset_for_scrollbar().height > px(0.),
             |d| {
-                let handle = crate::ui::list_handle::ListStateHandle(chat.ws.md_preview_list.clone());
+                let handle =
+                    crate::ui::list_handle::ListStateHandle(chat.ws.md_preview_list.clone());
                 d.child(
                     div()
                         .absolute()

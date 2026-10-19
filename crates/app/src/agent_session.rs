@@ -7,7 +7,7 @@ use std::path::Path;
 
 use futures::channel::mpsc::UnboundedReceiver;
 
-use pi_link::client::{spawn as spawn_pi, PiSession};
+use pi_link::client::{PiSession, spawn as spawn_pi};
 use pi_link::protocol::Event;
 
 pub(crate) struct AgentSession {

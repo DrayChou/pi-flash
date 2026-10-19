@@ -1,8 +1,8 @@
 //! pulldown-cmark 解析层：inline 样式栈、链接切分、块事件折叠
 //! （parse_blocks/parse_block）与表格单元格切分。产 MdBlock，纯函数。
 
-use pulldown_cmark::{CodeBlockKind, Event, Tag, TagEnd};
 use super::*;
+use pulldown_cmark::{CodeBlockKind, Event, Tag, TagEnd};
 
 fn style_push(styles: &mut Vec<StyleEntry>, tag: &Tag) {
     let (base, base_url) = styles
@@ -48,10 +48,7 @@ fn split_links(text: &str) -> Vec<(String, bool)> {
     let mut out: Vec<(String, bool)> = Vec::new();
     let mut rest = text;
     loop {
-        let start = [HTTPS, HTTP]
-            .iter()
-            .filter_map(|sc| rest.find(sc))
-            .min();
+        let start = [HTTPS, HTTP].iter().filter_map(|sc| rest.find(sc)).min();
         let Some(start) = start else { break };
         // 前缀须是词边界（避免 "foohttps://" 误切）
         let boundary_ok = start == 0
@@ -180,7 +177,11 @@ fn collect_inline_peek(
                 }
             }
         } else {
-            runs.push(Run { text: taken, style: cur, url: cur_url.clone() });
+            runs.push(Run {
+                text: taken,
+                style: cur,
+                url: cur_url.clone(),
+            });
         }
     }
 
@@ -231,16 +232,28 @@ fn collect_inline_peek(
             Event::InlineMath(tex) => {
                 // v57-2: 行内公式标记 run（渲染期拆段成图）
                 flush(&mut text, cur, &cur_url, &mut runs);
-                runs.push(Run { text: tex.to_string(), style: Style::Math, url: None });
+                runs.push(Run {
+                    text: tex.to_string(),
+                    style: Style::Math,
+                    url: None,
+                });
             }
             Event::DisplayMath(tex) => {
                 // 多行 $$…$$ 的 DisplayMath 事件发在段落流内（实测），同用标记
                 flush(&mut text, cur, &cur_url, &mut runs);
-                runs.push(Run { text: tex.to_string(), style: Style::DisplayMath, url: None });
+                runs.push(Run {
+                    text: tex.to_string(),
+                    style: Style::DisplayMath,
+                    url: None,
+                });
             }
             Event::Code(c) => {
                 flush(&mut text, cur, &cur_url, &mut runs);
-                runs.push(Run { text: c.to_string(), style: Style::Code, url: None });
+                runs.push(Run {
+                    text: c.to_string(),
+                    style: Style::Code,
+                    url: None,
+                });
             }
             // html=false 即用户气泡路径（render_user 唯一调用方）：段内软
             // 换行保留 \n（pi-web parity：.markdown-user-message p 的
@@ -271,7 +284,9 @@ fn html_block_dispatch(raw: &str, html: bool) -> Vec<MdBlock> {
     } else if html {
         crate::editor::markdown::render::html::blocks(raw)
     } else {
-        vec![MdBlock::Paragraph { runs: literal_runs(raw) }]
+        vec![MdBlock::Paragraph {
+            runs: literal_runs(raw),
+        }]
     }
 }
 
@@ -307,7 +322,11 @@ pub(super) fn parse_blocks(events: &[Event], html: bool) -> Vec<MdBlock> {
             }
             Event::Text(t) => {
                 out.push(MdBlock::Paragraph {
-                    runs: vec![Run { text: t.to_string(), style: Style::Normal, url: None }],
+                    runs: vec![Run {
+                        text: t.to_string(),
+                        style: Style::Normal,
+                        url: None,
+                    }],
                 });
                 i += 1;
             }
@@ -317,7 +336,9 @@ pub(super) fn parse_blocks(events: &[Event], html: bool) -> Vec<MdBlock> {
             }
             Event::DisplayMath(tex) => {
                 // v57-2: 块级公式（$$…$$）
-                out.push(MdBlock::Math { latex: tex.to_string() });
+                out.push(MdBlock::Math {
+                    latex: tex.to_string(),
+                });
                 i += 1;
             }
             Event::InlineHtml(h) => {
@@ -327,7 +348,9 @@ pub(super) fn parse_blocks(events: &[Event], html: bool) -> Vec<MdBlock> {
                         out.push(MdBlock::Paragraph { runs });
                     }
                 } else {
-                    out.push(MdBlock::Paragraph { runs: literal_runs(h) });
+                    out.push(MdBlock::Paragraph {
+                        runs: literal_runs(h),
+                    });
                 }
                 i += 1;
             }
@@ -389,27 +412,43 @@ fn parse_block(
                 }
                 if let Event::Start(Tag::Image { .. }) = &events[*i] {
                     *i += 1;
-                    let alt = collect_inline(events, i, &|e| {
-                        matches!(e, Event::End(TagEnd::Image))
-}, html);
-                    out.push(MdBlock::Image { url, alt, width: None });
+                    let alt = collect_inline(
+                        events,
+                        i,
+                        &|e| matches!(e, Event::End(TagEnd::Image)),
+                        html,
+                    );
+                    out.push(MdBlock::Image {
+                        url,
+                        alt,
+                        width: None,
+                    });
                 }
                 while *i < events.len() && !matches!(events[*i], Event::End(TagEnd::Paragraph)) {
                     *i += 1;
                 }
                 *i += 1;
             } else {
-                let runs = collect_inline(events, i, &|e| {
-                    matches!(e, Event::End(TagEnd::Paragraph))
-}, html);
+                let runs = collect_inline(
+                    events,
+                    i,
+                    &|e| matches!(e, Event::End(TagEnd::Paragraph)),
+                    html,
+                );
                 out.push(MdBlock::Paragraph { runs });
             }
         }
         Tag::Heading { level, .. } => {
-            let runs = collect_inline(events, i, &|e| {
-                matches!(e, Event::End(TagEnd::Heading(_)))
-}, html);
-            out.push(MdBlock::Heading { level: level as u8, runs });
+            let runs = collect_inline(
+                events,
+                i,
+                &|e| matches!(e, Event::End(TagEnd::Heading(_))),
+                html,
+            );
+            out.push(MdBlock::Heading {
+                level: level as u8,
+                runs,
+            });
         }
         Tag::BlockQuote(_) => {
             let mut inner = Vec::new();
@@ -484,7 +523,11 @@ fn parse_block(
         }
         Tag::Image { dest_url, .. } => {
             let alt = collect_inline(events, i, &|e| matches!(e, Event::End(TagEnd::Image)), html);
-            out.push(MdBlock::Image { url: dest_url.to_string(), alt, width: None });
+            out.push(MdBlock::Image {
+                url: dest_url.to_string(),
+                alt,
+                width: None,
+            });
         }
         Tag::List(start) => {
             let ordered = start.is_some();
@@ -519,9 +562,12 @@ fn parse_block(
                                 *i += 1;
                                 match &inner_tag {
                                     Tag::Paragraph => {
-                                        let r = collect_inline(events, i, &|e| {
-                                            matches!(e, Event::End(TagEnd::Paragraph))
-}, html);
+                                        let r = collect_inline(
+                                            events,
+                                            i,
+                                            &|e| matches!(e, Event::End(TagEnd::Paragraph)),
+                                            html,
+                                        );
                                         if !runs.is_empty() {
                                             if let Some(last) = runs.last_mut() {
                                                 last.text.push(' ');
@@ -530,13 +576,34 @@ fn parse_block(
                                         runs.extend(r);
                                     }
                                     Tag::List(_) => {
-                                        parse_block(events, i, inner_tag, &mut nested, depth + 1, html);
+                                        parse_block(
+                                            events,
+                                            i,
+                                            inner_tag,
+                                            &mut nested,
+                                            depth + 1,
+                                            html,
+                                        );
                                     }
                                     Tag::CodeBlock(_) | Tag::BlockQuote(_) | Tag::Table(_) => {
-                                        parse_block(events, i, inner_tag, &mut nested, depth + 1, html);
+                                        parse_block(
+                                            events,
+                                            i,
+                                            inner_tag,
+                                            &mut nested,
+                                            depth + 1,
+                                            html,
+                                        );
                                     }
                                     Tag::Image { .. } => {
-                                        parse_block(events, i, inner_tag, &mut nested, depth + 1, html);
+                                        parse_block(
+                                            events,
+                                            i,
+                                            inner_tag,
+                                            &mut nested,
+                                            depth + 1,
+                                            html,
+                                        );
                                     }
                                     Tag::HtmlBlock => {
                                         // 列表项内包裹式 HTML 块：收拢 chunks 走
@@ -580,7 +647,12 @@ fn parse_block(
                         }
                     }
                     *i += 1; // End(Item)
-                    out.push(MdBlock::ListItem { depth, marker, runs, task });
+                    out.push(MdBlock::ListItem {
+                        depth,
+                        marker,
+                        runs,
+                        task,
+                    });
                     out.extend(nested);
                 } else {
                     *i += 1;
@@ -620,8 +692,12 @@ fn parse_table_cells(
         }
         if matches!(events[*i], Event::Start(Tag::TableCell)) {
             *i += 1;
-            let runs =
-                collect_inline(events, i, &|e| matches!(e, Event::End(TagEnd::TableCell)), html);
+            let runs = collect_inline(
+                events,
+                i,
+                &|e| matches!(e, Event::End(TagEnd::TableCell)),
+                html,
+            );
             cells.push(runs);
         } else {
             *i += 1;

@@ -133,7 +133,13 @@ pub fn provider_globs(refs: &[String]) -> Vec<(String, String)> {
             format!("{p}/**")
         };
         // verify: matches exactly this provider's models
-        if match_base(&glob, refs) == refs.iter().filter(|r| ref_provider(r) == p).cloned().collect::<Vec<_>>() {
+        if match_base(&glob, refs)
+            == refs
+                .iter()
+                .filter(|r| ref_provider(r) == p)
+                .cloned()
+                .collect::<Vec<_>>()
+        {
             out.push((p.to_string(), glob));
         }
     }
@@ -174,10 +180,18 @@ fn materialize(entries: Vec<Entry>, refs: &[String], globs: &[(String, String)])
             .cloned()
             .collect();
         match globs.iter().find(|(gp, _)| gp == p) {
-            Some((_, glob)) => out.push(Entry { pattern: glob.clone(), matched: prov_refs, pin: None }),
+            Some((_, glob)) => out.push(Entry {
+                pattern: glob.clone(),
+                matched: prov_refs,
+                pin: None,
+            }),
             None => {
                 for r in prov_refs {
-                    out.push(Entry { pattern: r.clone(), matched: vec![r], pin: None });
+                    out.push(Entry {
+                        pattern: r.clone(),
+                        matched: vec![r],
+                        pin: None,
+                    });
                 }
             }
         }
@@ -187,7 +201,11 @@ fn materialize(entries: Vec<Entry>, refs: &[String], globs: &[(String, String)])
 
 /// Replace a fully enabled provider's entries with its verified glob
 /// (self-healing against catalog renames; skipped with pins or partial sets).
-fn collapse_provider(mut entries: Vec<Entry>, refs: &[String], globs: &[(String, String)]) -> Vec<Entry> {
+fn collapse_provider(
+    mut entries: Vec<Entry>,
+    refs: &[String],
+    globs: &[(String, String)],
+) -> Vec<Entry> {
     for (provider, glob) in globs {
         let prov_refs: Vec<String> = refs
             .iter()
@@ -214,7 +232,8 @@ fn collapse_provider(mut entries: Vec<Entry>, refs: &[String], globs: &[(String,
         if prov_refs.iter().any(|r| !covered.contains(r)) {
             continue;
         }
-        let is_subset = |e: &Entry| !e.matched.is_empty() && e.matched.iter().all(|r| prov_set.contains(r));
+        let is_subset =
+            |e: &Entry| !e.matched.is_empty() && e.matched.iter().all(|r| prov_set.contains(r));
         let subsets: Vec<usize> = entries
             .iter()
             .enumerate()
@@ -225,12 +244,22 @@ fn collapse_provider(mut entries: Vec<Entry>, refs: &[String], globs: &[(String,
             continue;
         }
         let first = subsets[0];
-        let glob_entry = Entry { pattern: glob.clone(), matched: prov_refs, pin: None };
+        let glob_entry = Entry {
+            pattern: glob.clone(),
+            matched: prov_refs,
+            pin: None,
+        };
         entries = entries
             .iter()
             .enumerate()
             .filter(|(i, e)| *i == first || !is_subset(e))
-            .map(|(i, e)| if i == first { glob_entry.clone() } else { e.clone() })
+            .map(|(i, e)| {
+                if i == first {
+                    glob_entry.clone()
+                } else {
+                    e.clone()
+                }
+            })
             .collect();
     }
     entries
@@ -276,7 +305,11 @@ pub fn compute_state(patterns: Option<&Vec<String>>, refs: &[String]) -> Enabled
         all_enabled,
         enabled: if all_enabled { refs.to_vec() } else { enabled },
         pins,
-        stale: entries.iter().filter(|e| e.matched.is_empty()).map(|e| e.pattern.clone()).collect(),
+        stale: entries
+            .iter()
+            .filter(|e| e.matched.is_empty())
+            .map(|e| e.pattern.clone())
+            .collect(),
     }
 }
 
@@ -289,19 +322,24 @@ pub fn set_models_enabled(
     enable: bool,
 ) -> Result<Edit, &'static str> {
     let available: std::collections::HashSet<&String> = refs.iter().collect();
-    let targets: Vec<&String> = targets
-        .iter()
-        .filter(|t| available.contains(t))
-        .collect();
+    let targets: Vec<&String> = targets.iter().filter(|t| available.contains(t)).collect();
     if targets.is_empty() {
-        return Ok(Edit { patterns: patterns.cloned(), changed: false });
+        return Ok(Edit {
+            patterns: patterns.cloned(),
+            changed: false,
+        });
     }
     let globs = provider_globs(refs);
     let input_patterns = patterns.cloned();
-    let mut entries = materialize(resolve_all(patterns.unwrap_or(&Vec::new()), refs), refs, &globs);
+    let mut entries = materialize(
+        resolve_all(patterns.unwrap_or(&Vec::new()), refs),
+        refs,
+        &globs,
+    );
 
     if enable {
-        let current: std::collections::HashSet<String> = enabled_refs(&entries).into_iter().collect();
+        let current: std::collections::HashSet<String> =
+            enabled_refs(&entries).into_iter().collect();
         for t in &targets {
             if current.contains(*t) {
                 continue;
@@ -360,7 +398,6 @@ pub fn set_provider_enabled(
         .collect();
     set_models_enabled(patterns, refs, &targets, enable)
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -437,13 +474,17 @@ mod tests {
         // deepseek keeps its verified glob; the only openai model is now off
         // so openai has no entries at all; openrouter's two explicit entries
         // are normalized back into its verified `**` glob
-        assert_eq!(patterns, vec!["deepseek/*".to_string(), "openrouter/**".to_string()]);
+        assert_eq!(
+            patterns,
+            vec!["deepseek/*".to_string(), "openrouter/**".to_string()]
+        );
         let state = compute_state(Some(&patterns), &refs);
         assert!(!state.all_enabled);
         assert_eq!(state.enabled.len(), 4);
         assert!(!state.enabled.contains(&"openai/gpt-5".to_string()));
         // re-enable: everything back -> setting dropped entirely
-        let edit = set_models_enabled(Some(&patterns), &refs, &["openai/gpt-5".to_string()], true).unwrap();
+        let edit = set_models_enabled(Some(&patterns), &refs, &["openai/gpt-5".to_string()], true)
+            .unwrap();
         assert_eq!(edit.patterns, None);
         assert!(compute_state(edit.patterns.as_ref(), &refs).all_enabled);
     }
@@ -466,7 +507,10 @@ mod tests {
         let patterns = edit.patterns.unwrap();
         let state = compute_state(Some(&patterns), &refs);
         assert!(!state.enabled.iter().any(|r| r.starts_with("deepseek/")));
-        assert!(!patterns.iter().any(|p| p.contains("deepseek")), "provider fully off -> no deepseek entries");
+        assert!(
+            !patterns.iter().any(|p| p.contains("deepseek")),
+            "provider fully off -> no deepseek entries"
+        );
         assert!(patterns.contains(&"openai/*".to_string()));
 
         // a pinned model keeps `:level` on surviving refs when its pattern is
@@ -475,8 +519,17 @@ mod tests {
             "deepseek/deepseek-chat:medium".to_string(),
             "deepseek/deepseek-reasoner".to_string(),
         ];
-        let edit = set_models_enabled(Some(&patterns), &refs, &["deepseek/deepseek-chat".to_string()], false).unwrap();
-        assert_eq!(edit.patterns.unwrap(), vec!["deepseek/deepseek-reasoner".to_string()]);
+        let edit = set_models_enabled(
+            Some(&patterns),
+            &refs,
+            &["deepseek/deepseek-chat".to_string()],
+            false,
+        )
+        .unwrap();
+        assert_eq!(
+            edit.patterns.unwrap(),
+            vec!["deepseek/deepseek-reasoner".to_string()]
+        );
 
         // whitelist semantics: disabling the only pattern-covered model is
         // rejected by the last-model guard (pi-web parity)
@@ -492,7 +545,8 @@ mod tests {
             "ghost/missing".to_string(),
             "deepseek/deepseek-chat".to_string(),
         ];
-        let edit = set_models_enabled(Some(&patterns), &refs, &["openai/gpt-5".to_string()], false).unwrap();
+        let edit = set_models_enabled(Some(&patterns), &refs, &["openai/gpt-5".to_string()], false)
+            .unwrap();
         let out = edit.patterns.unwrap();
         assert!(out.contains(&"ghost/missing".to_string()));
     }

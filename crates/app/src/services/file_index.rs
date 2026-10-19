@@ -26,8 +26,16 @@ pub struct FileListing {
 /// 同参）。git 不存在 / 非 git 仓库 → None（调用方回退 walk）。
 pub fn list_with_git(cwd: &Path) -> Option<FileListing> {
     let mut cmd = std::process::Command::new("git");
-    cmd.args(["-C", &cwd.to_string_lossy(), "ls-files", "--cached", "--others", "--exclude-standard", "-z"])
-        .env("LC_ALL", "C");
+    cmd.args([
+        "-C",
+        &cwd.to_string_lossy(),
+        "ls-files",
+        "--cached",
+        "--others",
+        "--exclude-standard",
+        "-z",
+    ])
+    .env("LC_ALL", "C");
     // git 是 console 程序：GUI 宿主裸 spawn 会分配控制台并弹 Windows
     // Terminal 窗口（口径同 git.rs::hide_console）。
     #[cfg(windows)]
@@ -51,7 +59,10 @@ pub fn list_with_git(cwd: &Path) -> Option<FileListing> {
             hard_truncated: true,
         });
     }
-    Some(FileListing { files: all, hard_truncated: false })
+    Some(FileListing {
+        files: all,
+        hard_truncated: false,
+    })
 }
 
 /// BFS 目录遍历（浅层文件优先占上限）；跳过隐藏项与常见构建目录。仅在
@@ -62,7 +73,9 @@ pub fn list_with_walk(cwd: &Path) -> FileListing {
         std::collections::VecDeque::new();
     queue.push_back((cwd.to_path_buf(), String::new(), 0));
     while let Some((abs, rel, depth)) = queue.pop_front() {
-        let Ok(rd) = std::fs::read_dir(&abs) else { continue };
+        let Ok(rd) = std::fs::read_dir(&abs) else {
+            continue;
+        };
         let mut entries: Vec<_> = rd.flatten().collect();
         entries.sort_by_key(|e| e.file_name());
         for e in entries {
@@ -70,7 +83,11 @@ pub fn list_with_walk(cwd: &Path) -> FileListing {
             if is_hidden_outside_git(&name) {
                 continue;
             }
-            let child_rel = if rel.is_empty() { name.clone() } else { format!("{rel}/{name}") };
+            let child_rel = if rel.is_empty() {
+                name.clone()
+            } else {
+                format!("{rel}/{name}")
+            };
             match e.file_type() {
                 Ok(ft) if ft.is_dir() => {
                     if depth + 1 <= MAX_WALK_DEPTH {
@@ -79,7 +96,10 @@ pub fn list_with_walk(cwd: &Path) -> FileListing {
                 }
                 Ok(ft) if ft.is_file() => {
                     if files.len() >= WALK_HARD_CAP {
-                        return FileListing { files, hard_truncated: true };
+                        return FileListing {
+                            files,
+                            hard_truncated: true,
+                        };
                     }
                     files.push(child_rel);
                 }
@@ -87,16 +107,16 @@ pub fn list_with_walk(cwd: &Path) -> FileListing {
             }
         }
     }
-    FileListing { files, hard_truncated: false }
+    FileListing {
+        files,
+        hard_truncated: false,
+    }
 }
 
 /// 非 git 回退的名字黑名单：隐藏项 + 依赖/构建目录（pi-web
 /// file-tree-visibility 的同职责清单；与 walk_files 的黑名单一致）。
 fn is_hidden_outside_git(name: &str) -> bool {
-    name.starts_with('.')
-        || name == "node_modules"
-        || name == "target"
-        || name == "dist"
+    name.starts_with('.') || name == "node_modules" || name == "target" || name == "dist"
 }
 
 /// 装载一个 cwd 的清单（git 优先，回退 BFS）。后台线程调用。

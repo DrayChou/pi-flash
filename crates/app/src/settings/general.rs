@@ -6,8 +6,8 @@
 //! 每次启动报错。
 
 use super::*;
-use crate::appearance::{FontSlot, ThemeEntry};
 use crate::appearance::theme;
+use crate::appearance::{FontSlot, ThemeEntry};
 
 /// 槽位序号 → FontSlot（族/字号下拉共用）。
 fn slot_of(ix: usize) -> FontSlot {
@@ -123,29 +123,22 @@ pub(crate) fn mc_general_view(
     // 展示思考 switch（思考块始终渲染；关（默认）=新思考块收成一行，
     // 开=默认展开全文。用户手动开合过的块以显式状态为准）
     let show_thinking = crate::services::workspace::show_thinking();
-    col = col.child(
-        set_row(
-            tr("settings.show_thinking"),
-            tr("settings.show_thinking_hint"),
-            switch_base(
-                "general-show-thinking",
-                show_thinking,
-                false,
-                {
-                    let weak = weak.clone();
-                    move |on, cx| {
-                        let _ = weak.update(cx, |_c, cx| {
-                            let mut s = crate::services::workspace::app_settings();
-                            s.show_thinking = Some(on);
-                            crate::services::workspace::save_app_settings(&s);
-                            cx.notify();
-                        });
-                    }
-                },
-            ),
-            t,
-        ),
-    );
+    col = col.child(set_row(
+        tr("settings.show_thinking"),
+        tr("settings.show_thinking_hint"),
+        switch_base("general-show-thinking", show_thinking, false, {
+            let weak = weak.clone();
+            move |on, cx| {
+                let _ = weak.update(cx, |_c, cx| {
+                    let mut s = crate::services::workspace::app_settings();
+                    s.show_thinking = Some(on);
+                    crate::services::workspace::save_app_settings(&s);
+                    cx.notify();
+                });
+            }
+        }),
+        t,
+    ));
 
     // ---- 语言：三个一排，左对齐（置底——用户定夺） ------------------------
     col = col.child(section_label(tr("settings.language")));
@@ -193,80 +186,88 @@ fn theme_row(dark: bool, weak: &gpui::WeakEntity<Chat>) -> gpui::AnyElement {
         .gap(px(8.))
         .mt(px(8.))
         .children(rows.into_iter().map(|cells| {
-            div().flex().gap(px(8.)).children(cells.into_iter().map(|cell| {
-                let Some(entry) = cell else {
-                    // 空槽：只占位，保持与上一排等宽
-                    return div().flex_1().min_w_0().into_any_element();
-                };
-                let th = theme::ALL
-                    .iter()
-                    .find(|(id, _)| *id == entry.id)
-                    .map(|(_, t)| *t)
-                    .expect("registry id missing from theme table");
-                let active = entry.id == current;
-                let weak_card = weak.clone();
-                let theme_id = entry.id.to_string();
-                // 卡片外包一层无 padding/边框的等宽槽位：卡片自带的 padding+边框
-                // 会计入 taffy 的假设主尺寸（flex-basis 0 压不掉），直接 flex_1 会
-                // 比空槽宽出一个 padding+border，导致上下两排不等宽。
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .child(
-                        div()
-                            .id(SharedString::from(format!("theme-{}", entry.id)))
-                            .w_full()
-                            .h(px(36.))
-                            .rounded(px(5.))
-                            .border_1()
-                            // 选中描边加粗到 2px（后写覆盖 border_1 的四边宽度）
-                            .when(active, |d| d.border_2())
-                            .border_color(rgb(if active { th.accent } else { th.border }))
-                            .bg(rgb(th.bg))
-                            .overflow_hidden()
-                            .flex()
-                            .items_center()
-                            .gap(px(6.))
-                            .px(px(8.))
-                            .cursor_pointer()
-                            .hover(|s| s.border_color(rgb(th.text_muted)))
-                            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                                let _ = weak_card.update(cx, |_c, cx| {
-                                    if crate::appearance::persist_theme(&theme_id) {
-                                        // 006: re-map tokens so widget-library surfaces
-                                        // (inputs/modals) follow the switch
-                                        crate::appearance::sync_gpui_tokens(cx);
-                                        cx.notify();
-                                    }
-                                });
-                            })
-                            // 左圆点区 / 右空位等宽（各 flex_1），名字真正落在横条中央
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .flex()
-                                    .items_center()
-                                    .gap(px(4.))
-                                    .child(div().size(px(7.)).rounded_full().bg(rgb(th.accent)))
-                                    .child(div().size(px(7.)).rounded_full().bg(rgb(th.text_muted))),
-                            )
-                            .child(
-                                div()
-                                    .flex_shrink_0()
-                                    .text_size(crate::appearance::ui_size(11.5))
-                                    .font_weight(if active {
-                                        gpui::FontWeight::SEMIBOLD
-                                    } else {
-                                        gpui::FontWeight::NORMAL
-                                    })
-                                    .text_color(rgb(if active { th.accent } else { th.text }))
-                                    .whitespace_nowrap()
-                                    .child(SharedString::from(entry.name)),
-                            )
-                            .child(div().flex_1()),
-                    )
-                    .into_any_element()
-            }))
+            div()
+                .flex()
+                .gap(px(8.))
+                .children(cells.into_iter().map(|cell| {
+                    let Some(entry) = cell else {
+                        // 空槽：只占位，保持与上一排等宽
+                        return div().flex_1().min_w_0().into_any_element();
+                    };
+                    let th = theme::ALL
+                        .iter()
+                        .find(|(id, _)| *id == entry.id)
+                        .map(|(_, t)| *t)
+                        .expect("registry id missing from theme table");
+                    let active = entry.id == current;
+                    let weak_card = weak.clone();
+                    let theme_id = entry.id.to_string();
+                    // 卡片外包一层无 padding/边框的等宽槽位：卡片自带的 padding+边框
+                    // 会计入 taffy 的假设主尺寸（flex-basis 0 压不掉），直接 flex_1 会
+                    // 比空槽宽出一个 padding+border，导致上下两排不等宽。
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .child(
+                            div()
+                                .id(SharedString::from(format!("theme-{}", entry.id)))
+                                .w_full()
+                                .h(px(36.))
+                                .rounded(px(5.))
+                                .border_1()
+                                // 选中描边加粗到 2px（后写覆盖 border_1 的四边宽度）
+                                .when(active, |d| d.border_2())
+                                .border_color(rgb(if active { th.accent } else { th.border }))
+                                .bg(rgb(th.bg))
+                                .overflow_hidden()
+                                .flex()
+                                .items_center()
+                                .gap(px(6.))
+                                .px(px(8.))
+                                .cursor_pointer()
+                                .hover(|s| s.border_color(rgb(th.text_muted)))
+                                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                                    let _ = weak_card.update(cx, |_c, cx| {
+                                        if crate::appearance::persist_theme(&theme_id) {
+                                            // 006: re-map tokens so widget-library surfaces
+                                            // (inputs/modals) follow the switch
+                                            crate::appearance::sync_gpui_tokens(cx);
+                                            cx.notify();
+                                        }
+                                    });
+                                })
+                                // 左圆点区 / 右空位等宽（各 flex_1），名字真正落在横条中央
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .flex()
+                                        .items_center()
+                                        .gap(px(4.))
+                                        .child(div().size(px(7.)).rounded_full().bg(rgb(th.accent)))
+                                        .child(
+                                            div()
+                                                .size(px(7.))
+                                                .rounded_full()
+                                                .bg(rgb(th.text_muted)),
+                                        ),
+                                )
+                                .child(
+                                    div()
+                                        .flex_shrink_0()
+                                        .text_size(crate::appearance::ui_size(11.5))
+                                        .font_weight(if active {
+                                            gpui::FontWeight::SEMIBOLD
+                                        } else {
+                                            gpui::FontWeight::NORMAL
+                                        })
+                                        .text_color(rgb(if active { th.accent } else { th.text }))
+                                        .whitespace_nowrap()
+                                        .child(SharedString::from(entry.name)),
+                                )
+                                .child(div().flex_1()),
+                        )
+                        .into_any_element()
+                }))
         }))
         .into_any_element()
 }
@@ -402,7 +403,11 @@ fn size_trigger(
             let _ = weak_toggle.update(cx, |c, cx| {
                 if let Some(st) = c.dlg.settings.clone() {
                     st.update(cx, |s, cx| {
-                        s.size_popup = if s.size_popup == Some(ix) { None } else { Some(ix) };
+                        s.size_popup = if s.size_popup == Some(ix) {
+                            None
+                        } else {
+                            Some(ix)
+                        };
                         cx.notify();
                     });
                 }
@@ -663,7 +668,10 @@ fn font_popup_card(
 
 /// 语言：三个 radio（14px 圆圈，无边框无底色）。文字统一 text_muted，
 /// 选中只加粗（SEMIBOLD）不变色；圆圈 accent 描边 + 内点。
-fn lang_row(weak: &gpui::WeakEntity<Chat>, t: &'static crate::appearance::theme::Theme) -> gpui::AnyElement {
+fn lang_row(
+    weak: &gpui::WeakEntity<Chat>,
+    t: &'static crate::appearance::theme::Theme,
+) -> gpui::AnyElement {
     let lang_current = i18n::lang_ix();
     div()
         .flex()

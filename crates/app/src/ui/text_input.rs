@@ -164,7 +164,6 @@ impl TextInput {
         self
     }
 
-
     pub fn on_escape(mut self, cb: Escaped) -> Self {
         self.on_escape = Some(cb);
         self
@@ -397,11 +396,13 @@ impl Render for TextInput {
         let mut input = GpInput::new(&state)
             .appearance(!self.flat)
             .bordered(!self.flat)
-            .map(|input| if self.compact {
-                use gpui_component::Sizable as _;
-                input.with_size(gpui_component::Size::XSmall)
-            } else {
-                input
+            .map(|input| {
+                if self.compact {
+                    use gpui_component::Sizable as _;
+                    input.with_size(gpui_component::Size::XSmall)
+                } else {
+                    input
+                }
             });
         if self.flat {
             // Zed 行内编辑零内距（project_panel 把 Editor 原样塞进 Label 位，
@@ -436,7 +437,11 @@ impl Render for TextInput {
             } else {
                 crate::appearance::panel_font().family.clone().into()
             })
-            .text_size(crate::appearance::ui_size(if self.compact { 11. } else { 12. }))
+            .text_size(crate::appearance::ui_size(if self.compact {
+                11.
+            } else {
+                12.
+            }))
             // escape bubbles up from the inner widget (it only unmarks IME
             // composition and propagates) — turn it into the app callback
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _window, cx| {

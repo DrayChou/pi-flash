@@ -7,9 +7,9 @@
 //! 对齐 Zed worktree `process_events` 的过滤段——不滤会造成 git 面板与树
 //! 互相触发刷新死循环。
 
+use notify::Watcher;
 use std::path::Path;
 use std::sync::mpsc::Sender;
-use notify::Watcher;
 
 pub type FsWatcher = notify::RecommendedWatcher;
 
@@ -33,8 +33,8 @@ fn watch_with(
     mode: notify::RecursiveMode,
     tx: Sender<()>,
 ) -> notify::Result<FsWatcher> {
-    let mut watcher = notify::recommended_watcher(
-        move |res: Result<notify::Event, notify::Error>| {
+    let mut watcher =
+        notify::recommended_watcher(move |res: Result<notify::Event, notify::Error>| {
             let Ok(ev) = res else { return };
             let relevant = matches!(
                 ev.kind,
@@ -48,17 +48,15 @@ fn watch_with(
             // .git 内部与编辑器临时文件不触发刷新（Zed process_events 过滤段同款）
             let interesting = ev.paths.iter().any(|p| {
                 !p.components().any(|c| c.as_os_str() == ".git")
-                    && !p
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .is_some_and(|n| n.ends_with('~') || (n.starts_with('#') && n.ends_with('#')))
+                    && !p.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+                        n.ends_with('~') || (n.starts_with('#') && n.ends_with('#'))
+                    })
             });
             if interesting {
                 // 批内事件只当一次「有变化」信号，消费端负责合批
                 let _ = tx.send(());
             }
-        },
-    )?;
+        })?;
     watcher.watch(root, mode)?;
     Ok(watcher)
 }
@@ -79,7 +77,10 @@ mod tests {
         // 轮询等待事件（watcher 延迟与平台相关）
         let mut got = false;
         for _ in 0..100 {
-            if rx.recv_timeout(std::time::Duration::from_millis(50)).is_ok() {
+            if rx
+                .recv_timeout(std::time::Duration::from_millis(50))
+                .is_ok()
+            {
                 got = true;
                 break;
             }
@@ -104,7 +105,10 @@ mod tests {
         std::fs::write(&sibling, "bb").unwrap();
         let mut got = false;
         for _ in 0..100 {
-            if rx.recv_timeout(std::time::Duration::from_millis(50)).is_ok() {
+            if rx
+                .recv_timeout(std::time::Duration::from_millis(50))
+                .is_ok()
+            {
                 got = true;
                 break;
             }

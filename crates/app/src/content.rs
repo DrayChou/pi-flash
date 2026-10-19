@@ -6,8 +6,8 @@ use gpui::{Context, Entity, KeyDownEvent, MouseButton, SharedString, div, prelud
 
 use crate::Chat;
 use crate::ContentView;
-use crate::i18n::tr;
 use crate::appearance::theme::theme as T;
+use crate::i18n::tr;
 use crate::ui::ScrollAxisExt;
 
 /// 内容主视图：按 content_view 切换（flex-1，占满 topbar-r 以下）。
@@ -20,12 +20,15 @@ pub(crate) fn content_main(
 ) -> gpui::AnyElement {
     let t = T();
     let view: gpui::AnyElement = match chat.layout.content_view {
-        ContentView::Chat => crate::session::main_column(chat, entity, weak, window, cx)
-            .into_any_element(),
+        ContentView::Chat => {
+            crate::session::main_column(chat, entity, weak, window, cx).into_any_element()
+        }
         ContentView::Term => term_view(chat, weak, window, cx)
             .map(|d| d.into_any_element())
             .unwrap_or_else(|| empty_hint(tr("terminal.none"), t)),
-        ContentView::File => crate::editor::view::file_view(chat, weak, window, cx).into_any_element(),
+        ContentView::File => {
+            crate::editor::view::file_view(chat, weak, window, cx).into_any_element()
+        }
         // 081 更新日志 tab（新版本首启自动打开）
         ContentView::Changelog => changelog_view(chat).into_any_element(),
     };
@@ -50,7 +53,11 @@ pub(crate) fn content_main(
         .into_any_element()
 }
 
-pub(crate) fn empty_hint(text: &str, t: &'static crate::appearance::theme::Theme) -> gpui::AnyElement {    div()
+pub(crate) fn empty_hint(
+    text: &str,
+    t: &'static crate::appearance::theme::Theme,
+) -> gpui::AnyElement {
+    div()
         .flex_1()
         .flex()
         .items_center()
@@ -152,7 +159,8 @@ pub(crate) fn term_view(
 ) -> Option<gpui::AnyElement> {
     let _t = T();
     let body: Option<gpui::AnyElement> = chat
-        .ws.active_panel_tab
+        .ws
+        .active_panel_tab
         .and_then(|ix| chat.ws.panel_tabs.get(ix).cloned())
         .map(|tab| match tab {
             crate::PanelTab::File(_) => div().into_any_element(),
@@ -185,26 +193,22 @@ pub(crate) fn term_view(
                     crate::terminal::TermStatus::Ready => {}
                 }
                 col.child(
-                    div()
-                        .flex_1()
-                        .min_h_0()
-                        .bg(rgb(0x141a17))
-                        .child(
-                            crate::terminal::TerminalElement::new(tab, weak.clone())
-                                .blink_on(chat.ws.term_cursor_on)
-                                .track_focus(&tab.focus)
-                                .flex_1()
-                                .h_full()
-                                .on_mouse_down(MouseButton::Left, {
-                                    let f = tab.focus.clone();
-                                    move |_, window, _cx| {
-                                        window.focus(&f);
-                                    }
-                                })
-                                .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _w, cx| {
-                                    this.terminal_key(ev, cx);
-                                })),
-                        ),
+                    div().flex_1().min_h_0().bg(rgb(0x141a17)).child(
+                        crate::terminal::TerminalElement::new(tab, weak.clone())
+                            .blink_on(chat.ws.term_cursor_on)
+                            .track_focus(&tab.focus)
+                            .flex_1()
+                            .h_full()
+                            .on_mouse_down(MouseButton::Left, {
+                                let f = tab.focus.clone();
+                                move |_, window, _cx| {
+                                    window.focus(&f);
+                                }
+                            })
+                            .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _w, cx| {
+                                this.terminal_key(ev, cx);
+                            })),
+                    ),
                 )
                 .into_any_element()
             }
@@ -222,4 +226,3 @@ pub(crate) fn term_view(
             .into_any_element()
     })
 }
-

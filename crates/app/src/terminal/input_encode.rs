@@ -1,19 +1,16 @@
 //! 终端键盘/IME → PTY 字节编码：keystroke_to_pty 及辅助、bracketed
 //! paste、IME commit；TermInput（gpui InputHandler）桥。
 
-
 use std::sync::Arc;
 
+use super::*;
 use alacritty_terminal::event_loop::EventLoopSender;
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::index::{Column, Line};
 use alacritty_terminal::sync::FairMutex;
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::{Term, TermMode};
-use gpui::{
-    px, Keystroke, Pixels, Point, SharedString, UTF16Selection, WeakEntity, Window,
-};
-use super::*;
+use gpui::{Keystroke, Pixels, Point, SharedString, UTF16Selection, WeakEntity, Window, px};
 
 /// Translate a gpui keystroke into PTY bytes. Returns None when the keystroke
 /// is not terminal input (e.g. plain modifier presses are filtered upstream).
@@ -40,7 +37,11 @@ pub fn keystroke_to_pty(k: &Keystroke, mode: &TermMode) -> Option<Vec<u8>> {
     match key {
         "enter" => return Some(between(alt_prefix, b"\r")),
         "tab" => {
-            return Some(if shift { b"\x1b[Z".to_vec() } else { b"\t".to_vec() })
+            return Some(if shift {
+                b"\x1b[Z".to_vec()
+            } else {
+                b"\t".to_vec()
+            });
         }
         "backspace" => return Some(between(alt_prefix, b"\x7f")),
         "escape" => return Some(between(alt_prefix, b"\x1b")),
@@ -231,8 +232,7 @@ impl TermInput {
         let content = term.renderable_content();
         let row = content.cursor.point.line.0 + offset;
         let rows = term.grid().screen_lines();
-        (row >= 0 && (row as usize) < rows)
-            .then(|| (content.cursor.point.column.0, row as usize))
+        (row >= 0 && (row as usize) < rows).then(|| (content.cursor.point.column.0, row as usize))
     }
 
     /// Text left of the grid cursor on its row (snapshot rules: wide spacers
@@ -248,7 +248,11 @@ impl TermInput {
             if cell.flags.contains(Flags::WIDE_CHAR_SPACER) {
                 continue;
             }
-            let mut ch = if cell.flags.contains(Flags::HIDDEN) { ' ' } else { cell.c };
+            let mut ch = if cell.flags.contains(Flags::HIDDEN) {
+                ' '
+            } else {
+                cell.c
+            };
             if ch == '\0' || ch == '\n' || ch == '\r' {
                 ch = ' ';
             }
@@ -285,7 +289,10 @@ impl gpui::InputHandler for TermInput {
         _cx: &mut gpui::App,
     ) -> Option<UTF16Selection> {
         // caret = empty selection at a virtual document origin
-        Some(UTF16Selection { range: 0..0, reversed: false })
+        Some(UTF16Selection {
+            range: 0..0,
+            reversed: false,
+        })
     }
 
     fn marked_text_range(
@@ -324,7 +331,14 @@ impl gpui::InputHandler for TermInput {
         _window: &mut Window,
         cx: &mut gpui::App,
     ) {
-        self.set_preedit(if new_text.is_empty() { None } else { Some(new_text.to_string()) }, cx);
+        self.set_preedit(
+            if new_text.is_empty() {
+                None
+            } else {
+                Some(new_text.to_string())
+            },
+            cx,
+        );
     }
 
     fn unmark_text(&mut self, _window: &mut Window, cx: &mut gpui::App) {

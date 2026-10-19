@@ -7,11 +7,11 @@
 use gpui::prelude::*;
 use gpui::{MouseButton, SharedString, div, px, rgb};
 
-use crate::i18n::tr;
-use crate::appearance::theme;
-use crate::ui::icon;
 use crate::Chat;
+use crate::appearance::theme;
+use crate::i18n::tr;
 use crate::session::fork::ForkAnchor;
+use crate::ui::icon;
 
 /// 用户消息下的操作栏（复制 / 编辑 + 时间戳）。
 ///
@@ -107,20 +107,20 @@ pub(crate) fn user_action_bar(
             t.text_dim,
             false,
         )
-            .on_mouse_down(MouseButton::Left, move |_, window, cx| {
-                let _ = weak_edit.update(cx, |c, cx| {
-                    let text = c
-                        .rt()
-                        .read(cx)
-                        .messages
-                        .get(msg_ix)
-                        .map(|m| m.plain_text().into_owned())
-                        .unwrap_or_default();
-                    c.with_active_editor(cx, |r, _| r.input = text);
-                    let focus = c.layout.focus.clone();
-                    window.focus(&focus);
-                });
-            }),
+        .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+            let _ = weak_edit.update(cx, |c, cx| {
+                let text = c
+                    .rt()
+                    .read(cx)
+                    .messages
+                    .get(msg_ix)
+                    .map(|m| m.plain_text().into_owned())
+                    .unwrap_or_default();
+                c.with_active_editor(cx, |r, _| r.input = text);
+                let focus = c.layout.focus.clone();
+                window.focus(&focus);
+            });
+        }),
     );
     // 操作栏（主界面UI设计-2.html .msg-actions）：acts + .when 时间戳
     // 都在栏内；显影 = 状态驱动（row on_hover → Chat.bar_hover，
@@ -132,12 +132,9 @@ pub(crate) fn user_action_bar(
         .opacity(if bar_revealed || copied { 1. } else { 0. })
         .child(actions);
     if let Some(ts) = ts {
-        actions_wrap = actions_wrap.child(
-            div()
-                .ml(px(4.))
-                .text_color(rgb(t.text_faint))
-                .child(SharedString::from(crate::services::format::fmt_msg_time(ts))),
-        );
+        actions_wrap = actions_wrap.child(div().ml(px(4.)).text_color(rgb(t.text_faint)).child(
+            SharedString::from(crate::services::format::fmt_msg_time(ts)),
+        ));
     }
     div()
         .flex()
@@ -147,7 +144,6 @@ pub(crate) fn user_action_bar(
         .pr(px(4.))
         .child(actions_wrap)
 }
-
 
 /// agent 轮操作栏（主界面UI设计-2.html `.as-stats`）：新分支 / 复制 +
 /// 用时 / 时间戳。
@@ -178,7 +174,11 @@ pub(crate) fn assistant_action_bar(
         .text_color(rgb(t.text_dim))
         // pi-web: `hovered || forking` —— 分支在飞时栏不许消失，否则
         // 「创建中…」提示连同 disabled 态一起看不见；复制反馈亮起同理
-        .opacity(if bar_revealed || forking || copied { 1. } else { 0. });
+        .opacity(if bar_revealed || forking || copied {
+            1.
+        } else {
+            0.
+        });
     if !turn_text.trim().is_empty() {
         let weak_copy = weak.clone();
         let copy_text = turn_text.to_string();
@@ -234,7 +234,9 @@ pub(crate) fn assistant_action_bar(
             bar = bar.child(
                 div()
                     .text_color(rgb(t.text_faint))
-                    .child(SharedString::from(crate::services::format::fmt_msg_time(ts))),
+                    .child(SharedString::from(crate::services::format::fmt_msg_time(
+                        ts,
+                    ))),
             );
         }
     }

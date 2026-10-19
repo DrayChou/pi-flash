@@ -10,7 +10,8 @@ fn main() {
     res.set_icon("assets/icon/pi-flash.ico");
     res.set("FileDescription", "pi-flash");
     res.set("ProductName", "pi-flash");
-    res.compile().expect("compile windows resource (brand icon)");
+    res.compile()
+        .expect("compile windows resource (brand icon)");
 }
 
 #[cfg(not(windows))]

@@ -6,13 +6,15 @@
 //! 编排边界：文件打开/缓冲区/file_cache 状态仍在 Chat（main.rs），本文件
 //! 只管视图渲染与交互；md 所见即所得见 `super::markdown::wysiwyg`。
 
-use gpui::{Context, Focusable, MouseButton, SharedString, div, img, prelude::*, px, relative, rgb};
+use gpui::{
+    Context, Focusable, MouseButton, SharedString, div, img, prelude::*, px, relative, rgb,
+};
 
 use super::kind::{BodyCtx, FileKind, ToolButton, kind_of};
 use crate::Chat;
+use crate::appearance::theme::theme as T;
 use crate::content::empty_hint;
 use crate::i18n::tr;
-use crate::appearance::theme::theme as T;
 use crate::ui::icon;
 use std::path::Path;
 
@@ -31,7 +33,8 @@ fn ensure_file_editor(
         return;
     };
     if chat
-        .ws.file_cache
+        .ws
+        .file_cache
         .get(path)
         .map(|f| f.editor.is_some())
         .unwrap_or(true)
@@ -39,7 +42,8 @@ fn ensure_file_editor(
         return;
     }
     let content = chat
-        .ws.file_cache
+        .ws
+        .file_cache
         .get(path)
         .map(|f| f.content.clone())
         .unwrap_or_default();
@@ -53,35 +57,41 @@ fn ensure_file_editor(
         // 025 插图（P0）：handler 配了粘贴钩子才挂（目前仅 md）——非 md
         // 自动不做（文本粘贴照旧）。落盘/引用串见 markdown::attachments。
         if cfg.image_paste {
-            st.on_image_paste = Some(
-                crate::editor::markdown::attachments::image_paste_hook(path.to_path_buf()),
-            );
+            st.on_image_paste = Some(crate::editor::markdown::attachments::image_paste_hook(
+                path.to_path_buf(),
+            ));
         }
     });
-    cx.subscribe(&ed, |this, ed, ev: &gpui_component::input::InputEvent, cx| {
-        if matches!(ev, gpui_component::input::InputEvent::Change) {
-            let src = ed.entity_id();
-            if let Some((path, ft)) = this.ws.file_cache.iter_mut().find(|(_, f)| {
-                f.editor.as_ref().map(|e| e.entity_id()) == Some(src)
-            }) {
-                // Rope 与 String 直接比较（ropey PartialEq，零分配 memcmp）；
-                // 原先 value().to_string() 每次编辑都全文物化一遍（4.6MB 文件
-                // 每次按键 ~8ms + 一次全文分配）。
-                let dirty = *ed.read(cx).text() != ft.content;
-                if dirty {
-                    ft.last_edit = Some(std::time::Instant::now());
-                }
-                if ft.dirty != dirty {
-                    ft.dirty = dirty;
-                    cx.notify();
-                }
-                if dirty {
-                    let p = path.clone();
-                    this.autosave_later(p, cx);
+    cx.subscribe(
+        &ed,
+        |this, ed, ev: &gpui_component::input::InputEvent, cx| {
+            if matches!(ev, gpui_component::input::InputEvent::Change) {
+                let src = ed.entity_id();
+                if let Some((path, ft)) = this
+                    .ws
+                    .file_cache
+                    .iter_mut()
+                    .find(|(_, f)| f.editor.as_ref().map(|e| e.entity_id()) == Some(src))
+                {
+                    // Rope 与 String 直接比较（ropey PartialEq，零分配 memcmp）；
+                    // 原先 value().to_string() 每次编辑都全文物化一遍（4.6MB 文件
+                    // 每次按键 ~8ms + 一次全文分配）。
+                    let dirty = *ed.read(cx).text() != ft.content;
+                    if dirty {
+                        ft.last_edit = Some(std::time::Instant::now());
+                    }
+                    if ft.dirty != dirty {
+                        ft.dirty = dirty;
+                        cx.notify();
+                    }
+                    if dirty {
+                        let p = path.clone();
+                        this.autosave_later(p, cx);
+                    }
                 }
             }
-        }
-    })
+        },
+    )
     .detach();
     if let Some(ft) = chat.ws.file_cache.get_mut(path) {
         ft.editor = Some(ed);
@@ -99,7 +109,8 @@ fn consume_file_reload(
     cx: &mut Context<Chat>,
 ) {
     let pending = chat
-        .ws.file_cache
+        .ws
+        .file_cache
         .get(path)
         .map(|f| f.reload_pending)
         .unwrap_or(false);
@@ -107,7 +118,8 @@ fn consume_file_reload(
         return;
     }
     let content = chat
-        .ws.file_cache
+        .ws
+        .file_cache
         .get(path)
         .map(|f| f.content.clone())
         .unwrap_or_default();
@@ -130,18 +142,15 @@ pub(crate) fn file_view(
         return empty_hint(tr("file_view.pick_in_tree"), t);
     };
     let conflict = chat
-        .ws.file_cache
+        .ws
+        .file_cache
         .get(&path)
         .map(|f| f.conflict.clone())
         .unwrap_or(None);
     // 非文本 tab（open_file_tab 开的：图片查看 / 「无法打开」灰屏）：无缓冲
     // 无编辑器——懒创建/重载灌入/聚焦三件套全部跳过
     let binary = chat.ws.file_cache.get(&path).is_some_and(|f| f.binary);
-    let tab_image = chat
-        .ws
-        .file_cache
-        .get(&path)
-        .and_then(|f| f.image);
+    let tab_image = chat.ws.file_cache.get(&path).and_then(|f| f.image);
 
     // 渲染帧副作用区：编辑器懒创建 + 自动重载灌入（见两 fn 文档）
     if !binary {
@@ -220,7 +229,11 @@ pub(crate) fn breadcrumb_segments(
     let under_cwd = path.strip_prefix(cwd).is_ok();
     let rel = path.strip_prefix(cwd).unwrap_or(path);
     let mut segments: Vec<(SharedString, std::path::PathBuf)> = Vec::new();
-    let mut acc = if under_cwd { cwd.to_path_buf() } else { std::path::PathBuf::new() };
+    let mut acc = if under_cwd {
+        cwd.to_path_buf()
+    } else {
+        std::path::PathBuf::new()
+    };
     for c in rel.components() {
         if c == std::path::Component::RootDir
             && let Some((text, p)) = segments.last_mut()
@@ -235,7 +248,10 @@ pub(crate) fn breadcrumb_segments(
             continue;
         }
         acc.push(c.as_os_str());
-        segments.push((c.as_os_str().to_string_lossy().to_string().into(), acc.clone()));
+        segments.push((
+            c.as_os_str().to_string_lossy().to_string().into(),
+            acc.clone(),
+        ));
     }
     segments
 }
@@ -259,7 +275,10 @@ fn file_nav_bar(
     // `D:\` 是一个 crumb，此前拆成 `D:` 与 `\` 两段（且目录累积 acc 从 cwd
     // 拼起，盘符段后的兄弟菜单指向错误目录）。
     // 无项目态：无 cwd 相对化基准，退化为绝对路径段
-    let segments = breadcrumb_segments(chat.ws.cwd.as_deref().unwrap_or_else(|| Path::new("")), path);
+    let segments = breadcrumb_segments(
+        chat.ws.cwd.as_deref().unwrap_or_else(|| Path::new("")),
+        path,
+    );
     let mut crumbs = div().min_w_0().flex().items_center().overflow_hidden();
     for (i, (seg_text, dir)) in segments.iter().enumerate() {
         let last = i + 1 == segments.len();
@@ -279,39 +298,37 @@ fn file_nav_bar(
             let dd = chat.ws.crumb_dd.clone();
             let open = chat.ws.crumb_menu_dir.as_ref() == Some(&dir);
             let seg_dir = dir.clone();
-            crumbs = crumbs.child(
-                crate::ui::dropdown(
-                    SharedString::from(format!("fv-crumb-{i}")),
-                    &dd,
-                    open,
-                    move |_w, cx| {
-                        let _ = weak_crumb.update(cx, |c, cx| {
-                            // 再点同段 = 收起；点别段 = 换目标
-                            c.ws.crumb_menu_dir = if c.ws.crumb_menu_dir.as_ref() == Some(&dir) {
-                                None
-                            } else {
-                                Some(dir.clone())
-                            };
-                            cx.notify();
-                        });
-                    },
-                    move |_w, cx| {
-                        let _ = weak_off.update(cx, |c, cx| {
-                            c.ws.crumb_menu_dir = None;
-                            cx.notify();
-                        });
-                    },
-                    div()
-                        .text_size(crate::appearance::ui_size(11.5))
-                        .text_color(rgb(t.text_muted))
-                        .cursor_pointer()
-                        .hover(|s| s.text_color(rgb(t.text)))
-                        .whitespace_nowrap()
-                        .child(seg_text)
-                        .into_any_element(),
-                    move || crumb_siblings_menu(weak, &seg_dir),
-                ),
-            );
+            crumbs = crumbs.child(crate::ui::dropdown(
+                SharedString::from(format!("fv-crumb-{i}")),
+                &dd,
+                open,
+                move |_w, cx| {
+                    let _ = weak_crumb.update(cx, |c, cx| {
+                        // 再点同段 = 收起；点别段 = 换目标
+                        c.ws.crumb_menu_dir = if c.ws.crumb_menu_dir.as_ref() == Some(&dir) {
+                            None
+                        } else {
+                            Some(dir.clone())
+                        };
+                        cx.notify();
+                    });
+                },
+                move |_w, cx| {
+                    let _ = weak_off.update(cx, |c, cx| {
+                        c.ws.crumb_menu_dir = None;
+                        cx.notify();
+                    });
+                },
+                div()
+                    .text_size(crate::appearance::ui_size(11.5))
+                    .text_color(rgb(t.text_muted))
+                    .cursor_pointer()
+                    .hover(|s| s.text_color(rgb(t.text)))
+                    .whitespace_nowrap()
+                    .child(seg_text)
+                    .into_any_element(),
+                move || crumb_siblings_menu(weak, &seg_dir),
+            ));
             crumbs = crumbs.child(
                 div()
                     .px(px(3.))
@@ -361,7 +378,11 @@ fn file_nav_bar(
                 .child(div().flex_1())
                 .child(right),
         );
-    if search_open && let Some(panel) = ed_for_focus.as_ref().and_then(|ed| ed.read(cx).search_panel_element()) {
+    if search_open
+        && let Some(panel) = ed_for_focus
+            .as_ref()
+            .and_then(|ed| ed.read(cx).search_panel_element())
+    {
         bar = bar.child(panel);
     }
     bar.into_any_element()
@@ -551,10 +572,14 @@ fn conflict_banner(
         .child(SharedString::from(msg.to_string()))
         .child(div().flex_1());
     if !reload_label.is_empty() {
-        row = row.child(banner_btn("fv-banner-reload", reload_label, move |_, _, cx| {
-            let p = p_reload.clone();
-            let _ = weak_reload.update(cx, |c, cx| c.file_reload_from_disk(&p, cx));
-        }));
+        row = row.child(banner_btn(
+            "fv-banner-reload",
+            reload_label,
+            move |_, _, cx| {
+                let p = p_reload.clone();
+                let _ = weak_reload.update(cx, |c, cx| c.file_reload_from_disk(&p, cx));
+            },
+        ));
     }
     row = row.child(banner_btn("fv-banner-keep", keep_label, move |_, _, cx| {
         let p = p_keep.clone();
@@ -599,7 +624,12 @@ fn file_editor_body(
     let source_mode = chat.ws.file_cache.get(path).is_some_and(|f| f.md_source);
     kind.render_body(
         cx,
-        BodyCtx { chat, weak, path, source_mode },
+        BodyCtx {
+            chat,
+            weak,
+            path,
+            source_mode,
+        },
     )
 }
 

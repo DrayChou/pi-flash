@@ -120,16 +120,12 @@ impl IgnoreStack {
                 // .unwrap()，非前缀路径当场 panic（用户 2026-10-17 报崩：
                 // 切项目时 Pin 清单没跟着换 → 崩在 flatten_pins）。
                 if !abs_path.starts_with(abs_base_path) {
-                    return IgnoreStack {
-                        top: prev.clone(),
-                    }
-                    .is_abs_path_ignored(abs_path, is_dir);
+                    return IgnoreStack { top: prev.clone() }.is_abs_path_ignored(abs_path, is_dir);
                 }
                 match ignore.matched(abs_path.strip_prefix(abs_base_path).unwrap(), is_dir) {
-                ignore::Match::None => IgnoreStack {
-                        top: prev.clone(),
+                    ignore::Match::None => {
+                        IgnoreStack { top: prev.clone() }.is_abs_path_ignored(abs_path, is_dir)
                     }
-                    .is_abs_path_ignored(abs_path, is_dir),
                     ignore::Match::Ignore(_) => true,
                     ignore::Match::Whitelist(_) => false,
                 }
@@ -203,7 +199,16 @@ pub fn flatten(cwd: &Path, expanded: &HashSet<PathBuf>, git_files: &[GitFile]) -
 
     let mut out = Vec::new();
     if expanded.contains(cwd) {
-        walk(cwd, 0, expanded, &git_map, &changed_dirs, &stack, false, &mut out);
+        walk(
+            cwd,
+            0,
+            expanded,
+            &git_map,
+            &changed_dirs,
+            &stack,
+            false,
+            &mut out,
+        );
     }
     out
 }
@@ -259,7 +264,8 @@ pub fn flatten_pins(
             .file_name()
             .map(|n| n.to_string_lossy().to_lowercase())
             .unwrap_or_else(|| b.to_string_lossy().to_lowercase());
-        ka.cmp(&kb).then_with(|| a.to_string_lossy().cmp(&b.to_string_lossy()))
+        ka.cmp(&kb)
+            .then_with(|| a.to_string_lossy().cmp(&b.to_string_lossy()))
     });
 
     let mut out = Vec::new();
@@ -396,7 +402,12 @@ fn walk(
     // + Default；sort_mode 设置后续再接）。par_sort 换 sort：单目录条目量级
     // 下差异可忽略，保持稳定序。
     entries.sort_by(|(pa, na, fa, _), (pb, nb, fb, _)| {
-        let ord = compare_entry_names((na, !*fa), (nb, !*fb), SortMode::DirectoriesFirst, SortOrder::Default);
+        let ord = compare_entry_names(
+            (na, !*fa),
+            (nb, !*fb),
+            SortMode::DirectoriesFirst,
+            SortOrder::Default,
+        );
         if ord == Ordering::Equal {
             pa.cmp(pb)
         } else {
@@ -505,10 +516,8 @@ mod tests {
     struct TempTree(PathBuf);
     impl TempTree {
         fn new(tag: &str) -> Self {
-            let base = std::env::temp_dir().join(format!(
-                "piflash-tree-{tag}-{}",
-                std::process::id()
-            ));
+            let base =
+                std::env::temp_dir().join(format!("piflash-tree-{tag}-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&base);
             std::fs::create_dir_all(&base).unwrap();
             Self(base)
@@ -598,7 +607,10 @@ mod tests {
         assert!(!keep.ignored, "whitelist survives as normal");
         assert!(!by_name("src").ignored, "normal dir unmarked");
         // v61 起 dot 文件可见（Zed parity）：.gitignore 本身也是普通行
-        assert!(!by_name(".gitignore").ignored, "dot file shown as normal row");
+        assert!(
+            !by_name(".gitignore").ignored,
+            "dot file shown as normal row"
+        );
         // src/ 未展开不显示子文件，但目录本身在
         let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
         assert_eq!(
@@ -642,7 +654,10 @@ mod tests {
         );
         assert!(rows[0].ignored, "gitignored dot dir shown dimmed");
         assert!(rows[1].ignored, "ignored dir children inherit the mark");
-        assert!(!rows[2].ignored && !rows[3].ignored, "plain dot files normal");
+        assert!(
+            !rows[2].ignored && !rows[3].ignored,
+            "plain dot files normal"
+        );
         // Zed 默认 file_scan_exclusions：.git / .DS_Store 整个不进树
         assert!(names.iter().all(|n| *n != ".git" && *n != ".DS_Store"));
     }
@@ -715,16 +730,26 @@ mod tests {
         let r = t.file("root.txt");
         let u = t.file("src/new.txt");
         let git_files = vec![
-            GitFile { path: u, status: GitStatus::Untracked, staged: false },
-            GitFile { path: r, status: GitStatus::Modified, staged: false },
-            GitFile { path: m, status: GitStatus::Modified, staged: false },
+            GitFile {
+                path: u,
+                status: GitStatus::Untracked,
+                staged: false,
+            },
+            GitFile {
+                path: r,
+                status: GitStatus::Modified,
+                staged: false,
+            },
+            GitFile {
+                path: m,
+                status: GitStatus::Modified,
+                staged: false,
+            },
         ];
         let rows = flatten_changes(&t.0, &git_files);
         // 扁平（depth 恒 0）+ 路径字典序 + '/' 分隔相对路径 + 徽标回填
-        let rows: Vec<(String, usize, Option<GitStatus>)> = rows
-            .into_iter()
-            .map(|r| (r.name, r.depth, r.git))
-            .collect();
+        let rows: Vec<(String, usize, Option<GitStatus>)> =
+            rows.into_iter().map(|r| (r.name, r.depth, r.git)).collect();
         assert_eq!(
             rows,
             vec![
@@ -762,7 +787,14 @@ mod tests {
         let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
         assert_eq!(
             names,
-            vec!["beta.txt", "docs", ".gitignore", "draft.md", "guide.md", "src"]
+            vec![
+                "beta.txt",
+                "docs",
+                ".gitignore",
+                "draft.md",
+                "guide.md",
+                "src"
+            ]
         );
         let docs = &rows[1];
         assert!(docs.is_dir && docs.expanded && docs.depth == 0);

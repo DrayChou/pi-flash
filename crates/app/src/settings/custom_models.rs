@@ -14,8 +14,14 @@ impl Chat {
         let model = ix
             .and_then(|ix| entry.get("models").and_then(|m| m.get(ix)).cloned())
             .unwrap_or_else(|| serde_json::json!({}));
-        let api = entry.get("api").and_then(|v| v.as_str()).unwrap_or("openai-completions");
-        let reasoning = model.get("reasoning").and_then(|v| v.as_bool()).unwrap_or(false);
+        let api = entry
+            .get("api")
+            .and_then(|v| v.as_str())
+            .unwrap_or("openai-completions");
+        let reasoning = model
+            .get("reasoning")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         let get_str = |v: &serde_json::Value, k: &str| {
             v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string()
         };
@@ -25,12 +31,21 @@ impl Chat {
                 s.error = None;
                 s.mj_api = mj_api_ix(api);
                 s.mj_reasoning = reasoning;
-                s.mj_name.update(cx, |ti, cx| ti.set_value(name.clone(), cx));
-                s.mj_base.update(cx, |ti, cx| ti.set_value(get_str(&entry, "baseUrl"), cx));
-                s.mj_key.update(cx, |ti, cx| ti.set_value(get_str(&entry, "apiKey"), cx));
-                s.mj_id.update(cx, |ti, cx| ti.set_value(get_str(&model, "id"), cx));
-                s.mj_mname.update(cx, |ti, cx| ti.set_value(get_str(&model, "name"), cx));
-                let ctx = model.get("contextWindow").and_then(|v| v.as_u64()).map(|v| v.to_string()).unwrap_or_default();
+                s.mj_name
+                    .update(cx, |ti, cx| ti.set_value(name.clone(), cx));
+                s.mj_base
+                    .update(cx, |ti, cx| ti.set_value(get_str(&entry, "baseUrl"), cx));
+                s.mj_key
+                    .update(cx, |ti, cx| ti.set_value(get_str(&entry, "apiKey"), cx));
+                s.mj_id
+                    .update(cx, |ti, cx| ti.set_value(get_str(&model, "id"), cx));
+                s.mj_mname
+                    .update(cx, |ti, cx| ti.set_value(get_str(&model, "name"), cx));
+                let ctx = model
+                    .get("contextWindow")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v.to_string())
+                    .unwrap_or_default();
                 s.mj_ctx.update(cx, |ti, cx| ti.set_value(ctx, cx));
                 cx.notify();
             });
@@ -46,7 +61,9 @@ impl Chat {
 
     /// 把编辑器字段应用进缓冲并落盘（provider 名称改动走重命名）。
     pub(crate) fn mj_apply_provider(&mut self, old_name: String, cx: &mut Context<Self>) {
-        let Some(st) = self.dlg.settings.clone() else { return };
+        let Some(st) = self.dlg.settings.clone() else {
+            return;
+        };
         let (name, base, key, api) = {
             let s = st.read(cx);
             (
@@ -68,11 +85,19 @@ impl Chat {
         // 库不可用降级明文
         self.mj_store_key(&mut entry, &name, &key, cx);
         if name != old_name {
-            if let Err(e) = pi_link::models_json::rename_provider(&mut self.cfg.mc_models_json, &old_name, &name) {
+            if let Err(e) = pi_link::models_json::rename_provider(
+                &mut self.cfg.mc_models_json,
+                &old_name,
+                &name,
+            ) {
                 return self.mc_set_error(&e, cx);
             }
             // 凭据库条目跟名搬家（无旧条目则静默跳过）
-            pi_link::pf_providers::rename_provider_key(&old_name, &name, &pi_link::credentials::KeyringVault);
+            pi_link::pf_providers::rename_provider_key(
+                &old_name,
+                &name,
+                &pi_link::credentials::KeyringVault,
+            );
         }
         pi_link::models_json::upsert_provider(&mut self.cfg.mc_models_json, &name, entry);
         self.mj_flush(cx);
@@ -88,8 +113,8 @@ impl Chat {
     pub(crate) fn mj_delete_provider(&mut self, name: String, cx: &mut Context<Self>) {
         pi_link::models_json::remove_provider(&mut self.cfg.mc_models_json, &name);
         // 凭据库条目一并清（幂等；条目不存在是 Ok）
-        let _ = pi_link::credentials::KeyringVault
-            .delete(&pi_link::credentials::env_var_name(&name));
+        let _ =
+            pi_link::credentials::KeyringVault.delete(&pi_link::credentials::env_var_name(&name));
         self.mj_flush(cx);
         if let Some(st) = self.dlg.settings.clone() {
             let next = pi_link::models_json::providers(&self.cfg.mc_models_json)
@@ -114,7 +139,12 @@ impl Chat {
         cx: &mut Context<Self>,
     ) {
         if let Ok(Some(pi_link::credentials::StoreMode::File)) =
-            pi_link::pf_providers::set_provider_key(entry, name, key, &pi_link::credentials::KeyringVault)
+            pi_link::pf_providers::set_provider_key(
+                entry,
+                name,
+                key,
+                &pi_link::credentials::KeyringVault,
+            )
         {
             self.mc_set_error(tr("conflict.vault_unavailable"), cx);
         }
@@ -131,11 +161,18 @@ impl Chat {
     ) {
         self.mc_clear_error(cx);
         let name = name.trim().to_string();
-        if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        if name.is_empty()
+            || !name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
             return self.mc_set_error(tr("custom_models.name_invalid"), cx);
         }
         if pi_link::models_json::provider_entry(&self.cfg.mc_models_json, &name).is_some() {
-            return self.mc_set_error(&crate::i18n::tf("custom_models.exists", &[("name", name)]), cx);
+            return self.mc_set_error(
+                &crate::i18n::tf("custom_models.exists", &[("name", name)]),
+                cx,
+            );
         }
         let mut entry = serde_json::json!({ "api": mj_api_name(api) });
         set_opt_str(&mut entry, "baseUrl", base.trim());
@@ -153,7 +190,9 @@ impl Chat {
     }
 
     pub(crate) fn mj_apply_model(&mut self, provider: String, ix: usize, cx: &mut Context<Self>) {
-        let Some(st) = self.dlg.settings.clone() else { return };
+        let Some(st) = self.dlg.settings.clone() else {
+            return;
+        };
         let (id, mname, ctx, reasoning) = {
             let s = st.read(cx);
             (
@@ -188,7 +227,9 @@ impl Chat {
     /// Skills toggle: write `disable-model-invocation` into SKILL.md
     /// (pi-web PATCH /api/skills parity).
     pub(crate) fn mc_cli_op(&mut self, args: Vec<String>, done: String, cx: &mut Context<Self>) {
-        let Some(tx) = self.cfg.op_tx.clone() else { return };
+        let Some(tx) = self.cfg.op_tx.clone() else {
+            return;
+        };
 
         // 无项目态：pi CLI 安装/卸载是全局操作，进程 cwd 落用户主目录
         //（只是一次性子进程的工作目录，不是项目语义，不入任何记忆）
@@ -257,10 +298,12 @@ fn set_opt_str(obj: &mut serde_json::Value, key: &str, value: &str) {
     if value.is_empty() {
         map.remove(key);
     } else {
-        map.insert(key.to_string(), serde_json::Value::String(value.to_string()));
+        map.insert(
+            key.to_string(),
+            serde_json::Value::String(value.to_string()),
+        );
     }
 }
-
 
 pub(crate) fn mj_provider_editor(
     chat: &Chat,
@@ -285,14 +328,30 @@ pub(crate) fn mj_provider_editor(
                 .min_h(px(28.))
                 .child(section_title(&tr("custom_models.configure")))
                 .child(div().flex_1())
-                .child(config_button("mj-apply", weak, &tr("action.save"), Btn::Primary, true, false, {
-                    let n = name.to_string();
-                    move |c, cx| c.mj_apply_provider(n.clone(), cx)
-                }))
-                .child(config_button("mj-del", weak, &tr("action.remove"), Btn::Danger, true, false, {
-                    let n = name.to_string();
-                    move |c, cx| c.mj_delete_provider(n.clone(), cx)
-                })),
+                .child(config_button(
+                    "mj-apply",
+                    weak,
+                    &tr("action.save"),
+                    Btn::Primary,
+                    true,
+                    false,
+                    {
+                        let n = name.to_string();
+                        move |c, cx| c.mj_apply_provider(n.clone(), cx)
+                    },
+                ))
+                .child(config_button(
+                    "mj-del",
+                    weak,
+                    &tr("action.remove"),
+                    Btn::Danger,
+                    true,
+                    false,
+                    {
+                        let n = name.to_string();
+                        move |c, cx| c.mj_delete_provider(n.clone(), cx)
+                    },
+                )),
         )
         .children(error.as_ref().map(|e| error_note(e)))
         .child(field(
@@ -307,7 +366,10 @@ pub(crate) fn mj_provider_editor(
             tr("custom_models.api_key"),
             div().w(px(420.)).child(mj_key.clone()),
         ))
-        .child(field(tr("custom_models.api"), api_options_row(weak, mj_api)))
+        .child(field(
+            tr("custom_models.api"),
+            api_options_row(weak, mj_api),
+        ))
         .child(note(tr("custom_models.base_url_hint")));
 
     // 模型清单（原侧栏嵌套行内收进来；点行进模型编辑器）
@@ -317,7 +379,10 @@ pub(crate) fn mj_provider_editor(
     let mut list = div().flex().flex_col();
     for (ix, m) in models.iter().enumerate() {
         let id = m.get("id").and_then(|v| v.as_str()).unwrap_or("");
-        let reasoning = m.get("reasoning").and_then(|v| v.as_bool()).unwrap_or(false);
+        let reasoning = m
+            .get("reasoning")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         let weak_row = weak.clone();
         let key = format!("mj:m:{name}:{ix}");
         list = list.child(
@@ -331,7 +396,11 @@ pub(crate) fn mj_provider_editor(
                 .gap(px(8.))
                 .text_size(crate::appearance::ui_size(12.))
                 .cursor_pointer()
-                .text_color(rgb(if id.is_empty() { t.text_dim } else { t.text_muted }))
+                .text_color(rgb(if id.is_empty() {
+                    t.text_dim
+                } else {
+                    t.text_muted
+                }))
                 .hover(|s| s.bg(rgb(t.bg_hover)))
                 .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                     let _ = weak_row.update(cx, |c, cx| c.mj_select(key.clone(), cx));
@@ -343,9 +412,11 @@ pub(crate) fn mj_provider_editor(
                         .overflow_hidden()
                         .whitespace_nowrap()
                         .text_ellipsis()
-                        .child(SharedString::from(
-                            if id.is_empty() { tr("custom_models.new_model").to_string() } else { id.to_string() },
-                        )),
+                        .child(SharedString::from(if id.is_empty() {
+                            tr("custom_models.new_model").to_string()
+                        } else {
+                            id.to_string()
+                        })),
                 )
                 .children(reasoning.then(|| {
                     div()
@@ -417,14 +488,30 @@ pub(crate) fn mj_model_editor(
                         .child(SharedString::from(name.to_string())),
                 )
                 .child(div().flex_1())
-                .child(config_button("mj-mapply", weak, &tr("action.save"), Btn::Primary, true, false, {
-                    let n = name.to_string();
-                    move |c, cx| c.mj_apply_model(n.clone(), ix, cx)
-                }))
-                .child(config_button("mj-mdel", weak, &tr("action.remove"), Btn::Danger, true, false, {
-                    let n = name.to_string();
-                    move |c, cx| c.mj_delete_model(n.clone(), ix, cx)
-                })),
+                .child(config_button(
+                    "mj-mapply",
+                    weak,
+                    &tr("action.save"),
+                    Btn::Primary,
+                    true,
+                    false,
+                    {
+                        let n = name.to_string();
+                        move |c, cx| c.mj_apply_model(n.clone(), ix, cx)
+                    },
+                ))
+                .child(config_button(
+                    "mj-mdel",
+                    weak,
+                    &tr("action.remove"),
+                    Btn::Danger,
+                    true,
+                    false,
+                    {
+                        let n = name.to_string();
+                        move |c, cx| c.mj_delete_model(n.clone(), ix, cx)
+                    },
+                )),
         )
         .children(error.as_ref().map(|e| error_note(e)))
         .child(field(
@@ -446,14 +533,20 @@ pub(crate) fn mj_model_editor(
                         .text_color(rgb(t.text_muted))
                         .child(tr("custom_models.reasoning_badge")),
                 )
-                .child(config_switch("mj-reasoning", weak, mj_reasoning, false, |c, cx| {
-                    if let Some(st) = c.dlg.settings.clone() {
-                        st.update(cx, |s, cx| {
-                            s.mj_reasoning = !s.mj_reasoning;
-                            cx.notify();
-                        });
-                    }
-                })),
+                .child(config_switch(
+                    "mj-reasoning",
+                    weak,
+                    mj_reasoning,
+                    false,
+                    |c, cx| {
+                        if let Some(st) = c.dlg.settings.clone() {
+                            st.update(cx, |s, cx| {
+                                s.mj_reasoning = !s.mj_reasoning;
+                                cx.notify();
+                            });
+                        }
+                    },
+                )),
         )
         .child(field(
             &tr("custom_models.field_context"),
@@ -476,28 +569,43 @@ pub(crate) fn mj_add_panel(
     detail_shell("mc-detail")
         .p(px(15.))
         .child(section_title(&tr("custom_models.add")))
-        .child(field(&tr("field.name"), div().w(px(320.)).child(mj_name.clone())))
-        .child(field(tr("custom_models.base_url"), div().w(px(420.)).child(mj_base.clone())))
-        .child(field(tr("custom_models.api_key"), div().w(px(420.)).child(mj_key.clone())))
-        .child(field(tr("custom_models.api"), api_options_row(weak, mj_api)))
+        .child(field(
+            &tr("field.name"),
+            div().w(px(320.)).child(mj_name.clone()),
+        ))
+        .child(field(
+            tr("custom_models.base_url"),
+            div().w(px(420.)).child(mj_base.clone()),
+        ))
+        .child(field(
+            tr("custom_models.api_key"),
+            div().w(px(420.)).child(mj_key.clone()),
+        ))
+        .child(field(
+            tr("custom_models.api"),
+            api_options_row(weak, mj_api),
+        ))
         .child(note(tr("custom_models.endpoint_hint")))
-        .child(
-            div()
-                .pt(px(4.))
-                .child(config_button("mj-create", weak, &tr("action.create"), Btn::Primary, false, false, |c, cx| {
-                    let Some(st) = c.dlg.settings.clone() else { return };
-                    let (name, base, key, api) = st.read(cx).editor_snapshot(cx);
-                    c.mj_add_provider(name, base, key, api, cx);
-                })),
-        )
+        .child(div().pt(px(4.)).child(config_button(
+            "mj-create",
+            weak,
+            &tr("action.create"),
+            Btn::Primary,
+            false,
+            false,
+            |c, cx| {
+                let Some(st) = c.dlg.settings.clone() else {
+                    return;
+                };
+                let (name, base, key, api) = st.read(cx).editor_snapshot(cx);
+                c.mj_add_provider(name, base, key, api, cx);
+            },
+        )))
         .into_any_element()
 }
 
 /// API 四选一按钮排（openai-completions / responses / anthropic / google）。
-pub(crate) fn api_options_row(
-    weak: &gpui::WeakEntity<Chat>,
-    selected: u8,
-) -> gpui::AnyElement {
+pub(crate) fn api_options_row(weak: &gpui::WeakEntity<Chat>, selected: u8) -> gpui::AnyElement {
     let t = T();
     const OPTIONS: [(u8, &str); 4] = [
         (0, "openai-completions"),

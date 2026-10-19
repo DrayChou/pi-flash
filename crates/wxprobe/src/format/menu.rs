@@ -16,7 +16,7 @@
 //! 权限选项的**编号不带 0 取消**：`permission_request` 的 `SelectionPrompt`
 //! 硬编码 `showCancel: false`（botsService.ts:4021），只有通用选择菜单才有 0。
 
-use super::messages::{t, Lang};
+use super::messages::{Lang, t};
 use super::permission::Scope;
 use super::reply::contains_any_word;
 
@@ -146,7 +146,9 @@ impl DisplayKind {
 pub fn display_kind(option_id: &str, kind: &str, name: &str) -> DisplayKind {
     let text = format!("{option_id} {kind} {name}").to_lowercase();
     let is_always = contains_any_word(&text, &["always", "persistent", "permanent", "remember"])
-        || ["始终", "永久", "记住", "不再询问"].iter().any(|w| text.contains(w));
+        || ["始终", "永久", "记住", "不再询问"]
+            .iter()
+            .any(|w| text.contains(w));
     let is_allow = contains_any_word(&text, &["allow", "approve", "accept", "yes"])
         || ["允许", "同意", "批准"].iter().any(|w| text.contains(w));
     let is_reject = contains_any_word(&text, &["deny", "reject", "decline", "no"])
@@ -216,7 +218,12 @@ pub fn option_label(lang: Lang, kind: DisplayKind, custom_name: &str) -> String 
 ///
 /// `Custom` 直接返回 `option.kind`；其余按 [`Scope`] 三分支（command / file /
 /// generic），**与 label 同样只有 en / 中文两档**。
-pub fn option_description(lang: Lang, kind: DisplayKind, scope: Scope, custom_kind: &str) -> String {
+pub fn option_description(
+    lang: Lang,
+    kind: DisplayKind,
+    scope: Scope,
+    custom_kind: &str,
+) -> String {
     if matches!(kind, DisplayKind::Custom) {
         return custom_kind.to_string();
     }
@@ -271,11 +278,7 @@ pub fn option_description(lang: Lang, kind: DisplayKind, scope: Scope, custom_ki
 pub fn option_index(text: &str) -> Option<usize> {
     let n = js_parse_int_10(text)?;
     let idx = n - 1;
-    if idx < 0 {
-        None
-    } else {
-        Some(idx as usize)
-    }
+    if idx < 0 { None } else { Some(idx as usize) }
 }
 
 /// JS `Number.parseInt(s, 10)` 的最小等价实现。
@@ -355,17 +358,29 @@ mod tests {
 
     #[test]
     fn display_kind_sniffs_english_and_chinese() {
-        assert_eq!(display_kind("allow", "once", "Run it"), DisplayKind::AllowOnce);
+        assert_eq!(
+            display_kind("allow", "once", "Run it"),
+            DisplayKind::AllowOnce
+        );
         assert_eq!(
             display_kind("always", "persistent", "allow"),
             DisplayKind::AllowAlways
         );
         assert_eq!(display_kind("deny", "once", "x"), DisplayKind::RejectOnce);
-        assert_eq!(display_kind("reject", "always", "x"), DisplayKind::RejectAlways);
-        assert_eq!(display_kind("custom", "override", "强制覆盖"), DisplayKind::Custom);
+        assert_eq!(
+            display_kind("reject", "always", "x"),
+            DisplayKind::RejectAlways
+        );
+        assert_eq!(
+            display_kind("custom", "override", "强制覆盖"),
+            DisplayKind::Custom
+        );
         // 中文关键词
         assert_eq!(display_kind("a", "b", "始终允许"), DisplayKind::AllowAlways);
-        assert_eq!(display_kind("a", "b", "这次先拒绝"), DisplayKind::RejectOnce);
+        assert_eq!(
+            display_kind("a", "b", "这次先拒绝"),
+            DisplayKind::RejectOnce
+        );
         assert_eq!(display_kind("a", "b", "允许"), DisplayKind::AllowOnce);
     }
 
@@ -425,11 +440,20 @@ mod tests {
             assert_eq!(option_label(lang, DisplayKind::AllowOnce, "n"), allow);
             assert_eq!(option_label(lang, DisplayKind::AllowAlways, "n"), always);
             assert_eq!(option_label(lang, DisplayKind::RejectOnce, "n"), deny);
-            assert_eq!(option_label(lang, DisplayKind::RejectAlways, "n"), always_deny);
+            assert_eq!(
+                option_label(lang, DisplayKind::RejectAlways, "n"),
+                always_deny
+            );
         }
         // Custom 不本地化
-        assert_eq!(option_label(Lang::En, DisplayKind::Custom, "My Option"), "My Option");
-        assert_eq!(option_label(Lang::ZhCn, DisplayKind::Custom, "自定"), "自定");
+        assert_eq!(
+            option_label(Lang::En, DisplayKind::Custom, "My Option"),
+            "My Option"
+        );
+        assert_eq!(
+            option_label(Lang::ZhCn, DisplayKind::Custom, "自定"),
+            "自定"
+        );
     }
 
     #[test]

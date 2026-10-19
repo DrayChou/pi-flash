@@ -1,0 +1,9 @@
+# rustfmt 配置（2026-10-20 起本仓采用「全仓基线 + 提交时自动格式化」）
+#
+# 策略见 docs/agents/engineering.md §格式化。要点：
+#   · 只对 crates/**（本仓源码）生效；vendor/gpui、vendor/gpui-component 是
+#     vendored 上游副本，永远不格式化（格式化会把补丁面炸开）。
+#   · i18n.rs 的 TABLE 用 #[rustfmt::skip] 局部豁免（表行必须一行一条）。
+#   · 提交时由 .githooks/pre-commit 自动对暂存的 .rs 跑 rustfmt → agent 无需
+#     记忆任何排版规则。
+edition = "2024"

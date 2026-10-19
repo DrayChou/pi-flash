@@ -173,7 +173,10 @@ fn dump() -> Result<RegistryDump, String> {
         return Err(if err.trim().is_empty() {
             format!("registry dump failed ({})", out.status)
         } else {
-            err.lines().last().unwrap_or("registry dump failed").to_string()
+            err.lines()
+                .last()
+                .unwrap_or("registry dump failed")
+                .to_string()
         });
     }
     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -242,10 +245,22 @@ mod tests {
         };
         d.providers.push(codex);
         let by_id = |id: &str| d.providers.iter().find(|p| p.id == id).unwrap();
-        assert_eq!(RegistryDump::oauth_display_name(by_id("openai-codex")), "ChatGPT Plus/Pro");
-        assert_eq!(RegistryDump::oauth_display_name(by_id("github-copilot")), "GitHub Copilot");
-        assert_eq!(RegistryDump::oauth_display_name(by_id("anthropic")), "Claude Pro/Max");
-        assert_eq!(RegistryDump::oauth_display_name(by_id("deepseek")), "DeepSeek");
+        assert_eq!(
+            RegistryDump::oauth_display_name(by_id("openai-codex")),
+            "ChatGPT Plus/Pro"
+        );
+        assert_eq!(
+            RegistryDump::oauth_display_name(by_id("github-copilot")),
+            "GitHub Copilot"
+        );
+        assert_eq!(
+            RegistryDump::oauth_display_name(by_id("anthropic")),
+            "Claude Pro/Max"
+        );
+        assert_eq!(
+            RegistryDump::oauth_display_name(by_id("deepseek")),
+            "DeepSeek"
+        );
     }
 
     #[test]

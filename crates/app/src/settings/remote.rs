@@ -49,7 +49,11 @@ fn qr_panel(chat: &mut Chat, weak: &gpui::WeakEntity<Chat>) -> Vec<gpui::AnyElem
         QrState::Ready { url } => {
             match wxprobe::qr::qr_block_text(&url, 2) {
                 Ok(art) => {
-                    out.push(mono_lines(art.lines().map(str::to_string).collect(), 14., false));
+                    out.push(mono_lines(
+                        art.lines().map(str::to_string).collect(),
+                        14.,
+                        false,
+                    ));
                     out.push(note(tr("remote.qr_hint")));
                 }
                 Err(e) => out.push(error_note(&e)),
@@ -108,11 +112,17 @@ pub(crate) fn mc_remote_view(chat: &mut Chat, weak: &gpui::WeakEntity<Chat>) -> 
     // ── 开关：关停即停线程（P4 验收项） ──────────────────────────────
     col = col.child(field(
         tr("remote.enable"),
-        config_switch("wx-enable", weak, chat.aux.remote.is_running(), false, |c, cx| {
-            let on = !c.aux.remote.is_running();
-            c.aux.remote.set_enabled(on);
-            cx.notify();
-        }),
+        config_switch(
+            "wx-enable",
+            weak,
+            chat.aux.remote.is_running(),
+            false,
+            |c, cx| {
+                let on = !c.aux.remote.is_running();
+                c.aux.remote.set_enabled(on);
+                cx.notify();
+            },
+        ),
     ));
     col = col.child(note(tr("remote.enable_hint")));
 
@@ -122,31 +132,32 @@ pub(crate) fn mc_remote_view(chat: &mut Chat, weak: &gpui::WeakEntity<Chat>) -> 
     let has_token = wxprobe::transport::require_token(&token).is_ok();
     let bot_id = wxprobe::state::get_str(&token, "bot_id").unwrap_or_default();
     let status_lines = vec![
-        format!(
-            "{}",
-            tr("remote.channel"),
-        )
-        .replace("{status}", match running {
-            true => tr("remote.status_running"),
-            false if has_token => tr("remote.status_stopped"),
-            _ => tr("remote.status_not_started"),
-        }),
-        format!(
-            "{}",
-            tr("remote.binding"),
-        )
-        .replace("{status}", match has_token {
-            true => {
-                if bot_id.is_empty() {
-                    tr("remote.bound_scanned")
-                } else {
-                    &bot_id
+        format!("{}", tr("remote.channel"),).replace(
+            "{status}",
+            match running {
+                true => tr("remote.status_running"),
+                false if has_token => tr("remote.status_stopped"),
+                _ => tr("remote.status_not_started"),
+            },
+        ),
+        format!("{}", tr("remote.binding"),).replace(
+            "{status}",
+            match has_token {
+                true => {
+                    if bot_id.is_empty() {
+                        tr("remote.bound_scanned")
+                    } else {
+                        &bot_id
+                    }
                 }
-            }
-            false => tr("remote.bound_not_scanned"),
-        }),
+                false => tr("remote.bound_not_scanned"),
+            },
+        ),
     ];
-    col = col.child(field(tr("remote.field_status"), mono_lines(status_lines, 11., true)));
+    col = col.child(field(
+        tr("remote.field_status"),
+        mono_lines(status_lines, 11., true),
+    ));
 
     // ── 绑定码：设置页展示，用户在微信里 `/bind <code>` 回填 ──────────
     let active = chat.pool.active_key.clone();
@@ -156,7 +167,10 @@ pub(crate) fn mc_remote_view(chat: &mut Chat, weak: &gpui::WeakEntity<Chat>) -> 
         Some(k) => bind_lines.push(tr("remote.bound_session").replace("{k}", k)),
         None => bind_lines.push(tr("remote.bound_unbound").into()),
     }
-    col = col.child(field(tr("remote.field_binding"), mono_lines(bind_lines, 11., true)));
+    col = col.child(field(
+        tr("remote.field_binding"),
+        mono_lines(bind_lines, 11., true),
+    ));
 
     // ── 扫码面板 ────────────────────────────────────────────────────
     for el in qr_panel(chat, weak) {

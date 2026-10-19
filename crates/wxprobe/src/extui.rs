@@ -29,7 +29,7 @@
 
 use pi_link::protocol::ExtUiMethod;
 
-use crate::format::menu::{option_label, option_index, render_selection, DisplayKind, MenuOption};
+use crate::format::menu::{DisplayKind, MenuOption, option_index, option_label, render_selection};
 use crate::format::messages::Lang;
 
 /// pi 专有、ZCode 文案表里没有的一句提示（本地补充，**不进** ZCode 文案表）。
@@ -107,9 +107,7 @@ pub fn render(method: &ExtUiMethod, lang: Lang) -> Option<String> {
         }
         ExtUiMethod::Notify { message, .. } => Some(message.clone()),
         ExtUiMethod::SetStatus { status_text, .. } => status_text.clone(),
-        ExtUiMethod::SetWidget { widget_lines, .. } => {
-            widget_lines.as_ref().map(|l| l.join("\n"))
-        }
+        ExtUiMethod::SetWidget { widget_lines, .. } => widget_lines.as_ref().map(|l| l.join("\n")),
         ExtUiMethod::SetTitle { title } => Some(title.clone()),
         ExtUiMethod::SetEditorText { text } => Some(text.clone()),
     }
@@ -128,9 +126,7 @@ pub fn parse(method: &ExtUiMethod, text: &str) -> ExtUiReply {
                 return ExtUiReply::Cancelled;
             }
             match option_index(text) {
-                Some(i) if i < options.len() => {
-                    ExtUiReply::Select(options[i].clone())
-                }
+                Some(i) if i < options.len() => ExtUiReply::Select(options[i].clone()),
                 _ => ExtUiReply::Invalid,
             }
         }
@@ -231,13 +227,20 @@ mod tests {
             title: "问".into(),
             placeholder: None,
         };
-        assert_eq!(render(&empty, Lang::ZhCn).unwrap(), "问\n\n回复文本，0 取消。");
+        assert_eq!(
+            render(&empty, Lang::ZhCn).unwrap(),
+            "问\n\n回复文本，0 取消。"
+        );
 
         let ed = ExtUiMethod::Editor {
             title: "编辑".into(),
             prefill: Some("line1".into()),
         };
-        assert!(render(&ed, Lang::ZhCn).unwrap().starts_with("编辑\nline1\n"));
+        assert!(
+            render(&ed, Lang::ZhCn)
+                .unwrap()
+                .starts_with("编辑\nline1\n")
+        );
     }
 
     #[test]
@@ -279,7 +282,11 @@ mod tests {
         let m = select(&["claude", "gpt"]);
         assert_eq!(parse(&m, "1"), ExtUiReply::Select("claude".into()));
         assert_eq!(parse(&m, "2"), ExtUiReply::Select("gpt".into()));
-        assert_eq!(parse(&m, " 2 "), ExtUiReply::Select("gpt".into()), "parseInt 跳空白");
+        assert_eq!(
+            parse(&m, " 2 "),
+            ExtUiReply::Select("gpt".into()),
+            "parseInt 跳空白"
+        );
         assert_eq!(parse(&m, "0"), ExtUiReply::Cancelled);
         assert_eq!(parse(&m, "3"), ExtUiReply::Invalid, "越界");
         assert_eq!(parse(&m, "abc"), ExtUiReply::Invalid, "NaN");
@@ -305,7 +312,10 @@ mod tests {
             title: "t".into(),
             placeholder: None,
         };
-        assert_eq!(parse(&m, "  帮我读一下 README  "), ExtUiReply::Text("帮我读一下 README".into()));
+        assert_eq!(
+            parse(&m, "  帮我读一下 README  "),
+            ExtUiReply::Text("帮我读一下 README".into())
+        );
         assert_eq!(parse(&m, "0"), ExtUiReply::Cancelled);
         assert_eq!(parse(&m, "   "), ExtUiReply::Invalid, "空文本不能提交");
         // 正文真的是 "0" 的场景无法与取消区分 —— 与桌面 ESC 语义取齐（取消优先）

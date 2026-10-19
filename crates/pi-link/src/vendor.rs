@@ -36,22 +36,24 @@ pub fn vendor_dir() -> Option<PathBuf> {
 /// lookup accepts `node.exe` (Windows) and `node` (macOS/Linux) so the app
 /// bundle is self-contained even when Finder gives it an empty PATH.
 pub fn node_bin() -> String {
-    std::env::var("PI_FLASH_NODE").ok().or_else(|| {
-        std::env::current_exe().ok().and_then(|d| {
-            let dir = d.parent()?;
-            #[cfg(windows)]
-            let candidates = vec![dir.join("node.exe")];
-            #[cfg(not(windows))]
-            // release .app: node sits in Contents/Resources (next to vendor/pi);
-            // dev/zip layout: node sits next to the executable
-            let candidates = vec![dir.join("node"), dir.join("../Resources/node")];
-            candidates
-                .into_iter()
-                .find(|c| c.is_file())
-                .map(|c| c.to_string_lossy().to_string())
+    std::env::var("PI_FLASH_NODE")
+        .ok()
+        .or_else(|| {
+            std::env::current_exe().ok().and_then(|d| {
+                let dir = d.parent()?;
+                #[cfg(windows)]
+                let candidates = vec![dir.join("node.exe")];
+                #[cfg(not(windows))]
+                // release .app: node sits in Contents/Resources (next to vendor/pi);
+                // dev/zip layout: node sits next to the executable
+                let candidates = vec![dir.join("node"), dir.join("../Resources/node")];
+                candidates
+                    .into_iter()
+                    .find(|c| c.is_file())
+                    .map(|c| c.to_string_lossy().to_string())
+            })
         })
-    })
-    .unwrap_or_else(|| "node".to_string())
+        .unwrap_or_else(|| "node".to_string())
 }
 
 /// Run a one-off vendored pi CLI command (`pi install/remove/list ...`) and

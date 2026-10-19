@@ -94,7 +94,9 @@ fn sanitize(text: &str) -> String {
 pub fn read_json(path: &Path) -> Result<Value, String> {
     let text = match std::fs::read(path) {
         Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Value::Object(Default::default())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(Value::Object(Default::default()));
+        }
         Err(e) => return Err(e.to_string()),
     };
     parse_lenient(&text)
@@ -123,8 +125,7 @@ fn write_json_mode(path: &Path, value: &Value, private: bool) -> Result<(), Stri
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
             if private && absent {
                 use std::os::unix::fs::PermissionsExt;
-                let _ =
-                    std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
+                let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
             }
         }
         #[cfg(not(unix))]
@@ -134,8 +135,11 @@ fn write_json_mode(path: &Path, value: &Value, private: bool) -> Result<(), Stri
         }
     }
     let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, serde_json::to_string_pretty(value).map_err(|e| e.to_string())?)
-        .map_err(|e| e.to_string())?;
+    std::fs::write(
+        &tmp,
+        serde_json::to_string_pretty(value).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
     #[cfg(unix)]
     {
         // rename replaces the whole file and the new file inherits the
@@ -176,7 +180,10 @@ pub fn write_enabled_models(path: &Path, patterns: Option<Vec<String>>) -> Resul
         .ok_or_else(|| "settings.json is not an object".to_string())?;
     match patterns {
         Some(list) => {
-            obj.insert("enabledModels".into(), Value::Array(list.into_iter().map(Value::String).collect()));
+            obj.insert(
+                "enabledModels".into(),
+                Value::Array(list.into_iter().map(Value::String).collect()),
+            );
         }
         None => {
             obj.remove("enabledModels");
@@ -244,7 +251,9 @@ pub fn remove_credential_if_api_key(path: &Path, provider: &str) -> Result<bool,
         .and_then(|c| c.get("type").and_then(|t| t.as_str()))
         != Some("oauth");
     if !is_api_key {
-        return Err(format!("{provider} is authenticated with OAuth, not an API key"));
+        return Err(format!(
+            "{provider} is authenticated with OAuth, not an API key"
+        ));
     }
     let removed = obj.remove(provider).is_some();
     if removed {
@@ -304,7 +313,10 @@ mod tests {
         assert!(!raw.contains("enabledModels"));
         // write back
         write_enabled_models(&path, Some(vec!["openai/*".into()])).unwrap();
-        assert_eq!(read_enabled_models(&path).unwrap(), Some(vec!["openai/*".into()]));
+        assert_eq!(
+            read_enabled_models(&path).unwrap(),
+            Some(vec!["openai/*".into()])
+        );
         let _ = std::fs::remove_file(&path);
     }
 
@@ -355,7 +367,11 @@ mod tests {
         let kinds = read_credential_kinds(&path).unwrap();
         assert!(kinds.contains(&("deepseek".into(), CredentialKind::ApiKey)));
         // oauth entries are preserved and refuse deletion via the key path
-        std::fs::write(&path, r#"{"github-copilot":{"type":"oauth","refresh":"r","access":"a","expires":1}}"#).unwrap();
+        std::fs::write(
+            &path,
+            r#"{"github-copilot":{"type":"oauth","refresh":"r","access":"a","expires":1}}"#,
+        )
+        .unwrap();
         let kinds = read_credential_kinds(&path).unwrap();
         assert_eq!(kinds[0].1, CredentialKind::OAuth);
         let err = remove_credential_if_api_key(&path, "github-copilot").unwrap_err();
@@ -399,7 +415,11 @@ pub fn read_default_tools(path: &Path) -> Result<Option<Vec<String>>, String> {
     Ok(value
         .get("defaultTools")
         .and_then(|v| v.as_array())
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()))
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        }))
 }
 
 // ---------------------------------------------------------------------------
@@ -519,7 +539,10 @@ mod builtin_extension_tests {
     fn user_settings_can_disable_and_enable_builtins() {
         let user = json!({ "extensions": ["-builtin:mcp", "+builtin:codemode"] });
         let on = enabled_builtin_extensions_from(Some(&user), None);
-        assert!(!on.iter().any(|x| x == "builtin:mcp"), "-builtin:mcp 应关掉 MCP");
+        assert!(
+            !on.iter().any(|x| x == "builtin:mcp"),
+            "-builtin:mcp 应关掉 MCP"
+        );
         assert!(on.iter().any(|x| x == "builtin:codemode"));
         // 其它内置扩展不受影响
         assert!(on.iter().any(|x| x == "builtin:tool-search"));
@@ -538,8 +561,14 @@ mod builtin_extension_tests {
         let user = json!({ "extensions": ["-builtin:mcp", "-builtin:tool-search"] });
         let project = json!({ "extensions": ["builtin:mcp"] });
         let on = enabled_builtin_extensions_from(Some(&user), Some(&project));
-        assert!(on.iter().any(|x| x == "builtin:mcp"), "项目 settings 覆盖用户");
-        assert!(!on.iter().any(|x| x == "builtin:tool-search"), "项目没覆盖的保持用户口径");
+        assert!(
+            on.iter().any(|x| x == "builtin:mcp"),
+            "项目 settings 覆盖用户"
+        );
+        assert!(
+            !on.iter().any(|x| x == "builtin:tool-search"),
+            "项目没覆盖的保持用户口径"
+        );
     }
 }
 

@@ -34,13 +34,22 @@ impl Chat {
             path
         } else {
             // 相对路径按当前项目绝对化；无项目态无从解析，拒绝打开
-            let Some(cwd) = self.ws.cwd.clone() else { return };
+            let Some(cwd) = self.ws.cwd.clone() else {
+                return;
+            };
             cwd.join(path)
         };
         const MAX: u64 = 10 * 1024 * 1024;
-        if std::fs::metadata(&path).map(|m| m.len() > MAX).unwrap_or(false) {
+        if std::fs::metadata(&path)
+            .map(|m| m.len() > MAX)
+            .unwrap_or(false)
+        {
             self.set_status(
-                format!("{}：{}", crate::i18n::tr("file_view.too_large"), path.display()),
+                format!(
+                    "{}：{}",
+                    crate::i18n::tr("file_view.too_large"),
+                    path.display()
+                ),
                 cx,
             );
             return;
@@ -51,7 +60,8 @@ impl Chat {
         // retain_file_watches 按所在目录单挂监听，两边信号都经
         // check_external_file_changes 按 disk_sig 复查后自动重载/标冲突。
         if let Some(ix) = self
-            .ws.panel_tabs
+            .ws
+            .panel_tabs
             .iter()
             .position(|t| matches!(t, PanelTab::File(p) if same_path(p, &path)))
         {
@@ -67,7 +77,11 @@ impl Chat {
                 // 带上完整路径：消息里的路径点击失败（相对解析/拼写/盘符），
                 // 没有路径无法定位是哪个文件没打开
                 self.set_status(
-                    format!("{} {}: {e}", crate::i18n::tr("file_view.read_failed"), path.display()),
+                    format!(
+                        "{} {}: {e}",
+                        crate::i18n::tr("file_view.read_failed"),
+                        path.display()
+                    ),
                     cx,
                 );
                 return;
@@ -119,7 +133,8 @@ impl Chat {
     /// 脏——直接关，不弹「未保存的修改」；脏的照旧弹（保存并关闭=重建文件）。
     pub(crate) fn close_file_tab(&mut self, path: &Path, cx: &mut Context<Self>) {
         let dirty = self
-            .ws.file_cache
+            .ws
+            .file_cache
             .get(path)
             .map(|f| match f.conflict {
                 Some(crate::FileConflict::Deleted) => f.dirty,
@@ -127,7 +142,9 @@ impl Chat {
             })
             .unwrap_or(false);
         if dirty {
-            self.dlg.dialog = Some(crate::Dialog::FileDirty { paths: vec![path.to_path_buf()] });
+            self.dlg.dialog = Some(crate::Dialog::FileDirty {
+                paths: vec![path.to_path_buf()],
+            });
             cx.notify();
             return;
         }
@@ -261,7 +278,8 @@ impl Chat {
     /// 无条件丢弃文件 tab（确认弹窗三个按钮的公共尾）。
     pub(crate) fn discard_file_tab(&mut self, path: &Path, cx: &mut Context<Self>) {
         let Some(ix) = self
-            .ws.panel_tabs
+            .ws
+            .panel_tabs
             .iter()
             .position(|t| matches!(t, PanelTab::File(p) if same_path(p, path)))
         else {
@@ -276,13 +294,16 @@ impl Chat {
             // 激活位可能落到终端 tab 上——优先指去最近的文件 tab；
             // 一个文件 tab 都不剩则内容区回退（有终端回浏览区，否则回会话）
             let any_file = self
-                .ws.panel_tabs
+                .ws
+                .panel_tabs
                 .iter()
                 .position(|t| matches!(t, PanelTab::File(_)));
             match any_file {
                 Some(fix)
                     if !matches!(
-                        self.ws.panel_tabs.get(self.ws.active_panel_tab.unwrap_or(usize::MAX)),
+                        self.ws
+                            .panel_tabs
+                            .get(self.ws.active_panel_tab.unwrap_or(usize::MAX)),
                         Some(PanelTab::File(_))
                     ) =>
                 {
@@ -311,7 +332,10 @@ impl Chat {
         }
         let err = self.write_file_back(path, cx);
         if let Some(e) = err {
-            self.set_status(format!("{}: {e}", crate::i18n::tr("file_view.save_failed")), cx);
+            self.set_status(
+                format!("{}: {e}", crate::i18n::tr("file_view.save_failed")),
+                cx,
+            );
             return;
         }
         self.set_status(crate::i18n::tr("status.saved").to_string(), cx);
@@ -366,8 +390,9 @@ impl Chat {
                     c.ws.file_cache.get(&path).is_some_and(|f| {
                         f.dirty
                             && f.conflict.is_none()
-                            && f.last_edit
-                                .is_some_and(|t| t.elapsed().as_millis() as u64 >= AUTOSAVE_DEBOUNCE_MS)
+                            && f.last_edit.is_some_and(|t| {
+                                t.elapsed().as_millis() as u64 >= AUTOSAVE_DEBOUNCE_MS
+                            })
                     })
                 });
                 if !proceed.unwrap_or(false) {
@@ -429,7 +454,8 @@ impl Chat {
         self.ws.ext_probe.0 += 1;
         let mut changed = false;
         let paths: Vec<PathBuf> = self
-            .ws.panel_tabs
+            .ws
+            .panel_tabs
             .iter()
             .filter_map(|t| match t {
                 PanelTab::File(p) => Some(p.clone()),
@@ -494,7 +520,8 @@ impl Chat {
 
     /// 当前激活的文件 tab 路径。
     pub(crate) fn active_file_path(&self) -> Option<PathBuf> {
-        self.ws.active_panel_tab
+        self.ws
+            .active_panel_tab
             .and_then(|ix| self.ws.panel_tabs.get(ix))
             .and_then(|t| match t {
                 PanelTab::File(p) => Some(p.clone()),
@@ -628,7 +655,10 @@ impl Chat {
         }
         let tab = self.ws.panel_tabs.remove(from);
         self.ws.panel_tabs.insert(to, tab);
-        self.ws.active_panel_tab = self.ws.active_panel_tab.map(|a| shifted_active(a, from, to));
+        self.ws.active_panel_tab = self
+            .ws
+            .active_panel_tab
+            .map(|a| shifted_active(a, from, to));
         // 换位同 zed：drop 落位后把被拖 tab 滚进视口（拖到条尾/条头时它
         // 可能本身就在屏外）
         self.layout.tabs_scroll.scroll_to_item(to);
@@ -704,7 +734,11 @@ mod tests {
                     for a in 0..n {
                         let elem = tabs[a];
                         let want = moved.iter().position(|&e| e == elem).unwrap();
-                        assert_eq!(shifted_active(a, from, to), want, "n={n} from={from} to={to} a={a}");
+                        assert_eq!(
+                            shifted_active(a, from, to),
+                            want,
+                            "n={n} from={from} to={to} a={a}"
+                        );
                     }
                 }
             }

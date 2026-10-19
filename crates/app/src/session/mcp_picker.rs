@@ -57,7 +57,8 @@ impl Chat {
     /// 勾选即生效：写 mcp.json enabled；运行中标记重绑（下一轮发送前）。
     pub(crate) fn mcp_picker_toggle(&mut self, name: &str, cx: &mut gpui::Context<Self>) {
         let Some(entry) = self
-            .cfg.mcp_servers
+            .cfg
+            .mcp_servers
             .iter()
             .find(|s| s.scope == pi_link::mcp::Scope::Global && s.name == name)
             .cloned()
@@ -80,14 +81,19 @@ impl Chat {
 }
 
 /// 面板元素（`None` = 没开）。挂在 app root 上，锚点同扩展菜单。
-pub(crate) fn view(chat: &Chat, weak: &gpui::WeakEntity<Chat>, window: &gpui::Window) -> Option<AnyElement> {
+pub(crate) fn view(
+    chat: &Chat,
+    weak: &gpui::WeakEntity<Chat>,
+    window: &gpui::Window,
+) -> Option<AnyElement> {
     let picker = chat.dlg.mcp_picker.as_ref()?;
     let t = T();
     let ui = crate::appearance::ui_size;
 
     // ---- 全局条目：按名称排序，再稳定地把已勾选置顶 ----
     let mut items: Vec<&pi_link::mcp::ServerEntry> = chat
-        .cfg.mcp_servers
+        .cfg
+        .mcp_servers
         .iter()
         .filter(|s| s.scope == pi_link::mcp::Scope::Global)
         .collect();
@@ -112,7 +118,11 @@ pub(crate) fn view(chat: &Chat, weak: &gpui::WeakEntity<Chat>, window: &gpui::Wi
         );
     }
     // 10 行限高：内容不到就按内容高（不出滚动条），超出才截到 300px 滚动
-    let list_h = if n_rows == 0 { 60. } else { (n_rows as f32 * ROW_H).min(ROW_H * 10.) };
+    let list_h = if n_rows == 0 {
+        60.
+    } else {
+        (n_rows as f32 * ROW_H).min(ROW_H * 10.)
+    };
 
     let enabled_n = items.iter().filter(|s| s.enabled).count();
     let header = div()
@@ -136,7 +146,10 @@ pub(crate) fn view(chat: &Chat, weak: &gpui::WeakEntity<Chat>, window: &gpui::Wi
                 .text_color(rgb(t.text_dim))
                 .child(SharedString::from(crate::i18n::tf(
                     "mcp.enabled_count",
-                    &[("n", enabled_n.to_string()), ("total", items.len().to_string())],
+                    &[
+                        ("n", enabled_n.to_string()),
+                        ("total", items.len().to_string()),
+                    ],
                 ))),
         );
 
@@ -227,10 +240,9 @@ fn mcp_row(
                 .flex()
                 .items_center()
                 .justify_center()
-                .when(
-                    checked,
-                    |d| d.child(crate::ui::icon("check", 10., t.accent_contrast)),
-                ),
+                .when(checked, |d| {
+                    d.child(crate::ui::icon("check", 10., t.accent_contrast))
+                }),
         )
         .child(
             div()

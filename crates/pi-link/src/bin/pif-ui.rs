@@ -19,9 +19,9 @@
 //! 文件。判死规则：只有 ConnectionRefused 才删登记（防误杀活实例）。
 
 use pi_link::automation::{
-    self, method, AutomationError, AutomationRecord, InstanceInfo, PROTO_VERSION,
+    self, AutomationError, AutomationRecord, InstanceInfo, PROTO_VERSION, method,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;
@@ -161,18 +161,22 @@ fn main() {
                         .unwrap_or_else(|_| Value::String(raw.to_string()));
                     params[key] = val;
                 }
-                with_conn(pid, addr, token, timeout, |c| c.call(m, &params).map(print_json))
+                with_conn(pid, addr, token, timeout, |c| {
+                    c.call(m, &params).map(print_json)
+                })
             }
             "keys" => {
                 let keys = cargs.first().ok_or("keys 需要组合键参数，如 \"ctrl-s\"")?;
                 with_conn(pid, addr, token, timeout, |c| {
-                    c.call(method::INPUT_KEYS, &json!({"keys": keys})).map(print_json)
+                    c.call(method::INPUT_KEYS, &json!({"keys": keys}))
+                        .map(print_json)
                 })
             }
             "type" => {
                 let text = cargs.join(" ");
                 with_conn(pid, addr, token, timeout, |c| {
-                    c.call(method::COMPOSER_SET_TEXT, &json!({"text": text})).map(print_json)
+                    c.call(method::COMPOSER_SET_TEXT, &json!({"text": text}))
+                        .map(print_json)
                 })
             }
             "shot" => {
@@ -217,16 +221,27 @@ fn split_args(args: &[String], value_flags: &[&str]) -> (Vec<String>, Vec<(Strin
 }
 
 fn flag_last<'a>(flags: &'a [(String, String)], name: &str) -> Option<&'a str> {
-    flags.iter().rev().find(|(k, _)| k == name).map(|(_, v)| v.as_str())
+    flags
+        .iter()
+        .rev()
+        .find(|(k, _)| k == name)
+        .map(|(_, v)| v.as_str())
 }
 
 fn print_json(v: Value) {
     // EPIPE（下游 head 关管道）不算错，静默退出
-    let _ = writeln!(std::io::stdout(), "{}", serde_json::to_string_pretty(&v).unwrap_or_default());
+    let _ = writeln!(
+        std::io::stdout(),
+        "{}",
+        serde_json::to_string_pretty(&v).unwrap_or_default()
+    );
 }
 
 fn now_ms() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 /// 一条已握手的连接；wait 复用同一条轮询。timeout = 全局 --timeout（单次
@@ -246,7 +261,9 @@ impl Conn {
 
     /// 读到指定 id 的 Response 为止（跳过服务端可能推送的其它记录）。
     fn read_response(&mut self, id: &str, timeout: Duration) -> Result<Value, String> {
-        self.stream.set_read_timeout(Some(timeout)).map_err(|e| e.to_string())?;
+        self.stream
+            .set_read_timeout(Some(timeout))
+            .map_err(|e| e.to_string())?;
         loop {
             let mut line = String::new();
             let n = self
@@ -257,7 +274,12 @@ impl Conn {
                 return Err("连接已关闭（app 可能退出了）".into());
             }
             match automation::parse_line(&line) {
-                Some(AutomationRecord::Response { id: rid, ok, result, error }) if rid == id => {
+                Some(AutomationRecord::Response {
+                    id: rid,
+                    ok,
+                    result,
+                    error,
+                }) if rid == id => {
                     return if ok {
                         Ok(result.unwrap_or_else(|| json!({})))
                     } else {
@@ -284,20 +306,30 @@ fn handshake(stream: TcpStream, token: &str, timeout: Duration) -> Result<Conn, 
         .set_read_timeout(Some(timeout))
         .map_err(|e| format!("设超时失败: {e}"))?;
     let reader = BufReader::new(stream.try_clone().map_err(|e| e.to_string())?);
-    let mut conn = Conn { stream, reader, timeout };
+    let mut conn = Conn {
+        stream,
+        reader,
+        timeout,
+    };
     // hello
     let mut line = String::new();
-    conn.reader.read_line(&mut line).map_err(|e| format!("读 hello 失败: {e}"))?;
+    conn.reader
+        .read_line(&mut line)
+        .map_err(|e| format!("读 hello 失败: {e}"))?;
     match automation::parse_line(&line) {
         Some(AutomationRecord::Hello { proto, .. }) if proto == PROTO_VERSION => {}
         Some(AutomationRecord::Hello { proto, .. }) => {
-            return Err(format!("协议版本不匹配: 服务端 {proto}, CLI {PROTO_VERSION}"))
+            return Err(format!(
+                "协议版本不匹配: 服务端 {proto}, CLI {PROTO_VERSION}"
+            ));
         }
         _ => return Err("服务端首行不是 hello".into()),
     }
     conn.write_line(&automation::auth_record(token).to_string())?;
     let mut line = String::new();
-    conn.reader.read_line(&mut line).map_err(|e| format!("读 auth 应答失败: {e}"))?;
+    conn.reader
+        .read_line(&mut line)
+        .map_err(|e| format!("读 auth 应答失败: {e}"))?;
     match automation::parse_line(&line) {
         Some(AutomationRecord::AuthOk) => Ok(conn),
         Some(AutomationRecord::AuthError { code, message }) => {
@@ -342,7 +374,9 @@ fn discover(pid: Option<u32>) -> Result<(String, String), String> {
         .collect();
     if candidates.is_empty() {
         return Err(match pid {
-            Some(p) => format!("没有 pid={p} 的自动化实例（app 需以 PI_FLASH_AUTOMATION=auto 启动）"),
+            Some(p) => {
+                format!("没有 pid={p} 的自动化实例（app 需以 PI_FLASH_AUTOMATION=auto 启动）")
+            }
             None => "没有找到自动化实例（app 需以 PI_FLASH_AUTOMATION=auto 启动）".into(),
         });
     }
@@ -393,9 +427,15 @@ fn cmd_clean() -> Result<(), String> {
         let addr = format!("127.0.0.1:{}", info.port);
         if automation::port_is_definitely_dead(&addr) {
             let _ = std::fs::remove_file(&file);
-            println!("removed pid={} port={}（明确拒绝连接）", info.pid, info.port);
+            println!(
+                "removed pid={} port={}（明确拒绝连接）",
+                info.pid, info.port
+            );
         } else {
-            println!("kept pid={} port={}（活着或无法确认死亡，保守保留）", info.pid, info.port);
+            println!(
+                "kept pid={} port={}（活着或无法确认死亡，保守保留）",
+                info.pid, info.port
+            );
         }
     }
     Ok(())
@@ -409,10 +449,19 @@ fn cmd_wait(
     cargs: &[String],
 ) -> Result<(), String> {
     let truthy_flag = cargs.iter().any(|a| a == "--truthy");
-    let (pos, flags) = split_args(cargs, &["path", "eq", "contains", "timeout", "interval", "surface"]);
+    let (pos, flags) = split_args(
+        cargs,
+        &["path", "eq", "contains", "timeout", "interval", "surface"],
+    );
     // split_args 会把 --truthy 当位置参数，剔除
     let _ = pos;
-    let flag = |name: &str| flags.iter().rev().find(|(k, _)| k == name).map(|(_, v)| v.clone());
+    let flag = |name: &str| {
+        flags
+            .iter()
+            .rev()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.clone())
+    };
     let path = flag("path").ok_or("wait 需要 --path <点分路径>")?;
     let eq = flag("eq");
     let contains = flag("contains");
@@ -444,7 +493,9 @@ fn cmd_wait(
     let deadline = std::time::Instant::now() + Duration::from_secs(total);
     let id = format!("cli-wait-{}", now_ms());
     loop {
-        conn.write_line(&automation::request_record(&id, method::UI_SNAPSHOT, &params).to_string())?;
+        conn.write_line(
+            &automation::request_record(&id, method::UI_SNAPSHOT, &params).to_string(),
+        )?;
         let snap = conn.read_response(&id, conn.timeout)?;
         let hit = lookup(&snap, &path).map(|got| {
             if eq.is_some() {
@@ -474,7 +525,9 @@ fn cmd_wait(
                 last.truncate(1500);
                 last.push_str("…(截断)");
             }
-            return Err(format!("等待超时（{total}s）: {path} 断言仍不成立\n最后快照: {last}"));
+            return Err(format!(
+                "等待超时（{total}s）: {path} 断言仍不成立\n最后快照: {last}"
+            ));
         }
         std::thread::sleep(Duration::from_millis(interval));
     }
@@ -540,10 +593,17 @@ mod tests {
 
     #[test]
     fn split_args_collects_repeatable_value_flags() {
-        let args: Vec<String> = ["file.open", "--arg", "path=C:/x/y.md", "--arg", "all=true", "leftover"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
+        let args: Vec<String> = [
+            "file.open",
+            "--arg",
+            "path=C:/x/y.md",
+            "--arg",
+            "all=true",
+            "leftover",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
         let (pos, flags) = split_args(&args, &["arg"]);
         assert_eq!(pos, vec!["file.open".to_string(), "leftover".to_string()]);
         assert_eq!(flags.len(), 2);

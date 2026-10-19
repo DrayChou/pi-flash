@@ -73,7 +73,11 @@ impl Drop for BotRuntimeLock {
 }
 
 /// 默认参数版本：P1 轮询用。
-pub fn acquire(namespace: &str, lock_key: &str, bot_id: &str) -> Result<Option<BotRuntimeLock>, String> {
+pub fn acquire(
+    namespace: &str,
+    lock_key: &str,
+    bot_id: &str,
+) -> Result<Option<BotRuntimeLock>, String> {
     acquire_with(namespace, lock_key, bot_id, HEARTBEAT_MS, LEASE_MS)
 }
 
@@ -112,10 +116,16 @@ pub fn acquire_with(
         let outcome = fs::rename(&pending, &lock_path);
         // pending 目录在任何分支都要清掉（ZCode 的 finally）。
         let result = match outcome {
-            Ok(()) => Ok(Some(start_heartbeat(lock_path.clone(), owner.clone(), heartbeat_ms))),
+            Ok(()) => Ok(Some(start_heartbeat(
+                lock_path.clone(),
+                owner.clone(),
+                heartbeat_ms,
+            ))),
             Err(rename_err) => {
                 if !lock_path.exists() {
-                    Err(format!("rename 锁失败（锁路径不存在，非竞争）: {rename_err}"))
+                    Err(format!(
+                        "rename 锁失败（锁路径不存在，非竞争）: {rename_err}"
+                    ))
                 } else {
                     // 竞争分支：只有「租约仍新鲜」才让路。
                     if let Some(current) = read_owner(&lock_path) {
@@ -144,11 +154,13 @@ fn start_heartbeat(lock_path: PathBuf, owner: Owner, heartbeat_ms: u64) -> BotRu
     let (stop, rx) = mpsc::channel::<()>();
     let lease_path = lock_path.join(format!("lease-{}", owner.nonce));
     let interval = Duration::from_millis(heartbeat_ms.max(1));
-    let handle = thread::spawn(move || loop {
-        // 收到 stop（Ok / Disconnected）立刻退；只有超时才刷一次 lease。
-        match rx.recv_timeout(interval) {
-            Ok(()) | Err(RecvTimeoutError::Disconnected) => break,
-            Err(RecvTimeoutError::Timeout) => touch(&lease_path),
+    let handle = thread::spawn(move || {
+        loop {
+            // 收到 stop（Ok / Disconnected）立刻退；只有超时才刷一次 lease。
+            match rx.recv_timeout(interval) {
+                Ok(()) | Err(RecvTimeoutError::Disconnected) => break,
+                Err(RecvTimeoutError::Timeout) => touch(&lease_path),
+            }
         }
     });
     BotRuntimeLock {
@@ -161,7 +173,10 @@ fn start_heartbeat(lock_path: PathBuf, owner: Owner, heartbeat_ms: u64) -> BotRu
 
 /// 锁根目录（仅用于告诉用户「谁在占着」）。
 pub fn lock_root_display() -> String {
-    crate::state::base_dir().join(LOCK_ROOT).display().to_string()
+    crate::state::base_dir()
+        .join(LOCK_ROOT)
+        .display()
+        .to_string()
 }
 
 fn lock_path(namespace: &str, lock_key: &str) -> PathBuf {
@@ -202,7 +217,11 @@ fn read_owner(lock_path: &Path) -> Option<Owner> {
 fn lease_mtime(lock_path: &Path, nonce: &str) -> u64 {
     fs::metadata(lock_path.join(format!("lease-{nonce}")))
         .and_then(|m| m.modified())
-        .map(|t| t.duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0))
+        .map(|t| {
+            t.duration_since(UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0)
+        })
         .unwrap_or(0)
 }
 
@@ -243,11 +262,7 @@ fn nonce() -> String {
 /// 测试收尾：删掉本测试留下的空 namespace 目录，避免在真实配置目录里堆空壳。
 #[cfg(test)]
 fn cleanup_ns(ns: &str) {
-    let _ = fs::remove_dir_all(
-        crate::state::base_dir()
-            .join(LOCK_ROOT)
-            .join(ns),
-    );
+    let _ = fs::remove_dir_all(crate::state::base_dir().join(LOCK_ROOT).join(ns));
 }
 
 fn now_ms() -> u64 {
@@ -286,8 +301,12 @@ mod tests {
     #[test]
     fn different_keys_do_not_collide() {
         let ns = ns("keys");
-        let a = acquire_with(&ns, "token-a", "bot", 10_000, 30_000).unwrap().unwrap();
-        let b = acquire_with(&ns, "token-b", "bot", 10_000, 30_000).unwrap().unwrap();
+        let a = acquire_with(&ns, "token-a", "bot", 10_000, 30_000)
+            .unwrap()
+            .unwrap();
+        let b = acquire_with(&ns, "token-b", "bot", 10_000, 30_000)
+            .unwrap()
+            .unwrap();
         a.release();
         b.release();
         cleanup_ns(&ns);
@@ -296,7 +315,9 @@ mod tests {
     #[test]
     fn stale_lease_is_stolen() {
         let ns = ns("stale");
-        let a = acquire_with(&ns, "key", "bot", 10_000, 30_000).unwrap().unwrap();
+        let a = acquire_with(&ns, "key", "bot", 10_000, 30_000)
+            .unwrap()
+            .unwrap();
         // 模拟持有者崩溃：把 lease mtime 拨到 60s 前（远超 30s 租约）。
         let lock = lock_path(&ns, "key");
         let lease = lock.join(format!("lease-{}", a.owner.nonce));
@@ -325,7 +346,9 @@ mod tests {
     fn drop_releases_without_explicit_call() {
         let ns = ns("drop");
         {
-            let _a = acquire_with(&ns, "key", "bot", 10_000, 30_000).unwrap().unwrap();
+            let _a = acquire_with(&ns, "key", "bot", 10_000, 30_000)
+                .unwrap()
+                .unwrap();
         }
         assert!(
             !lock_path(&ns, "key").exists(),
@@ -339,7 +362,9 @@ mod tests {
         use std::time::Instant;
         let ns = ns("fast");
         // 心跳故意设 3s：若 release 仍在等心跳线程睡完，这里必然超过 1.5s 而失败。
-        let a = acquire_with(&ns, "key", "bot", 3_000, 30_000).unwrap().unwrap();
+        let a = acquire_with(&ns, "key", "bot", 3_000, 30_000)
+            .unwrap()
+            .unwrap();
         let started = Instant::now();
         a.release();
         let elapsed = started.elapsed();
@@ -353,7 +378,9 @@ mod tests {
     #[test]
     fn owner_file_is_complete_before_visible() {
         let ns = ns("atomic");
-        let _a = acquire_with(&ns, "key", "bot", 10_000, 30_000).unwrap().unwrap();
+        let _a = acquire_with(&ns, "key", "bot", 10_000, 30_000)
+            .unwrap()
+            .unwrap();
         let owner = read_owner(&lock_path(&ns, "key")).expect("锁可见时 owner 必须已完整");
         assert_eq!(owner.bot_id, "bot");
         assert_eq!(owner.pid, std::process::id());
@@ -372,7 +399,9 @@ mod tests {
                 .unwrap()
                 .unwrap_or_else(|| panic!("第 {cycle} 轮应能立刻拿到锁"));
             assert!(
-                acquire_with(&ns, "key", "bot", 50, 30_000).unwrap().is_none(),
+                acquire_with(&ns, "key", "bot", 50, 30_000)
+                    .unwrap()
+                    .is_none(),
                 "第 {cycle} 轮持锁期间必须拒绝第二个抢锁者"
             );
             drop(lock);

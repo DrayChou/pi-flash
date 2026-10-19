@@ -5,17 +5,18 @@ use super::*;
 
 use std::collections::HashMap;
 
-use gpui::{Animation, AnimationExt, MouseButton, SharedString, div, prelude::*, px, relative, rgb, rgba};
+use gpui::{
+    Animation, AnimationExt, MouseButton, SharedString, div, prelude::*, px, relative, rgb, rgba,
+};
 use pi_link::protocol::Block;
 
+use crate::Chat;
+use crate::appearance::theme;
+use crate::editor::markdown;
+use crate::i18n::tr;
 use crate::session::actions_bar::{self, user_action_bar};
 use crate::session::fork::ForkAnchor;
-use crate::Chat;
-use crate::i18n::tr;
-use crate::editor::markdown;
-use crate::appearance::theme;
 use crate::ui::icon;
-
 
 pub(crate) fn render_block(
     b: &Block,
@@ -52,7 +53,10 @@ pub(crate) fn render_block(
                 ))
             }
         }
-        Block::Thinking { text, content_index } if !text.trim().is_empty() => {
+        Block::Thinking {
+            text,
+            content_index,
+        } if !text.trim().is_empty() => {
             let key = (msg_ix, *content_index);
             // 「展示思考」开关 = 新思考块的默认展开态：开=默认展开全文，
             // 关（默认）=收成一行（灯泡+单行预览，点击可展开）；用户手动
@@ -358,10 +362,18 @@ pub(crate) fn render_msg(
                 None => (cmd.clone(), String::new()),
             };
             let weak_skill = weak.clone();
-            let chevron = if skill_open { "chevron-up" } else { "chevron-down" };
+            let chevron = if skill_open {
+                "chevron-up"
+            } else {
+                "chevron-down"
+            };
             let mut stack = div().flex().flex_col().w_full().gap(px(6.));
             stack = stack.child(
-                div().flex().items_start().gap(px(8.)).flex_wrap()
+                div()
+                    .flex()
+                    .items_start()
+                    .gap(px(8.))
+                    .flex_wrap()
                     .child(
                         div()
                             .id(SharedString::from(format!("skill-toggle-{}", msg_ix)))
@@ -438,100 +450,92 @@ pub(crate) fn render_msg(
         }
         if has_text {
             row = row.child(
-                div()
-                    .max_w(relative(0.85))
-                    .flex()
-                    .min_w_0()
-                    .child(
-                        div()
-                            .relative()
-                            .flex_1()
-                            .min_w_0()
-                            .child(
-                                div()
-                                    .id(SharedString::from(format!("ububble-{msg_ix}")))
-                                    // c21: 超高气泡 300px 内部滚动（USER_BUBBLE_MAX_HEIGHT）
-                                    .max_h(px(300.))
-                                    .overflow_y_scroll()
-                                    .track_scroll(&scroll_handle)
-                                    .flex_1()
-                                    .min_w_0()
-                                    // v63-8: 气泡内滚拦截（穿透修复）。gpui 滚轮派发给
-                                    // 所有命中 hitbox（含祖先，v63-3 删 occlude 后无
-                                    // 人拦），长气泡上滚轮会**同帧**连动外层会话列表
-                                    // ——「用户消息鼠标穿透」。在此判断：滚动前已在
-                                    // 对应边界才放行（原生嵌套滚动语义：内滚到底，
-                                    // 下一滚才带动外层）；未溢出（max=0）恒放行。
-                                    // 注意 gpui 滚动 offset 存储域为 [-max, 0]，且
-                                    // 同 div 内置滚动 handler 先于本 listener 执行，
-                                    // offset() 已含本次 delta，须减回去取滚动前值。
-                                    // 本拦截能生效的前提：会话列表（gpui `List`）的
-                                    // 滚轮注册晚于条目，否则列表同帧先滚、stop 已晚
-                                    // （vendor `elements/list.rs` v63-9 补丁修正了注册
-                                    // 时机，回归锁 `mod bubble_wheel`）。
-                                    .on_scroll_wheel({
-                                        let sh = scroll_handle.clone();
-                                        move |ev: &gpui::ScrollWheelEvent, window, cx| {
-                                            let max = sh.max_offset().height;
-                                            if max <= px(0.) {
-                                                return; // 未溢出：无内滚空间，恒放行
-                                            }
-                                            let delta_y =
-                                                ev.delta.pixel_delta(window.line_height()).y;
-                                            if delta_y == px(0.) {
-                                                return;
-                                            }
-                                            let off_pre = sh.offset().y - delta_y;
-                                            const EPS: f32 = 1.; // 浮点容差，防边界误拦
-                                            let at_edge = if delta_y > px(0.) {
-                                                off_pre >= px(-EPS) // 已在顶
-                                            } else {
-                                                off_pre <= px(-f32::from(max) + EPS) // 已在底
-                                            };
-                                            if !at_edge {
-                                                cx.stop_propagation();
-                                            }
+                div().max_w(relative(0.85)).flex().min_w_0().child(
+                    div()
+                        .relative()
+                        .flex_1()
+                        .min_w_0()
+                        .child(
+                            div()
+                                .id(SharedString::from(format!("ububble-{msg_ix}")))
+                                // c21: 超高气泡 300px 内部滚动（USER_BUBBLE_MAX_HEIGHT）
+                                .max_h(px(300.))
+                                .overflow_y_scroll()
+                                .track_scroll(&scroll_handle)
+                                .flex_1()
+                                .min_w_0()
+                                // v63-8: 气泡内滚拦截（穿透修复）。gpui 滚轮派发给
+                                // 所有命中 hitbox（含祖先，v63-3 删 occlude 后无
+                                // 人拦），长气泡上滚轮会**同帧**连动外层会话列表
+                                // ——「用户消息鼠标穿透」。在此判断：滚动前已在
+                                // 对应边界才放行（原生嵌套滚动语义：内滚到底，
+                                // 下一滚才带动外层）；未溢出（max=0）恒放行。
+                                // 注意 gpui 滚动 offset 存储域为 [-max, 0]，且
+                                // 同 div 内置滚动 handler 先于本 listener 执行，
+                                // offset() 已含本次 delta，须减回去取滚动前值。
+                                // 本拦截能生效的前提：会话列表（gpui `List`）的
+                                // 滚轮注册晚于条目，否则列表同帧先滚、stop 已晚
+                                // （vendor `elements/list.rs` v63-9 补丁修正了注册
+                                // 时机，回归锁 `mod bubble_wheel`）。
+                                .on_scroll_wheel({
+                                    let sh = scroll_handle.clone();
+                                    move |ev: &gpui::ScrollWheelEvent, window, cx| {
+                                        let max = sh.max_offset().height;
+                                        if max <= px(0.) {
+                                            return; // 未溢出：无内滚空间，恒放行
                                         }
-                                    })
-                                    // 此处**不得** occlude()：gpui hit_test 命中
-                                    // BlockMouse 即 break，会把祖先（本行的
-                                    // bar_hover_wired）一起挡掉 → 鼠标停在气泡上
-                                    // 操作栏永不显影（v62 修复）。滚轮也一并受益：
-                                    // 气泡内滚到底后能继续滚会话列表。
-                                    .px(px(12.))
-                                    .pr(px(14.))
-                                    .py(px(8.))
-                                    .rounded(px(12.))
-                                    .bg(rgb(t.user_bg))
-                                    .border_1()
-                                    .border_color(gpui::rgba(theme::rgba_a(0x3b82f6, 0.2)))
-                                    .text_color(rgb(t.text))
-                                    .child(div().flex().flex_col().child(md)),
-                            )
-                            // 滚动条仅在实际溢出限高时渲染（max_offset>0
-                            // = 内容超高；未溢出无条）
-                            .children(
-                                (scroll_handle.max_offset().height > px(0.)).then(|| {
-                                    div()
-                                        .absolute()
-                                        .top(px(8.))
-                                        .bottom(px(8.))
-                                        .right(px(3.))
-                                        .w(px(8.))
-                                        .child(
-                                            gpui_component::scroll::Scrollbar::vertical(
-                                                &scroll_state,
-                                                &scroll_handle,
-                                            )
-                                            .scroll_size(gpui::size(
-                                                px(0.),
-                                                px(300.)
-                                                    + scroll_handle.max_offset().height,
-                                            )),
-                                        )
-                                }),
-                            ),
-                    ),
+                                        let delta_y = ev.delta.pixel_delta(window.line_height()).y;
+                                        if delta_y == px(0.) {
+                                            return;
+                                        }
+                                        let off_pre = sh.offset().y - delta_y;
+                                        const EPS: f32 = 1.; // 浮点容差，防边界误拦
+                                        let at_edge = if delta_y > px(0.) {
+                                            off_pre >= px(-EPS) // 已在顶
+                                        } else {
+                                            off_pre <= px(-f32::from(max) + EPS) // 已在底
+                                        };
+                                        if !at_edge {
+                                            cx.stop_propagation();
+                                        }
+                                    }
+                                })
+                                // 此处**不得** occlude()：gpui hit_test 命中
+                                // BlockMouse 即 break，会把祖先（本行的
+                                // bar_hover_wired）一起挡掉 → 鼠标停在气泡上
+                                // 操作栏永不显影（v62 修复）。滚轮也一并受益：
+                                // 气泡内滚到底后能继续滚会话列表。
+                                .px(px(12.))
+                                .pr(px(14.))
+                                .py(px(8.))
+                                .rounded(px(12.))
+                                .bg(rgb(t.user_bg))
+                                .border_1()
+                                .border_color(gpui::rgba(theme::rgba_a(0x3b82f6, 0.2)))
+                                .text_color(rgb(t.text))
+                                .child(div().flex().flex_col().child(md)),
+                        )
+                        // 滚动条仅在实际溢出限高时渲染（max_offset>0
+                        // = 内容超高；未溢出无条）
+                        .children((scroll_handle.max_offset().height > px(0.)).then(|| {
+                            div()
+                                .absolute()
+                                .top(px(8.))
+                                .bottom(px(8.))
+                                .right(px(3.))
+                                .w(px(8.))
+                                .child(
+                                    gpui_component::scroll::Scrollbar::vertical(
+                                        &scroll_state,
+                                        &scroll_handle,
+                                    )
+                                    .scroll_size(gpui::size(
+                                        px(0.),
+                                        px(300.) + scroll_handle.max_offset().height,
+                                    )),
+                                )
+                        })),
+                ),
             );
         }
         row = row.child(bottom);
@@ -558,7 +562,11 @@ pub(crate) fn render_bash_msg(
         return col;
     };
     // pi-web：excluded 的命令显示 "bash (local)"（输出仅本地，不进模型）
-    let name = if info.excluded { "bash (local)" } else { "bash" };
+    let name = if info.excluded {
+        "bash (local)"
+    } else {
+        "bash"
+    };
     let args = serde_json::json!({ "command": info.command }).to_string();
     // is_error 对齐 agent 的 bash 工具卡：非零退出码 = 红（取消不算）
     let is_error = !info.cancelled && info.exit_code.is_some_and(|c| c != 0);
@@ -616,9 +624,9 @@ pub(crate) fn render_bash_msg(
                             SharedString::from(format!("bash-spin-{msg_ix}")),
                             Animation::new(std::time::Duration::from_millis(900)),
                             |el, delta| {
-                                el.with_transformation(gpui::Transformation::rotate(
-                                    gpui::radians(delta * 2. * std::f32::consts::PI),
-                                ))
+                                el.with_transformation(gpui::Transformation::rotate(gpui::radians(
+                                    delta * 2. * std::f32::consts::PI,
+                                )))
                             },
                         )
                         .into_any_element(),
@@ -768,7 +776,15 @@ fn live_turn_body(
         // pi-web thinkingDurationFromFile：该消息的生成时长挂到 thinking 块
         let msg_think_dur = m.end_ts.zip(m.ts).map(|(e, s)| (e - s).max(0) / 1000);
         for b in disp {
-            item = item.child(render_block(b, gix, weak, collapsed, t, streaming, msg_think_dur));
+            item = item.child(render_block(
+                b,
+                gix,
+                weak,
+                collapsed,
+                t,
+                streaming,
+                msg_think_dur,
+            ));
         }
         body = body.child(item);
     }
@@ -871,7 +887,16 @@ pub(crate) fn render_assistant_turn(
     let tps = stream_tps.filter(|_| is_working);
     if is_working {
         return col
-            .child(live_turn_body(turn, turn_ixs, weak, collapsed, t, model_label, est, tps))
+            .child(live_turn_body(
+                turn,
+                turn_ixs,
+                weak,
+                collapsed,
+                t,
+                model_label,
+                est,
+                tps,
+            ))
             .into_any_element();
     }
 
@@ -891,13 +916,16 @@ pub(crate) fn render_assistant_turn(
         if m.role != Role::Assistant {
             continue;
         }
-        let end = if i == final_pos { answer_start } else { m.blocks.len() };
+        let end = if i == final_pos {
+            answer_start
+        } else {
+            m.blocks.len()
+        };
         if !m.blocks[..end].iter().any(|b| block_displayable(b)) {
             continue;
         }
         n_views += 1;
-        n_tools += m
-            .blocks[..end]
+        n_tools += m.blocks[..end]
             .iter()
             .filter(|b| matches!(b, Block::ToolCall { .. }))
             .count();
@@ -934,7 +962,11 @@ pub(crate) fn render_assistant_turn(
                 });
             })
             .child(icon(
-                if open { "chevron-down" } else { "chevron-right" },
+                if open {
+                    "chevron-down"
+                } else {
+                    "chevron-right"
+                },
                 12.,
                 t.text_dim,
             ))
@@ -948,9 +980,15 @@ pub(crate) fn render_assistant_turn(
                 if m.role != Role::Assistant {
                     continue;
                 }
-                let end = if i == final_pos { answer_start } else { m.blocks.len() };
-                let disp: Vec<&Block> =
-                    m.blocks[..end].iter().filter(|b| block_displayable(b)).collect();
+                let end = if i == final_pos {
+                    answer_start
+                } else {
+                    m.blocks.len()
+                };
+                let disp: Vec<&Block> = m.blocks[..end]
+                    .iter()
+                    .filter(|b| block_displayable(b))
+                    .collect();
                 if disp.is_empty() {
                     continue;
                 }
@@ -966,7 +1004,15 @@ pub(crate) fn render_assistant_turn(
                 let msg_think_dur = m.end_ts.zip(m.ts).map(|(e, s)| (e - s).max(0) / 1000);
                 for b in disp {
                     let streaming = is_working && i == turn.len() - 1;
-                    item = item.child(render_block(b, gix, weak, collapsed, t, streaming, msg_think_dur));
+                    item = item.child(render_block(
+                        b,
+                        gix,
+                        weak,
+                        collapsed,
+                        t,
+                        streaming,
+                        msg_think_dur,
+                    ));
                 }
                 group_body = group_body.child(item);
             }
@@ -1001,12 +1047,7 @@ pub(crate) fn render_assistant_turn(
             .map(str::trim)
             .filter(|m| !m.is_empty())
             .unwrap_or("Unknown provider error");
-        col = col.child(alert_box(
-            format!("Error: {msg}"),
-            0xef4444,
-            0xef4444,
-            t,
-        ));
+        col = col.child(alert_box(format!("Error: {msg}"), 0xef4444, 0xef4444, t));
     }
     if final_truncated {
         col = col.child(alert_box(
@@ -1156,8 +1197,6 @@ mod tests {
 
         assert_eq!(image_natural_size(b"<svg/>", gpui::ImageFormat::Svg), None);
     }
-
-
 }
 
 #[cfg(test)]
@@ -1166,12 +1205,9 @@ mod skill_fold_tests {
 
     // pi-web lib/slash-display.test.mjs skillExpansion fixture 同款
     fn envelope(body: &str, args: Option<&str>) -> String {
-        let args_s = args
-            .map(|a| format!("\n\n{}", a))
-            .unwrap_or_default();
+        let args_s = args.map(|a| format!("\n\n{}", a)).unwrap_or_default();
         format!(
-            "<skill name=\"review\" location=\"/path/to/review/SKILL.md\">\nReferences are relative to /path/to/review.\n\n{body}\n</skill>{args}"
-            ,
+            "<skill name=\"review\" location=\"/path/to/review/SKILL.md\">\nReferences are relative to /path/to/review.\n\n{body}\n</skill>{args}",
             body = body,
             args = args_s,
         )
@@ -1180,7 +1216,11 @@ mod skill_fold_tests {
     #[test]
     fn restores_with_args() {
         assert_eq!(
-            skill_expansion_to_command(&envelope("Review the supplied files.", Some("src/main.ts"))).as_deref(),
+            skill_expansion_to_command(&envelope(
+                "Review the supplied files.",
+                Some("src/main.ts")
+            ))
+            .as_deref(),
             Some("/skill:review src/main.ts")
         );
     }
@@ -1194,22 +1234,34 @@ mod skill_fold_tests {
     #[test]
     fn multiline_args() {
         assert_eq!(
-            skill_expansion_to_command(&envelope("Body.", Some("first line\nsecond line"))).as_deref(),
+            skill_expansion_to_command(&envelope("Body.", Some("first line\nsecond line")))
+                .as_deref(),
             Some("/skill:review first line\nsecond line")
         );
     }
     #[test]
     fn final_closing_tag_wins() {
         assert_eq!(
-            skill_expansion_to_command(&envelope("Example:\n</skill>\nContinue.", Some("src"))).as_deref(),
+            skill_expansion_to_command(&envelope("Example:\n</skill>\nContinue.", Some("src")))
+                .as_deref(),
             Some("/skill:review src")
         );
     }
 
     #[test]
     fn lookalike_not_collapsed() {
-        assert_eq!(skill_expansion_to_command("<skill name=\"review\" location=\"/path/to/review/SKILL.md\">\nordinary user text"), None);
-        assert_eq!(skill_expansion_to_command("<skill name=\"review\" location=\"/path/to/review/SKILL.md\">\nReferences are elsewhere.\n\nbody\n</skill>"), None);
+        assert_eq!(
+            skill_expansion_to_command(
+                "<skill name=\"review\" location=\"/path/to/review/SKILL.md\">\nordinary user text"
+            ),
+            None
+        );
+        assert_eq!(
+            skill_expansion_to_command(
+                "<skill name=\"review\" location=\"/path/to/review/SKILL.md\">\nReferences are elsewhere.\n\nbody\n</skill>"
+            ),
+            None
+        );
         assert_eq!(skill_expansion_to_command("ordinary user text"), None);
     }
 }
@@ -1233,7 +1285,7 @@ mod bar_hover_hit_test {
 
     use gpui::{
         AppContext, Context, IntoElement, Modifiers, ParentElement, Render, Styled, TestAppContext,
-        VisualTestContext, Window, div, point, px, size, prelude::*,
+        VisualTestContext, Window, div, point, prelude::*, px, size,
     };
 
     /// 迷你复刻用户消息行：row = `bar_hover_wired` 的挂载点，bubble = 气泡本体
@@ -1278,13 +1330,17 @@ mod bar_hover_hit_test {
         let bubble_hovered: Rc<Cell<usize>> = Default::default();
         let row = row_hovered.clone();
         let bubble = bubble_hovered.clone();
-        let _ = window.draw(point(px(0.), px(0.)), size(px(400.), px(100.)), move |_, cx| {
-            cx.new(|_| Row {
-                row_hovered: row.clone(),
-                bubble_hovered: bubble.clone(),
-                bubble_occludes,
-            })
-        });
+        let _ = window.draw(
+            point(px(0.), px(0.)),
+            size(px(400.), px(100.)),
+            move |_, cx| {
+                cx.new(|_| Row {
+                    row_hovered: row.clone(),
+                    bubble_hovered: bubble.clone(),
+                    bubble_occludes,
+                })
+            },
+        );
         window.simulate_mouse_move(point(px(50.), px(20.)), None, Modifiers::none());
         (row_hovered.get(), bubble_hovered.get())
     }
@@ -1304,7 +1360,10 @@ mod bar_hover_hit_test {
     fn bubble_occluder_swallows_row_hover(cx: &mut TestAppContext) {
         let (row, bubble) = hover_bubble(cx, true);
         assert_eq!(bubble, 1);
-        assert_eq!(row, 0, "occlude 会连祖先一起截断（gpui 语义若变，此断言先炸）");
+        assert_eq!(
+            row, 0,
+            "occlude 会连祖先一起截断（gpui 语义若变，此断言先炸）"
+        );
     }
 }
 
@@ -1324,7 +1383,7 @@ mod bubble_wheel {
     use gpui::{
         AppContext, Context, IntoElement, ListAlignment, ListState, Modifiers, ParentElement,
         Render, ScrollDelta, ScrollHandle, ScrollWheelEvent, Styled, TestAppContext,
-        VisualTestContext, Window, div, point, px, size, prelude::*,
+        VisualTestContext, Window, div, point, prelude::*, px, size,
     };
 
     const VP: f32 = 600.;
@@ -1339,56 +1398,52 @@ mod bubble_wheel {
     impl Render for View {
         fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
             let handle = self.handle.clone();
-            div()
-                .w_full()
-                .h(px(VP))
-                .child(
-                    gpui::list(self.state.clone(), move |ix, _, _| {
-                        let sh = handle.clone();
-                        div()
-                            .w_full()
-                            .flex()
-                            .flex_col()
-                            .child(
-                                div()
-                                    .id(("bubble", ix))
-                                    .h(px(BUBBLE_H))
-                                    .overflow_y_scroll()
-                                    .track_scroll(&sh)
-                                    // 与 turn.rs render_msg 里的边界拦截同构
-                                    .on_scroll_wheel({
-                                        let sh = sh.clone();
-                                        move |ev: &ScrollWheelEvent, window, cx| {
-                                            let max = sh.max_offset().height;
-                                            if max <= px(0.) {
-                                                return;
-                                            }
-                                            let delta_y =
-                                                ev.delta.pixel_delta(window.line_height()).y;
-                                            if delta_y == px(0.) {
-                                                return;
-                                            }
-                                            // 同 div 内置滚动先跑，offset 已含本次 delta
-                                            let off_pre = sh.offset().y - delta_y;
-                                            const EPS: f32 = 1.;
-                                            let at_edge = if delta_y > px(0.) {
-                                                off_pre >= px(-EPS)
-                                            } else {
-                                                off_pre <= px(-f32::from(max) + EPS)
-                                            };
-                                            if !at_edge {
-                                                cx.stop_propagation();
-                                            }
+            div().w_full().h(px(VP)).child(
+                gpui::list(self.state.clone(), move |ix, _, _| {
+                    let sh = handle.clone();
+                    div()
+                        .w_full()
+                        .flex()
+                        .flex_col()
+                        .child(
+                            div()
+                                .id(("bubble", ix))
+                                .h(px(BUBBLE_H))
+                                .overflow_y_scroll()
+                                .track_scroll(&sh)
+                                // 与 turn.rs render_msg 里的边界拦截同构
+                                .on_scroll_wheel({
+                                    let sh = sh.clone();
+                                    move |ev: &ScrollWheelEvent, window, cx| {
+                                        let max = sh.max_offset().height;
+                                        if max <= px(0.) {
+                                            return;
                                         }
-                                    })
-                                    .child(div().h(px(1000.))),
-                            )
-                            // 气泡下垫高，让列表本身也有滚动余量
-                            .child(div().h(px(900.)))
-                            .into_any_element()
-                    })
-                    .h_full(),
-                )
+                                        let delta_y = ev.delta.pixel_delta(window.line_height()).y;
+                                        if delta_y == px(0.) {
+                                            return;
+                                        }
+                                        // 同 div 内置滚动先跑，offset 已含本次 delta
+                                        let off_pre = sh.offset().y - delta_y;
+                                        const EPS: f32 = 1.;
+                                        let at_edge = if delta_y > px(0.) {
+                                            off_pre >= px(-EPS)
+                                        } else {
+                                            off_pre <= px(-f32::from(max) + EPS)
+                                        };
+                                        if !at_edge {
+                                            cx.stop_propagation();
+                                        }
+                                    }
+                                })
+                                .child(div().h(px(1000.))),
+                        )
+                        // 气泡下垫高，让列表本身也有滚动余量
+                        .child(div().h(px(900.)))
+                        .into_any_element()
+                })
+                .h_full(),
+            )
         }
     }
 
@@ -1470,7 +1525,10 @@ mod bubble_wheel {
         assert_eq!(bubble, -50., "气泡自己必须滚起来");
         assert_eq!(
             list,
-            ListOffsetProbe { item_ix: 0, offset_in_item: 0. },
+            ListOffsetProbe {
+                item_ix: 0,
+                offset_in_item: 0.
+            },
             "气泡没到边界，会话列表不得同帧跟着滚（穿透 = 用户看到的「滚不动」）"
         );
     }
@@ -1485,7 +1543,13 @@ mod bubble_wheel {
         repaint(window, &state, &handle);
         assert_eq!(f32::from(handle.offset().y), -max, "气泡停在下限");
         assert_eq!(bubble, -max);
-        assert_eq!(list, ListOffsetProbe { item_ix: 0, offset_in_item: 0. });
+        assert_eq!(
+            list,
+            ListOffsetProbe {
+                item_ix: 0,
+                offset_in_item: 0.
+            }
+        );
 
         // 已在底部：下一记轮到列表（气泡仍钉在下限）
         let (_, list) = wheel(window, &state, &handle, -120.);
@@ -1497,6 +1561,12 @@ mod bubble_wheel {
         // 往上滚：光标仍在气泡上、气泡有上行余量 → 气泡先滚，列表不动
         let (bubble, list) = wheel(window, &state, &handle, 60.);
         assert_eq!(bubble, -max + 60.);
-        assert_eq!(list, ListOffsetProbe { item_ix: 0, offset_in_item: 120. });
+        assert_eq!(
+            list,
+            ListOffsetProbe {
+                item_ix: 0,
+                offset_in_item: 120.
+            }
+        );
     }
 }

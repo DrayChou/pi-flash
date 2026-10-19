@@ -16,8 +16,6 @@
 //!   /历史回溯/补全），非空多行重新派发组件 MoveUp/MoveDown
 //! - Escape → wrapper on_key_down（菜单开=取消补全，运行中=中止）
 
-
-
 use gpui::Context;
 
 use crate::Chat;
@@ -30,7 +28,6 @@ mod ctx_tip;
 pub(crate) use area::*;
 use bar::*;
 use ctx_tip::*;
-
 
 // ---------------------------------------------------------------------------
 // composer 方法：输入写入/@ 索引/发送与中止（P3 自 main.rs impl Chat 拆入）
@@ -70,13 +67,13 @@ impl Chat {
     /// app-settings.json，默认 60s / 10 项目）。
     pub(crate) fn ensure_at_index(&mut self, cx: &mut Context<Self>) {
         // 无项目态：无文件索引可言（发送已被 send 门拦在选目录之前）
-        let Some(cwd) = self.ws.cwd.clone() else { return };
+        let Some(cwd) = self.ws.cwd.clone() else {
+            return;
+        };
         let ttl = std::time::Duration::from_secs(services::workspace::at_index_ttl_secs());
         let key = cwd.to_string_lossy().to_string();
         let fresh = match self.composer.at_index.get(&key) {
-            Some(e) => {
-                e.building || e.built.is_some_and(|t| t.elapsed() < ttl)
-            }
+            Some(e) => e.building || e.built.is_some_and(|t| t.elapsed() < ttl),
             None => false,
         };
         if fresh {
@@ -113,7 +110,9 @@ impl Chat {
         .detach();
     }
 
-    pub(crate) fn with_active_editor<Act: FnOnce(&mut SessionRuntime, &mut Context<SessionRuntime>)>(
+    pub(crate) fn with_active_editor<
+        Act: FnOnce(&mut SessionRuntime, &mut Context<SessionRuntime>),
+    >(
         &mut self,
         cx: &mut Context<Self>,
         act: Act,
@@ -165,7 +164,9 @@ impl Chat {
     /// 文字随旧 runtime 换走，先把暂存文字放回；期间用户真有新输入则以新
     /// 输入为准（暂存弃掉，不自动发）。
     pub(crate) fn flush_pending_send(&mut self, cx: &mut Context<Self>) {
-        let Some(stashed) = self.dlg.pending_send.take() else { return };
+        let Some(stashed) = self.dlg.pending_send.take() else {
+            return;
+        };
         if self.composer.input.is_empty() {
             self.set_input(stashed.clone(), cx);
         }
@@ -220,7 +221,6 @@ impl Chat {
         out.extend(self.pool.globals.commands.iter().cloned());
         std::borrow::Cow::Owned(out)
     }
-
 }
 
 // ---- @ 文件索引状态类型（自 shell/types.rs 下沉，composer 域自持）----
@@ -232,7 +232,6 @@ pub(crate) struct AtIndexState {
     pub(crate) entries: std::sync::Arc<Vec<crate::services::at_file::FileEntry>>,
     pub(crate) building: bool,
 }
-
 
 /// 索引重建整体换新 Arc → `Arc::ptr_eq` 失配自然失效，无需手动清。
 pub(crate) type AtFilterCache = (

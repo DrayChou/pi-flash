@@ -85,8 +85,13 @@ impl Registry {
         let at = self
             .entries
             .partition_point(|e| e.last_opened_ms > opened_ms);
-        self.entries
-            .insert(at, ProjectRecord { path: path.to_path_buf(), last_opened_ms: opened_ms });
+        self.entries.insert(
+            at,
+            ProjectRecord {
+                path: path.to_path_buf(),
+                last_opened_ms: opened_ms,
+            },
+        );
         self.entries.truncate(PROJECTS_CAPACITY);
         self.save();
     }
@@ -153,10 +158,8 @@ pub fn register_project(path: &Path) {
 /// 启动清洗（幂等）：注册表里落在当前进程安装根内的存量——历史交接写脏
 /// 的「payload」等项目——一次性清掉并落盘。
 pub fn purge_app_paths() -> usize {
-    with_registry(|reg| {
-        reg.purge_app_paths_at(crate::paths::current_install_root().as_deref())
-    })
-    .unwrap_or(0)
+    with_registry(|reg| reg.purge_app_paths_at(crate::paths::current_install_root().as_deref()))
+        .unwrap_or(0)
 }
 
 /// 最近打开降序的项目记录快照。
@@ -200,7 +203,10 @@ mod tests {
 
     #[test]
     fn path_key_normalizes_like_ws_key() {
-        assert_eq!(path_key(Path::new("d:/a\\B/")), path_key(Path::new("D:\\A\\b")));
+        assert_eq!(
+            path_key(Path::new("d:/a\\B/")),
+            path_key(Path::new("D:\\A\\b"))
+        );
         assert_eq!(path_key(Path::new("D:\\x")), "d:\\x");
     }
 
@@ -240,7 +246,10 @@ mod tests {
         assert_eq!(r.records().len(), 1);
         assert_eq!(r.records()[0].path, PathBuf::from("D:\\work"));
         // 幂等
-        assert_eq!(r.purge_app_paths_at(Some(Path::new("D:/SOFTWARES/pi-flash"))), 0);
+        assert_eq!(
+            r.purge_app_paths_at(Some(Path::new("D:/SOFTWARES/pi-flash"))),
+            0
+        );
     }
 
     #[test]
@@ -251,10 +260,13 @@ mod tests {
             r.register_at(Path::new("D:\\a\\demo"), 7);
         }
         let r = Registry::load(&file);
-        assert_eq!(r.records(), &[ProjectRecord {
-            path: PathBuf::from("D:\\a\\demo"),
-            last_opened_ms: 7,
-        }]);
+        assert_eq!(
+            r.records(),
+            &[ProjectRecord {
+                path: PathBuf::from("D:\\a\\demo"),
+                last_opened_ms: 7,
+            }]
+        );
         let _ = std::fs::remove_file(&file);
     }
 

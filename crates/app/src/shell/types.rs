@@ -2,8 +2,8 @@
 //! psp 分组与悬浮卡、composer 菜单与 @ 索引状态、pill 弹层三件套、
 //! 内容区 tab（PanelTab/FileTab）。全量 pub(crate)：crate 内自由可达。
 
-use gpui::*;
 use crate::*;
+use gpui::*;
 
 /// 一个项目的文件树内存态（对齐 Zed `expanded_dir_ids` 的 per-worktree
 /// 结构）：展开集合 + Pin 视图开关。切项目不丢、可落盘恢复（010/021）。
@@ -17,9 +17,17 @@ pub(crate) struct TreeMemory {
 #[derive(Debug, Clone)]
 pub(crate) enum Dialog {
     /// 042：新增 Provider 清单弹窗（两组：自定义 / API KEY；订阅组缓行）
-    ProviderPicker { input: gpui::Entity<TextInput>, scroll: gpui::ScrollHandle },
-    GitDiff { path: PathBuf, patch: String },
-    SessionSearch { input: gpui::Entity<TextInput> },
+    ProviderPicker {
+        input: gpui::Entity<TextInput>,
+        scroll: gpui::ScrollHandle,
+    },
+    GitDiff {
+        path: PathBuf,
+        patch: String,
+    },
+    SessionSearch {
+        input: gpui::Entity<TextInput>,
+    },
     /// 004 projectManager 打开项目菜单：搜索框 + 打开文件夹 + 最近 30 天
     /// 项目列表（列表数据在 `project_hits`，扫描完异步回填）。`fresh` =
     /// 新会话页来源：选项目落**全新草稿**（new_session_in，不恢复
@@ -32,15 +40,21 @@ pub(crate) enum Dialog {
     },
     /// composer 缩略图点击大图预览：直接持渲染源（Arc 指针拷贝，无索引
     /// 失效问题）
-    ImagePreview { image: std::sync::Arc<gpui::Image> },
+    ImagePreview {
+        image: std::sync::Arc<gpui::Image>,
+    },
     /// topbar ⋯ 菜单：系统提示词 / 工具定义（窗体 = 设置弹窗那套大卡片，
     /// 见 top_panels / ui::overlay::big_card）
-    SessionInfo { kind: TopPanel },
+    SessionInfo {
+        kind: TopPanel,
+    },
     /// 023 fileView：关闭带未保存修改的文件 tab 前确认。单关持一个 path；
     /// 标签右键批量关闭（tab 菜单移植 zed「N unsaved」）收拢整批待裁决
     /// 文件，弹窗三键对整批生效。持 path 不持 ix——弹窗存活期间的增删
     /// 不会让索引漂移。
-    FileDirty { paths: Vec<PathBuf> },
+    FileDirty {
+        paths: Vec<PathBuf>,
+    },
     /// 060 远程控制：扫码弹窗（二维码 + 绑定码）。topbar 手机图标与设置
     /// 「远程控制」页签入口已隐藏（2026-10-10 定），自动化 WX_QR_OPEN 仍可打开。
     /// 不持数据 —— 内容全从 `chat.aux.remote.qr` 现读，泵更新即重绘。
@@ -138,8 +152,6 @@ pub(crate) struct PendingTab {
     pub cwd: String,
 }
 
-
-
 #[derive(Debug, Clone)]
 pub(crate) struct AttachedImage {
     pub(crate) data_b64: String,
@@ -162,8 +174,6 @@ pub(crate) struct MenuItem {
     /// @ 菜单条目的目录形态（决定插入文本 `@dir/` 不闭合 + 图标）
     pub(crate) is_dir: bool,
 }
-
-
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum PillMenu {
@@ -206,7 +216,11 @@ impl PillBtns {
                 right_x: b.right(),
                 top: b.origin.y,
             })
-            .unwrap_or(PillAnchor { center_x: at.x, right_x: at.x, top: at.y })
+            .unwrap_or(PillAnchor {
+                center_x: at.x,
+                right_x: at.x,
+                top: at.y,
+            })
     }
 
     /// 抓按钮 bounds 的隐形覆盖层：absolute inset_0 的 canvas，prepaint 期
@@ -323,7 +337,6 @@ pub(crate) struct FileTab {
     pub(crate) encoding: &'static encoding_rs::Encoding,
     pub(crate) has_bom: bool,
 }
-
 
 impl FileTab {
     pub(crate) fn from_disk(content: String) -> Self {

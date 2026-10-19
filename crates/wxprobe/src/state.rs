@@ -7,7 +7,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 pub fn base_dir() -> PathBuf {
     pi_link::paths::dir().unwrap_or_else(|| PathBuf::from("."))
@@ -69,7 +69,11 @@ pub fn ensure_client_id(state: &mut Value) -> String {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    let id = format!("wxprobe-{:08x}-{:08x}", std::process::id(), (nanos & 0xFFFF_FFFF) as u32);
+    let id = format!(
+        "wxprobe-{:08x}-{:08x}",
+        std::process::id(),
+        (nanos & 0xFFFF_FFFF) as u32
+    );
     set(state, "client_id", Some(&id));
     id
 }

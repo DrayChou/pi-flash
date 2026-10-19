@@ -85,7 +85,16 @@ pub const SYSTEM_BUCKETS: [SystemBucket; 7] = [
 /// pi 核心内置工具名（dist/core/tools，钉 1.3.0）。声明无来源字段，以此
 /// 名单差集分桶：核心 → 系统工具，`mcp` → MCP，其余 → 插件。vendor bump
 /// 时由协议符合性测试把关。
-const CORE_TOOLS: &[&str] = &["bash", "read", "write", "edit", "find", "grep", "ls", "powershell"];
+const CORE_TOOLS: &[&str] = &[
+    "bash",
+    "read",
+    "write",
+    "edit",
+    "find",
+    "grep",
+    "ls",
+    "powershell",
+];
 
 /// 提示词文本的有序分类分段：`(桶, 文本)`。顺序 = prompt 里的出现顺序；
 /// 同一 part 内的碎片段（project_context 切块）已合并，part 之间保持独立
@@ -192,7 +201,9 @@ fn project_context_segments<'a>(
         let rest = &tail[at + OPEN.len()..];
         let Some(q) = rest.find('"') else { break };
         let path = &rest[..q];
-        let Some(close) = rest[q..].find(CLOSE) else { break };
+        let Some(close) = rest[q..].find(CLOSE) else {
+            break;
+        };
         let body = &rest[q + 2..q + close]; // 路径引号后的 `>` 不算正文
         let is_global = global_prefix
             .as_ref()
@@ -322,11 +333,11 @@ mod tests {
         let entries = vec![
             json!({"role":"user","content":"hi"}),
             json!({"role":"system","content":"base",
-                "sections":{"preamble":"P1","rules":"R1","tools":"T1"},
-                "toolsAdded":[
-                    {"name":"read","description":"read a file","parameters":{"type":"object"}},
-                    {"name":"bash","description":"run","parameters":{"type":"object"}}
-                ]}),
+            "sections":{"preamble":"P1","rules":"R1","tools":"T1"},
+            "toolsAdded":[
+                {"name":"read","description":"read a file","parameters":{"type":"object"}},
+                {"name":"bash","description":"run","parameters":{"type":"object"}}
+            ]}),
             json!({"role":"system","sections":{"rules":"R2","cwd":"/x","tools":null},
                 "toolsRemoved":[{"name":"bash"}],
                 "toolsAdded":[{"name":"edit","description":"edit","parameters":{"type":"object"}}]}),
@@ -408,11 +419,23 @@ mod tests {
             t(&tools_wire_text(&subset))
         };
         // 全局 = content + preamble + rules + 全局 AGENTS 块
-        assert_eq!(b[at(GlobalPrompt)], t("base prompt") + t("you are pi") + t("<rules>- be careful</rules>") + t("global rules"));
+        assert_eq!(
+            b[at(GlobalPrompt)],
+            t("base prompt")
+                + t("you are pi")
+                + t("<rules>- be careful</rules>")
+                + t("global rules")
+        );
         assert_eq!(b[at(Skills)], t("<skills>- mx-data</skills>"));
-        assert_eq!(b[at(SystemTools)], t("<tools>- read</tools>") + tool_est(&["read"]));
+        assert_eq!(
+            b[at(SystemTools)],
+            t("<tools>- read</tools>") + tool_est(&["read"])
+        );
         assert_eq!(b[at(Mcp)], tool_est(&["mcp"]));
-        assert_eq!(b[at(Plugins)], t("<ext_thing>extension rules</ext_thing>") + tool_est(&["computer_use_click"]));
+        assert_eq!(
+            b[at(Plugins)],
+            t("<ext_thing>extension rules</ext_thing>") + tool_est(&["computer_use_click"])
+        );
         assert_eq!(b[at(Other)], t("<cwd>D:/x</cwd>"));
         // declarations：分桶与 breakdown 的声明部分一致
         let decls = declarations(&sys);
@@ -425,11 +448,17 @@ mod tests {
             ]
         );
         // 项目 = 包装句 + 块间换行 + 项目 AGENTS 块（分段逐段估算）
-        assert_eq!(b[at(ProjectPrompt)], t("<project_context>Project-specific:\n") + t("\nproject rules"));
+        assert_eq!(
+            b[at(ProjectPrompt)],
+            t("<project_context>Project-specific:\n") + t("\nproject rules")
+        );
 
         // agent_dir 传 None：所有块归项目，全局只剩非 project_context 部分
         let b = breakdown(&sys, None);
-        assert_eq!(b[at(GlobalPrompt)], t("base prompt") + t("you are pi") + t("<rules>- be careful</rules>"));
+        assert_eq!(
+            b[at(GlobalPrompt)],
+            t("base prompt") + t("you are pi") + t("<rules>- be careful</rules>")
+        );
         assert!(b[at(ProjectPrompt)] > t("project rules"));
     }
 
@@ -469,7 +498,8 @@ mod tests {
     #[test]
     fn split_project_context_by_path() {
         let text = "head <project_instructions path=\"C:/Users/u/.pi/agent/AGENTS.md\">G</project_instructions> mid <project_instructions path=\"D:\\repo\\AGENTS.md\">P</project_instructions> tail";
-        let segs = project_context_segments(text, Some(std::path::Path::new("c:\\users\\u\\.pi\\agent")));
+        let segs =
+            project_context_segments(text, Some(std::path::Path::new("c:\\users\\u\\.pi\\agent")));
         assert_eq!(
             segs,
             vec![

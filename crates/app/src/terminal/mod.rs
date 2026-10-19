@@ -9,7 +9,6 @@
 //! intentionally dropped; mouse-reporting apps get wheel-as-arrows only.
 use crate::*;
 
-
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -25,9 +24,9 @@ use alacritty_terminal::tty::{self, Shell};
 use alacritty_terminal::vte::ansi::CursorShape;
 use futures::channel::mpsc::UnboundedSender;
 use gpui::{
-    px, Font, FontStyle, FontWeight, Hsla, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, Pixels, Point, ScrollDelta, ScrollWheelEvent, SharedString,
-    UnderlineStyle, WeakEntity, Window,
+    Font, FontStyle, FontWeight, Hsla, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    Pixels, Point, ScrollDelta, ScrollWheelEvent, SharedString, UnderlineStyle, WeakEntity, Window,
+    px,
 };
 
 mod input_encode;
@@ -37,7 +36,6 @@ mod snapshot;
 use input_encode::*;
 use palette::*;
 pub(crate) use snapshot::*;
-
 
 use crate::Chat;
 
@@ -174,8 +172,14 @@ pub fn spawn_terminal(
     focus: gpui::FocusHandle,
     proxy: Proxy,
 ) -> Result<TerminalTab, String> {
-    let dims = CellDims { cols: DEFAULT_COLS, rows: DEFAULT_ROWS };
-    let config = Config { scrolling_history: SCROLLBACK, ..Config::default() };
+    let dims = CellDims {
+        cols: DEFAULT_COLS,
+        rows: DEFAULT_ROWS,
+    };
+    let config = Config {
+        scrolling_history: SCROLLBACK,
+        ..Config::default()
+    };
     let term = Arc::new(FairMutex::new(Term::new(config, &dims, proxy.clone())));
 
     let mut options = tty::Options::default();
@@ -193,8 +197,8 @@ pub fn spawn_terminal(
         cell_height: line_h as u16,
     };
     let pty = tty::new(&options, window_size, 0).map_err(|e| e.to_string())?;
-    let event_loop = EventLoop::new(term.clone(), proxy, pty, true, false)
-        .map_err(|e| e.to_string())?;
+    let event_loop =
+        EventLoop::new(term.clone(), proxy, pty, true, false).map_err(|e| e.to_string())?;
     let pty_tx = event_loop.channel();
     event_loop.spawn();
 
@@ -222,13 +226,14 @@ fn shell_env() -> std::collections::HashMap<String, String> {
     let mut env: std::collections::HashMap<String, String> = std::env::vars().collect();
     env.insert("TERM".into(), "xterm-256color".into());
     env.insert("COLORTERM".into(), "truecolor".into());
-    let has_lang = ["LANG", "LC_ALL", "LC_CTYPE"].iter().any(|k| env.contains_key(*k));
+    let has_lang = ["LANG", "LC_ALL", "LC_CTYPE"]
+        .iter()
+        .any(|k| env.contains_key(*k));
     if !has_lang {
         env.insert("LANG".into(), "C.UTF-8".into());
     }
     env
 }
-
 
 // ---------------------------------------------------------------------------
 // TerminalElement: custom element painting the alacritty grid
@@ -277,7 +282,6 @@ impl TerminalElement {
         self.blink_on = on;
         self
     }
-
 }
 
 impl gpui::IntoElement for TerminalElement {
@@ -441,7 +445,7 @@ impl gpui::Element for TerminalElement {
                     let caret = (row >= 0
                         && (row as usize) < grid_rows
                         && content.cursor.shape != CursorShape::Hidden)
-                    .then(|| (row as usize, chars_before));
+                        .then(|| (row as usize, chars_before));
                     (rows, caret)
                 };
                 let line_h = px(line_h);
@@ -482,7 +486,9 @@ impl gpui::Element for TerminalElement {
                 // caret bar: 2px vertical line in the fg color at the shaped
                 // pixel x of the cursor, ~1Hz blink while focused (heartbeat
                 // from the term_cursor task); dim static bar when unfocused
-                let _ = shared.weak.update(cx, |chat, _| chat.ws.term_cursor_focused = focused);
+                let _ = shared
+                    .weak
+                    .update(cx, |chat, _| chat.ws.term_cursor_focused = focused);
                 if let (Some((row_ix, _)), Some(x)) = (caret, caret_x) {
                     let (alpha, visible) = if focused {
                         (1.0, blink_on)
@@ -521,7 +527,10 @@ impl gpui::Element for TerminalElement {
                         }),
                         color: hsl(TERM_FG),
                         background_color: None,
-                        underline: Some(UnderlineStyle { thickness: px(1.), ..Default::default() }),
+                        underline: Some(UnderlineStyle {
+                            thickness: px(1.),
+                            ..Default::default()
+                        }),
                         strikethrough: None,
                     };
                     let line = window.text_system().shape_line(
@@ -535,7 +544,10 @@ impl gpui::Element for TerminalElement {
                         bounds.origin.y + px(PAD_T) + line_h * row_ix as f32,
                     );
                     window.paint_quad(gpui::fill(
-                        gpui::Bounds { origin, size: gpui::size(line.width, line_h) },
+                        gpui::Bounds {
+                            origin,
+                            size: gpui::size(line.width, line_h),
+                        },
                         hsl(0x1d222b),
                     ));
                     let _ = line.paint(origin, line_h, window, cx);
@@ -724,7 +736,11 @@ impl TermShared {
         let _ = self.weak.update(cx, |chat, cx| {
             if let Some(tab) = chat.ws.terminals.iter_mut().find(|t| t.id == self.tab_id) {
                 if let Some(anchor) = tab.sel_anchor {
-                    let sel = if anchor == head { None } else { Some((anchor, head)) };
+                    let sel = if anchor == head {
+                        None
+                    } else {
+                        Some((anchor, head))
+                    };
                     if tab.selection != sel {
                         tab.selection = sel;
                         cx.notify();
@@ -763,7 +779,10 @@ impl TermShared {
         let y = f32::from(pos.y - bounds.origin.y - px(PAD_T));
         let col = ((x / self.cell_w).floor() as i32).clamp(0, cols as i32 - 1) as usize;
         let row = (y / self.line_h).floor() as i32;
-        SelPt { line: (row - offset).clamp(-history, screen - 1), col }
+        SelPt {
+            line: (row - offset).clamp(-history, screen - 1),
+            col,
+        }
     }
 
     fn scroll(&self, delta: ScrollDelta, _window: &mut Window, cx: &mut gpui::App) {
@@ -805,8 +824,14 @@ pub fn semantic_range_of(
     let point = alacritty_terminal::index::Point::new(Line(cell.line), Column(cell.col));
     let range = Selection::new(ty, point, Side::Left).to_range(term)?;
     Some((
-        SelPt { line: range.start.line.0, col: range.start.column.0 },
-        SelPt { line: range.end.line.0, col: range.end.column.0 },
+        SelPt {
+            line: range.start.line.0,
+            col: range.start.column.0,
+        },
+        SelPt {
+            line: range.end.line.0,
+            col: range.end.column.0,
+        },
     ))
 }
 
@@ -909,15 +934,14 @@ pub fn measure_cell(window: &Window) -> (f32, f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gpui::Keystroke;
     use alacritty_terminal::vte::ansi::Processor;
+    use gpui::Keystroke;
 
     fn test_term(cols: usize, rows: usize, text: &[u8]) -> Term<Proxy> {
         let (tx, _rx) = futures::channel::mpsc::unbounded::<(usize, Event)>();
         let proxy = Proxy { tab: 0, tx };
         let mut term = Term::new(Config::default(), &CellDims { cols, rows }, proxy);
-        Processor::<alacritty_terminal::vte::ansi::StdSyncHandler>::new()
-            .advance(&mut term, text);
+        Processor::<alacritty_terminal::vte::ansi::StdSyncHandler>::new().advance(&mut term, text);
         term
     }
 
@@ -985,23 +1009,64 @@ mod tests {
         let plain = TermMode::empty();
         let app = TermMode::APP_CURSOR;
         let k = |key: &str, ctrl: bool, alt: bool, shift: bool| Keystroke {
-            modifiers: gpui::Modifiers { control: ctrl, alt, shift, ..Default::default() },
+            modifiers: gpui::Modifiers {
+                control: ctrl,
+                alt,
+                shift,
+                ..Default::default()
+            },
             key: key.into(),
             key_char: None,
         };
-        assert_eq!(keystroke_to_pty(&k("enter", false, false, false), &plain), Some(b"\r".to_vec()));
-        assert_eq!(keystroke_to_pty(&k("backspace", false, false, false), &plain), Some(vec![0x7f]));
-        assert_eq!(keystroke_to_pty(&k("escape", false, false, false), &plain), Some(vec![0x1b]));
-        assert_eq!(keystroke_to_pty(&k("tab", false, false, true), &plain), Some(b"\x1b[Z".to_vec()));
-        assert_eq!(keystroke_to_pty(&k("up", false, false, false), &plain), Some(b"\x1b[A".to_vec()));
-        assert_eq!(keystroke_to_pty(&k("up", false, false, false), &app), Some(b"\x1bOA".to_vec()));
-        assert_eq!(keystroke_to_pty(&k("left", true, false, false), &plain), Some(b"\x1b[1;5D".to_vec()));
-        assert_eq!(keystroke_to_pty(&k("pagedown", false, false, false), &plain), Some(b"\x1b[6~".to_vec()));
-        assert_eq!(keystroke_to_pty(&k("f5", false, false, false), &plain), Some(b"\x1b[15~".to_vec()));
-        assert_eq!(keystroke_to_pty(&k("d", true, false, false), &plain), Some(vec![0x04]));
-        assert_eq!(keystroke_to_pty(&k("a", true, false, false), &plain), Some(vec![0x01]));
+        assert_eq!(
+            keystroke_to_pty(&k("enter", false, false, false), &plain),
+            Some(b"\r".to_vec())
+        );
+        assert_eq!(
+            keystroke_to_pty(&k("backspace", false, false, false), &plain),
+            Some(vec![0x7f])
+        );
+        assert_eq!(
+            keystroke_to_pty(&k("escape", false, false, false), &plain),
+            Some(vec![0x1b])
+        );
+        assert_eq!(
+            keystroke_to_pty(&k("tab", false, false, true), &plain),
+            Some(b"\x1b[Z".to_vec())
+        );
+        assert_eq!(
+            keystroke_to_pty(&k("up", false, false, false), &plain),
+            Some(b"\x1b[A".to_vec())
+        );
+        assert_eq!(
+            keystroke_to_pty(&k("up", false, false, false), &app),
+            Some(b"\x1bOA".to_vec())
+        );
+        assert_eq!(
+            keystroke_to_pty(&k("left", true, false, false), &plain),
+            Some(b"\x1b[1;5D".to_vec())
+        );
+        assert_eq!(
+            keystroke_to_pty(&k("pagedown", false, false, false), &plain),
+            Some(b"\x1b[6~".to_vec())
+        );
+        assert_eq!(
+            keystroke_to_pty(&k("f5", false, false, false), &plain),
+            Some(b"\x1b[15~".to_vec())
+        );
+        assert_eq!(
+            keystroke_to_pty(&k("d", true, false, false), &plain),
+            Some(vec![0x04])
+        );
+        assert_eq!(
+            keystroke_to_pty(&k("a", true, false, false), &plain),
+            Some(vec![0x01])
+        );
         // alt prefixing
-        assert_eq!(keystroke_to_pty(&k("x", false, true, false), &plain), Some(b"\x1bx".to_vec()));
+        assert_eq!(
+            keystroke_to_pty(&k("x", false, true, false), &plain),
+            Some(b"\x1bx".to_vec())
+        );
         // printable via key_char
         let mut ch = k("a", false, false, false);
         ch.key_char = Some("A".into());
@@ -1044,14 +1109,29 @@ mod tests {
         let word = |col: usize| sel(&t30, col, SelectionType::Semantic);
         let line = |col: usize| sel(&t30, col, SelectionType::Lines);
         // `ls`：词首/词尾都归同一个词
-        assert_eq!(word(0), Some((SelPt { line: 0, col: 0 }, SelPt { line: 0, col: 1 })));
-        assert_eq!(word(1), Some((SelPt { line: 0, col: 0 }, SelPt { line: 0, col: 1 })));
+        assert_eq!(
+            word(0),
+            Some((SelPt { line: 0, col: 0 }, SelPt { line: 0, col: 1 }))
+        );
+        assert_eq!(
+            word(1),
+            Some((SelPt { line: 0, col: 0 }, SelPt { line: 0, col: 1 }))
+        );
         // 空格：分隔符扩到相邻词（alacritty 原样语义）
-        assert_eq!(word(2), Some((SelPt { line: 0, col: 0 }, SelPt { line: 0, col: 4 })));
+        assert_eq!(
+            word(2),
+            Some((SelPt { line: 0, col: 0 }, SelPt { line: 0, col: 4 }))
+        );
         // 路径整串（`/` `_` `.` 都是词字符）
-        assert_eq!(word(10), Some((SelPt { line: 0, col: 6 }, SelPt { line: 0, col: 21 })));
+        assert_eq!(
+            word(10),
+            Some((SelPt { line: 0, col: 6 }, SelPt { line: 0, col: 21 }))
+        );
         // 三击 = 整条屏幕行（到末列；尾部空白拷贝时去尾）
-        assert_eq!(line(5), Some((SelPt { line: 0, col: 0 }, SelPt { line: 0, col: 29 })));
+        assert_eq!(
+            line(5),
+            Some((SelPt { line: 0, col: 0 }, SelPt { line: 0, col: 29 }))
+        );
 
         // 折行：逻辑行跨屏幕行（20 列下 21 字符必然折行）
         let t20 = test_term(20, 3, b"ls -l /tmp/foo_bar.txt");
@@ -1133,7 +1213,10 @@ mod tests {
 
         let (tx, rx) = mpsc::channel();
         let term = Arc::new(FairMutex::new(Term::new(
-            Config { scrolling_history: 100, ..Config::default() },
+            Config {
+                scrolling_history: 100,
+                ..Config::default()
+            },
             &CellDims { cols: 80, rows: 24 },
             Chan(tx.clone()),
         )));
@@ -1142,7 +1225,12 @@ mod tests {
         options.drain_on_exit = false;
         let pty = tty::new(
             &options,
-            WindowSize { num_cols: 80, num_lines: 24, cell_width: 7, cell_height: 16 },
+            WindowSize {
+                num_cols: 80,
+                num_lines: 24,
+                cell_width: 7,
+                cell_height: 16,
+            },
             0,
         )
         .expect("conpty spawn");
@@ -1162,8 +1250,7 @@ mod tests {
                     let locked = term.lock();
                     let grid = locked.grid();
                     for r in 0..24 {
-                        let text: String =
-                            (0..80).map(|c| grid[Line(r)][Column(c)].c).collect();
+                        let text: String = (0..80).map(|c| grid[Line(r)][Column(c)].c).collect();
                         if text.contains("PIFLASH_OK") {
                             saw_output = true;
                         }
@@ -1206,7 +1293,9 @@ impl Chat {
                 None => return,
             },
         };
-        let Some(tx) = self.ws.term_events.clone() else { return };
+        let Some(tx) = self.ws.term_events.clone() else {
+            return;
+        };
         let (cell_w, line_h) = terminal::measure_cell(window);
         let font_size = terminal::font_size();
         self.ws.term_seq += 1;
@@ -1244,7 +1333,11 @@ impl Chat {
     /// panel tab 不是终端）。`term_view` 就是按 `active_panel_tab` 渲染的，
     /// 所以这条是「渲染面」的唯一口径。
     pub(crate) fn shown_terminal_index(&self) -> Option<usize> {
-        let id = match self.ws.active_panel_tab.and_then(|ix| self.ws.panel_tabs.get(ix))? {
+        let id = match self
+            .ws
+            .active_panel_tab
+            .and_then(|ix| self.ws.panel_tabs.get(ix))?
+        {
             PanelTab::Term(id) => *id,
             _ => return None,
         };
@@ -1266,7 +1359,9 @@ impl Chat {
         let Some(tab) = self.ws.terminals.iter_mut().find(|t| t.id == tab_id) else {
             return false;
         };
-        let Some(sel) = tab.selection else { return false };
+        let Some(sel) = tab.selection else {
+            return false;
+        };
         let Some((left, del)) = deletion_plan(&tab.term.lock(), sel) else {
             return false;
         };
@@ -1294,7 +1389,9 @@ impl Chat {
         let Some(tab) = self.ws.terminals.iter_mut().find(|t| t.id == tab_id) else {
             return false;
         };
-        let Some(sel) = tab.selection else { return false };
+        let Some(sel) = tab.selection else {
+            return false;
+        };
         let text = terminal::selection_text(&tab.term.lock(), sel);
         if text.is_empty() {
             return false;
@@ -1312,7 +1409,8 @@ impl Chat {
         };
         // 有选区 = 粘贴替换：先删选区（删不掉就只清选区），再写入
         let had_sel = self
-            .ws.terminals
+            .ws
+            .terminals
             .iter()
             .find(|t| t.id == tab_id)
             .is_some_and(|t| t.selection.is_some());
@@ -1349,8 +1447,14 @@ impl Chat {
         let min_line = -(total - screen).max(0);
         tab.sel_anchor = None;
         tab.selection = Some((
-            SelPt { line: min_line, col: 0 },
-            SelPt { line: screen - 1, col: cols.saturating_sub(1) },
+            SelPt {
+                line: min_line,
+                col: 0,
+            },
+            SelPt {
+                line: screen - 1,
+                col: cols.saturating_sub(1),
+            },
         ));
         cx.notify();
     }
@@ -1365,7 +1469,9 @@ impl Chat {
         let Some(tix) = self.shown_terminal_index().or(self.ws.active_terminal) else {
             return;
         };
-        let Some(tab) = self.ws.terminals.get(tix) else { return };
+        let Some(tab) = self.ws.terminals.get(tix) else {
+            return;
+        };
         let tab_id = tab.id;
         let k = &ev.keystroke;
         let ctrl = k.modifiers.control;
@@ -1415,13 +1521,14 @@ impl Chat {
             cx.stop_propagation();
             return;
         }
-        let Some(tab) = self.ws.terminals.get(tix) else { return };
+        let Some(tab) = self.ws.terminals.get(tix) else {
+            return;
+        };
         if let Some(bytes) = terminal::keystroke_to_pty(k, &mode) {
             let _ = tab.pty.send(Msg::Input(bytes.into()));
             cx.stop_propagation();
         }
     }
-
 }
 
 impl Chat {
@@ -1479,5 +1586,4 @@ impl Chat {
             _ => {}
         }
     }
-
 }

@@ -23,7 +23,11 @@ pub(crate) fn mc_shortcuts_view(window: &Window) -> gpui::AnyElement {
             "",
             action_key(&crate::OpenProjectPicker, window),
         ),
-        (tr("psp.new_session"), "", action_key(&crate::NewSession, window)),
+        (
+            tr("psp.new_session"),
+            "",
+            action_key(&crate::NewSession, window),
+        ),
         (
             tr("psp.search_sessions"),
             "",
@@ -44,16 +48,8 @@ pub(crate) fn mc_shortcuts_view(window: &Window) -> gpui::AnyElement {
             "",
             action_key(&crate::MaximizeFileTree, window),
         ),
-        (
-            tr("shortcuts.view_left"),
-            "",
-            Some(bare_key("ctrl-left")),
-        ),
-        (
-            tr("shortcuts.view_right"),
-            "",
-            Some(bare_key("ctrl-right")),
-        ),
+        (tr("shortcuts.view_left"), "", Some(bare_key("ctrl-left"))),
+        (tr("shortcuts.view_right"), "", Some(bare_key("ctrl-right"))),
     ];
     let file_tree: Vec<(&str, &str, Option<Keystroke>)> = vec![(
         tr("file_tree.rename"),
@@ -146,17 +142,13 @@ fn index_row(
     sep_below: bool,
 ) -> gpui::AnyElement {
     let t = T();
-    let mut name_col = div()
-        .flex()
-        .flex_col()
-        .flex_shrink_0()
-        .child(
-            div()
-                .text_size(crate::appearance::ui_size(13.))
-                .font_weight(FontWeight::MEDIUM)
-                .text_color(rgb(t.text))
-                .child(SharedString::from(title.to_string())),
-        );
+    let mut name_col = div().flex().flex_col().flex_shrink_0().child(
+        div()
+            .text_size(crate::appearance::ui_size(13.))
+            .font_weight(FontWeight::MEDIUM)
+            .text_color(rgb(t.text))
+            .child(SharedString::from(title.to_string())),
+    );
     if !desc.is_empty() {
         name_col = name_col.child(
             div()
@@ -230,7 +222,8 @@ fn keycap(label: String, modifier: bool) -> gpui::AnyElement {
     let cap_bg = if t.dark { t.tool_bg } else { 0xffffff };
     // mix_rgb 权重 = 第一参数占比：往底色里掺 5% 文字色、往边框色里掺黑
     let mod_bg = crate::appearance::theme::mix_rgb(t.text, t.bg, if t.dark { 0.06 } else { 0.05 });
-    let edge = crate::appearance::theme::mix_rgb(t.border, 0x000000, if t.dark { 0.45 } else { 0.86 });
+    let edge =
+        crate::appearance::theme::mix_rgb(t.border, 0x000000, if t.dark { 0.45 } else { 0.86 });
     div()
         .flex_shrink_0()
         .rounded(px(5.))

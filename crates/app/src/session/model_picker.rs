@@ -11,8 +11,8 @@
 use gpui::{AnyElement, MouseButton, SharedString, div, prelude::*, px, rgb};
 
 use super::Chat;
-use crate::appearance::theme::theme as T;
 use crate::TextInput;
+use crate::appearance::theme::theme as T;
 
 /// 菜单行高（限高 = `ROW_H × 10`，与 mcp_picker 一致）。
 pub(crate) const ROW_H: f32 = 30.;
@@ -43,7 +43,8 @@ impl Chat {
     /// 否则后台起一次性 node 走 SDK dump 并落缓存。幂等——Loading 中
     /// 重复调用直接返回。失败置 [`RegistryState::Failed`]，下次调用重试。
     pub(crate) fn ensure_registry(&mut self, cx: &mut Context<Self>) {
-        if self.cfg.provider_registry.is_some() || matches!(self.cfg.registry_state, RegistryState::Loading)
+        if self.cfg.provider_registry.is_some()
+            || matches!(self.cfg.registry_state, RegistryState::Loading)
         {
             return;
         }
@@ -110,7 +111,8 @@ impl Chat {
         self.ensure_models_requested(cx);
         let weak = cx.entity().downgrade();
         let weak_change = weak.clone();
-        let input = cx.new(|cx| TextInput::new(cx).placeholder(crate::i18n::tr("action.filter_models")));
+        let input =
+            cx.new(|cx| TextInput::new(cx).placeholder(crate::i18n::tr("action.filter_models")));
         input.update(cx, |ti, _| {
             ti.set_on_change(Box::new(move |_, cx| {
                 let _ = weak_change.update(cx, |c, cx| {
@@ -145,7 +147,10 @@ impl Chat {
     /// 菜单可见模型：当前项目目录（`catalog_for`）经 enabledModels 白名单
     /// 收窄；过滤文本仅在总数 ≥ [`MODEL_FILTER_MIN`] 时生效（阈值以下不渲染
     /// 过滤框，文本也不参与过滤——两处列表同规则）。返回 (可见, 总数)。
-    pub(crate) fn picker_models(&self, cx: &gpui::App) -> (Vec<pi_link::protocol::ModelInfo>, usize) {
+    pub(crate) fn picker_models(
+        &self,
+        cx: &gpui::App,
+    ) -> (Vec<pi_link::protocol::ModelInfo>, usize) {
         let picker_enabled = !self.cfg.mc_state.all_enabled;
         let scoped: Vec<pi_link::protocol::ModelInfo> = self
             .catalog_for(Some(self.rt().read(cx).cwd.as_path()))
@@ -184,9 +189,7 @@ impl Chat {
     }
 
     /// 分组行展开（组头 + 模型行交错；provider 按显示名序，组内保持入参序）。
-    pub(crate) fn group_entries(
-        models: &[pi_link::protocol::ModelInfo],
-    ) -> Vec<ModelGroupEntry> {
+    pub(crate) fn group_entries(models: &[pi_link::protocol::ModelInfo]) -> Vec<ModelGroupEntry> {
         let mut providers: Vec<String> = Vec::new();
         for m in models {
             if !providers.contains(&m.provider) {
@@ -232,7 +235,8 @@ impl Chat {
             .get(sel)
             .map(|m| (m.provider.clone(), m.id.clone()));
         if let Some((provider, id)) = pick {
-            self.rt().update(cx, |r, cx| r.select_model(provider, id, cx));
+            self.rt()
+                .update(cx, |r, cx| r.select_model(provider, id, cx));
         }
         self.dlg.model_picker = None;
         cx.notify();
@@ -285,7 +289,11 @@ pub(crate) fn group_model_row(
     let star_weak = weak.clone();
     let (dp, di) = (m.provider.clone(), m.id.clone());
     let (sp, si) = (dp.clone(), di.clone());
-    let label = if m.name.is_empty() { m.id.clone() } else { m.name.clone() };
+    let label = if m.name.is_empty() {
+        m.id.clone()
+    } else {
+        m.name.clone()
+    };
     let mut row = div()
         .id(SharedString::from(format!("mp-{}-{}", m.provider, m.id)))
         .h(px(row_h))
@@ -334,15 +342,17 @@ pub(crate) fn group_model_row(
         .child(
             // 五角星：实心 = 当前默认（全局唯一）；再点取消
             div()
-                .id(SharedString::from(format!("mp-star-{}-{}", m.provider, m.id)))
+                .id(SharedString::from(format!(
+                    "mp-star-{}-{}",
+                    m.provider, m.id
+                )))
                 .flex_shrink_0()
                 .cursor_pointer()
                 .hover(|s| s.opacity(0.8))
                 .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                     cx.stop_propagation();
-                    let _ = star_weak.update(cx, |c, cx| {
-                        c.mc_set_default(sp.clone(), si.clone(), cx)
-                    });
+                    let _ =
+                        star_weak.update(cx, |c, cx| c.mc_set_default(sp.clone(), si.clone(), cx));
                 })
                 .child(crate::ui::icon(
                     if is_default { "star-filled" } else { "star" },
@@ -351,15 +361,15 @@ pub(crate) fn group_model_row(
                 )),
         );
     if clickable {
-        row = row.cursor_pointer().hover(|s| s.bg(rgb(t.bg_hover))).on_mouse_down(
-            MouseButton::Left,
-            move |_, _, cx| {
+        row = row
+            .cursor_pointer()
+            .hover(|s| s.bg(rgb(t.bg_hover)))
+            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                 cx.stop_propagation();
                 if let Some(on_row) = &on_row {
                     let _ = row_weak.update(cx, |c, cx| on_row(c, cx));
                 }
-            },
-        );
+            });
     }
     row.into_any_element()
 }
@@ -386,7 +396,8 @@ pub(crate) fn view(
         .and_then(|s| s.model.as_ref())
         .map(|m| format!("{}/{}", m.provider, m.id));
     let default_ref = chat
-        .cfg.mc_default_model
+        .cfg
+        .mc_default_model
         .as_ref()
         .map(|(p, id)| format!("{p}/{id}"));
 
@@ -427,7 +438,8 @@ pub(crate) fn view(
                     10.,
                     None,
                     Some(Box::new(move |c, cx| {
-                        c.rt().update(cx, |r, cx| r.select_model(dp.clone(), di.clone(), cx));
+                        c.rt()
+                            .update(cx, |r, cx| r.select_model(dp.clone(), di.clone(), cx));
                         // picking is also the dismissal gesture
                         c.dlg.model_picker = None;
                         cx.notify();
@@ -444,7 +456,9 @@ pub(crate) fn view(
                 .py(px(12.))
                 .text_size(ui(11.))
                 .text_color(rgb(t.text_dim))
-                .child(SharedString::from(crate::i18n::tr("action.no_models_match"))),
+                .child(SharedString::from(crate::i18n::tr(
+                    "action.no_models_match",
+                ))),
         );
     }
     let n_rows = entries.len().max(1);

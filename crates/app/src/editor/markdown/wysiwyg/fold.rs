@@ -46,11 +46,9 @@ pub fn reveal_containers(
     merged
         .iter()
         .filter(|m| {
-            !touched.iter().any(|c| {
-                c.folds
-                    .iter()
-                    .any(|f| f.start < m.end && m.start < f.end)
-            })
+            !touched
+                .iter()
+                .any(|c| c.folds.iter().any(|f| f.start < m.end && m.start < f.end))
         })
         .cloned()
         .collect()
@@ -130,9 +128,7 @@ mod tests {
         for off in 0..total {
             // 段 [start, end) 收拢到段首（逆像优先段尾）→ 跳过起点侧；
             // 段尾及其后往返必须恒等
-            let collapses = folds
-                .iter()
-                .any(|f| f.start <= off && off < f.end);
+            let collapses = folds.iter().any(|f| f.start <= off && off < f.end);
             if collapses {
                 continue;
             }
@@ -178,7 +174,9 @@ mod tests {
         // 简易 LCG，避免引 rand 依赖
         let mut seed = 0x2545_F491_4F6C_DD1Du64;
         let mut next = move || {
-            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             (seed >> 33) as usize
         };
         for _case in 0..200 {
@@ -199,9 +197,7 @@ mod tests {
             let folds = merge(folds);
             for off in 0..64 {
                 // 段 [start, end) 收拢 → 逆像不唯一，跳过；其余恒等
-                let collapses = folds
-                    .iter()
-                    .any(|f| f.start <= off && off < f.end);
+                let collapses = folds.iter().any(|f| f.start <= off && off < f.end);
                 if collapses {
                     continue;
                 }

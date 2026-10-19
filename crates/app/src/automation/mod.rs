@@ -29,14 +29,21 @@ use crate::Chat;
 type ReqTx = futures::channel::mpsc::UnboundedSender<(std::sync::mpsc::Sender<String>, String)>;
 
 /// 启动服务。spec = PI_FLASH_AUTOMATION 的值："auto"/"1"/空 → 随机端口。
-pub fn start(cx: &mut App, window: AnyWindowHandle, chat: WeakEntity<Chat>, spec: &str) -> Result<(), String> {
+pub fn start(
+    cx: &mut App,
+    window: AnyWindowHandle,
+    chat: WeakEntity<Chat>,
+    spec: &str,
+) -> Result<(), String> {
     let port: u16 = match spec.trim() {
         "" | "1" | "auto" => 0,
-        s => s.parse().map_err(|_| format!("PI_FLASH_AUTOMATION 端口无效: {s:?}"))?,
+        s => s
+            .parse()
+            .map_err(|_| format!("PI_FLASH_AUTOMATION 端口无效: {s:?}"))?,
     };
     prune_stale_instances();
-    let listener =
-        std::net::TcpListener::bind(("127.0.0.1", port)).map_err(|e| format!("绑定 127.0.0.1:{port} 失败: {e}"))?;
+    let listener = std::net::TcpListener::bind(("127.0.0.1", port))
+        .map_err(|e| format!("绑定 127.0.0.1:{port} 失败: {e}"))?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     let token = Arc::new(make_token());
     let info = InstanceInfo {
@@ -46,7 +53,8 @@ pub fn start(cx: &mut App, window: AnyWindowHandle, chat: WeakEntity<Chat>, spec
         started_at_ms: now_ms(),
     };
     let file = automation::write_instance_file(&info);
-    let (tx, mut rx) = futures::channel::mpsc::unbounded::<(std::sync::mpsc::Sender<String>, String)>();
+    let (tx, mut rx) =
+        futures::channel::mpsc::unbounded::<(std::sync::mpsc::Sender<String>, String)>();
     std::thread::Builder::new()
         .name("pif-auto-accept".into())
         .spawn(move || {
@@ -70,7 +78,9 @@ pub fn start(cx: &mut App, window: AnyWindowHandle, chat: WeakEntity<Chat>, spec
         "pi-flash automation: 127.0.0.1:{port} pid={} token={} file={}",
         info.pid,
         info.token,
-        file.as_ref().map(|p| p.display().to_string()).unwrap_or_default()
+        file.as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_default()
     );
     Ok(())
 }
@@ -83,12 +93,15 @@ fn handle_line(
     cx: &mut App,
     line: &str,
 ) {
-    let Some(AutomationRecord::Request { id, method, params }) = automation::parse_line(line) else {
+    let Some(AutomationRecord::Request { id, method, params }) = automation::parse_line(line)
+    else {
         return;
     };
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         window.update(cx, |_view, window, cx| {
-            chat.update(cx, |chat, cx| handlers::dispatch(chat, window, cx, &method, &params))
+            chat.update(cx, |chat, cx| {
+                handlers::dispatch(chat, window, cx, &method, &params)
+            })
         })
     }));
     let response = match outcome {
@@ -133,13 +146,15 @@ fn handle_conn(stream: std::net::TcpStream, token: Arc<String>, tx: ReqTx) {
     {
         return;
     }
-    let _ = wtx.send(automation::hello_record(
-        automation::PROTO_VERSION,
-        "pi-flash",
-        std::process::id(),
-        env!("CARGO_PKG_VERSION"),
-    )
-    .to_string());
+    let _ = wtx.send(
+        automation::hello_record(
+            automation::PROTO_VERSION,
+            "pi-flash",
+            std::process::id(),
+            env!("CARGO_PKG_VERSION"),
+        )
+        .to_string(),
+    );
     let mut reader = std::io::BufReader::new(stream);
     let ok = (|| {
         let mut line = String::new();

@@ -16,21 +16,20 @@ use std::path::{Path, PathBuf};
 
 use futures::StreamExt;
 use gpui::{
-    actions, App, Application, Context, FocusHandle, Focusable, KeyBinding, KeyDownEvent,
-    MouseButton, ParentElement,
-    Render, SharedString, Styled, WindowOptions, div, prelude::*, px, rgb,
+    App, Application, Context, FocusHandle, Focusable, KeyBinding, KeyDownEvent, MouseButton,
+    ParentElement, Render, SharedString, Styled, WindowOptions, actions, div, prelude::*, px, rgb,
 };
 use pi_link::protocol::Command;
 use pi_link::sessions::{SessionInfo, list_sessions_for_cwd, read_tail_messages};
 
 mod agent_session;
-mod automation;
 mod appearance;
+mod ask_card;
 mod assets;
+mod automation;
 mod content;
 mod dialogs;
 mod editor;
-mod ask_card;
 mod ext_ui;
 mod function_panel;
 mod i18n;
@@ -38,20 +37,20 @@ mod i18n;
 mod i18n_audit;
 mod models_config;
 mod remote_control;
-mod startup;
 mod services;
 mod session;
 mod settings;
+mod shell;
+mod startup;
 mod status_bar;
-mod titlebar;
 mod terminal;
+mod titlebar;
 mod top_panels;
 mod ui;
-mod shell;
+pub(crate) use session::menu::slash_menu_view;
 pub(crate) use shell::chat::Chat;
 pub(crate) use shell::types::*;
 pub(crate) use ui::ComposerInput;
-pub(crate) use session::menu::slash_menu_view;
 
 /// 常规（非最大化）窗口尺寸——点窗口「缩小」钮还原到的就是这一档
 /// （2026-10-29 用户定案）。逻辑像素（gpui 按 scale_factor 折算），唯一
@@ -83,10 +82,35 @@ pub(crate) const WINDOW_H_MIN: f32 = 600.;
 // no-op 死键）。
 // 082 三期 md 预览滚动六动作（Preview*）：预览容器持焦（key_context
 // "MdPreview"）时方向/翻页/首尾键滚动虚拟列表，预览不再是键盘死角。
-actions!(app, [ComposerUp, ComposerDown, ComposerTab, ComposerPaste, FileSave, OpenProjectPicker, NewSession, OpenSessionSearch, CopyMessageSelection, MaximizeSessionList, MaximizeFileTree, ViewLeft, ViewRight, OpenFileSearch, PreviewUp, PreviewDown, PreviewPageUp, PreviewPageDown, PreviewHome, PreviewEnd]);
+actions!(
+    app,
+    [
+        ComposerUp,
+        ComposerDown,
+        ComposerTab,
+        ComposerPaste,
+        FileSave,
+        OpenProjectPicker,
+        NewSession,
+        OpenSessionSearch,
+        CopyMessageSelection,
+        MaximizeSessionList,
+        MaximizeFileTree,
+        ViewLeft,
+        ViewRight,
+        OpenFileSearch,
+        PreviewUp,
+        PreviewDown,
+        PreviewPageUp,
+        PreviewPageDown,
+        PreviewHome,
+        PreviewEnd
+    ]
+);
+use crate::appearance::theme::theme as T;
+use ext_ui::render_ext_dialog;
 use i18n::tr;
 use models_config::EnabledState;
-use crate::appearance::theme::theme as T;
 use services::format::*;
 use services::git::*;
 use services::workspace::*;
@@ -95,7 +119,6 @@ use session::runtime::SessionRuntime;
 use terminal::TerminalTab;
 use ui::TextInput;
 use ui::icon;
-use ext_ui::render_ext_dialog;
 
 static T0: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
 static PERF: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -144,7 +167,6 @@ fn install_crash_hook() {
     }));
 }
 
-
 fn main() {
     let _ = T0.set(std::time::Instant::now());
     install_crash_hook();
@@ -168,7 +190,11 @@ fn main() {
     // theme: PI_FLASH_THEME (dev override) > app_settings.json（pi-flash 专
     // 属配置，绝不碰 pi 的 settings.json——pi 的 settings schema 有自己的
     // theme 键，写入未知主题名会让 pi 每次启动报错）
-    if std::env::var("PI_FLASH_THEME").ok().and_then(|n| crate::appearance::theme::set_by_name(&n).then_some(())).is_none() {
+    if std::env::var("PI_FLASH_THEME")
+        .ok()
+        .and_then(|n| crate::appearance::theme::set_by_name(&n).then_some(()))
+        .is_none()
+    {
         if let Some(name) = app_settings().theme {
             crate::appearance::theme::set_by_name(&name);
         }
@@ -182,13 +208,24 @@ fn main() {
             // JetBrains Mono 随二进制打包：全应用唯一内置 mono（会话区 mono
             // + 终端网格；三档字重 + Italic 覆盖 400/600/700 与斜体）。
             // 注册失败仅回退系统字体，不致命。
-            cx.text_system().add_fonts(vec![
-                std::borrow::Cow::Borrowed(include_bytes!("../../../assets/fonts/JetBrainsMono-Regular.ttf").as_slice()),
-                std::borrow::Cow::Borrowed(include_bytes!("../../../assets/fonts/JetBrainsMono-SemiBold.ttf").as_slice()),
-                std::borrow::Cow::Borrowed(include_bytes!("../../../assets/fonts/JetBrainsMono-Bold.ttf").as_slice()),
-                std::borrow::Cow::Borrowed(include_bytes!("../../../assets/fonts/JetBrainsMono-Italic.ttf").as_slice()),
-            ])
-            .expect("embedded mono fonts are valid TTF");
+            cx.text_system()
+                .add_fonts(vec![
+                    std::borrow::Cow::Borrowed(
+                        include_bytes!("../../../assets/fonts/JetBrainsMono-Regular.ttf")
+                            .as_slice(),
+                    ),
+                    std::borrow::Cow::Borrowed(
+                        include_bytes!("../../../assets/fonts/JetBrainsMono-SemiBold.ttf")
+                            .as_slice(),
+                    ),
+                    std::borrow::Cow::Borrowed(
+                        include_bytes!("../../../assets/fonts/JetBrainsMono-Bold.ttf").as_slice(),
+                    ),
+                    std::borrow::Cow::Borrowed(
+                        include_bytes!("../../../assets/fonts/JetBrainsMono-Italic.ttf").as_slice(),
+                    ),
+                ])
+                .expect("embedded mono fonts are valid TTF");
             // 系统字体目录（设置页字体下拉数据源，字母序；一次性枚举）
             crate::appearance::init_font_catalog(cx);
             // 面板字号 → 全局 UI 缩放（ui_size 基准）
@@ -278,56 +315,54 @@ fn main() {
             let window_bounds = gpui::WindowBounds::Windowed(bounds);
             let automation_chat: std::sync::OnceLock<gpui::WeakEntity<Chat>> =
                 std::sync::OnceLock::new();
-            let window_handle = cx.open_window(
-                WindowOptions {
-                    window_bounds: Some(window_bounds),
-                    // 最小尺寸（逻辑像素，gpui 按 scale_factor 换算后交给
-                    // WM_GETMINMAXINFO）：宽同还原宽、高超矮一档
-                    window_min_size: Some(gpui::size(px(WINDOW_W_MIN), px(WINDOW_H_MIN))),
-                    titlebar: Some(gpui::TitlebarOptions {
-                        title: Some("pi-flash".into()),
-                        // client-side title bar (v54 topbar 两段, window
-                        // control hitboxes registered by titlebar.rs)
-                        appears_transparent: true,
+            let window_handle = cx
+                .open_window(
+                    WindowOptions {
+                        window_bounds: Some(window_bounds),
+                        // 最小尺寸（逻辑像素，gpui 按 scale_factor 换算后交给
+                        // WM_GETMINMAXINFO）：宽同还原宽、高超矮一档
+                        window_min_size: Some(gpui::size(px(WINDOW_W_MIN), px(WINDOW_H_MIN))),
+                        titlebar: Some(gpui::TitlebarOptions {
+                            title: Some("pi-flash".into()),
+                            // client-side title bar (v54 topbar 两段, window
+                            // control hitboxes registered by titlebar.rs)
+                            appears_transparent: true,
+                            ..Default::default()
+                        }),
                         ..Default::default()
-                    }),
-                    ..Default::default()
-                },
-                |window, cx| {
-                    // gpui-component widgets require their Root as the window
-                    // root view (renders their context-menu/popover layers)
-                    let chat = cx.new(Chat::new);
-                    let weak = chat.downgrade();
-                    let _ = automation_chat.set(weak.clone());
-                    // persist window bounds + shell layout on close so the
-                    // startup restore layer has data (§4)
-                    window.on_window_should_close(cx, move |window, cx| {
-                        let b = window.bounds();
-                        save_window_state(&WindowState {
-                            x: f64::from(b.origin.x),
-                            y: f64::from(b.origin.y),
-                            w: f64::from(b.size.width),
-                            h: f64::from(b.size.height),
-                            maximized: window.is_maximized(),
+                    },
+                    |window, cx| {
+                        // gpui-component widgets require their Root as the window
+                        // root view (renders their context-menu/popover layers)
+                        let chat = cx.new(Chat::new);
+                        let weak = chat.downgrade();
+                        let _ = automation_chat.set(weak.clone());
+                        // persist window bounds + shell layout on close so the
+                        // startup restore layer has data (§4)
+                        window.on_window_should_close(cx, move |window, cx| {
+                            let b = window.bounds();
+                            save_window_state(&WindowState {
+                                x: f64::from(b.origin.x),
+                                y: f64::from(b.origin.y),
+                                w: f64::from(b.size.width),
+                                h: f64::from(b.size.height),
+                                maximized: window.is_maximized(),
+                            });
+                            if let Some(chat) = weak.upgrade() {
+                                chat.update(cx, |chat, _cx| chat.persist_ui());
+                            }
+                            true
                         });
-                        if let Some(chat) = weak.upgrade() {
-                            chat.update(cx, |chat, _cx| chat.persist_ui());
-                        }
-                        true
-                    });
-                    cx.new(|cx| gpui_component::Root::new(chat.into(), window, cx))
-                },
-            )
-            .unwrap();
+                        cx.new(|cx| gpui_component::Root::new(chat.into(), window, cx))
+                    },
+                )
+                .unwrap();
             // UI 自动化服务（pi-flash-2kq）：PI_FLASH_AUTOMATION=<port|auto|1>
             // 显式开启，缺省关闭——agent 调试用，不抢真实屏幕/鼠标。
-            if let (Some(weak), Ok(spec)) = (
-                automation_chat.get(),
-                std::env::var("PI_FLASH_AUTOMATION"),
-            ) {
-                if let Err(e) =
-                    automation::start(cx, window_handle.into(), weak.clone(), &spec)
-                {
+            if let (Some(weak), Ok(spec)) =
+                (automation_chat.get(), std::env::var("PI_FLASH_AUTOMATION"))
+            {
+                if let Err(e) = automation::start(cx, window_handle.into(), weak.clone(), &spec) {
                     eprintln!("pi-flash automation: {e}");
                 }
             }
@@ -345,9 +380,17 @@ mod crash_log_tests {
     fn crash_log_written_with_message_and_backtrace() {
         let path = write_crash_log("boom: 输入路径重入借用").expect("写盘失败");
         assert!(path.to_string_lossy().contains("logs"));
-        assert!(path.file_name().unwrap().to_string_lossy().starts_with("crash-"));
+        assert!(
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("crash-")
+        );
         let body = std::fs::read_to_string(&path).expect("读回失败");
-        assert!(body.contains("boom: 输入路径重入借用"), "缺 panic 消息: {body}");
+        assert!(
+            body.contains("boom: 输入路径重入借用"),
+            "缺 panic 消息: {body}"
+        );
         assert!(body.contains("backtrace:"), "缺 backtrace 段: {body}");
         std::fs::remove_file(&path).ok();
     }

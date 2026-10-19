@@ -1,7 +1,6 @@
 //! markdown 链接目标：渲染构建期捕获点击目标（thread_local MD_TARGET）
 //! 与本地路径判定/百分号解码。
 
-
 /// 点击打开文件标签页的目标：渲染入口由调用方 set（消息区 / 文件 md 预览），
 /// 元素**构建期** clone 进事件闭包——事件期不读 thread_local，无跨帧陈旧。
 #[derive(Clone)]
@@ -74,8 +73,7 @@ pub(crate) fn as_file_path(input: &str) -> Option<String> {
     let mut s = input.trim();
     // 成对引号包裹（agent 常见 `'D:\x y.md'` / `"D:\x.md"`）
     if s.len() >= 2
-        && ((s.starts_with('"') && s.ends_with('"'))
-            || (s.starts_with('\'') && s.ends_with('\'')))
+        && ((s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')))
     {
         s = s[1..s.len() - 1].trim();
     }
@@ -154,4 +152,3 @@ fn percent_decode(s: &str) -> String {
     }
     String::from_utf8_lossy(&out).into_owned()
 }
-

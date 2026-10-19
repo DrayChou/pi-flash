@@ -7,7 +7,7 @@
 //! 编号解析复用 `permission.respond` 那套 `Number.parseInt(v,10)-1` 语义
 //! （`menu::option_index`），与权限审批共用同一条解析路径。
 
-use wxprobe::format::menu::{option_index, render_selection, MenuOption};
+use wxprobe::format::menu::{MenuOption, option_index, render_selection};
 use wxprobe::format::messages::Lang;
 
 /// 菜单种类 —— 决定选中后由 `Chat` 执行什么动作。
@@ -24,7 +24,6 @@ pub enum MenuKind {
     /// `/项目` 工作区列表
     Project,
 }
-
 
 /// 挂起中的菜单。
 #[derive(Debug, Clone)]
@@ -101,13 +100,8 @@ mod tests {
 
     #[test]
     fn build_renders_numbered_menu_with_cancel() {
-        let (text, m) = PendingMenu::build(
-            MenuKind::ModelProvider,
-            None,
-            "选择模型",
-            two(),
-            Lang::ZhCn,
-        );
+        let (text, m) =
+            PendingMenu::build(MenuKind::ModelProvider, None, "选择模型", two(), Lang::ZhCn);
         assert_eq!(
             text,
             "选择模型\n0. 取消\n1. claude-sonnet\n2. gpt-5\n\n回复数字选择，0 取消。"

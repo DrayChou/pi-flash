@@ -8,7 +8,6 @@
 
 use std::path::{Path, PathBuf};
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SkillScope {
     Project,
@@ -49,7 +48,9 @@ pub fn discover_skills(
     let mut out: Vec<SkillEntry> = Vec::new();
     let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
     for (dir, scope) in dirs {
-        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
         let mut subdirs: Vec<PathBuf> = entries
             .flatten()
             .map(|e| e.path())
@@ -71,7 +72,9 @@ pub fn discover_skills(
 
 fn resolve_setting_path(cwd: &Path, agent_dir: &Path, p: &str) -> PathBuf {
     if p.starts_with('~') {
-        let home = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")).unwrap_or_default();
+        let home = std::env::var("USERPROFILE")
+            .or_else(|_| std::env::var("HOME"))
+            .unwrap_or_default();
         return Path::new(&home).join(p.trim_start_matches("~/").trim_start_matches("~\\"));
     }
     let path = Path::new(p);
@@ -116,7 +119,13 @@ fn parse_skill(skill_md: &Path, scope: SkillScope) -> Option<SkillEntry> {
         .find(|(k, _)| k == "disable-model-invocation")
         .map(|(_, v)| v == "true")
         .unwrap_or(false);
-    Some(SkillEntry { name, description, path: skill_md.to_path_buf(), scope, disable_invocation })
+    Some(SkillEntry {
+        name,
+        description,
+        path: skill_md.to_path_buf(),
+        scope,
+        disable_invocation,
+    })
 }
 
 /// Key/value pairs of the leading `---` frontmatter block (flat YAML subset).
@@ -241,9 +250,14 @@ pub fn entry_source(entry: &serde_json::Value) -> String {
 pub fn entry_disabled(entry: &serde_json::Value) -> bool {
     match entry {
         serde_json::Value::Object(o) => {
-            ["extensions", "skills", "prompts", "themes"].iter().all(|k| {
-                o.get(*k).and_then(|v| v.as_array()).map(|a| a.is_empty()).unwrap_or(false)
-            })
+            ["extensions", "skills", "prompts", "themes"]
+                .iter()
+                .all(|k| {
+                    o.get(*k)
+                        .and_then(|v| v.as_array())
+                        .map(|a| a.is_empty())
+                        .unwrap_or(false)
+                })
         }
         _ => false,
     }
@@ -253,10 +267,22 @@ pub fn entry_disabled(entry: &serde_json::Value) -> bool {
 pub fn entry_resource_counts(entry: &serde_json::Value) -> (usize, usize, usize, usize) {
     match entry {
         serde_json::Value::Object(o) => (
-            o.get("extensions").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0),
-            o.get("skills").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0),
-            o.get("prompts").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0),
-            o.get("themes").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0),
+            o.get("extensions")
+                .and_then(|v| v.as_array())
+                .map(|a| a.len())
+                .unwrap_or(0),
+            o.get("skills")
+                .and_then(|v| v.as_array())
+                .map(|a| a.len())
+                .unwrap_or(0),
+            o.get("prompts")
+                .and_then(|v| v.as_array())
+                .map(|a| a.len())
+                .unwrap_or(0),
+            o.get("themes")
+                .and_then(|v| v.as_array())
+                .map(|a| a.len())
+                .unwrap_or(0),
         ),
         _ => (0, 0, 0, 0),
     }
@@ -301,8 +327,9 @@ pub fn package_install_dir(source: &str) -> PathBuf {
 /// 包内 package.json 的 `description`（040 详情「说明」行）。best-effort：
 /// 未安装 / 无字段 / 空串返回 None。
 pub fn package_description_in(agent_dir: &Path, source: &str) -> Option<String> {
-    let text = std::fs::read_to_string(package_install_dir_in(agent_dir, source).join("package.json"))
-        .ok()?;
+    let text =
+        std::fs::read_to_string(package_install_dir_in(agent_dir, source).join("package.json"))
+            .ok()?;
     let v = crate::config::parse_lenient(&text).ok()?;
     v.get("description")
         .and_then(|d| d.as_str())
@@ -360,8 +387,16 @@ mod tests {
         let base = std::env::temp_dir().join(format!("skills-{}", std::process::id()));
         let proj = base.join("proj");
         let glob = base.join("glob");
-        write_skill(&proj.join(".pi").join("skills"), "alpha", Some("---\nname: alpha\ndescription: A alpha\n---"));
-        write_skill(&glob.join("skills"), "beta", Some("---\nname: beta\ndescription: B beta\ndisable-model-invocation: true\n---"));
+        write_skill(
+            &proj.join(".pi").join("skills"),
+            "alpha",
+            Some("---\nname: alpha\ndescription: A alpha\n---"),
+        );
+        write_skill(
+            &glob.join("skills"),
+            "beta",
+            Some("---\nname: beta\ndescription: B beta\ndisable-model-invocation: true\n---"),
+        );
         let settings = parse_lenient("{}").unwrap();
         let skills = discover_skills(&proj, &glob, &base.join("home-agents"), &settings);
         assert_eq!(skills.len(), 2);
@@ -379,7 +414,12 @@ mod tests {
         let proj = base.join("proj");
         write_skill(&proj.join(".agents").join("skills"), "plain-skill", None);
         let settings = parse_lenient("{}").unwrap();
-        let skills = discover_skills(&proj, &base.join("nope"), &base.join("home-agents"), &settings);
+        let skills = discover_skills(
+            &proj,
+            &base.join("nope"),
+            &base.join("home-agents"),
+            &settings,
+        );
         assert_eq!(skills.len(), 1);
         assert_eq!(skills[0].name, "plain-skill");
         assert_eq!(skills[0].description, "");
@@ -395,29 +435,49 @@ mod tests {
             r#"{"name":"pi-demo","description":"  Demo pkg  "}"#,
         )
         .unwrap();
-        assert_eq!(package_description_in(&base, "npm:pi-demo").as_deref(), Some("Demo pkg"));
+        assert_eq!(
+            package_description_in(&base, "npm:pi-demo").as_deref(),
+            Some("Demo pkg")
+        );
         // scoped 名：node_modules/@scope/pkg
-        let scoped = base.join("npm").join("node_modules").join("@scope").join("pi-x");
+        let scoped = base
+            .join("npm")
+            .join("node_modules")
+            .join("@scope")
+            .join("pi-x");
         std::fs::create_dir_all(&scoped).unwrap();
         std::fs::write(scoped.join("package.json"), r#"{"description":"scoped"}"#).unwrap();
-        assert_eq!(package_description_in(&base, "npm:@scope/pi-x").as_deref(), Some("scoped"));
+        assert_eq!(
+            package_description_in(&base, "npm:@scope/pi-x").as_deref(),
+            Some("scoped")
+        );
         assert_eq!(package_description_in(&base, "npm:pi-missing"), None);
         // git 三种写法归一到 git/<host>/<path>
-        let git_dir = base.join("git").join("github.com").join("user").join("repo");
+        let git_dir = base
+            .join("git")
+            .join("github.com")
+            .join("user")
+            .join("repo");
         std::fs::create_dir_all(&git_dir).unwrap();
         std::fs::write(git_dir.join("package.json"), r#"{"description":"git pkg"}"#).unwrap();
         for src in [
             "git:https://github.com/user/repo",
             "git:git@github.com:user/repo.git",
         ] {
-            assert_eq!(package_description_in(&base, src).as_deref(), Some("git pkg"));
+            assert_eq!(
+                package_description_in(&base, src).as_deref(),
+                Some("git pkg")
+            );
         }
     }
 
     #[test]
     fn display_source_strips_npm_and_enabled_sources_filter_disabled() {
         assert_eq!(display_source("npm:pi-web-access"), "pi-web-access");
-        assert_eq!(display_source("git:https://github.com/u/r"), "git:https://github.com/u/r");
+        assert_eq!(
+            display_source("git:https://github.com/u/r"),
+            "git:https://github.com/u/r"
+        );
         let base = std::env::temp_dir().join(format!("pkgsrc-{}", std::process::id()));
         std::fs::create_dir_all(&base).unwrap();
         std::fs::write(
@@ -439,7 +499,11 @@ mod tests {
     #[test]
     fn frontmatter_toggle_roundtrip() {
         let base = std::env::temp_dir().join(format!("skills-fm-{}", std::process::id()));
-        let p = write_skill(&base, "gamma", Some("---\nname: gamma\ndescription: G\n---"));
+        let p = write_skill(
+            &base,
+            "gamma",
+            Some("---\nname: gamma\ndescription: G\n---"),
+        );
 
         set_disable_invocation(&p, true).unwrap();
         let text = std::fs::read_to_string(&p).unwrap();
@@ -447,7 +511,10 @@ mod tests {
         assert!(text.starts_with("---\n"));
         assert!(text.contains("name: gamma"), "existing keys preserved");
         let fm = frontmatter(&text).unwrap();
-        assert!(fm.iter().any(|(k, v)| k == "disable-model-invocation" && v == "true"));
+        assert!(
+            fm.iter()
+                .any(|(k, v)| k == "disable-model-invocation" && v == "true")
+        );
 
         // enabling removes the key
         set_disable_invocation(&p, false).unwrap();
@@ -463,7 +530,11 @@ mod tests {
         assert!(text.contains("# delta"));
 
         // replace an existing false value
-        let p3 = write_skill(&base, "eps", Some("---\nname: eps\ndisable-model-invocation: false\n---"));
+        let p3 = write_skill(
+            &base,
+            "eps",
+            Some("---\nname: eps\ndisable-model-invocation: false\n---"),
+        );
         set_disable_invocation(&p3, true).unwrap();
         let text = std::fs::read_to_string(&p3).unwrap();
         assert_eq!(text.matches("disable-model-invocation").count(), 1);
@@ -471,12 +542,20 @@ mod tests {
 
         // 反复启停不得让 frontmatter 长胖（旧伤：每写一次多一行 `---`，
         // 用户连点几次就把 SKILL.md 搓成十几行三连杠）
-        let p4 = write_skill(&base, "zeta", Some("---\nname: zeta\ndescription: Z\n---\n\nbody\n"));
+        let p4 = write_skill(
+            &base,
+            "zeta",
+            Some("---\nname: zeta\ndescription: Z\n---\n\nbody\n"),
+        );
         for disable in [true, false, true, false, true, false] {
             set_disable_invocation(&p4, disable).unwrap();
         }
         let text = std::fs::read_to_string(&p4).unwrap();
-        assert_eq!(text.matches("\n---").count(), 1, "only the closing fence: {text:?}");
+        assert_eq!(
+            text.matches("\n---").count(),
+            1,
+            "only the closing fence: {text:?}"
+        );
         assert!(!text.contains("disable-model-invocation"));
         assert!(text.contains("name: zeta") && text.contains("description: Z"));
         assert!(text.contains("\n\nbody\n"), "body untouched: {text:?}");
@@ -493,7 +572,10 @@ mod tests {
         let filter = serde_json::json!({"source": "npm:y", "skills": ["a"]});
         assert!(!entry_disabled(&filter));
         assert_eq!(normalize_source("$ pi install npm:foo"), "npm:foo");
-        assert_eq!(normalize_source("pi install git:https://x"), "git:https://x");
+        assert_eq!(
+            normalize_source("pi install git:https://x"),
+            "git:https://x"
+        );
         assert_eq!(normalize_source(" npm:bar "), "npm:bar");
     }
 
@@ -514,13 +596,22 @@ mod tests {
 
         // 正文 = 全文估算：真实文件非零；文件不存在按 0
         let real = write_skill(&std::env::temp_dir(), "tok-body", None);
-        let on_disk = SkillEntry { path: real, ..sk.clone() };
+        let on_disk = SkillEntry {
+            path: real,
+            ..sk.clone()
+        };
         assert!(body_tokens(&on_disk) > 0);
-        let missing = SkillEntry { path: PathBuf::from("Z:/no/such/SKILL.md"), ..sk.clone() };
+        let missing = SkillEntry {
+            path: PathBuf::from("Z:/no/such/SKILL.md"),
+            ..sk.clone()
+        };
         assert_eq!(body_tokens(&missing), 0);
 
         // 休眠技能不进提示词 → 0
-        let dormant = SkillEntry { disable_invocation: true, ..sk };
+        let dormant = SkillEntry {
+            disable_invocation: true,
+            ..sk
+        };
         assert_eq!(prompt_tokens(&dormant), 0);
     }
 }

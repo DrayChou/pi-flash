@@ -72,7 +72,12 @@ pub fn write_all(path: &Path, table: &BTreeMap<String, Vec<String>>) -> Result<(
     let value = Value::Object(
         table
             .iter()
-            .map(|(k, v)| (k.clone(), Value::Array(v.iter().map(|s| Value::String(s.clone())).collect())))
+            .map(|(k, v)| {
+                (
+                    k.clone(),
+                    Value::Array(v.iter().map(|s| Value::String(s.clone())).collect()),
+                )
+            })
             .collect(),
     );
     crate::config::write_json(path, &value)
@@ -131,7 +136,10 @@ mod tests {
         // 写入 pi 的反斜杠形态（get_state.sessionFile），读出用 app 的正斜杠形态
         let win = format!("C:\\Users\\bi_da\\.pi\\agent\\sessions\\x.jsonl");
         write_for(&p, &win, &["npm:a".into()]).unwrap();
-        assert_eq!(read_for(&p, "C:/Users/bi_da/.pi/agent/sessions/x.jsonl"), vec!["npm:a"]);
+        assert_eq!(
+            read_for(&p, "C:/Users/bi_da/.pi/agent/sessions/x.jsonl"),
+            vec!["npm:a"]
+        );
         // 反向：写正斜杠、读出反斜杠 + 盘符小写
         write_for(&p, "C:/tmp/y.jsonl", &["npm:b".into()]).unwrap();
         let win2 = format!("c:\\tmp\\y.jsonl");

@@ -26,7 +26,6 @@ pub fn lang_ix() -> usize {
     LANG_IX.load(Ordering::Relaxed)
 }
 
-
 // ===========================================================================
 // 键 = 语义标识 `<域>.<主语>[.<限定>]`，**不再拿中文当键**（2026-10-12 迁移）。
 // 旧设计里 zh-CN 源串同时是显示值和查表键，两处必须逐字节相等却没有编译期
@@ -48,6 +47,11 @@ pub const ABOUT_NOTE: &str = "about.note";
 /// (source zh-CN, zh-TW, en)
 
 // (key, zh-CN, zh-TW, en)
+//
+// rustfmt 跳过本 const：i18n_audit 按行解析（行 trim 后以 '(' 起 + 切 4 列），
+// 表行必须**一行一条**；rustfmt 会把超宽表行折成 5 行 → audit 只解析到零头直接
+// panic。豁免只针对这个 const，本文件其余部分照常自动格式化。
+#[rustfmt::skip]
 const TABLE: &[(&str, &str, &str, &str)] = &[
     // chrome / sidebar
     // compaction card（pi-web CompactionMessageView parity）

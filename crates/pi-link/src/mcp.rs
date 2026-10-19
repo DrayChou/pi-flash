@@ -80,10 +80,17 @@ fn parse_entry(name: String, config: &Value, scope: Scope, file: PathBuf) -> Ser
     let args = config
         .get("args")
         .and_then(|v| v.as_array())
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
         .unwrap_or_default();
     ServerEntry {
-        enabled: config.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true),
+        enabled: config
+            .get("enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true),
         exposure: str_val("exposure"),
         description: str_val("description"),
         command: str_val("command"),
@@ -107,7 +114,10 @@ pub fn load(cwd: Option<&Path>) -> (Vec<ServerEntry>, Vec<String>) {
 pub fn load_with_paths(global: &Path, project: Option<&Path>) -> (Vec<ServerEntry>, Vec<String>) {
     let mut errors = Vec::new();
     let mut out: Vec<ServerEntry> = Vec::new();
-    for (scope, path) in [(Scope::Global, global), (Scope::Project, project.unwrap_or(global))] {
+    for (scope, path) in [
+        (Scope::Global, global),
+        (Scope::Project, project.unwrap_or(global)),
+    ] {
         if scope == Scope::Project && project.is_none() {
             continue;
         }
@@ -116,14 +126,14 @@ pub fn load_with_paths(global: &Path, project: Option<&Path>) -> (Vec<ServerEntr
         }
         match read_json(&path) {
             Ok(value) => {
-            if let Some(servers) = value.get("mcpServers").and_then(|s| s.as_object()) {
-                for (name, config) in servers {
-                    // project entries replace global ones with the same name
-                    out.retain(|e| e.name != *name);
-                    out.push(parse_entry(name.clone(), config, scope, path.to_path_buf()));
+                if let Some(servers) = value.get("mcpServers").and_then(|s| s.as_object()) {
+                    for (name, config) in servers {
+                        // project entries replace global ones with the same name
+                        out.retain(|e| e.name != *name);
+                        out.push(parse_entry(name.clone(), config, scope, path.to_path_buf()));
+                    }
                 }
             }
-        }
             Err(e) => errors.push(format!("{}: {}", path.display(), e)),
         }
     }
@@ -135,10 +145,7 @@ pub fn load_with_paths(global: &Path, project: Option<&Path>) -> (Vec<ServerEntr
 /// unlike `ServerEntry` this keeps env/header *values* and unknown fields).
 pub fn raw_entry(path: &Path, name: &str) -> Result<Option<Value>, String> {
     let value = read_json(path)?;
-    Ok(value
-        .get("mcpServers")
-        .and_then(|s| s.get(name))
-        .cloned())
+    Ok(value.get("mcpServers").and_then(|s| s.get(name)).cloned())
 }
 
 /// Serialize a server config object back from an entry (add/edit writes).
@@ -208,7 +215,9 @@ pub fn remove(path: &Path, name: &str) -> Result<bool, String> {
 pub fn set_enabled(path: &Path, name: &str, enabled: bool) -> Result<(), String> {
     patch(path, name, |cfg| {
         if enabled {
-            cfg.as_object_mut().ok_or("server entry is not an object")?.remove("enabled");
+            cfg.as_object_mut()
+                .ok_or("server entry is not an object")?
+                .remove("enabled");
         } else {
             cfg.as_object_mut()
                 .ok_or("server entry is not an object")?
@@ -250,7 +259,9 @@ fn patch(
 /// Valid server name (pi: letters, digits, `_`, `-`).
 pub fn valid_name(name: &str) -> bool {
     !name.is_empty()
-        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
 // ---------------------------------------------------------------------------
@@ -402,7 +413,11 @@ pub fn parse_server_input(text: &str) -> Result<(String, Value, ParsedSource), S
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "my-server".into());
-    let name = if valid_name(&name) { name } else { "my-server".into() };
+    let name = if valid_name(&name) {
+        name
+    } else {
+        "my-server".into()
+    };
     Ok((name, cfg, ParsedSource::CommandLine))
 }
 
@@ -411,8 +426,7 @@ fn parse_json_blob(text: &str) -> Result<Option<(String, Value, ParsedSource)>, 
     if !text.starts_with('{') {
         return Ok(None);
     }
-    let value = crate::config::parse_lenient(text)
-        .map_err(|e| format!("JSON 解析失败: {e}"))?;
+    let value = crate::config::parse_lenient(text).map_err(|e| format!("JSON 解析失败: {e}"))?;
     if let Some(servers) = value.get("mcpServers").and_then(|s| s.as_object()) {
         if servers.is_empty() {
             return Err("mcpServers 里没有服务器".into());
@@ -458,8 +472,16 @@ mod tests {
         std::fs::create_dir_all(cwd.join(".pi")).unwrap();
         let global = base.join("mcp.json");
         let project = cwd.join(".pi").join("mcp.json");
-        std::fs::write(&global, r#"{"mcpServers":{"fs":{"command":"npx"},"docs":{"url":"https://x/mcp"}}}"#).unwrap();
-        std::fs::write(&project, r#"{"mcpServers":{"fs":{"command":"bunx","enabled":false}}}"#).unwrap();
+        std::fs::write(
+            &global,
+            r#"{"mcpServers":{"fs":{"command":"npx"},"docs":{"url":"https://x/mcp"}}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &project,
+            r#"{"mcpServers":{"fs":{"command":"bunx","enabled":false}}}"#,
+        )
+        .unwrap();
         let (servers, errors) = load_with_paths(&global, Some(&project));
         assert!(errors.is_empty(), "{errors:?}");
         assert_eq!(servers.len(), 2); // project `fs` replaced global `fs`
@@ -534,7 +556,8 @@ mod tests {
         assert_eq!(cfg["url"], "https://a/mcp");
         assert_eq!(src, ParsedSource::Json);
 
-        let (name, cfg, _) = parse_server_input(r#"{"command":"uvx","args":["mcp-fetch"]}"#).unwrap();
+        let (name, cfg, _) =
+            parse_server_input(r#"{"command":"uvx","args":["mcp-fetch"]}"#).unwrap();
         assert_eq!(name, "uvx");
         assert_eq!(cfg["args"][0], "mcp-fetch");
 

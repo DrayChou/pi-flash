@@ -11,8 +11,7 @@ use qrcode::render::unicode::Dense1x2;
 ///
 /// 显示端用等宽字体即可扫；GPUI 里字号给足 14px 以上。
 pub fn qr_block_text(url: &str, module_w: usize) -> Result<String, String> {
-    let code = qrcode::QrCode::new(url.as_bytes())
-        .map_err(|e| format!("二维码编码失败: {e}"))?;
+    let code = qrcode::QrCode::new(url.as_bytes()).map_err(|e| format!("二维码编码失败: {e}"))?;
     // Dense1x2 自带竖向半块配对：module_dimensions(1, N) 只调横向密度
     Ok(code
         .render::<Dense1x2>()
@@ -60,8 +59,7 @@ impl QrGrid {
 
 /// 渲染成矩阵；`quiet` 是四周静默区的模块数（规范要求 4）。
 pub fn qr_grid(url: &str, quiet: usize) -> Result<QrGrid, String> {
-    let code =
-        qrcode::QrCode::new(url.as_bytes()).map_err(|e| format!("二维码编码失败: {e}"))?;
+    let code = qrcode::QrCode::new(url.as_bytes()).map_err(|e| format!("二维码编码失败: {e}"))?;
     let w = code.width();
     use qrcode::Color as C;
     let src = code.to_colors(); // 行优先，长度 w*w
@@ -77,8 +75,7 @@ pub fn qr_grid(url: &str, quiet: usize) -> Result<QrGrid, String> {
 
 /// 320×320 的 SVG 文本（落盘后用浏览器打开 / 交给有 SVG 能力的渲染端）。
 pub fn qr_svg(url: &str) -> Result<String, String> {
-    let code = qrcode::QrCode::new(url.as_bytes())
-        .map_err(|e| format!("二维码编码失败: {e}"))?;
+    let code = qrcode::QrCode::new(url.as_bytes()).map_err(|e| format!("二维码编码失败: {e}"))?;
     Ok(code
         .render::<qrcode::render::svg::Color>()
         .min_dimensions(320, 320)
@@ -99,9 +96,14 @@ mod tests {
         let w = lines[0].chars().count();
         assert!(w > 10, "太窄：{w}");
         for l in &lines {
-            assert_eq!(l.chars().count(), w, "必须是等宽矩形（GPUI 文本渲染按等宽假设）");
+            assert_eq!(
+                l.chars().count(),
+                w,
+                "必须是等宽矩形（GPUI 文本渲染按等宽假设）"
+            );
             assert!(
-                l.chars().all(|c| c == '█' || c == '▀' || c == '▄' || c == ' '),
+                l.chars()
+                    .all(|c| c == '█' || c == '▀' || c == '▄' || c == ' '),
                 "出现半块字形之外的字符：{l:?}"
             );
         }
@@ -112,10 +114,7 @@ mod tests {
         let art = qr_block_text(URL, 2).unwrap();
         let lines: Vec<&str> = art.lines().collect();
         // 前几行必须是静默区（全空），否则扫不出来
-        let head = lines
-            .iter()
-            .take_while(|l| l.trim().is_empty())
-            .count();
+        let head = lines.iter().take_while(|l| l.trim().is_empty()).count();
         assert!(head >= 2, "缺静默区：只有 {head} 行空白");
         // 左上角定位图案第一行 = 实心-实心对 → 连续 █ 起头
         // 跳过静默区的前导空白，第一行有效内容就是左上角定位图案
@@ -162,13 +161,20 @@ mod tests {
 
     #[test]
     fn same_input_is_deterministic() {
-        assert_eq!(qr_block_text(URL, 2).unwrap(), qr_block_text(URL, 2).unwrap());
+        assert_eq!(
+            qr_block_text(URL, 2).unwrap(),
+            qr_block_text(URL, 2).unwrap()
+        );
     }
 
     #[test]
     fn svg_output_looks_like_svg() {
         let svg = qr_svg(URL).unwrap();
-        assert!(svg.starts_with("<?xml") || svg.contains("<svg"), "不是 SVG: {}", &svg[..40.min(svg.len())]);
+        assert!(
+            svg.starts_with("<?xml") || svg.contains("<svg"),
+            "不是 SVG: {}",
+            &svg[..40.min(svg.len())]
+        );
         assert!(svg.contains("path") || svg.contains("rect"));
     }
 

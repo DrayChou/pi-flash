@@ -16,9 +16,9 @@
 //! 下次启动从上次 ack 的游标重拉，**可能重复、绝不丢失**（at-least-once）。
 //! 反过来「先写游标再回复」正是 ZCode 注释里点名的坑：失败会跳过未完成消息。
 
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
-use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -163,7 +163,7 @@ pub fn spawn(cfg: &Config) -> Result<Transport, String> {
             return Err(format!(
                 "另一个轮询者已持有该 bot 的锁，见 {}",
                 crate::lock::lock_root_display()
-            ))
+            ));
         }
     };
 
@@ -206,17 +206,22 @@ fn poll_loop(token: String, mut cursor: Option<String>, tx: Sender<Batch>, stop:
                 failures = 0;
                 // 游标只在内存推进；落盘交给 app 的 ack()
                 cursor = up.next_buf.clone();
-                if !up.messages.is_empty() && tx.send(Batch {
-                    messages: up.messages,
-                    next_buf: up.next_buf,
-                }).is_err() {
+                if !up.messages.is_empty()
+                    && tx
+                        .send(Batch {
+                            messages: up.messages,
+                            next_buf: up.next_buf,
+                        })
+                        .is_err()
+                {
                     break; // 消费方已亡
                 }
             }
             Err(e) => {
                 failures = failures.saturating_add(1);
                 // 指数退避，封顶 30s；每次只睡一小段以便及时响应 stop
-                let wait = Duration::from_millis(500u64 << failures.min(6)).min(Duration::from_secs(30));
+                let wait =
+                    Duration::from_millis(500u64 << failures.min(6)).min(Duration::from_secs(30));
                 let _ = e; // 诊断串落盘见 Wire；此处只按退避重试
                 let mut left = wait;
                 while left > Duration::ZERO && !stop.load(Ordering::Relaxed) {
@@ -234,7 +239,11 @@ fn warn_once(msg: &str) {
     use std::sync::atomic::{AtomicBool, Ordering};
     static ROUTE: AtomicBool = AtomicBool::new(false);
     static SEND: AtomicBool = AtomicBool::new(false);
-    let flag = if msg.starts_with("sendmessage") { &SEND } else { &ROUTE };
+    let flag = if msg.starts_with("sendmessage") {
+        &SEND
+    } else {
+        &ROUTE
+    };
     if !flag.swap(true, Ordering::Relaxed) {
         eprintln!("[wx] {msg}（此提示只出现一次）");
     }

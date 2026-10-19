@@ -6,9 +6,9 @@
 //! - 游标 6 候选：`get_updates_buf | buf | next_buf | nextBuf | getUpdatesBuf | syncKey`（`:448-461`）
 //! - 文本/用户/会话/昵称/消息 id 各自的多级候选（`:345-440`）
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
-use crate::wire::{first_str, num, str_of, Wire};
+use crate::wire::{Wire, first_str, num, str_of};
 
 const MSG_LIST_KEYS: [&str; 5] = ["msgs", "messages", "updates", "items", "list"];
 const BUF_KEYS: [&str; 6] = [
@@ -31,7 +31,14 @@ const USER_KEYS: [&str; 7] = [
     "userId",
 ];
 /// ZCode 不读回发方向，但 sendmessage 需要 `from_user_id`=机器人自身，这里补一组候选。
-const BOT_KEYS: [&str; 6] = ["to_user_id", "to", "to_user", "toUser", "receiver", "target_id"];
+const BOT_KEYS: [&str; 6] = [
+    "to_user_id",
+    "to",
+    "to_user",
+    "toUser",
+    "receiver",
+    "target_id",
+];
 const CHAT_KEYS: [&str; 6] = ["room", "room_id", "roomId", "chat", "chat_id", "chatId"];
 const NAME_KEYS: [&str; 10] = [
     "name",
@@ -45,7 +52,16 @@ const NAME_KEYS: [&str; 10] = [
     "account",
     "alias",
 ];
-const MSG_ID_KEYS: [&str; 8] = ["id", "msgid", "msgId", "msg_id", "message_id", "new_msg_id", "svrMsgId", "localId"];
+const MSG_ID_KEYS: [&str; 8] = [
+    "id",
+    "msgid",
+    "msgId",
+    "msg_id",
+    "message_id",
+    "new_msg_id",
+    "svrMsgId",
+    "localId",
+];
 
 #[derive(Debug)]
 pub struct Inbound {
@@ -128,7 +144,12 @@ pub fn send_text(
     if let Some(ctx) = context_token.filter(|s| !s.is_empty()) {
         msg["context_token"] = json!(ctx);
     }
-    wire.post("sendmessage", "/sendmessage", Some(token), json!({ "msg": msg }))?;
+    wire.post(
+        "sendmessage",
+        "/sendmessage",
+        Some(token),
+        json!({ "msg": msg }),
+    )?;
     Ok(())
 }
 
@@ -156,8 +177,9 @@ fn read_inbound(m: &Value) -> Option<Inbound> {
         bot_user_id: read_bot_user_id(m, inner),
         chat_id: first_str(m, CHAT_KEYS).or_else(|| inner.and_then(|i| first_str(i, CHAT_KEYS))),
         name: first_str(m, NAME_KEYS).or_else(|| inner.and_then(|i| first_str(i, NAME_KEYS))),
-        context_token: first_str(m, &["context_token", "contextToken", "context"])
-            .or_else(|| inner.and_then(|i| first_str(i, &["context_token", "contextToken", "context"]))),
+        context_token: first_str(m, &["context_token", "contextToken", "context"]).or_else(|| {
+            inner.and_then(|i| first_str(i, &["context_token", "contextToken", "context"]))
+        }),
         attachments,
     })
 }
@@ -209,19 +231,28 @@ fn read_text_item(item: &Value) -> Option<String> {
 }
 
 fn count_attachments(m: &Value, inner: Option<&Value>) -> usize {
-    let direct = [m.get("attachments"), inner.and_then(|i| i.get("attachments"))]
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_array)
-        .map(Vec::len)
-        .sum::<usize>();
+    let direct = [
+        m.get("attachments"),
+        inner.and_then(|i| i.get("attachments")),
+    ]
+    .into_iter()
+    .flatten()
+    .filter_map(Value::as_array)
+    .map(Vec::len)
+    .sum::<usize>();
     let from_items = item_list(m, inner)
         .iter()
         .filter(|it| read_text_item(it).is_none())
         .filter(|it| {
-            ["image_item", "file_item", "video_item", "audio_item", "media_item"]
-                .iter()
-                .any(|k| it.get(k).is_some())
+            [
+                "image_item",
+                "file_item",
+                "video_item",
+                "audio_item",
+                "media_item",
+            ]
+            .iter()
+            .any(|k| it.get(k).is_some())
                 || str_of(it, "kind").is_some()
         })
         .count();
@@ -277,7 +308,13 @@ fn read_msg_id(m: &Value, inner: Option<&Value>) -> Option<String> {
     MSG_ID_KEYS
         .iter()
         .find_map(|k| num(m, k).map(|n| n.to_string()))
-        .or_else(|| inner.and_then(|i| MSG_ID_KEYS.iter().find_map(|k| num(i, k).map(|n| n.to_string()))))
+        .or_else(|| {
+            inner.and_then(|i| {
+                MSG_ID_KEYS
+                    .iter()
+                    .find_map(|k| num(i, k).map(|n| n.to_string()))
+            })
+        })
 }
 
 /// P0 产出：把真实响应的字段形状打出来，对拍 ZCode 的候选嗅探。
@@ -287,7 +324,9 @@ fn diagnose(container: &Value, raw_msgs: &[Value]) -> Vec<String> {
     let picked = MSG_LIST_KEYS.iter().find(|k| container.get(**k).is_some());
     out.push(format!(
         "消息数组键: {}",
-        picked.map(|k| k.to_string()).unwrap_or_else(|| "未命中任何候选".into())
+        picked
+            .map(|k| k.to_string())
+            .unwrap_or_else(|| "未命中任何候选".into())
     ));
     out.push(format!(
         "游标命中: {}",
@@ -307,12 +346,13 @@ fn diagnose(container: &Value, raw_msgs: &[Value]) -> Vec<String> {
         let items = item_list(m, nested(m));
         if !items.is_empty() {
             let shapes: Vec<String> = items.iter().map(|it| keys_of(it)).collect();
-            out.push(format!("  item_list[{}]: {}", items.len(), shapes.join(" | ")));
+            out.push(format!(
+                "  item_list[{}]: {}",
+                items.len(),
+                shapes.join(" | ")
+            ));
         }
-        out.push(format!(
-            "  文本候选命中: {}",
-            probe_text(m)
-        ));
+        out.push(format!("  文本候选命中: {}", probe_text(m)));
     }
     out
 }
@@ -390,7 +430,10 @@ mod tests {
 
     #[test]
     fn cursor_taken_from_server_on_first_poll() {
-        let expected = real_payload()["get_updates_buf"].as_str().unwrap().to_string();
+        let expected = real_payload()["get_updates_buf"]
+            .as_str()
+            .unwrap()
+            .to_string();
         let up = parse_updates(&real_payload(), None);
         assert_eq!(up.next_buf.as_deref(), Some(expected.as_str()));
     }
@@ -448,9 +491,18 @@ mod tests {
         // 直接对拍 ZCode 的候选嗅探：命中哪个候选必须打印出来。
         let up = parse_updates(&real_payload(), None);
         let joined = up.diagnostics.join("\n");
-        assert!(joined.contains("消息数组键: msgs"), "候选 1 应命中：{joined}");
-        assert!(joined.contains("游标命中: get_updates_buf"), "候选 1 应命中：{joined}");
-        assert!(joined.contains("文本候选命中: 顶层.item_list[0]"), "{joined}");
+        assert!(
+            joined.contains("消息数组键: msgs"),
+            "候选 1 应命中：{joined}"
+        );
+        assert!(
+            joined.contains("游标命中: get_updates_buf"),
+            "候选 1 应命中：{joined}"
+        );
+        assert!(
+            joined.contains("文本候选命中: 顶层.item_list[0]"),
+            "{joined}"
+        );
         assert!(!joined.contains("未命中任何候选"), "{joined}");
     }
 
@@ -472,7 +524,10 @@ mod tests {
     fn twenty_start_stop_cycles_never_lose_or_duplicate_the_cursor() {
         // 对应 P1 验收「重复启停 20 次游标不丢不重」的确定性版本：
         // 每个周期 = load → getupdates → **处理完** → 写回，跑 20 轮。
-        let server_cursor = real_payload()["get_updates_buf"].as_str().unwrap().to_string();
+        let server_cursor = real_payload()["get_updates_buf"]
+            .as_str()
+            .unwrap()
+            .to_string();
         let mut stored: Option<String> = None;
         for cycle in 0..20 {
             // 只有第 1 轮服务端发了新游标，其余 19 轮都是空闲（不带该字段）。

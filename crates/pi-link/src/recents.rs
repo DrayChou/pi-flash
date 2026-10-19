@@ -109,10 +109,7 @@ impl Recents {
     /// Returns whether anything materially changed.
     fn promote(&mut self, path: PathBuf, last_active_ms: i64) -> bool {
         let key = path_key(&path);
-        let ix = self
-            .entries
-            .iter()
-            .position(|e| path_key(&e.path) == key);
+        let ix = self.entries.iter().position(|e| path_key(&e.path) == key);
         let (prev_ms, same_string) = match ix {
             Some(i) => (self.entries[i].last_active_ms, self.entries[i].path == path),
             None => (0, false),
@@ -122,10 +119,14 @@ impl Recents {
         if let Some(i) = ix {
             self.entries.remove(i);
         }
-        let at = self
-            .entries
-            .partition_point(|e| e.last_active_ms > ms);
-        self.entries.insert(at, RecentEntry { path, last_active_ms: ms });
+        let at = self.entries.partition_point(|e| e.last_active_ms > ms);
+        self.entries.insert(
+            at,
+            RecentEntry {
+                path,
+                last_active_ms: ms,
+            },
+        );
         if self.entries.len() > RECENTS_CAPACITY {
             self.entries.truncate(RECENTS_CAPACITY);
         }
@@ -396,7 +397,13 @@ mod tests {
         assert_eq!(r.entries[0].path, real);
         // excluded paths survive a failed stat (live runtime owns them)
         exclude.insert(p("ghost"));
-        r.entries.insert(0, RecentEntry { path: p("ghost"), last_active_ms: 5 });
+        r.entries.insert(
+            0,
+            RecentEntry {
+                path: p("ghost"),
+                last_active_ms: 5,
+            },
+        );
         r.prune_missing(&exclude);
         assert_eq!(r.entries.len(), 2);
         r.remove(&real);

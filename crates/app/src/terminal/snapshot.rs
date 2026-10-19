@@ -1,15 +1,13 @@
 //! 终端快照纯逻辑：选区删除计划（deletion_plan，终端选区可编辑）、
 //! 网格快照（snapshot）、选区文本提取。不持 PTY 锁的读路径。
 
-
-
+use super::*;
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::index::{Column, Line};
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::{Term, TermMode};
 use alacritty_terminal::vte::ansi::Color;
 use gpui::Hsla;
-use super::*;
 
 // ---------------------------------------------------------------------------
 // grid snapshot: (cells, styles) per visible row
@@ -120,7 +118,11 @@ fn cell_selected(sel: (SelPt, SelPt), line: i32, col: usize) -> bool {
 /// The cursor is folded in as a cell style (block = bg swap, unfocused = dim).
 /// Snapshot the visible grid (rows tall) into styled rows. The cursor is
 /// NOT folded in here — it paints as a caret bar overlay in the element.
-pub fn snapshot(term: &Term<Proxy>, rows: usize, selection: Option<(SelPt, SelPt)>) -> Vec<SnapRow> {
+pub fn snapshot(
+    term: &Term<Proxy>,
+    rows: usize,
+    selection: Option<(SelPt, SelPt)>,
+) -> Vec<SnapRow> {
     let grid = term.grid();
     let offset = grid.display_offset() as i32;
     let cols = grid.columns();
@@ -199,8 +201,14 @@ pub fn selection_text(term: &Term<Proxy>, sel: (SelPt, SelPt)) -> String {
     let grid = term.grid();
     let screen = grid.screen_lines() as i32;
     let min_line = -(grid.total_lines() as i32 - screen);
-    let a = SelPt { line: a.line.clamp(min_line, screen - 1), ..a };
-    let b = SelPt { line: b.line.clamp(min_line, screen - 1), ..b };
+    let a = SelPt {
+        line: a.line.clamp(min_line, screen - 1),
+        ..a
+    };
+    let b = SelPt {
+        line: b.line.clamp(min_line, screen - 1),
+        ..b
+    };
     let mut lines = Vec::new();
     for line in a.line..=b.line {
         let row = &grid[Line(line)];

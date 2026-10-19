@@ -148,17 +148,17 @@ pub const MIST: Theme = Theme {
 /// 中间阶按 mist 的语义梯度插值（校准基准见文件头）。
 pub const KITCHEN: Theme = Theme {
     dark: false,
-    bg: 0xfbf5e9,        // --paper 奶油纸底
-    bg_panel: 0xf4ead8,   // --paper2 次级纸面
+    bg: 0xfbf5e9,       // --paper 奶油纸底
+    bg_panel: 0xf4ead8, // --paper2 次级纸面
     bg_hover: 0xf0e4cc,
     bg_selected: 0xe8dab9,
-    border: 0xd8cbb4,     // --rule 栏线
-    text: 0x241c14,       // --ink 墨黑棕
+    border: 0xd8cbb4, // --rule 栏线
+    text: 0x241c14,   // --ink 墨黑棕
     text_muted: 0x4f4232,
     text_dim: 0x6b5c48,
-    text_soft: 0x7a6a57,  // --mute
+    text_soft: 0x7a6a57, // --mute
     text_faint: 0x9b8d78,
-    accent: 0xb8402d,     // --red 校对红（014 唯一强调色）
+    accent: 0xb8402d, // --red 校对红（014 唯一强调色）
     accent_hover: 0x9c3425,
     accent_contrast: 0xffffff,
     user_bg: 0xf4ead8,
@@ -189,16 +189,16 @@ pub const LATTE: Theme = Theme {
     text_dim: 0x6c6f85,    // subtext0
     text_soft: 0x8c8fa1,   // overlay1（跳过 overlay2，拉开与 dim 的档距）
     text_faint: 0x9ca0b0,  // overlay0
-    accent: 0x5f5fab,     // 用户 Obsidian 自选 accent（雾紫罗兰）
+    accent: 0x5f5fab,      // 用户 Obsidian 自选 accent（雾紫罗兰）
     accent_hover: 0x4a4a8c,
     accent_contrast: 0xffffff,
-    user_bg: 0xe1e2ee,    // base + 10% accent（用户消息块淡紫）
+    user_bg: 0xe1e2ee, // base + 10% accent（用户消息块淡紫）
     assistant_bg: 0xeff1f5,
-    tool_bg: 0xe6e9ef,     // mantle（bg 深 ~3%）
+    tool_bg: 0xe6e9ef, // mantle（bg 深 ~3%）
     bg_subtle: 0x0000000a,
-    chrome: 0xdce0e8,      // crust（topbar/statusbar 比 panel 深）
-    nav: 0xe9ecf2,         // base↔mantle 插值
-    danger: 0xd20f39,      // Latte red
+    chrome: 0xdce0e8,       // crust（topbar/statusbar 比 panel 深）
+    nav: 0xe9ecf2,          // base↔mantle 插值
+    danger: 0xd20f39,       // Latte red
     danger_hover: 0xe64553, // Latte maroon（同向提亮）
 };
 
@@ -246,13 +246,13 @@ pub const ALL: &[(&str, Theme)] = &[
 /// 语义校准：border 提亮到 bg 之上（pi-web 分隔线语义）、text 阶梯拉开。
 pub const ONE_DARK: Theme = Theme {
     dark: true,
-    bg: 0x22252b,           // background hsla(215,12%,15%)
-    bg_panel: 0x282c33,     // editor/toolbar hsla(220,12%,18%)
-    bg_hover: 0x343843,     // element_hover 提亮收敛（原 3c404c 过亮）
-    bg_selected: 0x3b3f4a,  // element_selected hsla(224,11.3%,26.1%)
-    border: 0x353a45,       // 亮于 bg（原 1b1d23 更暗 → 分隔线不可见）
-    text: 0xd7dadf,         // text hsla(221,11%,86%)
-    text_muted: 0x9ea4af,   // 相对 bg 对比 ~65%（原 6d737e 与 text 差距过大）
+    bg: 0x22252b,          // background hsla(215,12%,15%)
+    bg_panel: 0x282c33,    // editor/toolbar hsla(220,12%,18%)
+    bg_hover: 0x343843,    // element_hover 提亮收敛（原 3c404c 过亮）
+    bg_selected: 0x3b3f4a, // element_selected hsla(224,11.3%,26.1%)
+    border: 0x353a45,      // 亮于 bg（原 1b1d23 更暗 → 分隔线不可见）
+    text: 0xd7dadf,        // text hsla(221,11%,86%)
+    text_muted: 0x9ea4af,  // 相对 bg 对比 ~65%（原 6d737e 与 text 差距过大）
     text_dim: 0x828996,
     text_soft: 0x767d8a,
     text_faint: 0x6b7280,
@@ -346,13 +346,13 @@ pub const PINE_FOREST: Theme = Theme {
     accent: 0x29a83c,       // 松针绿（原 2ecc40，微调防刺眼）
     accent_hover: 0x3ec251, // 同步微调后的 hover 提亮
     accent_contrast: 0x08190a,
-    user_bg: 0x103d15,      // 校准: 20% 松针绿合成（用户消息块）
+    user_bg: 0x103d15, // 校准: 20% 松针绿合成（用户消息块）
     assistant_bg: 0x08190a,
-    tool_bg: 0x0a1e0c,      // 校准: bg +~3% 亮
+    tool_bg: 0x0a1e0c, // 校准: bg +~3% 亮
     bg_subtle: 0xffffff14,
-    chrome: 0x061308,       // 校准: 比 bg 略深（原主题 status/title = bg）
+    chrome: 0x061308, // 校准: 比 bg 略深（原主题 status/title = bg）
     nav: 0x0c220f,
-    danger: 0xcf6a5f,       // 校准新增: 单色主题无红，语义必需
+    danger: 0xcf6a5f, // 校准新增: 单色主题无红，语义必需
     danger_hover: 0xe08378,
 };
 
@@ -442,15 +442,27 @@ mod tests {
         }
         for (name, t) in ALL {
             let dark = t.dark;
-            let deeper = |x: u32| if dark { lum(x) > lum(t.bg) } else { lum(x) < lum(t.bg) };
+            let deeper = |x: u32| {
+                if dark {
+                    lum(x) > lum(t.bg)
+                } else {
+                    lum(x) < lum(t.bg)
+                }
+            };
             assert!(deeper(t.border), "{name}: border must contrast against bg");
             assert!(deeper(t.tool_bg), "{name}: tool_bg off-baseline vs bg");
             assert!(deeper(t.bg_hover), "{name}: bg_hover off-baseline vs bg");
-            assert!(deeper(t.bg_selected), "{name}: bg_selected off-baseline vs bg");
+            assert!(
+                deeper(t.bg_selected),
+                "{name}: bg_selected off-baseline vs bg"
+            );
             // hover → selected 亮度递进（选中更显）
             let dh = (lum(t.bg) - lum(t.bg_hover)).abs();
             let ds = (lum(t.bg) - lum(t.bg_selected)).abs();
-            assert!(ds > dh, "{name}: selected must differ from bg more than hover");
+            assert!(
+                ds > dh,
+                "{name}: selected must differ from bg more than hover"
+            );
             // text 阶梯：对比度单调递减
             let base = lum(t.bg);
             let dist = |c: u32| (lum(c) - base).abs();

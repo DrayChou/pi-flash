@@ -16,8 +16,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use gpui::{
-    AnyElement, App, UniformListDecoration, UniformListScrollHandle, Window, div, px, rgb,
-    prelude::*,
+    AnyElement, App, UniformListDecoration, UniformListScrollHandle, Window, div, prelude::*, px,
+    rgb,
 };
 
 /// 高度策略。
@@ -107,13 +107,11 @@ pub fn vlist(
     // 的可用高会画全部内容（文件树首日翻的车：整棵树糊出来、不能滚）。
     // 滚动条兄弟节点挂 relative 包裹上（menu_scrollbar 自带右缘定位）。
     let fill_wrapper = |list: gpui::UniformList| {
-        let mut wrapper = div().flex_1().min_h_0().relative().child(
-            list.absolute()
-                .top(px(0.))
-                .left(px(0.))
-                .w_full()
-                .h_full(),
-        );
+        let mut wrapper = div()
+            .flex_1()
+            .min_h_0()
+            .relative()
+            .child(list.absolute().top(px(0.)).left(px(0.)).w_full().h_full());
         if scrollbar {
             wrapper = wrapper.child(super::psp_scrollbar::menu_scrollbar(
                 &scroll.0.borrow().base_handle,
@@ -138,19 +136,20 @@ pub fn vlist(
         .border_1()
         .border_color(rgb(t.border))
         .overflow_hidden();
-    box_ = match fixed_h {
-        Some(h) => {
-            if scrollbar {
-                box_.h(px(h)).relative().child(list_el).child(
-                    super::psp_scrollbar::menu_scrollbar(&scroll.0.borrow().base_handle),
-                )
-            } else {
-                box_.h(px(h)).child(list_el)
+    box_ =
+        match fixed_h {
+            Some(h) => {
+                if scrollbar {
+                    box_.h(px(h)).relative().child(list_el).child(
+                        super::psp_scrollbar::menu_scrollbar(&scroll.0.borrow().base_handle),
+                    )
+                } else {
+                    box_.h(px(h)).child(list_el)
+                }
             }
-        }
-        // Fill：壳填父容器，内层 wrapper 已带列表与滚动条
-        None => box_.flex_1().min_h_0().child(list_el),
-    };
+            // Fill：壳填父容器，内层 wrapper 已带列表与滚动条
+            None => box_.flex_1().min_h_0().child(list_el),
+        };
     box_.into_any_element()
 }
 
@@ -272,11 +271,7 @@ mod tests {
         cx.draw::<Entity<TestView>>(
             point(px(0.), px(0.)),
             size(px(200.), px(VIEWPORT)),
-            |_, cx| {
-                cx.new(|_| TestView {
-                    seen: seen.clone(),
-                })
-            },
+            |_, cx| cx.new(|_| TestView { seen: seen.clone() }),
         );
         let mut rows = seen.borrow().clone();
         rows.sort_unstable();

@@ -22,7 +22,11 @@ pub fn extract_at_query(before_cursor: &str) -> Option<AtQueryMatch> {
     // 正则按左最匹配：同形 token 多个候选时取最左。引号形态整体优先于
     // 普通形态（pi-web 先试 quoted 正则）。
     let boundary = |i: usize| -> bool {
-        i == 0 || before_cursor[..i].chars().next_back().is_some_and(|c| c.is_whitespace())
+        i == 0
+            || before_cursor[..i]
+                .chars()
+                .next_back()
+                .is_some_and(|c| c.is_whitespace())
     };
     for i in 0..bytes.len() {
         if bytes[i] != b'@' || !boundary(i) || bytes.get(i + 1) != Some(&b'"') {
@@ -98,7 +102,12 @@ impl FileEntry {
     pub fn new(path: String, is_dir: bool) -> Self {
         let lower_path = path.to_lowercase();
         let depth = path.bytes().filter(|b| *b == b'/').count();
-        Self { path, is_dir, lower_path, depth }
+        Self {
+            path,
+            is_dir,
+            lower_path,
+            depth,
+        }
     }
 }
 
@@ -156,7 +165,11 @@ pub fn filter_file_entries(entries: &[FileEntry], query: &str) -> Vec<FileEntry>
     filter_file_entries_limit(entries, query, AT_RESULT_LIMIT)
 }
 
-pub fn filter_file_entries_limit(entries: &[FileEntry], query: &str, limit: usize) -> Vec<FileEntry> {
+pub fn filter_file_entries_limit(
+    entries: &[FileEntry],
+    query: &str,
+    limit: usize,
+) -> Vec<FileEntry> {
     let lower_query = query.to_lowercase();
     if lower_query.is_empty() {
         return entries.iter().take(limit).cloned().collect();
@@ -181,7 +194,11 @@ pub fn filter_file_entries_limit(entries: &[FileEntry], query: &str, limit: usiz
 ///   `@"dir/"`，光标在闭引号前。
 /// 返回 (替换文本, 光标相对替换文本开头的字节偏移)。
 pub fn build_at_insert_text(path: &str, is_dir: bool) -> (String, usize) {
-    let p = if is_dir { format!("{path}/") } else { path.to_string() };
+    let p = if is_dir {
+        format!("{path}/")
+    } else {
+        path.to_string()
+    };
     if is_dir {
         if p.contains(' ') {
             let text = format!("@\"{p}\"");
@@ -235,16 +252,25 @@ mod tests {
     }
 
     fn files() -> Vec<String> {
-        ["components/ChatInput.tsx", "src/app/page.tsx", "src/lib/util.ts", "README.md"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect()
+        [
+            "components/ChatInput.tsx",
+            "src/app/page.tsx",
+            "src/lib/util.ts",
+            "README.md",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
     }
 
     #[test]
     fn entries_derive_dirs_and_sort_shallow_first() {
         let es = build_entries_from_files(&files());
-        let dirs: Vec<&str> = es.iter().filter(|e| e.is_dir).map(|e| e.path.as_str()).collect();
+        let dirs: Vec<&str> = es
+            .iter()
+            .filter(|e| e.is_dir)
+            .map(|e| e.path.as_str())
+            .collect();
         assert_eq!(dirs, vec!["components", "src", "src/app", "src/lib"]);
         // README.md（深度 0）排在 src/lib/util.ts（深度 2）前
         let pos = |p: &str| es.iter().position(|e| e.path == p).unwrap();
@@ -260,7 +286,11 @@ mod tests {
             .map(|s| s.to_string())
             .collect();
         let es = build_entries_from_files(&files);
-        let dirs: Vec<&str> = es.iter().filter(|e| e.is_dir).map(|e| e.path.as_str()).collect();
+        let dirs: Vec<&str> = es
+            .iter()
+            .filter(|e| e.is_dir)
+            .map(|e| e.path.as_str())
+            .collect();
         assert_eq!(dirs, vec!["a", "a/b", "a/b/f"]);
         assert_eq!(es.iter().filter(|e| !e.is_dir).count(), 4);
         // 预计算字段与 path 一致
@@ -292,9 +322,15 @@ mod tests {
     #[test]
     fn insert_text_forms() {
         // 文件闭合 + 尾空格
-        assert_eq!(build_at_insert_text("src/a.ts", false), ("@src/a.ts ".into(), 10));
+        assert_eq!(
+            build_at_insert_text("src/a.ts", false),
+            ("@src/a.ts ".into(), 10)
+        );
         // 含空格加引号
-        assert_eq!(build_at_insert_text("my file.ts", false), ("@\"my file.ts\" ".into(), 14));
+        assert_eq!(
+            build_at_insert_text("my file.ts", false),
+            ("@\"my file.ts\" ".into(), 14)
+        );
         // 目录不闭合（钻取继续）
         assert_eq!(build_at_insert_text("src", true), ("@src/".into(), 5));
         // 引号目录闭合、光标在闭引号前

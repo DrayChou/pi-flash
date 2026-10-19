@@ -75,11 +75,7 @@ impl gpui::Render for TabDragGhost {
 
 /// 拖拽幽灵的图标元素：文件 tab → 文件类型图标（`ui::icon_path` 口径）；
 /// 终端/更新日志 → tab 自身的命名图标（`ui::icon`）。
-fn drag_icon(
-    drag: &TabDrag,
-    size: f32,
-    color: u32,
-) -> Option<gpui::AnyElement> {
+fn drag_icon(drag: &TabDrag, size: f32, color: u32) -> Option<gpui::AnyElement> {
     if let Some(path) = drag.path.as_deref() {
         return Some(crate::ui::icon_path(
             crate::services::file_icons::get_icon(path),
@@ -87,7 +83,8 @@ fn drag_icon(
             color,
         ));
     }
-    drag.icon.map(|n| crate::ui::icon(n, size, color).into_any_element())
+    drag.icon
+        .map(|n| crate::ui::icon(n, size, color).into_any_element())
 }
 
 /// topbar 高（两段同高；窗口控制钮高度跟随；2026-10-10 定夺 36→38，

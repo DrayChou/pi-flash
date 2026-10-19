@@ -61,7 +61,10 @@ impl Chat {
     pub(crate) fn open_plugin_picker(&mut self, cx: &mut gpui::Context<Self>) {
         if self.rt().read(cx).tool_preset_key() != "custom" {
             self.dlg.pill_menu = None;
-            self.set_status(crate::i18n::tr("extensions.only_full_preset").to_string(), cx);
+            self.set_status(
+                crate::i18n::tr("extensions.only_full_preset").to_string(),
+                cx,
+            );
             return;
         }
         let seed = self.rt().read(cx).ext_sources.clone();
@@ -94,7 +97,12 @@ impl Chat {
         // 宇宙序 = 全局 → 项目，去重（同一来源出现在两个 scope 时 `-e` 只发一次），
         // 再按展示名排序，与面板呈现一致
         let mut sources: Vec<String> = Vec::new();
-        for v in self.cfg.mc_pkgs_global.iter().chain(self.cfg.mc_pkgs_project.iter()) {
+        for v in self
+            .cfg
+            .mc_pkgs_global
+            .iter()
+            .chain(self.cfg.mc_pkgs_project.iter())
+        {
             let src = pi_link::skills::entry_source(v);
             if src.is_empty() || !picker.pending.contains(&src) || sources.contains(&src) {
                 continue;
@@ -111,7 +119,10 @@ impl Chat {
         // 每个对话保存一份：落 ~/.pi-flash/session-ext.json，重启后按会话恢复
         if let Some(path) = pi_link::session_ext::store_path() {
             if let Err(e) = pi_link::session_ext::write_for(&path, &key, &sources) {
-                self.set_status(crate::i18n::tf("extensions.list_save_failed", &[("e", e)]), cx);
+                self.set_status(
+                    crate::i18n::tf("extensions.list_save_failed", &[("e", e)]),
+                    cx,
+                );
                 return;
             }
         }
@@ -123,7 +134,11 @@ impl Chat {
 }
 
 /// 面板元素（`None` = 没开）。挂在 app root 上，锚点同工具胶囊菜单。
-pub(crate) fn view(chat: &Chat, weak: &gpui::WeakEntity<Chat>, window: &gpui::Window) -> Option<AnyElement> {
+pub(crate) fn view(
+    chat: &Chat,
+    weak: &gpui::WeakEntity<Chat>,
+    window: &gpui::Window,
+) -> Option<AnyElement> {
     let picker = chat.dlg.plugin_picker.as_ref()?;
     let t = T();
     let ui = crate::appearance::ui_size;
@@ -131,13 +146,19 @@ pub(crate) fn view(chat: &Chat, weak: &gpui::WeakEntity<Chat>, window: &gpui::Wi
 
     // ---- 宇宙 = 全局 ∪ 项目包去重；先按展示名排序，再稳定地把已勾选置顶 ----
     let mut items: Vec<(String, bool)> = Vec::new(); // (来源, 项目)
-    for v in chat.cfg.mc_pkgs_global.iter().chain(chat.cfg.mc_pkgs_project.iter()) {
+    for v in chat
+        .cfg
+        .mc_pkgs_global
+        .iter()
+        .chain(chat.cfg.mc_pkgs_project.iter())
+    {
         let src = pi_link::skills::entry_source(v);
         if src.is_empty() || items.iter().any(|(s, _)| *s == src) {
             continue;
         }
         let project = chat
-            .cfg.mc_pkgs_project
+            .cfg
+            .mc_pkgs_project
             .iter()
             .any(|p| pi_link::skills::entry_source(p) == src);
         items.push((src, project));
@@ -161,12 +182,18 @@ pub(crate) fn view(chat: &Chat, weak: &gpui::WeakEntity<Chat>, window: &gpui::Wi
                 .py(px(12.))
                 .text_size(ui(11.))
                 .text_color(rgb(t.text_dim))
-                .child(SharedString::from(crate::i18n::tr("extensions.not_configured")))
+                .child(SharedString::from(crate::i18n::tr(
+                    "extensions.not_configured",
+                )))
                 .into_any_element(),
         );
     }
     // 10 行限高：内容不到就按内容高（不出滚动条），超出才截到 300px 滚动
-    let list_h = if n_rows == 0 { 60. } else { (n_rows as f32 * ROW_H).min(ROW_H * 10.) };
+    let list_h = if n_rows == 0 {
+        60.
+    } else {
+        (n_rows as f32 * ROW_H).min(ROW_H * 10.)
+    };
 
     // 标题行右侧：当前勾选集的说明 token 合计（040 延迟加载测得多少算多少）
     let total: i64 = items
@@ -188,7 +215,9 @@ pub(crate) fn view(chat: &Chat, weak: &gpui::WeakEntity<Chat>, window: &gpui::Wi
                 .text_size(ui(12.))
                 .font_weight(gpui::FontWeight::SEMIBOLD)
                 .text_color(rgb(t.text))
-                .child(SharedString::from(crate::i18n::tr("extensions.choose_extensions"))),
+                .child(SharedString::from(crate::i18n::tr(
+                    "extensions.choose_extensions",
+                ))),
         )
         .when(total > 0, |d| {
             // 不用 ml_auto（实测 CJK 标签参与测量时 auto margin 收不满，合计
@@ -302,10 +331,9 @@ fn plugin_row(
                 .flex()
                 .items_center()
                 .justify_center()
-                .when(
-                    checked,
-                    |d| d.child(crate::ui::icon("check", 10., t.accent_contrast)),
-                ),
+                .when(checked, |d| {
+                    d.child(crate::ui::icon("check", 10., t.accent_contrast))
+                }),
         )
         .child(
             div()
@@ -322,7 +350,11 @@ fn plugin_row(
                 )),
         );
     if project {
-        row = row.child(tag(crate::i18n::tr("scope.project"), crate::settings::widgets::indigo_bg(), crate::settings::widgets::indigo_fg()));
+        row = row.child(tag(
+            crate::i18n::tr("scope.project"),
+            crate::settings::widgets::indigo_bg(),
+            crate::settings::widgets::indigo_fg(),
+        ));
     }
     if let Some(n) = tokens {
         row = row.child(
@@ -337,11 +369,7 @@ fn plugin_row(
     row.into_any_element()
 }
 
-fn tag(
-    label: &str,
-    bg: gpui::Hsla,
-    fg: gpui::Hsla,
-) -> AnyElement {
+fn tag(label: &str, bg: gpui::Hsla, fg: gpui::Hsla) -> AnyElement {
     div()
         .flex_shrink_0()
         .px(px(4.))

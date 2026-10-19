@@ -16,9 +16,9 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    point, px, relative, rgb, size, AnyElement, App, Bounds, Corners, DispatchPhase, Edges,
-    Element, ElementId, GlobalElementId, Hitbox, HitboxBehavior, InspectorElementId, LayoutId,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Style, Window, prelude::*,
+    AnyElement, App, Bounds, Corners, DispatchPhase, Edges, Element, ElementId, GlobalElementId,
+    Hitbox, HitboxBehavior, InspectorElementId, LayoutId, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, Pixels, Style, Window, point, prelude::*, px, relative, rgb, size,
 };
 
 /// ZED `ScrollbarStyle::Regular.to_pixels()`
@@ -41,7 +41,6 @@ pub struct PspScrollbarState {
     /// 上次"panel 悬停"刷新时刻（autohide 基准；悬停中持续刷新 = 常显）
     last_active: Rc<Cell<Option<Instant>>>,
 }
-
 
 impl PspScrollbarState {
     pub fn new() -> Self {
@@ -211,9 +210,7 @@ impl Element for ScrollbarElement {
         let scrolled = LAST_OFFSET.with(|c| {
             let prev = c.get();
             c.set(Some((off_now, max_now)));
-            prev.is_some_and(|(po, pm)| {
-                (po - off_now).abs() > 0.5 || (pm - max_now).abs() > 0.5
-            })
+            prev.is_some_and(|(po, pm)| (po - off_now).abs() > 0.5 || (pm - max_now).abs() > 0.5)
         });
         if scrolled {
             self.state.last_active.set(Some(Instant::now()));
@@ -228,8 +225,7 @@ impl Element for ScrollbarElement {
                 MAX_OPACITY
             } else if el < Duration::from_millis(AUTOHIDE_MS + 1000) {
                 // 1s 线性淡出
-                MAX_OPACITY
-                    * (1. - (el.as_millis() - AUTOHIDE_MS as u128) as f32 / 1000.).max(0.)
+                MAX_OPACITY * (1. - (el.as_millis() - AUTOHIDE_MS as u128) as f32 / 1000.).max(0.)
             } else {
                 0.
             }
@@ -305,7 +301,7 @@ impl Element for ScrollbarElement {
                         - hit.origin.y.to_f64() as f32
                         - PADDING
                         - thumb_len / 2.)
-                    .clamp(0., track_h - thumb_len);
+                        .clamp(0., track_h - thumb_len);
                     let new_off = if track_h > thumb_len {
                         rel / (track_h - thumb_len) * max_off
                     } else {
@@ -340,7 +336,7 @@ impl Element for ScrollbarElement {
                             - hit.origin.y.to_f64() as f32
                             - PADDING
                             - drag_off)
-                        .clamp(0., track_h - thumb_len);
+                            .clamp(0., track_h - thumb_len);
                         let new_off = if track_h > thumb_len {
                             rel / (track_h - thumb_len) * max_off
                         } else {

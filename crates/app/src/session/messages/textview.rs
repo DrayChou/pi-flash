@@ -9,11 +9,11 @@
 //! TextView::markdown（use_keyed_state 需要 &mut Window）在此构造零改造。
 
 use gpui::{
-    App, px, relative, rgb, div, prelude::*, ElementId, IntoElement, RenderOnce, SharedString,
-    Styled, Window,
+    App, ElementId, IntoElement, RenderOnce, SharedString, Styled, Window, div, prelude::*, px,
+    relative, rgb,
 };
-use gpui_component::text::TextView;
 use gpui_component::ActiveTheme;
+use gpui_component::text::TextView;
 
 use crate::appearance::theme::theme as T;
 use crate::editor::markdown;
@@ -62,7 +62,9 @@ fn text_view_style(cx: &App) -> gpui_component::text::TextViewStyle {
     let t = T();
     // Styled 方法是 move 链式（self -> Self），只能整体一条链不能逐语句调
     let code_block = gpui::StyleRefinement::default()
-        .bg(gpui::rgb(crate::appearance::theme::mix_rgb(t.bg, t.bg_panel, 0.92)))
+        .bg(gpui::rgb(crate::appearance::theme::mix_rgb(
+            t.bg, t.bg_panel, 0.92,
+        )))
         .rounded(px(7.))
         .font_family(markdown::MONO_FAMILY)
         .text_size(crate::appearance::sess_size(-1.));

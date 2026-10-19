@@ -23,7 +23,10 @@ pub(crate) struct Cell {
 pub(crate) enum Row {
     /// @@ header / "\ No newline" marker — rendered as a band, no cells
     Hunk(String),
-    Line { left: Cell, right: Cell },
+    Line {
+        left: Cell,
+        right: Cell,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -34,7 +37,11 @@ pub(crate) struct DiffFile {
 }
 
 fn empty_cell() -> Cell {
-    Cell { line_no: None, text: String::new(), kind: CellKind::Empty }
+    Cell {
+        line_no: None,
+        text: String::new(),
+        kind: CellKind::Empty,
+    }
 }
 
 /// Pending removed/added runs pair up into split rows on the next flush.
@@ -46,14 +53,26 @@ struct RowSink {
 
 impl RowSink {
     fn new() -> RowSink {
-        RowSink { rows: Vec::new(), pending_removed: Vec::new(), pending_added: Vec::new() }
+        RowSink {
+            rows: Vec::new(),
+            pending_removed: Vec::new(),
+            pending_added: Vec::new(),
+        }
     }
 
     fn flush(&mut self) {
         let count = self.pending_removed.len().max(self.pending_added.len());
         for i in 0..count {
-            let left = self.pending_removed.get(i).cloned().unwrap_or_else(empty_cell);
-            let right = self.pending_added.get(i).cloned().unwrap_or_else(empty_cell);
+            let left = self
+                .pending_removed
+                .get(i)
+                .cloned()
+                .unwrap_or_else(empty_cell);
+            let right = self
+                .pending_added
+                .get(i)
+                .cloned()
+                .unwrap_or_else(empty_cell);
             self.rows.push(Row::Line { left, right });
         }
         self.pending_removed.clear();
@@ -63,19 +82,33 @@ impl RowSink {
     fn context(&mut self, text: &str, line_no: Option<u64>) {
         self.flush();
         self.rows.push(Row::Line {
-            left: Cell { line_no, text: text.to_string(), kind: CellKind::Context },
-            right: Cell { line_no, text: text.to_string(), kind: CellKind::Context },
+            left: Cell {
+                line_no,
+                text: text.to_string(),
+                kind: CellKind::Context,
+            },
+            right: Cell {
+                line_no,
+                text: text.to_string(),
+                kind: CellKind::Context,
+            },
         });
     }
 
     fn removed(&mut self, text: &str, line_no: Option<u64>) {
-        self.pending_removed
-            .push(Cell { line_no, text: text.to_string(), kind: CellKind::Removed });
+        self.pending_removed.push(Cell {
+            line_no,
+            text: text.to_string(),
+            kind: CellKind::Removed,
+        });
     }
 
     fn added(&mut self, text: &str, line_no: Option<u64>) {
-        self.pending_added
-            .push(Cell { line_no, text: text.to_string(), kind: CellKind::Added });
+        self.pending_added.push(Cell {
+            line_no,
+            text: text.to_string(),
+            kind: CellKind::Added,
+        });
     }
 
     /// finish(): flush + drop non-line rows (hunk bands carry no data here)
@@ -146,14 +179,20 @@ pub(crate) fn parse_unified_patch(text: &str) -> Option<Vec<DiffFile>> {
         if let Some(h) = hunk_header(line) {
             if current.is_none() {
                 current = Some(files.len());
-                files.push(DiffFile { old_path: None, new_path: None, rows: Vec::new() });
+                files.push(DiffFile {
+                    old_path: None,
+                    new_path: None,
+                    rows: Vec::new(),
+                });
             }
             flush_changes!();
             old_no = h.0;
             new_no = h.2;
             hunk_old_left = h.1.unwrap_or(1);
             hunk_new_left = h.3.unwrap_or(1);
-            files[current.unwrap()].rows.push(Row::Hunk(line.to_string()));
+            files[current.unwrap()]
+                .rows
+                .push(Row::Hunk(line.to_string()));
             continue;
         }
 
@@ -261,7 +300,11 @@ pub(crate) fn parse_apply_patch_input(patch_text: &str) -> Option<Vec<DiffFile>>
     if !patch_text.contains("*** Begin Patch")
         && !["Add File: ", "Delete File: ", "Update File: "]
             .iter()
-            .any(|op| patch_text.lines().any(|l| l.starts_with(&format!("*** {op}"))))
+            .any(|op| {
+                patch_text
+                    .lines()
+                    .any(|l| l.starts_with(&format!("*** {op}")))
+            })
     {
         return None;
     }
@@ -285,10 +328,7 @@ pub(crate) fn parse_apply_patch_input(patch_text: &str) -> Option<Vec<DiffFile>>
                 Op::Delete => "delete",
                 Op::Update => "update",
             };
-            current = Some((
-                files.len(),
-                op_s,
-            ));
+            current = Some((files.len(), op_s));
             files.push(DiffFile {
                 old_path: (op != Op::Add).then(|| path.clone()),
                 new_path: (op != Op::Delete).then(|| path.clone()),
@@ -383,13 +423,19 @@ pub(crate) fn apply_patch_preview_to_files(preview: &Value) -> Option<Vec<DiffFi
     let raw_files = preview.get("files")?.as_array()?;
     let mut files = Vec::new();
     for raw in raw_files {
-        let Some(path) = raw.get("filePath").and_then(|v| v.as_str()) else { continue };
-        let Some(diff) = raw.get("diff").and_then(|v| v.as_str()) else { continue };
+        let Some(path) = raw.get("filePath").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Some(diff) = raw.get("diff").and_then(|v| v.as_str()) else {
+            continue;
+        };
         let op = raw.get("operation").and_then(|v| v.as_str()).unwrap_or("");
         let move_path = raw.get("movePath").and_then(|v| v.as_str());
         let mut sink = RowSink::new();
         for line in diff.lines() {
-            let Some((marker, num, body)) = split_numbered_line(line) else { continue };
+            let Some((marker, num, body)) = split_numbered_line(line) else {
+                continue;
+            };
             match marker {
                 '+' => sink.added(body, Some(num)),
                 '-' => sink.removed(body, Some(num)),
@@ -453,7 +499,11 @@ mod tests {
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].old_path.as_deref(), Some("a/f.rs"));
         assert_eq!(files[0].new_path.as_deref(), Some("b/f.rs"));
-        let lines: Vec<&Row> = files[0].rows.iter().filter(|r| matches!(r, Row::Line { .. })).collect();
+        let lines: Vec<&Row> = files[0]
+            .rows
+            .iter()
+            .filter(|r| matches!(r, Row::Line { .. }))
+            .collect();
         assert_eq!(lines.len(), 3);
         // pairing: removed old / added new share one row
         if let Row::Line { left, right } = lines[1] {

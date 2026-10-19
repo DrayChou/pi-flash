@@ -165,8 +165,16 @@ mod tests {
         // §1 间距
         assert_eq!(
             [
-                space::SP1, space::SP2, space::SP3, space::SP4, space::SP5,
-                space::SP6, space::SP7, space::SP8, space::SP9, space::SP10,
+                space::SP1,
+                space::SP2,
+                space::SP3,
+                space::SP4,
+                space::SP5,
+                space::SP6,
+                space::SP7,
+                space::SP8,
+                space::SP9,
+                space::SP10,
             ],
             [2., 4., 6., 8., 10., 12., 16., 20., 24., 32.]
         );
@@ -176,30 +184,41 @@ mod tests {
         }
         // §3 图标
         assert_eq!(
-            [
-                icon::INDICATOR, icon::XS, icon::SM, icon::MD, icon::LG
-            ],
+            [icon::INDICATOR, icon::XS, icon::SM, icon::MD, icon::LG],
             [10., 12., 14., 16., 18.]
         );
         // §4 圆角
         assert_eq!(
             [
-                radius::XS, radius::CTRL, radius::CARD, radius::MODAL, radius::SHEET
+                radius::XS,
+                radius::CTRL,
+                radius::CARD,
+                radius::MODAL,
+                radius::SHEET
             ],
             [3., 6., 8., 10., 12.]
         );
         // §5.1 按钮
         assert_eq!(
             [
-                btn::SM_H, btn::SM_PX, btn::MD_H, btn::MD_PX, btn::LG_H, btn::LG_PX
+                btn::SM_H,
+                btn::SM_PX,
+                btn::MD_H,
+                btn::MD_PX,
+                btn::LG_H,
+                btn::LG_PX
             ],
             [24., 8., 28., 12., 32., 14.]
         );
         // §5.3 开关
         assert_eq!(
             [
-                switch::MD_W, switch::MD_H, switch::MD_KNOB,
-                switch::SM_W, switch::SM_H, switch::SM_KNOB,
+                switch::MD_W,
+                switch::MD_H,
+                switch::MD_KNOB,
+                switch::SM_W,
+                switch::SM_H,
+                switch::SM_KNOB,
             ],
             [28., 16., 10., 24., 14., 8.]
         );
@@ -212,15 +231,24 @@ mod tests {
         // §5.6 菜单 / §5.7 弹窗
         assert_eq!(
             [
-                menu::MIN_W, menu::PAD, menu::ROW_PX, menu::ROW_PY,
-                menu::ROW_GAP, menu::SEP_MY,
+                menu::MIN_W,
+                menu::PAD,
+                menu::ROW_PX,
+                menu::ROW_PY,
+                menu::ROW_GAP,
+                menu::SEP_MY,
             ],
             [200., 4., 10., 7., 8., 6.]
         );
         assert_eq!(
             [
-                dialog::W_SM, dialog::W_MD, dialog::W_LG, dialog::W_XL,
-                dialog::RADIUS, dialog::PAD, dialog::TITLE_H,
+                dialog::W_SM,
+                dialog::W_MD,
+                dialog::W_LG,
+                dialog::W_XL,
+                dialog::RADIUS,
+                dialog::PAD,
+                dialog::TITLE_H,
             ],
             [380., 500., 620., 760., 10., 16., 36.]
         );

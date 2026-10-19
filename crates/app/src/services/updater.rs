@@ -103,7 +103,10 @@ pub(crate) fn version_gt(a: &str, b: &str) -> bool {
     let (ka, kb) = (version_key(a), version_key(b));
     let n = ka.len().max(kb.len());
     for i in 0..n {
-        let (x, y) = (ka.get(i).copied().unwrap_or(0), kb.get(i).copied().unwrap_or(0));
+        let (x, y) = (
+            ka.get(i).copied().unwrap_or(0),
+            kb.get(i).copied().unwrap_or(0),
+        );
         if x != y {
             return x > y;
         }
@@ -142,7 +145,10 @@ fn exe_rel() -> &'static str {
 }
 
 fn my_exe_dir() -> Option<PathBuf> {
-    std::env::current_exe().ok()?.parent().map(Path::to_path_buf)
+    std::env::current_exe()
+        .ok()?
+        .parent()
+        .map(Path::to_path_buf)
 }
 
 /// 载荷目录名剥掉尾部 `-<版本>`：`payload-0.1.11` → `payload`、
@@ -226,7 +232,10 @@ pub(crate) fn handoff_if_newer() -> bool {
         move || cleanup_older(root, me)
     });
     if !self_version_matches(&me) {
-        eprintln!("[updater] {} 的版本戳与进程版本不符，跳过启动交接", me.display());
+        eprintln!(
+            "[updater] {} 的版本戳与进程版本不符，跳过启动交接",
+            me.display()
+        );
         return false;
     }
     let Some((ver, dir)) = pick_next(&root, current_version(), &me) else {
@@ -242,8 +251,8 @@ pub(crate) fn handoff_if_newer() -> bool {
     // exe 目录（双击签名）时，显式给子进程 current_dir = 它自己的载荷目
     // 录，让它同样命中 exe 目录启动兜底；终端/薄壳场景 cwd 是用户语义
     // （shell 所在项目），保持继承不动。
-    let double_click = std::env::current_dir()
-        .is_ok_and(|c| crate::services::workspace::same_path(&c, &me));
+    let double_click =
+        std::env::current_dir().is_ok_and(|c| crate::services::workspace::same_path(&c, &me));
     let mut cmd = std::process::Command::new(&exe);
     if double_click {
         cmd.current_dir(&dir);
@@ -251,7 +260,10 @@ pub(crate) fn handoff_if_newer() -> bool {
     match cmd.spawn() {
         Ok(_) => true,
         Err(e) => {
-            eprintln!("[updater] 交接失败（{e}），继续以 v{} 启动", current_version());
+            eprintln!(
+                "[updater] 交接失败（{e}），继续以 v{} 启动",
+                current_version()
+            );
             false
         }
     }
@@ -326,7 +338,11 @@ fn older_than_an_hour(entry: &std::fs::DirEntry) -> bool {
     entry
         .metadata()
         .and_then(|m| m.modified())
-        .map(|t| t.elapsed().map(|a| a > Duration::from_secs(3600)).unwrap_or(true))
+        .map(|t| {
+            t.elapsed()
+                .map(|a| a > Duration::from_secs(3600))
+                .unwrap_or(true)
+        })
         .unwrap_or(true)
 }
 
@@ -371,13 +387,15 @@ fn touch_tree(dir: &Path) -> (usize, u128) {
         .clamp(1, 8);
     std::thread::scope(|s| {
         for _ in 0..workers {
-            s.spawn(|| loop {
-                let i = next.fetch_add(1, Ordering::Relaxed);
-                let Some(p) = files.get(i) else { break };
-                let mut buf = [0u8; 4096];
-                if let Ok(mut f) = std::fs::File::open(p) {
-                    if f.read(&mut buf).is_ok() {
-                        done.fetch_add(1, Ordering::Relaxed);
+            s.spawn(|| {
+                loop {
+                    let i = next.fetch_add(1, Ordering::Relaxed);
+                    let Some(p) = files.get(i) else { break };
+                    let mut buf = [0u8; 4096];
+                    if let Ok(mut f) = std::fs::File::open(p) {
+                        if f.read(&mut buf).is_ok() {
+                            done.fetch_add(1, Ordering::Relaxed);
+                        }
                     }
                 }
             });
@@ -385,7 +403,10 @@ fn touch_tree(dir: &Path) -> (usize, u128) {
     });
     let ms = t0.elapsed().as_millis();
     let n = done.load(Ordering::Relaxed);
-    eprintln!("[updater] 安装收尾：读过 {n}/{} 个文件，{ms} ms", files.len());
+    eprintln!(
+        "[updater] 安装收尾：读过 {n}/{} 个文件，{ms} ms",
+        files.len()
+    );
     (n, ms)
 }
 
@@ -598,7 +619,9 @@ fn extract_zip(zip_path: &Path, dest: &Path) -> Result<(), String> {
                             }
                         }
                         let mut out_f = std::fs::File::create(&out).map_err(|e| format!("{e}"))?;
-                        std::io::copy(&mut entry, &mut out_f).map(|_| ()).map_err(|e| format!("{e}"))
+                        std::io::copy(&mut entry, &mut out_f)
+                            .map(|_| ())
+                            .map_err(|e| format!("{e}"))
                     })();
                     let n = done.fetch_add(1, Ordering::Relaxed) + 1;
                     if total > 0 {
@@ -769,7 +792,14 @@ fn download_and_hash_cfg(
 /// 按候选源逐个试下载（每源一次，测速不过/网络错误都换下一个），全灭才报错。
 /// 返回（zip 的 SHA-256，命中源 base——校验和钉官方优先时兜底用）。
 fn download_mirrored(asset: &str, dest: &Path, ver: &str) -> Result<(String, String), String> {
-    download_mirrored_cfg(asset, dest, ver, &download_bases(), speed_probe(), min_speed_bps())
+    download_mirrored_cfg(
+        asset,
+        dest,
+        ver,
+        &download_bases(),
+        speed_probe(),
+        min_speed_bps(),
+    )
 }
 
 fn download_mirrored_cfg(
@@ -866,8 +896,8 @@ fn stage_update_in(me: &Path, rel: &ReleaseInfo) -> Result<String, String> {
 
         set_phase(PHASE_EXTRACT);
         extract_zip(&zip_path, &tmp.join("x"))?;
-        let content = locate_content_root(&tmp.join("x"))
-            .ok_or("载荷结构异常：找不到 pi-flash.exe")?;
+        let content =
+            locate_content_root(&tmp.join("x")).ok_or("载荷结构异常：找不到 pi-flash.exe")?;
 
         // 上一轮半截的同版本目录先清（解压中断/被清），再 rename 成最终目录
         let _ = std::fs::remove_dir_all(&target);
@@ -1070,7 +1100,10 @@ impl crate::Chat {
             // ① 检测（3 次尝试，间隔 10 分钟）
             let mut latest: Option<ReleaseInfo> = None;
             for attempt in 0..3 {
-                let r = cx.background_executor().spawn(async { fetch_latest() }).await;
+                let r = cx
+                    .background_executor()
+                    .spawn(async { fetch_latest() })
+                    .await;
                 match r {
                     Ok(rel) => {
                         latest = Some(rel);
@@ -1114,9 +1147,7 @@ impl crate::Chat {
                 .await;
             let _ = this.update(cx, |c, cx| {
                 c.aux.update = match &outcome {
-                    Ok(v) => UpdateState::Ready {
-                        version: v.clone(),
-                    },
+                    Ok(v) => UpdateState::Ready { version: v.clone() },
                     Err(e) => {
                         eprintln!("[updater] 下载更新失败：{e}");
                         UpdateState::Idle
@@ -1212,7 +1243,8 @@ mod tests {
     }
 
     #[test]
-    fn base_name_strips_version_suffix() {        assert_eq!(base_name("payload-0.1.11"), "payload");
+    fn base_name_strips_version_suffix() {
+        assert_eq!(base_name("payload-0.1.11"), "payload");
         assert_eq!(base_name("pi-flash-0.1.11"), "pi-flash");
         assert_eq!(base_name("payload"), "payload");
         assert_eq!(base_name("pi-flash"), "pi-flash", "绿色包基名不能被吃掉");
@@ -1230,7 +1262,10 @@ mod tests {
         let faked = root.join("payload-9.9.9");
         fake_payload(&faked, "9.9.9");
         assert!(!self_version_matches(&faked), "戳与进程版本不符应拒交");
-        assert!(self_version_matches(&root.join("payload")), "无版本名照常交接");
+        assert!(
+            self_version_matches(&root.join("payload")),
+            "无版本名照常交接"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -1270,7 +1305,10 @@ mod tests {
         fake_payload(&root.join(format!("payload-{cur}")), cur);
         fake_payload(&root.join(&format!("payload-{newer}")), &newer);
         cleanup_older(root.clone(), root.join(format!("payload-{cur}")));
-        assert!(!root.join(format!("payload-{older}")).exists(), "旧版本目录被清");
+        assert!(
+            !root.join(format!("payload-{older}")).exists(),
+            "旧版本目录被清"
+        );
         assert!(root.join(format!("payload-{cur}")).exists(), "自己不动");
         assert!(root.join(format!("payload-{newer}")).exists(), "更新的不动");
         assert!(root.join("payload").exists(), "安装目录（无版本）不动");
@@ -1316,8 +1354,14 @@ mod tests {
 
         cleanup_older(root.clone(), me.clone());
 
-        assert!(!old.exists(), "payload.old-* 应被清（升级过来的 300MB 孤儿）");
-        assert!(!root.join("update-swap.log").exists(), "老 helper 日志应被清");
+        assert!(
+            !old.exists(),
+            "payload.old-* 应被清（升级过来的 300MB 孤儿）"
+        );
+        assert!(
+            !root.join("update-swap.log").exists(),
+            "老 helper 日志应被清"
+        );
         assert!(!root.join("update-staged.json").exists(), "老标记应被清");
         assert!(!old_stage.exists(), "更旧的 staging 走版本规则清掉");
         assert!(me.exists(), "当前载荷不动");
@@ -1474,15 +1518,8 @@ mod tests {
         let body = vec![0x5Au8; 256 * 1024];
         let good = serve(body.clone(), None, true);
         let bases = vec![dead_base(), good.clone()];
-        let (hash, chosen) = download_mirrored_cfg(
-            "x.zip",
-            &d_fo,
-            "0.0.1",
-            &bases,
-            probe,
-            min_bps,
-        )
-        .unwrap();
+        let (hash, chosen) =
+            download_mirrored_cfg("x.zip", &d_fo, "0.0.1", &bases, probe, min_bps).unwrap();
         assert_eq!(chosen, good, "应命中可用源");
         let mut h = sha2::Sha256::new();
         h.update(&body);
@@ -1491,15 +1528,9 @@ mod tests {
 
         // ③ 无 content-length：下载成功但百分比保持未知
         let stream = serve(b"no-length-body".to_vec(), None, false);
-        let (_h3, chosen3) = download_mirrored_cfg(
-            "x.zip",
-            &d_nl,
-            "0.0.1",
-            &[stream.clone()],
-            probe,
-            min_bps,
-        )
-        .unwrap();
+        let (_h3, chosen3) =
+            download_mirrored_cfg("x.zip", &d_nl, "0.0.1", &[stream.clone()], probe, min_bps)
+                .unwrap();
         assert_eq!(chosen3, stream);
         assert_eq!(download_percent(), None, "无 content-length 无百分比");
 
@@ -1520,7 +1551,11 @@ mod tests {
         let dest = dir.join(&asset);
         let (hash, chosen) = download_mirrored(&asset, &dest, &rel.version)
             .unwrap_or_else(|e| panic!("下载失败：{e}"));
-        eprintln!("v{} 命中源：{chosen}\nsha256={hash}\n文件：{}", rel.version, dest.display());
+        eprintln!(
+            "v{} 命中源：{chosen}\nsha256={hash}\n文件：{}",
+            rel.version,
+            dest.display()
+        );
         assert_eq!(download_percent(), Some(100));
         assert!(dest.metadata().unwrap().len() > 0);
         let _ = std::fs::remove_dir_all(&dir);
@@ -1701,7 +1736,10 @@ mod tests {
             "0.1.8\n",
             "旧载荷原样"
         );
-        assert!(!root.join(format!("payload-{ver}")).exists(), "无新载荷目录");
+        assert!(
+            !root.join(format!("payload-{ver}")).exists(),
+            "无新载荷目录"
+        );
         let residue: Vec<_> = std::fs::read_dir(&root)
             .unwrap()
             .flatten()
@@ -1749,9 +1787,15 @@ mod tests {
             std::fs::read_to_string(stale.join(".payload-version")).unwrap(),
             format!("{ver}\n")
         );
-        assert_eq!(std::fs::read(stale.join("marker.txt")).unwrap(), b"payload-v9.9.9\n");
+        assert_eq!(
+            std::fs::read(stale.join("marker.txt")).unwrap(),
+            b"payload-v9.9.9\n"
+        );
         assert!(!stale.join("junk.txt").exists(), "旧半截内容被整目录替换掉");
-        assert_eq!(staged_newer(&root, "0.1.9").map(|(v, _)| v), Some(ver.to_string()));
+        assert_eq!(
+            staged_newer(&root, "0.1.9").map(|(v, _)| v),
+            Some(ver.to_string())
+        );
 
         unsafe { std::env::remove_var("PI_FLASH_MIRROR") };
         let _ = std::fs::remove_dir_all(&root);

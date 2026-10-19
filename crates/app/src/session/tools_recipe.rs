@@ -53,12 +53,11 @@
 //!   所以内置清单必须跟着 settings 走，不能无条件写死 `builtin:mcp`
 //!   （否则用户关掉的 MCP 会被这一档强行打开）。
 
-use std::path::{Path, PathBuf};
 use crate::*;
+use std::path::{Path, PathBuf};
 
 /// app 随包分发的激活脚本（编译进二进制；dev 直接读工作区源文件）。
 const FULL_ACTIVATE_TS: &str = include_str!("../../assets/full_activate.ts");
-
 
 /// `full_activate.ts` 的磁盘绝对路径 —— `-e` 只吃真实文件路径，不吃内存。
 ///
@@ -210,7 +209,10 @@ mod tests {
             &[],
             None,
         );
-        assert_eq!(args, srcs(&["-ne", "-e", "npm:a", "-e", "npm:b", "-e", "npm:c"]));
+        assert_eq!(
+            args,
+            srcs(&["-ne", "-e", "npm:a", "-e", "npm:b", "-e", "npm:c"])
+        );
     }
 
     #[test]
@@ -221,10 +223,22 @@ mod tests {
         );
         assert_eq!(
             args,
-            srcs(&["-ne", "-e", "C:/u/.pi/agent/extensions/pi-notify.ts", "-e", "builtin:codemode"])
+            srcs(&[
+                "-ne",
+                "-e",
+                "C:/u/.pi/agent/extensions/pi-notify.ts",
+                "-e",
+                "builtin:codemode"
+            ])
         );
-        assert!(!args.iter().any(|a| a == "--tools" || a == "--no-tools"), "full 的 --tools 在 runtime 拼");
-        assert!(!args.iter().any(|a| a.starts_with("npm:")), "full 不装任何包");
+        assert!(
+            !args.iter().any(|a| a == "--tools" || a == "--no-tools"),
+            "full 的 --tools 在 runtime 拼"
+        );
+        assert!(
+            !args.iter().any(|a| a.starts_with("npm:")),
+            "full 不装任何包"
+        );
     }
 
     #[test]
@@ -263,28 +277,46 @@ mod tests {
         let cwd = base.join("proj");
         std::fs::create_dir_all(agent.join("npm").join("node_modules").join("pi-freeflow"))
             .unwrap();
-        std::fs::create_dir_all(cwd.join(".pi").join("npm").join("node_modules").join("pi-goal"))
-            .unwrap();
+        std::fs::create_dir_all(
+            cwd.join(".pi")
+                .join("npm")
+                .join("node_modules")
+                .join("pi-goal"),
+        )
+        .unwrap();
 
         let out = resolve_ext_sources_at(
             &srcs(&[
-                "npm:pi-freeflow",        // user 根命中 → 路径
-                "npm:pi-goal",            // 项目根命中 → 路径
-                "npm:pi-missing",         // 没装 → 原样回退
-                "git:github.com/x/y@v1",  // 非 npm: 原样
+                "npm:pi-freeflow",                        // user 根命中 → 路径
+                "npm:pi-goal",                            // 项目根命中 → 路径
+                "npm:pi-missing",                         // 没装 → 原样回退
+                "git:github.com/x/y@v1",                  // 非 npm: 原样
                 "C:/u/.pi/agent/extensions/pi-notify.ts", // 本地路径原样
             ]),
             &agent,
             &cwd,
         );
-        assert_eq!(out[0], agent.join("npm").join("node_modules").join("pi-freeflow").to_string_lossy());
-        assert_eq!(out[1], cwd.join(".pi").join("npm").join("node_modules").join("pi-goal").to_string_lossy());
+        assert_eq!(
+            out[0],
+            agent
+                .join("npm")
+                .join("node_modules")
+                .join("pi-freeflow")
+                .to_string_lossy()
+        );
+        assert_eq!(
+            out[1],
+            cwd.join(".pi")
+                .join("npm")
+                .join("node_modules")
+                .join("pi-goal")
+                .to_string_lossy()
+        );
         assert_eq!(out[2], "npm:pi-missing");
         assert_eq!(out[3], "git:github.com/x/y@v1");
         assert_eq!(out[4], "C:/u/.pi/agent/extensions/pi-notify.ts");
         let _ = std::fs::remove_dir_all(&base);
     }
-
 }
 
 impl Chat {
@@ -313,5 +345,4 @@ impl Chat {
         });
         cx.notify();
     }
-
 }

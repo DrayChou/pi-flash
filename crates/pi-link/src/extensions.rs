@@ -33,7 +33,11 @@ fn resolve_entries(dir: &Path) -> Option<Vec<PathBuf>> {
     if let Ok(bytes) = std::fs::read(&manifest_path) {
         let text = String::from_utf8_lossy(&bytes);
         if let Ok(Value::Object(pkg)) = crate::config::parse_lenient(&text) {
-            if let Some(entries) = pkg.get("pi").and_then(|p| p.get("extensions")).and_then(Value::as_array) {
+            if let Some(entries) = pkg
+                .get("pi")
+                .and_then(|p| p.get("extensions"))
+                .and_then(Value::as_array)
+            {
                 let resolved: Vec<PathBuf> = entries
                     .iter()
                     .filter_map(Value::as_str)
@@ -63,7 +67,9 @@ pub fn discover_in_dir(dir: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     for entry in read.flatten() {
         let path = entry.path();
-        let Ok(kind) = entry.file_type() else { continue };
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
         // 符号链接：跟随（pi 对 symlink 一律当候选，交给后续读取判真伪）
         let is_symlink = kind.is_symlink();
         let is_file = kind.is_file() || (is_symlink && path.is_file());
@@ -208,10 +214,18 @@ mod tests {
             .iter()
             .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
             .collect();
-        assert!(found.contains(&"notify.ts".to_string()), "顶层裸 .ts 文件要发现");
-        assert!(found.contains(&"a.ts".to_string()) && found.contains(&"b.ts".to_string()),
-            "package.json pi.extensions[] 要发现（missing 跳过）");
-        assert!(found.contains(&"index.js".to_string()), "一级子目录 index.js 要发现");
+        assert!(
+            found.contains(&"notify.ts".to_string()),
+            "顶层裸 .ts 文件要发现"
+        );
+        assert!(
+            found.contains(&"a.ts".to_string()) && found.contains(&"b.ts".to_string()),
+            "package.json pi.extensions[] 要发现（missing 跳过）"
+        );
+        assert!(
+            found.contains(&"index.js".to_string()),
+            "一级子目录 index.js 要发现"
+        );
         assert!(!found.contains(&"notes.md".to_string()), "非 .ts/.js 忽略");
         assert!(!found.iter().any(|n| n == "missing.ts"), "不存在条目不发现");
         // pi 不递归：二级目录里的 index.ts 不算（一级子目录被当包根处理）
@@ -224,7 +238,8 @@ mod tests {
     fn npm_tree(agent: &Path, project: &Path) {
         let _ = std::fs::remove_dir_all(agent);
         let _ = std::fs::remove_dir_all(project);
-        std::fs::create_dir_all(agent.join("npm").join("node_modules").join("pi-freeflow")).unwrap();
+        std::fs::create_dir_all(agent.join("npm").join("node_modules").join("pi-freeflow"))
+            .unwrap();
         std::fs::create_dir_all(
             agent
                 .join("npm")
@@ -233,8 +248,14 @@ mod tests {
                 .join("pi-fff"),
         )
         .unwrap();
-        std::fs::create_dir_all(project.join(".pi").join("npm").join("node_modules").join("pi-goal"))
-            .unwrap();
+        std::fs::create_dir_all(
+            project
+                .join(".pi")
+                .join("npm")
+                .join("node_modules")
+                .join("pi-goal"),
+        )
+        .unwrap();
     }
 
     #[test]
@@ -246,9 +267,15 @@ mod tests {
 
         // 命中 user 根（带/不带版本 spec 同解）
         let got = managed_npm_source_path("npm:pi-freeflow", &agent, &project).unwrap();
-        assert_eq!(got, agent.join("npm").join("node_modules").join("pi-freeflow"));
+        assert_eq!(
+            got,
+            agent.join("npm").join("node_modules").join("pi-freeflow")
+        );
         let got = managed_npm_source_path("npm:pi-freeflow@^1.34", &agent, &project).unwrap();
-        assert_eq!(got, agent.join("npm").join("node_modules").join("pi-freeflow"));
+        assert_eq!(
+            got,
+            agent.join("npm").join("node_modules").join("pi-freeflow")
+        );
         // scoped 包
         let got = managed_npm_source_path("npm:@ff-labs/pi-fff@0.11.0", &agent, &project).unwrap();
         assert_eq!(
@@ -261,7 +288,14 @@ mod tests {
         );
         // user 根没有 → 项目根兜底
         let got = managed_npm_source_path("npm:pi-goal", &agent, &project).unwrap();
-        assert_eq!(got, project.join(".pi").join("npm").join("node_modules").join("pi-goal"));
+        assert_eq!(
+            got,
+            project
+                .join(".pi")
+                .join("npm")
+                .join("node_modules")
+                .join("pi-goal")
+        );
         // 两边都没有 → None（调用方回退 -e npm:x）
         assert!(managed_npm_source_path("npm:pi-missing", &agent, &project).is_none());
         // 非 npm: 源一律不改写

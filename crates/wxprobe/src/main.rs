@@ -38,9 +38,7 @@ fn main() {
             args.get(1).map(String::as_str).unwrap_or("zh"),
             args.get(2).map(String::as_str).unwrap_or("running"),
         ),
-        "reply-demo" => {
-            cmd_reply_demo(args.get(1).map(String::as_str).unwrap_or("zh"))
-        }
+        "reply-demo" => cmd_reply_demo(args.get(1).map(String::as_str).unwrap_or("zh")),
         "parity" => wxprobe::parity::run(args.iter().any(|a| a == "--update")),
         "state" => cmd_state(),
         "reset" => cmd_reset(),
@@ -71,7 +69,10 @@ fn cmd_qr() -> Result<(), String> {
     let begin = register::begin(&mut w)?;
     println!("真实字段 qrcode           = {}", begin.qrcode);
     println!("真实字段 qrcode_img_content = {}", begin.qr_url);
-    println!("expires_in 解析           = 有效期至 {}ms", begin.expires_at_ms);
+    println!(
+        "expires_in 解析           = 有效期至 {}ms",
+        begin.expires_at_ms
+    );
     println!("扫码状态轮询间隔          = {}s", begin.interval_secs);
 
     if let Some(path) = save_qr_image(&begin.qr_url) {
@@ -160,7 +161,11 @@ fn cmd_recv(rounds: usize) -> Result<(), String> {
         for d in &up.diagnostics {
             println!("  {d}");
         }
-        println!("  原始消息数={} 解析成功={}", up.raw_count, up.messages.len());
+        println!(
+            "  原始消息数={} 解析成功={}",
+            up.raw_count,
+            up.messages.len()
+        );
 
         for m in &up.messages {
             println!(
@@ -185,7 +190,10 @@ fn cmd_recv(rounds: usize) -> Result<(), String> {
             state::set(&mut st, "buf", Some(nb));
         }
         state::save(&st);
-        println!("  游标已落盘 ({} 字符)", state::get_str(&st, "buf").map(|s| s.len()).unwrap_or(0));
+        println!(
+            "  游标已落盘 ({} 字符)",
+            state::get_str(&st, "buf").map(|s| s.len()).unwrap_or(0)
+        );
     }
     Ok(())
 }
@@ -274,13 +282,12 @@ fn cmd_parse(text: &str) -> Result<(), String> {
     Ok(())
 }
 
-
 /// 渲染一张 /status 卡片 —— 界面层 B 的排版冒烟与「逐字节对拍」基准。
 /// 数据是写死的样例；P3 接上 pi 会话状态后，这里仍是回归用的稳定出口。
 ///
 /// `state` 传 `disconnected` 时走 ZCode 的断连分支（`tf` 模板那条）。
 fn cmd_status_demo(lang_arg: &str, state: &str) -> Result<(), String> {
-    use crate::format::messages::{t, tf, Lang};
+    use crate::format::messages::{Lang, t, tf};
     use crate::format::status::{
         status_card, status_line, status_state_value, status_task_line, task_running_duration,
     };
@@ -302,7 +309,11 @@ fn cmd_status_demo(lang_arg: &str, state: &str) -> Result<(), String> {
                 status_line(lang, "模型", "glm-5.3"),
                 "------".to_string(),
                 status_line(lang, "任务", "task-abc"),
-                status_line(lang, "状态", &status_state_value(lang, "remote disconnected")),
+                status_line(
+                    lang,
+                    "状态",
+                    &status_state_value(lang, "remote disconnected")
+                ),
                 tf(
                     lang,
                     "当前远端项目 {workspacePath} 未连接。请发送 **/重连** 恢复连接。",
@@ -334,11 +345,10 @@ fn cmd_reply_demo(lang_arg: &str) -> Result<(), String> {
     use crate::format::messages::Lang;
     use crate::format::permission::PermissionRequest;
     use crate::format::reply::{
-        extract_bot_assistant_response_messages, format_bot_assistant_reply_blocks,
-        format_bot_permission_request_summary, format_tool_status,
-        is_bot_tool_call_reply_terminal, split_long_reply_text,
-        BotAssistantReplyBlock, BotReplyToolCallState, ChangeSummary, FileChange, ToolStatus,
-        MAX_REPLY_MESSAGE_LENGTH,
+        BotAssistantReplyBlock, BotReplyToolCallState, ChangeSummary, FileChange,
+        MAX_REPLY_MESSAGE_LENGTH, ToolStatus, extract_bot_assistant_response_messages,
+        format_bot_assistant_reply_blocks, format_bot_permission_request_summary,
+        format_tool_status, is_bot_tool_call_reply_terminal, split_long_reply_text,
     };
 
     let lang = Lang::from_ix(match lang_arg {
@@ -411,10 +421,9 @@ fn cmd_reply_demo(lang_arg: &str) -> Result<(), String> {
             },
         },
     ];
-    for (index, message) in
-        format_bot_assistant_reply_blocks(&blocks, lang, Some(workspace))
-            .iter()
-            .enumerate()
+    for (index, message) in format_bot_assistant_reply_blocks(&blocks, lang, Some(workspace))
+        .iter()
+        .enumerate()
     {
         println!("── 第 {} 条 ──", index + 1);
         println!("{message}");
@@ -452,7 +461,10 @@ fn cmd_reply_demo(lang_arg: &str) -> Result<(), String> {
         Some(ToolStatus::Stopped),
         None,
     ] {
-        println!("状态文案 {status:?} = {}", format_tool_status(status, None, lang));
+        println!(
+            "状态文案 {status:?} = {}",
+            format_tool_status(status, None, lang)
+        );
     }
 
     // 权限请求排版：kind=edit，PC 端 PermissionDialog 与微信端共用同一份 preview。
@@ -510,8 +522,7 @@ fn mask(t: &str) -> String {
 /// 把 `qr_url` 渲成二维码：SVG 落盘（浏览器可开）+ 终端直出。
 /// 单元尺寸 2×2：Dense1x2 的 2 半行 = 1 字符高，2 字符宽 × 1 字符高 ≈ 方形模块。
 fn render_qr(url: &str) -> Result<(), String> {
-    let code =
-        qrcode::QrCode::new(url.as_bytes()).map_err(|e| format!("二维码编码失败: {e}"))?;
+    let code = qrcode::QrCode::new(url.as_bytes()).map_err(|e| format!("二维码编码失败: {e}"))?;
 
     let svg = code
         .render::<qrcode::render::svg::Color>()
@@ -519,7 +530,10 @@ fn render_qr(url: &str) -> Result<(), String> {
         .build();
     let svg_path = state::base_dir().join("wxprobe-qr.svg");
     fs::write(&svg_path, svg).map_err(|e| format!("写 SVG 失败: {e}"))?;
-    println!("二维码 SVG 已存: {}（浏览器打开后用手机微信扫）", svg_path.display());
+    println!(
+        "二维码 SVG 已存: {}（浏览器打开后用手机微信扫）",
+        svg_path.display()
+    );
 
     let art = code
         .render::<qrcode::render::unicode::Dense1x2>()
@@ -538,7 +552,9 @@ fn save_qr_image(src: &str) -> Option<String> {
         let (head, b64) = rest.split_once(',')?;
         let mime = head.split(';').next().unwrap_or("image/png");
         let ext = mime.split('/').nth(1)?.split(';').next().unwrap_or("png");
-        let raw = base64::engine::general_purpose::STANDARD.decode(b64.trim()).ok()?;
+        let raw = base64::engine::general_purpose::STANDARD
+            .decode(b64.trim())
+            .ok()?;
         let path = base.join(format!("wxprobe-qr.{ext}"));
         fs::write(&path, &raw).ok()?;
         return Some(path.display().to_string());
@@ -553,7 +569,9 @@ fn save_qr_image(src: &str) -> Option<String> {
         {
             return None;
         }
-        base64::engine::general_purpose::STANDARD.decode(&cleaned).ok()?
+        base64::engine::general_purpose::STANDARD
+            .decode(&cleaned)
+            .ok()?
     };
 
     let ext = if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {

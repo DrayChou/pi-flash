@@ -17,11 +17,11 @@
 
 use std::path::Path;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::config::{read_json, write_json_private};
 use crate::credentials::{
-    classify, env_var_name, official_env_name, pf_ref, SecretVault, StoreMode,
+    SecretVault, StoreMode, classify, env_var_name, official_env_name, pf_ref,
 };
 
 /// 账本路径；None = 自有目录不可用（极端环境，调用方按无凭据处理）。
@@ -52,7 +52,10 @@ pub fn entries_at(
             obj.iter()
                 .filter_map(|(p, e)| {
                     let key = e.get("key")?.as_str()?.to_string();
-                    let inject = e.get("injectAs").and_then(|v| v.as_str()).map(str::to_string);
+                    let inject = e
+                        .get("injectAs")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string);
                     let mode = e
                         .get("mode")
                         .and_then(|v| v.as_str())
@@ -84,7 +87,9 @@ pub fn set_entry_at(
     mode: StoreMode,
 ) -> Result<(), String> {
     let mut value = read_at(path)?;
-    let obj = value.as_object_mut().ok_or("pf-auth.json is not an object")?;
+    let obj = value
+        .as_object_mut()
+        .ok_or("pf-auth.json is not an object")?;
     let mut entry = json!({ "type": "api_key", "key": key, "mode": mode.as_str() });
     if let Some(inj) = inject_as {
         entry["injectAs"] = json!(inj);
@@ -125,13 +130,21 @@ pub fn store_catalog_key_at(
         Ok(()) => (format!("${var}"), StoreMode::Vault),
         Err(_) => (raw.to_string(), StoreMode::File),
     };
-    let inject = Some(official_env_name(provider).map(str::to_string).unwrap_or(var));
+    let inject = Some(
+        official_env_name(provider)
+            .map(str::to_string)
+            .unwrap_or(var),
+    );
     set_entry_at(pf_path, provider, &stored, inject.as_deref(), mode)?;
     Ok(mode)
 }
 
 /// 目录 provider 断开连接：删账本条目 + 凭据库条目（幂等）。
-pub fn delete_catalog_key_at(pf_path: &Path, provider: &str, vault: &dyn SecretVault) -> Result<(), String> {
+pub fn delete_catalog_key_at(
+    pf_path: &Path,
+    provider: &str,
+    vault: &dyn SecretVault,
+) -> Result<(), String> {
     remove_at(pf_path, provider)?;
     let _ = vault.delete(&env_var_name(provider));
     Ok(())
@@ -155,7 +168,7 @@ pub fn adopt_from_auth_at(
         for (provider, entry) in obj {
             if skip.iter().any(|p| p == provider) {
                 continue; // 【移除】墓碑：收编不得复活（否则每次启动都会把
-                          // 刚删的 key 从 auth.json 复制回来）
+                // 刚删的 key 从 auth.json 复制回来）
             }
             if has_entry_at(pf_path, provider) {
                 continue; // PF 已管理，不覆盖
@@ -219,7 +232,12 @@ pub fn delete_catalog_key(provider: &str, vault: &dyn SecretVault) -> Result<(),
 /// UI 文案用的条目形态；None = 未配置。
 pub fn store_mode(provider: &str) -> Option<StoreMode> {
     let p = path()?;
-    read_at(&p).ok()?.get(provider)?.get("mode")?.as_str().and_then(StoreMode::from_str)
+    read_at(&p)
+        .ok()?
+        .get(provider)?
+        .get("mode")?
+        .as_str()
+        .and_then(StoreMode::from_str)
 }
 
 #[cfg(test)]
@@ -240,7 +258,14 @@ mod tests {
     fn set_entries_remove_roundtrip() {
         let p = tmp("roundtrip");
         clean(&p);
-        set_entry_at(&p, "deepseek", "$PF_KEY_DEEPSEEK", Some("DEEPSEEK_API_KEY"), StoreMode::Vault).unwrap();
+        set_entry_at(
+            &p,
+            "deepseek",
+            "$PF_KEY_DEEPSEEK",
+            Some("DEEPSEEK_API_KEY"),
+            StoreMode::Vault,
+        )
+        .unwrap();
         set_entry_at(&p, "odd-provider", "$PF_KEY_ODD_X1", None, StoreMode::Vault).unwrap();
         let entries = entries_at(&p).unwrap();
         assert_eq!(entries.len(), 2);
@@ -272,9 +297,15 @@ mod tests {
         let mode = store_catalog_key_at(&p, "deepseek", "!my-cmd", &v).unwrap();
         assert_eq!(mode, StoreMode::Vault);
         let entries = entries_at(&p).unwrap();
-        let entry = entries.iter().find(|(p, _, _, _)| *p == "deepseek").unwrap();
+        let entry = entries
+            .iter()
+            .find(|(p, _, _, _)| *p == "deepseek")
+            .unwrap();
         assert_eq!(entry.1, "$PF_KEY_DEEPSEEK");
-        assert_eq!(v.get("PF_KEY_DEEPSEEK").unwrap().as_deref(), Some("!my-cmd"));
+        assert_eq!(
+            v.get("PF_KEY_DEEPSEEK").unwrap().as_deref(),
+            Some("!my-cmd")
+        );
         // 官方名未知（glm 不在 pi 的 getApiKeyEnvVars 表）：injectAs = 自身
         // 变量名，诚实降级——**不写任何 models.json**
         let mode = store_catalog_key_at(&p, "glm", "sk-glm", &v).unwrap();
@@ -306,7 +337,10 @@ mod tests {
         store_catalog_key_at(&p, "deepseek", "sk-ds", &v).unwrap();
         delete_catalog_key_at(&p, "deepseek", &v).unwrap();
         assert!(!has_entry_at(&p, "deepseek"));
-        assert!(v.get("PF_KEY_DEEPSEEK").unwrap().is_none(), "凭据库条目应删除");
+        assert!(
+            v.get("PF_KEY_DEEPSEEK").unwrap().is_none(),
+            "凭据库条目应删除"
+        );
         clean(&p);
     }
 
@@ -331,7 +365,10 @@ mod tests {
         // 复制不删：auth.json 原文不动
         let raw = std::fs::read_to_string(&auth).unwrap();
         assert!(raw.contains("sk-legacy"), "auth.json 必须保持原样");
-        assert_eq!(v.get("PF_KEY_DEEPSEEK").unwrap().as_deref(), Some("sk-legacy"));
+        assert_eq!(
+            v.get("PF_KEY_DEEPSEEK").unwrap().as_deref(),
+            Some("sk-legacy")
+        );
         // 幂等：已有账本条目不覆盖
         assert_eq!(adopt_from_auth_at(&p, &auth, &v, &[]).unwrap(), 0);
     }

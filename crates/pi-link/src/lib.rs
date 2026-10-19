@@ -9,29 +9,29 @@
 
 pub mod agents;
 pub mod automation;
+pub mod catalog;
 pub mod client;
-pub mod json;
 pub mod config;
 pub mod credentials;
+pub mod estimate;
+pub mod extensions;
+pub mod json;
+pub mod mcp;
+pub mod models_json;
+pub mod paths;
 pub mod pf_auth;
 pub mod pf_providers;
-pub mod extensions;
+pub mod probe;
+pub mod projects;
 pub mod protocol;
 pub mod recents;
+pub mod registry;
 pub mod session_ext;
 pub mod sessions;
 pub mod skills;
 pub mod subagent_catalog;
 pub mod subagents;
 pub mod transcript;
-pub mod mcp;
-pub mod models_json;
-pub mod catalog;
-pub mod estimate;
-pub mod probe;
-pub mod projects;
-pub mod registry;
-pub mod paths;
 pub mod vendor;
 
 /// Vendored pi version this crate's types/tests are written against.

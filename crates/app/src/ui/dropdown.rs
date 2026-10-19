@@ -10,8 +10,8 @@
 //! 保证，用 300ms 时间窗判定）。
 
 use gpui::{
-    anchored, deferred, div, prelude::*, px, AnyElement, App, ElementId, Entity, MouseButton,
-    Window,
+    AnyElement, App, ElementId, Entity, MouseButton, Window, anchored, deferred, div, prelude::*,
+    px,
 };
 
 /// 弹层收起的防抖守卫（同一组件的多次开合共享一个实例即可）。
@@ -67,22 +67,20 @@ pub fn dropdown(
         .when(open, |d| {
             d.child(
                 deferred(
-                    anchored()
-                        .snap_to_window_with_margin(px(8.))
-                        .child(
-                            div()
-                                .occlude()
-                                .mt(px(4.))
-                                .on_mouse_down_out(move |_, window, cx| {
-                                    guard_out.update(cx, |s, _| s.note_dismiss());
-                                    on_dismiss(window, cx);
-                                    // down_out 是 capture 阶段监听器，stop 后 bubble
-                                    // 整体跳过：外点只关本弹层，不会穿透到下层表面
-                                    // （如设置弹窗的点外关闭），避免一次点击关两层
-                                    cx.stop_propagation();
-                                })
-                                .child(popup()),
-                        ),
+                    anchored().snap_to_window_with_margin(px(8.)).child(
+                        div()
+                            .occlude()
+                            .mt(px(4.))
+                            .on_mouse_down_out(move |_, window, cx| {
+                                guard_out.update(cx, |s, _| s.note_dismiss());
+                                on_dismiss(window, cx);
+                                // down_out 是 capture 阶段监听器，stop 后 bubble
+                                // 整体跳过：外点只关本弹层，不会穿透到下层表面
+                                // （如设置弹窗的点外关闭），避免一次点击关两层
+                                cx.stop_propagation();
+                            })
+                            .child(popup()),
+                    ),
                 )
                 .with_priority(1),
             )

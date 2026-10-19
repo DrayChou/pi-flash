@@ -80,7 +80,11 @@ fn sel_trigger(value: &str, open: bool) -> gpui::AnyElement {
                 .text_ellipsis()
                 .child(SharedString::from(value.to_string())),
         )
-        .child(icon(if open { "chevron-up" } else { "chevron-down" }, 12., t.text_dim))
+        .child(icon(
+            if open { "chevron-up" } else { "chevron-down" },
+            12.,
+            t.text_dim,
+        ))
         .into_any_element()
 }
 
@@ -125,10 +129,14 @@ impl Chat {
         if let Some(st) = self.dlg.settings.clone() {
             st.update(cx, |s, cx| {
                 s.section = AG_NEW.into();
-                s.ag_name.update(cx, |ti, cx| ti.set_value(String::new(), cx));
-                s.ag_desc.update(cx, |ti, cx| ti.set_value(String::new(), cx));
-                s.ag_prompt.update(cx, |ti, cx| ti.set_value(String::new(), cx));
-                s.ag_turns_n.update(cx, |ti, cx| ti.set_value(String::new(), cx));
+                s.ag_name
+                    .update(cx, |ti, cx| ti.set_value(String::new(), cx));
+                s.ag_desc
+                    .update(cx, |ti, cx| ti.set_value(String::new(), cx));
+                s.ag_prompt
+                    .update(cx, |ti, cx| ti.set_value(String::new(), cx));
+                s.ag_turns_n
+                    .update(cx, |ti, cx| ti.set_value(String::new(), cx));
                 s.ag_model = None;
                 s.ag_tools = "inherit".into();
                 s.ag_turns = MaxTurnsTier::Hundred;
@@ -144,21 +152,28 @@ impl Chat {
     /// 读表单 → 组 AgentProfile → 写回 md（保存/新建共用）。
     pub(crate) fn mc_agent_save(&mut self, cx: &mut Context<Self>) {
         self.mc_clear_error(cx);
-        let Some(st) = self.dlg.settings.clone() else { return };
-        let (section, name, desc, prompt, turns_n, model, tools, turns, inject) = st.update(cx, |s, cx| {
-            (
-                s.section.clone(),
-                s.ag_name.read(cx).value().trim().to_string(),
-                s.ag_desc.read(cx).value().trim().to_string(),
-                s.ag_prompt.read(cx).value().to_string(),
-                s.ag_turns_n.read(cx).value().trim().to_string(),
-                s.ag_model.clone(),
-                s.ag_tools.clone(),
-                s.ag_turns,
-                s.ag_inject,
-            )
-        });
-        if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.') {
+        let Some(st) = self.dlg.settings.clone() else {
+            return;
+        };
+        let (section, name, desc, prompt, turns_n, model, tools, turns, inject) =
+            st.update(cx, |s, cx| {
+                (
+                    s.section.clone(),
+                    s.ag_name.read(cx).value().trim().to_string(),
+                    s.ag_desc.read(cx).value().trim().to_string(),
+                    s.ag_prompt.read(cx).value().to_string(),
+                    s.ag_turns_n.read(cx).value().trim().to_string(),
+                    s.ag_model.clone(),
+                    s.ag_tools.clone(),
+                    s.ag_turns,
+                    s.ag_inject,
+                )
+            });
+        if name.is_empty()
+            || !name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+        {
             self.mc_set_error(&tr("agents.name_invalid"), cx);
             return;
         }
@@ -181,11 +196,19 @@ impl Chat {
             id: name.clone(),
             description: desc,
             model,
-            tools: if tools == "inherit" { None } else { Some(tools) },
+            tools: if tools == "inherit" {
+                None
+            } else {
+                Some(tools)
+            },
             max_turns,
             inject_agents_md: Some(inject),
             system_prompt: None,
-            append_system_prompt: if prompt_trimmed.is_empty() { None } else { Some(prompt_trimmed) },
+            append_system_prompt: if prompt_trimmed.is_empty() {
+                None
+            } else {
+                Some(prompt_trimmed)
+            },
             unknown: prev_unknown,
             origin: AgentOrigin::Custom,
             path: None,
@@ -290,8 +313,18 @@ pub(crate) fn mc_agents_view(
     d: &SettingsFormData,
 ) -> (gpui::AnyElement, gpui::AnyElement) {
     let t = T();
-    let builtins: Vec<&AgentProfile> = chat.cfg.mc_agents.iter().filter(|a| !a.origin.is_custom()).collect();
-    let customs: Vec<&AgentProfile> = chat.cfg.mc_agents.iter().filter(|a| a.origin.is_custom()).collect();
+    let builtins: Vec<&AgentProfile> = chat
+        .cfg
+        .mc_agents
+        .iter()
+        .filter(|a| !a.origin.is_custom())
+        .collect();
+    let customs: Vec<&AgentProfile> = chat
+        .cfg
+        .mc_agents
+        .iter()
+        .filter(|a| a.origin.is_custom())
+        .collect();
 
     // ---- 左列表 ----
     let mut list = sidebar_list().px(px(7.));
@@ -342,11 +375,7 @@ pub(crate) fn mc_agents_view(
 }
 
 /// 列表行：7px 圆点 + 名称（+ 覆盖内置徽标）。
-fn agent_item(
-    weak: &gpui::WeakEntity<Chat>,
-    a: &AgentProfile,
-    active: bool,
-) -> gpui::AnyElement {
+fn agent_item(weak: &gpui::WeakEntity<Chat>, a: &AgentProfile, active: bool) -> gpui::AnyElement {
     let t = T();
     let id = a.id.clone();
     let builtins: Vec<AgentProfile> = pi_link::agents::builtin_agents();
@@ -422,7 +451,10 @@ fn agent_detail(
             false,
         )
     };
-    let builtin = agent.as_ref().map(|a| !a.origin.is_custom()).unwrap_or(false);
+    let builtin = agent
+        .as_ref()
+        .map(|a| !a.origin.is_custom())
+        .unwrap_or(false);
     let readonly = builtin; // 内置只读灰化
     let broken = agent.as_ref().and_then(|a| a.error.clone());
 
@@ -500,24 +532,21 @@ fn agent_detail(
             ))
         });
 
-    let dirty_dot = div().size(px(6.)).rounded_full().flex_shrink_0().bg(rgb(t.accent));
+    let dirty_dot = div()
+        .size(px(6.))
+        .rounded_full()
+        .flex_shrink_0()
+        .bg(rgb(t.accent));
     if *ag_dirty && !readonly {
         head = head.child(dirty_dot);
     }
 
-    let mut form = div()
-        .flex()
-        .flex_col()
-        .gap(px(12.))
-        .mt(px(12.))
-        .flex_1();
+    let mut form = div().flex().flex_col().gap(px(12.)).mt(px(12.)).flex_1();
 
     // 损坏态：红条 + 打开文件修复 + 删除
     if let Some(err) = broken {
         form = form
-            .child(
-                error_note(&format!("{}：{err}", tr("agents.broken"))),
-            )
+            .child(error_note(&format!("{}：{err}", tr("agents.broken"))))
             .child(
                 div()
                     .flex()
@@ -571,17 +600,29 @@ fn agent_detail(
     ));
 
     // 模型下拉（首项「继承」+ 分隔线 + 模型列表）
-    let model_opts = chat.mc_sorted_enabled()
+    let model_opts = chat
+        .mc_sorted_enabled()
         .iter()
         .map(|m| {
             let key = format!("{}/{}", m.provider, m.id);
-            let label = if m.name.is_empty() { key.clone() } else { m.name.clone() };
+            let label = if m.name.is_empty() {
+                key.clone()
+            } else {
+                m.name.clone()
+            };
             (key, label)
         })
         .collect::<Vec<_>>();
     form = form.child(agent_row(
         &tr("agents.model"),
-        model_dropdown(weak, &model_opts, ag_model, *ag_popup, ag_dd.clone(), readonly),
+        model_dropdown(
+            weak,
+            &model_opts,
+            ag_model,
+            *ag_popup,
+            ag_dd.clone(),
+            readonly,
+        ),
         false,
     ));
 
@@ -701,7 +742,10 @@ fn turns_seg(
     for (tier, label) in tiers {
         let on = match (tier, turns) {
             (MaxTurnsTier::Custom(_), MaxTurnsTier::Custom(_)) => true,
-            (a, b) => std::mem::discriminant(&a) == std::mem::discriminant(b) && !matches!(a, MaxTurnsTier::Custom(_)),
+            (a, b) => {
+                std::mem::discriminant(&a) == std::mem::discriminant(b)
+                    && !matches!(a, MaxTurnsTier::Custom(_))
+            }
         };
         let weak_item = weak.clone();
         seg = seg.child(
@@ -715,9 +759,9 @@ fn turns_seg(
                 .bg(rgb(if on { t.bg_selected } else { t.bg_panel }))
                 .when(on, |d| d.font_weight(gpui::FontWeight::SEMIBOLD))
                 .when(!readonly, |d| {
-                    d.cursor_pointer().hover(|s| s.bg(rgb(t.bg_hover))).on_mouse_down(
-                        MouseButton::Left,
-                        move |_, _, cx| {
+                    d.cursor_pointer()
+                        .hover(|s| s.bg(rgb(t.bg_hover)))
+                        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                             let _ = weak_item.update(cx, |c, cx| {
                                 if let Some(st) = c.dlg.settings.clone() {
                                     st.update(cx, |s, cx| {
@@ -734,20 +778,14 @@ fn turns_seg(
                                     });
                                 }
                             });
-                        },
-                    )
+                        })
                 })
                 .child(SharedString::from(label.to_string())),
         );
     }
     let mut out = div().flex().items_center().gap(px(8.)).child(seg);
     if is_custom && !readonly {
-        out = out.child(
-            div()
-                .w(px(70.))
-                .flex_shrink_0()
-                .child(turns_n.clone()),
-        );
+        out = out.child(div().w(px(70.)).flex_shrink_0().child(turns_n.clone()));
     }
     out.into_any_element()
 }
@@ -976,20 +1014,15 @@ fn dd_item_inner(
                 }
             });
         })
-        .child(
-            div()
-                .w(px(12.))
-                .flex_shrink_0()
-                .when(selected, |d| {
-                    d.child(
-                        div()
-                            .text_size(crate::appearance::ui_size(12.))
-                            .font_weight(gpui::FontWeight::BOLD)
-                            .text_color(rgb(t.accent))
-                            .child("✓"),
-                    )
-                }),
-        )
+        .child(div().w(px(12.)).flex_shrink_0().when(selected, |d| {
+            d.child(
+                div()
+                    .text_size(crate::appearance::ui_size(12.))
+                    .font_weight(gpui::FontWeight::BOLD)
+                    .text_color(rgb(t.accent))
+                    .child("✓"),
+            )
+        }))
         .child(
             div()
                 .flex_1()
@@ -1010,4 +1043,3 @@ fn dd_item_inner(
         })
         .into_any_element()
 }
-

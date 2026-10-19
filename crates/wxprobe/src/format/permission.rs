@@ -146,7 +146,11 @@ fn get_command_from_record(record: &serde_json::Map<String, Value>) -> Option<St
 const NESTED_COMMAND_KEYS: [&str; 4] = ["rawInput", "input", "params", "toolCall"];
 
 /// ZCode `findFirstCommand`。
-fn find_first_command(value: &Value, seen: &mut Seen<'_>, allow_bare_string: bool) -> Option<String> {
+fn find_first_command(
+    value: &Value,
+    seen: &mut Seen<'_>,
+    allow_bare_string: bool,
+) -> Option<String> {
     if let Some(text) = value.as_str() {
         if !allow_bare_string {
             return None;
@@ -296,7 +300,11 @@ fn collect_file_paths(value: &Value, paths: &mut Vec<String>, seen: &mut Seen<'_
 }
 
 /// ZCode `collectFileChanges`：只认 `{ path: { type: "add"|"update" } }` 这个形状。
-fn collect_file_changes(value: &Value, changes: &mut Vec<PermissionFileChange>, seen: &mut Seen<'_>) {
+fn collect_file_changes(
+    value: &Value,
+    changes: &mut Vec<PermissionFileChange>,
+    seen: &mut Seen<'_>,
+) {
     if let Some(list) = value.as_array() {
         let ptr = value as *const Value;
         if !seen.insert(ptr) {
@@ -502,7 +510,10 @@ mod tests {
         assert!(p.file_change.is_none(), "多于一条时 fileChange 为 null");
 
         let p = preview(json!({ "changes": { "src/a.rs": { "type": "add" } } }));
-        assert_eq!(p.file_change.as_ref().map(|c| c.path.as_str()), Some("src/a.rs"));
+        assert_eq!(
+            p.file_change.as_ref().map(|c| c.path.as_str()),
+            Some("src/a.rs")
+        );
 
         // 非法 type 被忽略
         let p = preview(json!({ "changes": { "x.rs": { "type": "delete" } } }));

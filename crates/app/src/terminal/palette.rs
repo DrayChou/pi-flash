@@ -1,10 +1,8 @@
 //! 终端 256 色/命名色调色板：alacritty Color → gpui 颜色的换算层
 //! （paint 每格消费）。
 
-
-
-use alacritty_terminal::vte::ansi::{Color, NamedColor, Rgb};
 use super::*;
+use alacritty_terminal::vte::ansi::{Color, NamedColor, Rgb};
 
 /// 256-color palette (+256 fg / 257 bg / 258 cursor) from the xterm theme.
 pub fn palette256(i: usize) -> u32 {
@@ -32,7 +30,11 @@ pub fn palette256(i: usize) -> u32 {
 /// ColorRequest answer: palette entry as `Rgb`.
 pub fn term_rgb(i: usize) -> Rgb {
     let v = palette256(i);
-    Rgb { r: (v >> 16) as u8, g: (v >> 8) as u8, b: v as u8 }
+    Rgb {
+        r: (v >> 16) as u8,
+        g: (v >> 8) as u8,
+        b: v as u8,
+    }
 }
 
 pub(super) fn named_index(n: NamedColor) -> usize {

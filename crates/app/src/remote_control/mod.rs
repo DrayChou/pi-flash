@@ -25,10 +25,10 @@ use gpui::{MouseButton, SharedString, div, prelude::*, px, rgb};
 
 use wxprobe::command::BotCommand;
 use wxprobe::extui::{self, ExtUiReply};
-use wxprobe::format::messages::{t, Lang};
+use wxprobe::format::messages::{Lang, t};
 
 use crate::appearance::theme;
-use crate::i18n::{tr, tf};
+use crate::i18n::{tf, tr};
 
 /// 档 1 尚未接入的命令回执 —— ZCode 文案表里的现成句子，不新造。
 const CMD_NOT_ENABLED: &str = "当前 bot 未启用这个命令。";
@@ -105,11 +105,15 @@ pub enum QrState {
     Idle,
     Loading,
     /// `url` = `qrcode_img_content`，用 [`wxprobe::qr::qr_block_text`] 渲成可扫码字符画
-    Ready { url: String },
+    Ready {
+        url: String,
+    },
     /// 已扫码，等待手机确认
     Scanned,
     /// 成功：token 已写进状态文件
-    Done { bot_id: Option<String> },
+    Done {
+        bot_id: Option<String>,
+    },
     Expired,
     Error(String),
 }
@@ -195,7 +199,8 @@ impl RemoteControl {
         }
         self.activated = true;
         // welcome + 帮助（ZCode: [msg(weixinActivatedWelcome), buildHelpText].join("\n\n")）
-        Some(format!("{}\n\n{}",
+        Some(format!(
+            "{}\n\n{}",
             t(lang, ACTIVATED_WELCOME),
             crate::remote_control::pipeline::help_text(lang)
         ))
@@ -429,9 +434,7 @@ impl RemoteControl {
             BotCommand::Status => Action::Status,
             BotCommand::New => Action::New,
             BotCommand::Bind { code } => Action::Bind(code),
-            BotCommand::ThoughtLevelList => {
-                Action::OpenMenu(menu::MenuKind::Think, None)
-            }
+            BotCommand::ThoughtLevelList => Action::OpenMenu(menu::MenuKind::Think, None),
             BotCommand::ThoughtLevelSet { value } => Action::SetThink(value),
             BotCommand::ModelList => Action::OpenMenu(menu::MenuKind::ModelProvider, None),
             // WeChat 侧只先展示供应商，模型放到下一层（ZCode 原 Bugfix）
@@ -439,9 +442,11 @@ impl RemoteControl {
                 Action::OpenMenu(menu::MenuKind::Model, Some(value))
             }
             // 直接给 id 时 provider 由 Chat 按模型清单反查
-            BotCommand::ModelSet { value } => {
-                Action::Select { kind: menu::MenuKind::Model, sub: None, value }
-            }
+            BotCommand::ModelSet { value } => Action::Select {
+                kind: menu::MenuKind::Model,
+                sub: None,
+                value,
+            },
             // ZCode botsService.ts:5006 Bugfix：运行中连列表都不给 ——
             // 否则用户会继续点选其它 task，即使切换被拒也留下误导性 pending selection
             BotCommand::TaskList => {
@@ -453,12 +458,16 @@ impl RemoteControl {
             }
             BotCommand::WorkspaceList => Action::OpenMenu(menu::MenuKind::Project, None),
             // 直接给名字/路径，落地时由 Chat 反查
-            BotCommand::WorkspaceSet { value } => {
-                Action::Select { kind: menu::MenuKind::Project, sub: None, value }
-            }
-            BotCommand::TaskSet { value } => {
-                Action::Select { kind: menu::MenuKind::Task, sub: None, value }
-            }
+            BotCommand::WorkspaceSet { value } => Action::Select {
+                kind: menu::MenuKind::Project,
+                sub: None,
+                value,
+            },
+            BotCommand::TaskSet { value } => Action::Select {
+                kind: menu::MenuKind::Task,
+                sub: None,
+                value,
+            },
             // `0` 在没有待答菜单时无意义，静默忽略（不打扰模型）
             BotCommand::SelectionCancel => Action::None,
             // 档 1 只接 Prompt/Abort；其余等 pipeline（P3 步骤 2-4）
@@ -477,14 +486,20 @@ impl RemoteControl {
     pub fn on_assistant(&mut self, ev: &pi_link::protocol::AssistantEvent) -> Vec<String> {
         use pi_link::protocol::AssistantEvent as E;
         match ev {
-            E::TextDelta { content_index, delta } => {
+            E::TextDelta {
+                content_index,
+                delta,
+            } => {
                 if self.cur_ix != Some(*content_index) {
                     self.cur_ix = Some(*content_index);
                 }
                 self.cur_text.push_str(delta);
                 Vec::new()
             }
-            E::TextEnd { content_index, content } => {
+            E::TextEnd {
+                content_index,
+                content,
+            } => {
                 self.cur_ix = Some(*content_index);
                 self.cur_text = content.clone();
                 Vec::new()
@@ -500,11 +515,7 @@ impl RemoteControl {
     /// （200ms 采样可能整轮跨不过一次下降沿）。
     pub fn on_running(&mut self, running: bool) -> Vec<String> {
         self.was_running = running;
-        if running {
-            Vec::new()
-        } else {
-            self.flush()
-        }
+        if running { Vec::new() } else { self.flush() }
     }
 
     /// force flush：当前块并入缓冲 → 一次性切段发出。
@@ -526,7 +537,6 @@ impl RemoteControl {
         self.buf = rest;
         msgs
     }
-
 }
 
 /// `/思考` 的 8 档 —— 与桌面 PillMenu 完全同一张表（key/label 一一对应）。
@@ -551,7 +561,8 @@ fn think_options() -> Vec<(String, String)> {
 fn provider_options(chat: &crate::Chat) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = Vec::new();
     let live = chat
-        .pool.models_by_cwd
+        .pool
+        .models_by_cwd
         .get(&chat.project_key())
         .map(|v| v.as_slice())
         .unwrap_or(&[]);
@@ -570,7 +581,8 @@ fn provider_options(chat: &crate::Chat) -> Vec<(String, String)> {
 /// `/模型` 第二层：某供应商下的模型（入参来自第一层，已过移除墓碑）。
 fn model_options(chat: &crate::Chat, provider: &str) -> Vec<(String, String)> {
     let live = chat
-        .pool.models_by_cwd
+        .pool
+        .models_by_cwd
         .get(&chat.project_key())
         .map(|v| v.as_slice())
         .unwrap_or(&[]);
@@ -591,7 +603,8 @@ fn model_options(chat: &crate::Chat, provider: &str) -> Vec<(String, String)> {
 
 /// `/项目`：工作区清单，标签 = 目录名，载荷 = 绝对路径。
 fn project_options(chat: &crate::Chat) -> Vec<(String, String)> {
-    chat.psp.projects
+    chat.psp
+        .projects
         .iter()
         .map(|p| (p.name.clone(), p.path.to_string_lossy().to_string()))
         .collect()
@@ -599,7 +612,8 @@ fn project_options(chat: &crate::Chat) -> Vec<(String, String)> {
 
 /// `/任务`：会话清单，标签优先 `name`，回落首条用户消息（与侧栏同一优先级）。
 fn task_options(chat: &crate::Chat) -> Vec<(String, String)> {
-    chat.pool.sessions
+    chat.pool
+        .sessions
         .iter()
         .map(|s| {
             let label = s
@@ -643,7 +657,8 @@ impl crate::Chat {
         // 060 档 1 回推：空闲/轮次结束时把 assistant 缓冲发干净。
         // 每拍都调，flush 在缓冲为空时是 no-op。
         let running = self
-            .pool.runtimes
+            .pool
+            .runtimes
             .get(&self.pool.active_key)
             .map(|rt| rt.read(cx).agent_running)
             .unwrap_or(false);
@@ -713,7 +728,9 @@ impl crate::Chat {
             Action::Bind(code) => {
                 let lang = Lang::from_ix(crate::i18n::lang_ix());
                 if self.aux.remote.accept_bind(&code, &self.pool.active_key) {
-                    self.aux.remote.send(&t(lang, "绑定成功。发送 **/帮助** 查看可用命令。"));
+                    self.aux
+                        .remote
+                        .send(&t(lang, "绑定成功。发送 **/帮助** 查看可用命令。"));
                 } else {
                     self.aux.remote.send(&bind_invalid(lang));
                 }
@@ -752,18 +769,29 @@ impl crate::Chat {
     ) {
         let lang = Lang::from_ix(crate::i18n::lang_ix());
         let (title, options) = match kind {
-            menu::MenuKind::Think => (crate::i18n::tr("remote.select_thinking").to_string(), think_options()),
-            menu::MenuKind::ModelProvider => {
-                (crate::i18n::tr("remote.select_provider").to_string(), provider_options(self))
-            }
+            menu::MenuKind::Think => (
+                crate::i18n::tr("remote.select_thinking").to_string(),
+                think_options(),
+            ),
+            menu::MenuKind::ModelProvider => (
+                crate::i18n::tr("remote.select_provider").to_string(),
+                provider_options(self),
+            ),
             menu::MenuKind::Model => {
                 let p = sub.clone().unwrap_or_default();
-                (crate::i18n::tr("model.select_title").to_string(), model_options(self, &p))
+                (
+                    crate::i18n::tr("model.select_title").to_string(),
+                    model_options(self, &p),
+                )
             }
-            menu::MenuKind::Task => (crate::i18n::tr("remote.switch_session").to_string(), task_options(self)),
-            menu::MenuKind::Project => {
-                (crate::i18n::tr("remote.switch_workspace").to_string(), project_options(self))
-            }
+            menu::MenuKind::Task => (
+                crate::i18n::tr("remote.switch_session").to_string(),
+                task_options(self),
+            ),
+            menu::MenuKind::Project => (
+                crate::i18n::tr("remote.switch_workspace").to_string(),
+                project_options(self),
+            ),
         };
         if options.is_empty() {
             // 没有可选项时给回执而不是发一张空菜单
@@ -795,18 +823,18 @@ impl crate::Chat {
             menu::MenuKind::Model => {
                 let provider = sub.clone().or_else(|| self.provider_of_model(value));
                 if let Some(p) = provider {
-                    self.rt().update(cx, |r, cx| r.select_model(p, value.to_string(), cx));
+                    self.rt()
+                        .update(cx, |r, cx| r.select_model(p, value.to_string(), cx));
                 }
                 self.reply_status(cx);
             }
             menu::MenuKind::Project => {
                 // 菜单载荷就是路径；直接 `/项目 <名字>` 时按名字反查
                 let path = self
-                    .psp.projects
+                    .psp
+                    .projects
                     .iter()
-                    .find(|p| {
-                        p.path.to_string_lossy() == value || p.name == value
-                    })
+                    .find(|p| p.path.to_string_lossy() == value || p.name == value)
                     .map(|p| p.path.clone());
                 if let Some(p) = path {
                     self.switch_project(p, cx);
@@ -818,7 +846,9 @@ impl crate::Chat {
                 // 会让后续输入落到新 task，但旧 task 输出仍回同一 bot 会话 ——
                 // 用户会误以为消息串线。运行中一律拒绝切换。
                 if self.aux.remote.active_running {
-                    self.aux.remote.send(&t(Lang::from_ix(crate::i18n::lang_ix()), TASK_RUNNING));
+                    self.aux
+                        .remote
+                        .send(&t(Lang::from_ix(crate::i18n::lang_ix()), TASK_RUNNING));
                     return;
                 }
                 if let Some(info) = self.pool.sessions.iter().find(|s| s.id == value) {
@@ -842,7 +872,8 @@ impl crate::Chat {
     /// 移除墓碑过滤：已移除商的模型 id 不再可被指定。
     fn provider_of_model(&self, id: &str) -> Option<String> {
         let live = self
-            .pool.models_by_cwd
+            .pool
+            .models_by_cwd
             .get(&self.project_key())
             .map(|v| v.as_slice())
             .unwrap_or(&[]);
@@ -856,7 +887,11 @@ impl crate::Chat {
 
     fn send_wx(&mut self, cmd: &Command, cx: &mut gpui::Context<Self>) {
         // `/bind` 钉住的会话优先，否则当前活跃会话（§4.2 active_session）
-        let key = self.aux.remote.target_key(&self.pool.active_key).to_string();
+        let key = self
+            .aux
+            .remote
+            .target_key(&self.pool.active_key)
+            .to_string();
         let Some(rt) = self.pool.runtimes.get(&key).cloned() else {
             // 找不到目标会话也要出声 —— 静默丢弃已经坑过一次（微信没回执）
             eprintln!("[wx] 命令未送达：没有 key = {key} 的会话");
@@ -873,7 +908,8 @@ impl crate::Chat {
     }
     /// 当前活跃会话是否在跑（`/新建` 的运行中分支与状态卡共用）。
     fn agent_running_now(&self, cx: &gpui::App) -> bool {
-        self.pool.runtimes
+        self.pool
+            .runtimes
             .get(&self.pool.active_key)
             .map(|rt| rt.read(cx).agent_running)
             .unwrap_or(false)
@@ -933,7 +969,6 @@ impl crate::Chat {
             },
         ))
     }
-
 }
 
 /// 060 远程控制：扫码弹窗（原手机图标入口已隐藏 2026-10-10，自动化
@@ -972,9 +1007,7 @@ pub(crate) fn render_wx_qr(
             .when(accent, |d| {
                 d.bg(rgb(t.accent)).text_color(rgb(t.accent_contrast))
             })
-            .when(!accent, |d| {
-                d.border_1().border_color(rgb(t.border))
-            })
+            .when(!accent, |d| d.border_1().border_color(rgb(t.border)))
             .hover(|s| s.bg(rgb(t.bg_hover)))
             .child(SharedString::from(label.to_string()))
             .on_mouse_down(MouseButton::Left, move |_, _, cx| {
@@ -1015,12 +1048,7 @@ pub(crate) fn render_wx_qr(
                 if x > cursor {
                     row = row.child(div().w(px((x - cursor) as f32 * MOD)).h(px(MOD)));
                 }
-                row = row.child(
-                    div()
-                        .w(px(len as f32 * MOD))
-                        .h(px(MOD))
-                        .bg(rgb(DARK)),
-                );
+                row = row.child(div().w(px(len as f32 * MOD)).h(px(MOD)).bg(rgb(DARK)));
                 cursor = x + len;
             }
             if cursor < grid.size {
@@ -1028,7 +1056,11 @@ pub(crate) fn render_wx_qr(
             }
             canvas = canvas.child(row);
         }
-        div().flex().justify_center().child(canvas).into_any_element()
+        div()
+            .flex()
+            .justify_center()
+            .child(canvas)
+            .into_any_element()
     };
 
     let mut body = div()
@@ -1042,13 +1074,23 @@ pub(crate) fn render_wx_qr(
     match &chat.aux.remote.qr {
         QrState::Idle => {
             body = body.child(body_text(tr("remote.dlg_idle_hint").into(), true));
-            body = body.child(action_btn("wx-qr-begin", tr("remote.dlg_qr_begin"), true, true));
+            body = body.child(action_btn(
+                "wx-qr-begin",
+                tr("remote.dlg_qr_begin"),
+                true,
+                true,
+            ));
         }
         QrState::Loading => body = body.child(body_text(tr("remote.qr_loading").into(), true)),
         QrState::Ready { url } => {
             body = body.child(qr_grid(url));
             body = body.child(body_text(tr("remote.dlg_qr_hint").into(), true));
-            body = body.child(action_btn("wx-qr-refresh", tr("remote.dlg_qr_refresh"), false, true));
+            body = body.child(action_btn(
+                "wx-qr-refresh",
+                tr("remote.dlg_qr_refresh"),
+                false,
+                true,
+            ));
         }
         QrState::Scanned => body = body.child(body_text(tr("remote.qr_scanned").into(), true)),
         QrState::Done { bot_id } => {
@@ -1057,7 +1099,11 @@ pub(crate) fn render_wx_qr(
                 lines.push(format!("bot_id = {b}"));
             }
             body = body.child(
-                div().flex().justify_center().child(mono_lines(lines, 12., false)).into_any_element(),
+                div()
+                    .flex()
+                    .justify_center()
+                    .child(mono_lines(lines, 12., false))
+                    .into_any_element(),
             );
             body = body.child(body_text(tr("remote.dlg_done_hint").into(), true));
         }
@@ -1066,8 +1112,16 @@ pub(crate) fn render_wx_qr(
             body = body.child(action_btn("wx-qr-again", tr("remote.qr_begin"), true, true));
         }
         QrState::Error(m) => {
-            body = body.child(body_text(format!("{}", tr("remote.dlg_error")).replace("{m}", m), false));
-            body = body.child(action_btn("wx-qr-retry", tr("remote.dlg_retry"), false, true));
+            body = body.child(body_text(
+                format!("{}", tr("remote.dlg_error")).replace("{m}", m),
+                false,
+            ));
+            body = body.child(action_btn(
+                "wx-qr-retry",
+                tr("remote.dlg_retry"),
+                false,
+                true,
+            ));
         }
     }
 
@@ -1080,7 +1134,12 @@ pub(crate) fn render_wx_qr(
         None => tr("remote.dlg_bind_optional").replace("{code}", &code),
     };
     body = body.child(body_text(bind_line, true));
-    body = body.child(action_btn("wx-qr-close", tr("remote.dlg_close"), false, false));
+    body = body.child(action_btn(
+        "wx-qr-close",
+        tr("remote.dlg_close"),
+        false,
+        false,
+    ));
 
     let weak_dismiss = weak.clone();
     let dismiss = move |_w: &mut gpui::Window, cx: &mut gpui::App| {
@@ -1184,12 +1243,24 @@ mod tests {
         assert!(rc.pending_menu.is_none(), "选中后必须清掉");
 
         // 挂新菜单：0 = 取消、越界 = 重发提示并保留
-        let (_, m2) = PendingMenu::build(MenuKind::Task, None, "t", vec![("a".into(), "id".into())], Lang::ZhCn);
+        let (_, m2) = PendingMenu::build(
+            MenuKind::Task,
+            None,
+            "t",
+            vec![("a".into(), "id".into())],
+            Lang::ZhCn,
+        );
         set_pending(&mut rc, m2);
         assert!(matches!(rc.route("0"), Action::Send(s) if s == "已取消。"));
         assert!(rc.pending_menu.is_none(), "取消也要清掉");
 
-        let (_, m3) = PendingMenu::build(MenuKind::Task, None, "再试", vec![("a".into(), "id".into())], Lang::ZhCn);
+        let (_, m3) = PendingMenu::build(
+            MenuKind::Task,
+            None,
+            "再试",
+            vec![("a".into(), "id".into())],
+            Lang::ZhCn,
+        );
         let want = m3.prompt.clone();
         set_pending(&mut rc, m3);
         assert!(matches!(rc.route("9"), Action::Send(s) if s == want));
@@ -1203,7 +1274,10 @@ mod tests {
         let mut rc = RemoteControl::new();
         assert!(!rc.is_running(), "默认未启动");
         rc.set_enabled(true);
-        assert!(!rc.is_running(), "开只是允许下一拍去起，不会凭空有 transport");
+        assert!(
+            !rc.is_running(),
+            "开只是允许下一拍去起，不会凭空有 transport"
+        );
         assert!(!rc.boot_attempted, "开启后要允许重试");
         rc.set_enabled(false);
         assert!(!rc.is_running());
@@ -1215,7 +1289,10 @@ mod tests {
         let rc = RemoteControl::new();
         let a = rc.bind_code("draft-1");
         assert_eq!(a.len(), 6, "6 位");
-        assert!(a.chars().all(|c| c.is_ascii_digit()), "纯数字，避免大小写歧义");
+        assert!(
+            a.chars().all(|c| c.is_ascii_digit()),
+            "纯数字，避免大小写歧义"
+        );
         assert_eq!(a, rc.bind_code("draft-1"), "同会话稳定");
         assert_ne!(a, rc.bind_code("draft-2"), "不同会话必须不同");
     }
@@ -1224,7 +1301,10 @@ mod tests {
     fn bind_accepts_match_rejects_others_and_pins_target() {
         let mut rc = RemoteControl::new();
         let code = rc.bind_code("draft-7");
-        assert!(!rc.accept_bind("000000", "draft-7") || code == "000000", "错码不绑");
+        assert!(
+            !rc.accept_bind("000000", "draft-7") || code == "000000",
+            "错码不绑"
+        );
         assert!(rc.bound.is_none());
 
         assert!(rc.accept_bind(&code, "draft-7"));

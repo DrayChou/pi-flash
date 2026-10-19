@@ -16,8 +16,8 @@
 //! vendor 编辑底座见 `vendor/gpui-component/src/input/`
 //! （rope/光标/undo/IME），本域不碰内核。
 
-pub mod markdown;
-pub mod view;
-pub(crate) mod tabs;
-pub(crate) mod kind;
 pub(crate) mod file_content;
+pub(crate) mod kind;
+pub mod markdown;
+pub(crate) mod tabs;
+pub mod view;

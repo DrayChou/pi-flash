@@ -24,36 +24,36 @@ mod audit {
     /// 存量未翻译键（zh-TW 或 en 为空的表行）。补齐译文后：TABLE 里填上
     /// 译文 + 从这里删掉该键——测试会校验清单没有死账。
     const BACKLOG: &[&str] = &[
-"branch.detour_note",
-"composer.compacting_wait2",
-"composer.hint_esc",
-"composer.hint_shortcuts",
-"file_view.image_read_failed",
-"git.commit_placeholder",
-"git.no_commits",
-"git.pushed",
-"git.pushing",
-"git.staged",
-"mcp.closed",
-"mcp.failed_count",
-"menu.no_command_found",
-"menu.tab_enter_insert",
-"messages.before",
-"messages.extended_hidden",
-"messages.generating_args",
-"messages.too_large",
-"messages.truncated",
-"psp.confirm_delete",
-"psp.list_mode",
-"psp.messages_count",
-"psp.no_sessions",
-"psp.open_in_file_browser",
-"psp.project_deleted",
-"psp.project_groups",
-"psp.recent_sessions",
-"psp.sort_by_time",
-"psp.sort_manual",
-"psp.sort_mode",
+        "branch.detour_note",
+        "composer.compacting_wait2",
+        "composer.hint_esc",
+        "composer.hint_shortcuts",
+        "file_view.image_read_failed",
+        "git.commit_placeholder",
+        "git.no_commits",
+        "git.pushed",
+        "git.pushing",
+        "git.staged",
+        "mcp.closed",
+        "mcp.failed_count",
+        "menu.no_command_found",
+        "menu.tab_enter_insert",
+        "messages.before",
+        "messages.extended_hidden",
+        "messages.generating_args",
+        "messages.too_large",
+        "messages.truncated",
+        "psp.confirm_delete",
+        "psp.list_mode",
+        "psp.messages_count",
+        "psp.no_sessions",
+        "psp.open_in_file_browser",
+        "psp.project_deleted",
+        "psp.project_groups",
+        "psp.recent_sessions",
+        "psp.sort_by_time",
+        "psp.sort_manual",
+        "psp.sort_mode",
     ];
 
     fn src_root() -> PathBuf {
@@ -65,7 +65,9 @@ mod audit {
     }
 
     fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
-        let Ok(rd) = std::fs::read_dir(dir) else { return };
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            return;
+        };
         for e in rd.flatten() {
             let p = e.path();
             if p.is_dir() {
@@ -103,10 +105,18 @@ mod audit {
             if !(t.starts_with('(')) {
                 continue;
             }
-            let inner = t.trim_start_matches('(').trim_end_matches("),").trim_end_matches(')');
+            let inner = t
+                .trim_start_matches('(')
+                .trim_end_matches("),")
+                .trim_end_matches(')');
             let parts: Vec<String> = split_args(inner);
             if parts.len() == 4 {
-                rows.push((parts[0].clone(), parts[1].clone(), parts[2].clone(), parts[3].clone()));
+                rows.push((
+                    parts[0].clone(),
+                    parts[1].clone(),
+                    parts[2].clone(),
+                    parts[3].clone(),
+                ));
             }
         }
         rows
@@ -146,7 +156,12 @@ mod audit {
             out.push(cur.trim().to_string());
         }
         out.into_iter()
-            .map(|a| a.trim().trim_start_matches('"').trim_end_matches('"').to_string())
+            .map(|a| {
+                a.trim()
+                    .trim_start_matches('"')
+                    .trim_end_matches('"')
+                    .to_string()
+            })
             .collect()
     }
 
@@ -250,8 +265,10 @@ mod audit {
         let calls = literal_calls(&root);
 
         // ① 调用点用的键必须在表里（否则界面显示裸键名）
-        let unknown: Vec<&String> =
-            calls.iter().filter(|c| !keys.contains(c.as_str())).collect();
+        let unknown: Vec<&String> = calls
+            .iter()
+            .filter(|c| !keys.contains(c.as_str()))
+            .collect();
         assert!(
             unknown.is_empty(),
             "⛔ {} 个调用点的键不在 TABLE 里（界面会显示裸键名）：{unknown:?}",
@@ -281,7 +298,11 @@ mod audit {
         );
 
         // ③ 死键：只报告，不判定（常量/变量传参、预留文案都会误报）
-        let dead: Vec<&str> = keys.iter().copied().filter(|k| !calls.contains(*k)).collect();
+        let dead: Vec<&str> = keys
+            .iter()
+            .copied()
+            .filter(|k| !calls.contains(*k))
+            .collect();
         eprintln!(
             "i18n 审计：{} 行 / {} 键，{} 个调用点键，未翻译 {} 条（BACKLOG {}），死键 {} 条",
             rows.len(),

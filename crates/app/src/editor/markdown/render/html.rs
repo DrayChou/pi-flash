@@ -155,20 +155,28 @@ fn walk_inline(
                     .last()
                     .map(|(s, u)| (*s, u.clone()))
                     .unwrap_or((Style::Normal, None));
-                runs.push(Run { text: text.text.to_string(), style, url });
+                runs.push(Run {
+                    text: text.text.to_string(),
+                    style,
+                    url,
+                });
             }
         }
         Node::Element(el) => {
             let tag = el.name().to_ascii_lowercase();
             match tag.as_str() {
-                "script" | "style" | "iframe" | "object" | "embed" | "form" | "head"
-                | "svg" | "template" => return,
+                "script" | "style" | "iframe" | "object" | "embed" | "form" | "head" | "svg"
+                | "template" => return,
                 "br" => {
                     let (style, url) = styles
                         .last()
                         .map(|(s, u)| (*s, u.clone()))
                         .unwrap_or((Style::Normal, None));
-                    runs.push(Run { text: "\n".to_string(), style, url });
+                    runs.push(Run {
+                        text: "\n".to_string(),
+                        style,
+                        url,
+                    });
                 }
                 "img" => {
                     let alt = el.attr("alt").unwrap_or("");
@@ -178,13 +186,20 @@ fn walk_inline(
                         .unwrap_or((Style::Normal, None));
                     runs.push(Run {
                         text: format!("🖼 {alt}"),
-                        style: if style == Style::Normal { Style::Italic } else { style },
+                        style: if style == Style::Normal {
+                            Style::Italic
+                        } else {
+                            style
+                        },
                         url,
                     });
                 }
                 _ => {
-                    let href =
-                        if tag == "a" { el.attr("href").map(|h| h.to_string()) } else { None };
+                    let href = if tag == "a" {
+                        el.attr("href").map(|h| h.to_string())
+                    } else {
+                        None
+                    };
                     push_style(styles, &tag, href);
                     for child in node.children() {
                         walk_inline(&child, styles, runs);
@@ -224,11 +239,26 @@ fn collect_cell_runs(node: &NodeRef<'_, Node>) -> Vec<Run> {
 fn is_inline_tag(tag: Option<&str>) -> bool {
     matches!(
         tag,
-        None
-            | Some("a") | Some("b") | Some("strong") | Some("i") | Some("em")
-            | Some("code") | Some("span") | Some("del") | Some("s") | Some("strike")
-            | Some("kbd") | Some("u") | Some("mark") | Some("small") | Some("sub")
-            | Some("sup") | Some("cite") | Some("var") | Some("samp") | Some("br")
+        None | Some("a")
+            | Some("b")
+            | Some("strong")
+            | Some("i")
+            | Some("em")
+            | Some("code")
+            | Some("span")
+            | Some("del")
+            | Some("s")
+            | Some("strike")
+            | Some("kbd")
+            | Some("u")
+            | Some("mark")
+            | Some("small")
+            | Some("sub")
+            | Some("sup")
+            | Some("cite")
+            | Some("var")
+            | Some("samp")
+            | Some("br")
     )
 }
 
@@ -243,8 +273,8 @@ fn walk_block(node: &NodeRef<'_, Node>, out: &mut Vec<MdBlock>, depth: usize) {
     };
     match tag.as_str() {
         "script" | "style" | "iframe" | "object" | "embed" | "form" | "head" | "svg"
-        | "template" | "col" | "colgroup" | "thead" | "tbody" | "tfoot" | "tr" | "th"
-        | "td" | "dt" | "dd" | "option" => {}
+        | "template" | "col" | "colgroup" | "thead" | "tbody" | "tfoot" | "tr" | "th" | "td"
+        | "dt" | "dd" | "option" => {}
         "p" => {
             let runs = collect_cell_runs(node);
             if !runs.is_empty() {
@@ -254,7 +284,9 @@ fn walk_block(node: &NodeRef<'_, Node>, out: &mut Vec<MdBlock>, depth: usize) {
         "pre" => {
             let code;
             let mut lang = String::new();
-            let code_child = node.children().find(|c| tag_of(c).as_deref() == Some("code"));
+            let code_child = node
+                .children()
+                .find(|c| tag_of(c).as_deref() == Some("code"));
             match code_child {
                 Some(c) => {
                     lang = el_class_lang(&c).unwrap_or_default();
@@ -290,7 +322,10 @@ fn walk_block(node: &NodeRef<'_, Node>, out: &mut Vec<MdBlock>, depth: usize) {
         }
         "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => {
             let level = tag[1..].parse::<u8>().unwrap_or(6).min(6);
-            out.push(MdBlock::Heading { level, runs: collect_cell_runs(node) });
+            out.push(MdBlock::Heading {
+                level,
+                runs: collect_cell_runs(node),
+            });
         }
         "hr" => out.push(MdBlock::Rule),
         "br" => {}
@@ -308,7 +343,11 @@ fn walk_block(node: &NodeRef<'_, Node>, out: &mut Vec<MdBlock>, depth: usize) {
                 if tag_of(&child).as_deref() != Some("li") {
                     continue;
                 }
-                let marker = if ordered { format!("{n}.") } else { "•".to_string() };
+                let marker = if ordered {
+                    format!("{n}.")
+                } else {
+                    "•".to_string()
+                };
                 n += 1;
                 let mut runs = Vec::new();
                 let mut styles = Vec::new();
@@ -323,7 +362,12 @@ fn walk_block(node: &NodeRef<'_, Node>, out: &mut Vec<MdBlock>, depth: usize) {
                         walk_block(&sub, &mut nested, depth + 1);
                     }
                 }
-                out.push(MdBlock::ListItem { depth, marker, runs, task: None });
+                out.push(MdBlock::ListItem {
+                    depth,
+                    marker,
+                    runs,
+                    task: None,
+                });
                 out.extend(nested);
             }
         }
@@ -355,10 +399,22 @@ fn walk_block(node: &NodeRef<'_, Node>, out: &mut Vec<MdBlock>, depth: usize) {
             let has_block_child = node.children().any(|c| {
                 matches!(
                     tag_of(&c).as_deref(),
-                    Some("p") | Some("div") | Some("pre") | Some("table") | Some("ul")
-                        | Some("ol") | Some("h1") | Some("h2") | Some("h3") | Some("h4")
-                        | Some("h5") | Some("h6") | Some("blockquote") | Some("img")
-                        | Some("details") | Some("hr")
+                    Some("p")
+                        | Some("div")
+                        | Some("pre")
+                        | Some("table")
+                        | Some("ul")
+                        | Some("ol")
+                        | Some("h1")
+                        | Some("h2")
+                        | Some("h3")
+                        | Some("h4")
+                        | Some("h5")
+                        | Some("h6")
+                        | Some("blockquote")
+                        | Some("img")
+                        | Some("details")
+                        | Some("hr")
                 )
             });
             if has_block_child {
@@ -450,20 +506,32 @@ mod tests {
         );
         assert_eq!(
             styles_of(&runs),
-            vec![Style::Bold, Style::Normal, Style::Italic, Style::Normal, Style::Code]
+            vec![
+                Style::Bold,
+                Style::Normal,
+                Style::Italic,
+                Style::Normal,
+                Style::Code
+            ]
         );
     }
 
     #[test]
     fn script_dropped_text_kept() {
         let runs = inline_runs("<script>alert(1)</script>ok");
-        assert_eq!(runs.iter().map(|r| r.text.as_str()).collect::<Vec<_>>(), vec!["ok"]);
+        assert_eq!(
+            runs.iter().map(|r| r.text.as_str()).collect::<Vec<_>>(),
+            vec!["ok"]
+        );
     }
 
     #[test]
     fn entities_decoded() {
         let runs = inline_runs("a &amp; &lt;b&gt;");
-        assert_eq!(runs.iter().map(|r| r.text.as_str()).collect::<Vec<_>>(), vec!["a & <b>"]);
+        assert_eq!(
+            runs.iter().map(|r| r.text.as_str()).collect::<Vec<_>>(),
+            vec!["a & <b>"]
+        );
     }
 
     #[test]
@@ -527,7 +595,10 @@ mod tests {
         // br 有内容效果（换行 run）
         assert!(matches!(fragment_effect("<br>"), InlineHtmlEffect::Runs(_)));
         // 自带文本的完整片段走 runs
-        assert!(matches!(fragment_effect("<b>x</b>"), InlineHtmlEffect::Runs(_)));
+        assert!(matches!(
+            fragment_effect("<b>x</b>"),
+            InlineHtmlEffect::Runs(_)
+        ));
     }
 
     #[test]

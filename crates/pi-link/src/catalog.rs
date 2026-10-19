@@ -53,12 +53,20 @@ pub fn parse_store(value: &Value) -> Vec<ModelInfo> {
             continue;
         };
         for m in models {
-            let Some(id) = m.get("id").and_then(Value::as_str).filter(|s| !s.is_empty()) else {
+            let Some(id) = m
+                .get("id")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+            else {
                 continue;
             };
             out.push(ModelInfo {
                 id: id.to_string(),
-                name: m.get("name").and_then(Value::as_str).unwrap_or("").to_string(),
+                name: m
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
                 provider: m
                     .get("provider")
                     .and_then(Value::as_str)
@@ -82,12 +90,20 @@ pub fn parse_models_json(value: &Value) -> Vec<ModelInfo> {
             continue;
         };
         for m in models {
-            let Some(id) = m.get("id").and_then(Value::as_str).filter(|s| !s.is_empty()) else {
+            let Some(id) = m
+                .get("id")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+            else {
                 continue;
             };
             out.push(ModelInfo {
                 id: id.to_string(),
-                name: m.get("name").and_then(Value::as_str).unwrap_or("").to_string(),
+                name: m
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
                 provider: provider.clone(),
                 context_window: m.get("contextWindow").and_then(Value::as_u64),
             });
@@ -133,7 +149,8 @@ pub fn disk_models() -> Vec<ModelInfo> {
 /// （键 = provider id，值 = ModelInfo 数组；空列表删除该键）。整个文件损坏
 /// 视为不存在，重写自愈。
 pub fn save_catalog(provider: &str, models: &[ModelInfo]) -> Result<(), String> {
-    let path = crate::paths::provider_catalog_file().ok_or_else(|| "pi-flash 配置目录不可用".to_string())?;
+    let path = crate::paths::provider_catalog_file()
+        .ok_or_else(|| "pi-flash 配置目录不可用".to_string())?;
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
     }

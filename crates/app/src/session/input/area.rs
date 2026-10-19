@@ -1,19 +1,20 @@
 //! composer 主输入区：input_area 键路由与装配、外层 wrap、惰性建
 //! ComposerInput 实体（ensure_composer）。
 
-
 use std::rc::Rc;
 
-use gpui::{Context, KeyDownEvent, MouseButton, MouseDownEvent, SharedString, div, prelude::*, px, rgb};
+use gpui::{
+    Context, KeyDownEvent, MouseButton, MouseDownEvent, SharedString, div, prelude::*, px, rgb,
+};
 
+use super::*;
 use crate::Chat;
 use crate::ComposerInput;
 use crate::MenuKind;
-use crate::{ComposerDown, ComposerTab, ComposerUp, ComposerPaste};
-use crate::i18n::tr;
 use crate::appearance::theme::theme as T;
+use crate::i18n::tr;
 use crate::ui::icon;
-use super::*;
+use crate::{ComposerDown, ComposerPaste, ComposerTab, ComposerUp};
 
 /// `/` `@` 是否出现在输入中（菜单/过滤相关的廉价判定）。
 /// 单次字节扫描（memchr 级），不跑两遍 `contains`。
@@ -79,7 +80,8 @@ pub(crate) fn input_area(
     let composer = ensure_composer(chat, weak, cx);
     // `!` shell 模式（031 pi-web bashMode parity）：去前导空白后以 ! 开头且
     // 无图片附着——边框着色 + 提示行（!! = 输出仅本地）
-    let bash_mode = chat.composer.pending_images.is_empty() && chat.composer.input.trim_start().starts_with('!');
+    let bash_mode = chat.composer.pending_images.is_empty()
+        && chat.composer.input.trim_start().starts_with('!');
     // @ 菜单可能打开：预热/续期文件索引（TTL 内幂等，后台构建）
     if chat.active_menu(cx) == Some(MenuKind::At) {
         chat.ensure_at_index(cx);
@@ -101,7 +103,12 @@ pub(crate) fn input_area(
     // 每键不碰命令表；会话进程答案优先，否则启动装载的（项目 skill + 扩展
     // 缓存）。names 在 update 外先算好，避与 chat 的借用嵌套。
     let names: Option<Vec<String>> = if chat.composer.input.starts_with('/') {
-        Some(chat.slash_commands(cx).iter().map(|c| c.name.clone()).collect())
+        Some(
+            chat.slash_commands(cx)
+                .iter()
+                .map(|c| c.name.clone())
+                .collect(),
+        )
     } else {
         None
     };
@@ -168,8 +175,7 @@ pub(crate) fn input_area(
                 }
                 cx.stop_propagation();
                 let _ = weak_menu.update(cx, |c, cx| {
-                    c.dlg.input_menu =
-                        Some((f32::from(ev.position.x), f32::from(ev.position.y)));
+                    c.dlg.input_menu = Some((f32::from(ev.position.x), f32::from(ev.position.y)));
                     cx.notify();
                 });
             })
@@ -201,8 +207,8 @@ pub(crate) fn input_area(
     // 斜杠与 @ 菜单共用 slash_menu_view（视图内部按 kind 分支渲染）
     let slash_open = chat.active_menu(cx).is_some();
     // 「回到最新」按钮：不贴底且有消息时，悬浮在输入面板顶部上方 20px
-    let show_scroll_btn = !chat.rt().read(cx).pager.is_at_bottom()
-        && !chat.rt().read(cx).messages.is_empty();
+    let show_scroll_btn =
+        !chat.rt().read(cx).pager.is_at_bottom() && !chat.rt().read(cx).messages.is_empty();
     // 内容列宽（设置-界面可调；与消息列同源）
     let content_w = crate::services::workspace::chat_content_width();
     // 胶囊高度测量槽（导航刻度条 033 居中用）；先克隆引用再拼元素，
@@ -267,7 +273,8 @@ fn pending_images_strip(
         return None;
     }
     let thumbs: Vec<gpui::AnyElement> = chat
-        .composer.pending_images
+        .composer
+        .pending_images
         .iter()
         .enumerate()
         .map(|(i, img)| {
@@ -292,7 +299,9 @@ fn pending_images_strip(
                         .overflow_hidden()
                         .cursor_pointer()
                         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                            let Some(image) = thumb_for_open.clone() else { return; };
+                            let Some(image) = thumb_for_open.clone() else {
+                                return;
+                            };
                             let _ = weak_open.update(cx, |c, cx| {
                                 c.dlg.dialog = Some(crate::Dialog::ImagePreview { image });
                                 cx.notify();
@@ -360,54 +369,55 @@ fn wire_composer_keys(
     cx: &mut Context<Chat>,
 ) -> gpui::Stateful<gpui::Div> {
     capsule
-        .on_key_down(cx.listener(
-            |this, ev: &KeyDownEvent, window, cx| {
-                let key = ev.keystroke.key.as_str();                if key == "enter" && ev.keystroke.modifiers.shift {
-                    // Shift+Enter 永远是换行，无论 agent 在不在跑（2026-10-16
-                    // 用户定批：composer 只有 Enter 一个发送键，排队语义全
-                    // 并到 Enter 上）。历史上这里曾抢走做“排队追问”
-                    // ——用户一输字就被发走、输入框抹掉。
-                    // IME 组合期平台不派发按键（gpui windows events.rs），
-                    // 无需组合守卫
-                    if let Some(c) = &this.composer.composer {
-                        c.update(cx, |f, fcx| f.insert_newline(window, fcx));
-                    }
-                    cx.stop_propagation();
-                    return;
+        .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
+            let key = ev.keystroke.key.as_str();
+            if key == "enter" && ev.keystroke.modifiers.shift {
+                // Shift+Enter 永远是换行，无论 agent 在不在跑（2026-10-16
+                // 用户定批：composer 只有 Enter 一个发送键，排队语义全
+                // 并到 Enter 上）。历史上这里曾抢走做“排队追问”
+                // ——用户一输字就被发走、输入框抹掉。
+                // IME 组合期平台不派发按键（gpui windows events.rs），
+                // 无需组合守卫
+                if let Some(c) = &this.composer.composer {
+                    c.update(cx, |f, fcx| f.insert_newline(window, fcx));
                 }
-                if key == "escape" {
-                    // 走到这说明组件的 escape 已处理（解除 IME 标记且未清
-                    // 草稿）并传播；这里做 app 层语义：菜单取消 / 中止
-                    let menu = this.active_menu(cx);
-                    if let Some(kind) = menu {
-                        if kind == MenuKind::Slash && !this.composer.input.is_empty() {
-                            let v = format!("{} ", this.composer.input);
-                            this.set_input(v, cx);
-                        }
-                        // @ 菜单 Esc = 只收起（pi-web parity：token 原样保留，
-                        // 下一次输入变化重新打开）
-                        this.composer.menu_dismissed = true;
-                        this.composer.menu_ix = 0;
-                        cx.notify();
-                    } else {
-                        // `!` 执行中优先中止 bash（rpc abort_bash），其次模型流
-                        let bash_running = this.rt().read(cx).bash_running;
-                        let streaming = this.rt().read(cx).agent_running;
-                        if bash_running {
-                            this.abort_bash(cx);
-                        } else if streaming {
-                            this.abort_stream(cx);
-                        }
+                cx.stop_propagation();
+                return;
+            }
+            if key == "escape" {
+                // 走到这说明组件的 escape 已处理（解除 IME 标记且未清
+                // 草稿）并传播；这里做 app 层语义：菜单取消 / 中止
+                let menu = this.active_menu(cx);
+                if let Some(kind) = menu {
+                    if kind == MenuKind::Slash && !this.composer.input.is_empty() {
+                        let v = format!("{} ", this.composer.input);
+                        this.set_input(v, cx);
                     }
-                    cx.stop_propagation();
+                    // @ 菜单 Esc = 只收起（pi-web parity：token 原样保留，
+                    // 下一次输入变化重新打开）
+                    this.composer.menu_dismissed = true;
+                    this.composer.menu_ix = 0;
+                    cx.notify();
+                } else {
+                    // `!` 执行中优先中止 bash（rpc abort_bash），其次模型流
+                    let bash_running = this.rt().read(cx).bash_running;
+                    let streaming = this.rt().read(cx).agent_running;
+                    if bash_running {
+                        this.abort_bash(cx);
+                    } else if streaming {
+                        this.abort_stream(cx);
+                    }
                 }
-            },
-        ))
+                cx.stop_propagation();
+            }
+        }))
         .on_action(cx.listener(|this, _: &ComposerUp, window, cx| {
             let items = this.menu_items(cx);
             if this.active_menu(cx).is_some() && !items.is_empty() {
                 this.composer.menu_ix = this.composer.menu_ix.saturating_sub(1);
-                this.composer.menu_scroll.scroll_to_item(this.composer.menu_ix);
+                this.composer
+                    .menu_scroll
+                    .scroll_to_item(this.composer.menu_ix);
                 cx.notify();
             } else if this.composer.input.is_empty() && !this.composer.history.is_empty() {
                 let ix = match this.composer.history_ix {
@@ -426,7 +436,9 @@ fn wire_composer_keys(
             let items = this.menu_items(cx);
             if this.active_menu(cx).is_some() && !items.is_empty() {
                 this.composer.menu_ix = (this.composer.menu_ix + 1).min(items.len() - 1);
-                this.composer.menu_scroll.scroll_to_item(this.composer.menu_ix);
+                this.composer
+                    .menu_scroll
+                    .scroll_to_item(this.composer.menu_ix);
                 cx.notify();
             } else if this.composer.input.is_empty() {
                 if let Some(i) = this.composer.history_ix {
@@ -549,7 +561,8 @@ fn ensure_composer(
                         chat.composer.menu_dismissed = false;
                         chat.composer.menu_ix = 0;
                         // 过滤集变了回顶部，避免新列表停留在旧滚动深处
-                        chat.composer.menu_scroll
+                        chat.composer
+                            .menu_scroll
                             .set_offset(gpui::point(px(0.), px(0.)));
                     }
                     // **派生界面态不变就不 notify**：正文中间打字/删字（绝大
@@ -591,7 +604,8 @@ fn ensure_composer(
                 // 的输入形态与菜单过滤态相同，必须以 chip 态区分，否则
                 // Enter 会走"接受补全"永远发不出去
                 let chip = chat
-                    .composer.composer
+                    .composer
+                    .composer
                     .as_ref()
                     .map(|c| c.read(cx).chip_active())
                     .unwrap_or(false);
@@ -602,7 +616,8 @@ fn ensure_composer(
                     chat.accept_menu(insert, cx);
                     return;
                 }
-                let can_queue = !chat.composer.input.is_empty() || !chat.composer.pending_images.is_empty();
+                let can_queue =
+                    !chat.composer.input.is_empty() || !chat.composer.pending_images.is_empty();
                 // 运行中也是“排队”，不再 steer 插话（2026-10-16 用户定批：
                 // 所有发送统一排队）。send_input 自身也按 agent_running
                 // 分流，故直接走它即可（两处同口径，一处分叉不可）

@@ -8,7 +8,7 @@
 //! 使用模式是先 `pif-ui wait` 后 shot（或隔一次 CLI 调用）。
 
 use gpui::Window;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// ui.screenshot：params `{path?}`（缺省 `<配置目录>/automation/shots/`）
 /// → `{path,width,height,bytes}`。只读 op，不改状态、不 notify。
@@ -30,15 +30,23 @@ pub fn shot(window: &Window, params: &Value) -> Result<Value, (String, String)> 
             .join(format!("shot-{}.png", now_ms())),
     };
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| ("internal".to_string(), format!("建目录 {}: {e}", parent.display())))?;
+        std::fs::create_dir_all(parent).map_err(|e| {
+            (
+                "internal".to_string(),
+                format!("建目录 {}: {e}", parent.display()),
+            )
+        })?;
     }
 
     let mut buf = Vec::new();
     img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
         .map_err(|e| ("internal".to_string(), format!("PNG 编码失败: {e}")))?;
-    std::fs::write(&path, &buf)
-        .map_err(|e| ("internal".to_string(), format!("写 {}: {e}", path.display())))?;
+    std::fs::write(&path, &buf).map_err(|e| {
+        (
+            "internal".to_string(),
+            format!("写 {}: {e}", path.display()),
+        )
+    })?;
     Ok(json!({
         "path": path.display().to_string(),
         "width": width,

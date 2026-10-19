@@ -7,7 +7,7 @@
 
 use serde_json::Value;
 
-use crate::wire::{first_str, num, str_of, Wire};
+use crate::wire::{Wire, first_str, num, str_of};
 
 pub struct QrBegin {
     pub qrcode: String,
@@ -20,10 +20,14 @@ pub struct QrBegin {
 
 pub fn begin(wire: &mut Wire) -> Result<QrBegin, String> {
     let payload = wire.get_qr("qr-begin", "/get_bot_qrcode", &[("bot_type", "3")])?;
-    let qrcode = first_str(&payload, &["qrcode", "qr_code"])
-        .ok_or_else(|| format!("扫码接口未返回 qrcode，真实字段：{}", crate::wire::to_pretty(&payload)))?;
-    let qr_url =
-        first_str(&payload, &["qrcode_img_content", "qrcode_url"]).unwrap_or_else(|| qrcode.clone());
+    let qrcode = first_str(&payload, &["qrcode", "qr_code"]).ok_or_else(|| {
+        format!(
+            "扫码接口未返回 qrcode，真实字段：{}",
+            crate::wire::to_pretty(&payload)
+        )
+    })?;
+    let qr_url = first_str(&payload, &["qrcode_img_content", "qrcode_url"])
+        .unwrap_or_else(|| qrcode.clone());
     let interval = num(&payload, "expires_in").map(|v| v as u64);
     let expires_at_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -42,11 +46,15 @@ pub fn begin(wire: &mut Wire) -> Result<QrBegin, String> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum QrEvent {
     /// 拿到二维码 —— `url` 是 `qrcode_img_content`（要拿去编码成二维码）
-    Ready { url: String },
+    Ready {
+        url: String,
+    },
     /// 已扫码，等待手机确认
     Scanned,
     /// 扫码成功：token 已写进状态文件
-    Success { bot_id: Option<String> },
+    Success {
+        bot_id: Option<String>,
+    },
     Expired,
     Error(String),
 }
@@ -57,10 +65,7 @@ pub enum QrEvent {
 /// 所以设置页扫完码 CLI 工具立刻也能用，反之亦然。
 ///
 /// `deadline_sec` = 超时秒数（ZCode/微信二维码约 120s 有效）。
-pub fn run_qr_flow(
-    tx: std::sync::mpsc::Sender<QrEvent>,
-    deadline_sec: u64,
-) {
+pub fn run_qr_flow(tx: std::sync::mpsc::Sender<QrEvent>, deadline_sec: u64) {
     let mut w = crate::wire::Wire::new(crate::state::dump_dir());
     let begin = match begin(&mut w) {
         Ok(b) => b,
@@ -69,7 +74,12 @@ pub fn run_qr_flow(
             return;
         }
     };
-    if tx.send(QrEvent::Ready { url: begin.qr_url.clone() }).is_err() {
+    if tx
+        .send(QrEvent::Ready {
+            url: begin.qr_url.clone(),
+        })
+        .is_err()
+    {
         return;
     }
 
@@ -119,18 +129,17 @@ pub fn run_qr_flow(
 pub enum QrStatus {
     Pending,
     Scanned,
-    Success { bot_token: String, bot_id: Option<String> },
+    Success {
+        bot_token: String,
+        bot_id: Option<String>,
+    },
     Expired,
     Error(String),
 }
 
 pub fn poll(wire: &mut Wire, qrcode: &str) -> Result<QrStatus, String> {
     // 418 与 weixinRegistration.ts:86 一致：扫码接口是 GET。
-    let payload = wire.get_qr(
-        "qr-status",
-        "/get_qrcode_status",
-        &[("qrcode", qrcode)],
-    )?;
+    let payload = wire.get_qr("qr-status", "/get_qrcode_status", &[("qrcode", qrcode)])?;
     let raw = payload
         .get("status")
         .or_else(|| payload.get("qrcode_status"))
@@ -150,7 +159,9 @@ pub fn poll(wire: &mut Wire, qrcode: &str) -> Result<QrStatus, String> {
             }
         }
         "expired" => QrStatus::Expired,
-        "error" => QrStatus::Error(str_of(&payload, "errmsg").unwrap_or_else(|| "二维码状态接口报错".into())),
+        "error" => QrStatus::Error(
+            str_of(&payload, "errmsg").unwrap_or_else(|| "二维码状态接口报错".into()),
+        ),
         other => {
             if other == "scanned" {
                 QrStatus::Scanned
@@ -177,7 +188,9 @@ fn normalize(status: Option<&Value>) -> String {
                 "success".into()
             } else if ["scaned", "scanned", "scan", "confirmed_wait"].contains(&s.as_str()) {
                 "scanned".into()
-            } else if ["expired", "timeout", "cancel", "cancelled", "canceled"].contains(&s.as_str()) {
+            } else if ["expired", "timeout", "cancel", "cancelled", "canceled"]
+                .contains(&s.as_str())
+            {
                 "expired".into()
             } else if ["error", "failed", "fail"].contains(&s.as_str()) {
                 "error".into()

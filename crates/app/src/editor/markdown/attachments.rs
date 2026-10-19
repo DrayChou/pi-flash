@@ -74,9 +74,7 @@ pub(crate) fn to_png_bytes(img: &Image) -> Option<Vec<u8>> {
     };
     let decoded = image::load_from_memory_with_format(&img.bytes, fmt).ok()?;
     let mut out = Cursor::new(Vec::new());
-    decoded
-        .write_to(&mut out, image::ImageFormat::Png)
-        .ok()?;
+    decoded.write_to(&mut out, image::ImageFormat::Png).ok()?;
     Some(out.into_inner())
 }
 
@@ -136,14 +134,23 @@ mod tests {
             .unwrap();
         assert_eq!(digits.len(), 17, "命名应为 17 位: {n1}");
         assert!(digits.ends_with("645"), "毫秒尾数应为 645: {n1}");
-        assert!(digits.chars().all(|c| c.is_ascii_digit()), "应全为数字: {n1}");
+        assert!(
+            digits.chars().all(|c| c.is_ascii_digit()),
+            "应全为数字: {n1}"
+        );
         // 首个路径已存在 → 追加序号
         std::fs::write(&p1, b"x").unwrap();
         let p2 = unique_png_path(&dir, now);
-        assert_eq!(p2.file_name().unwrap().to_str().unwrap(), format!("file-{digits}-1.png"));
+        assert_eq!(
+            p2.file_name().unwrap().to_str().unwrap(),
+            format!("file-{digits}-1.png")
+        );
         std::fs::write(&p2, b"x").unwrap();
         let p3 = unique_png_path(&dir, now);
-        assert_eq!(p3.file_name().unwrap().to_str().unwrap(), format!("file-{digits}-2.png"));
+        assert_eq!(
+            p3.file_name().unwrap().to_str().unwrap(),
+            format!("file-{digits}-2.png")
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

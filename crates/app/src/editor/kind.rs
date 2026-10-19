@@ -160,7 +160,11 @@ impl FileKind for TextKind {
         "text"
     }
     fn editor_config(&self) -> Option<EditorConfig> {
-        Some(EditorConfig { ts_lang: "text", soft_wrap: true, image_paste: false })
+        Some(EditorConfig {
+            ts_lang: "text",
+            soft_wrap: true,
+            image_paste: false,
+        })
     }
     fn render_body(&self, cx: &mut Context<Chat>, body: BodyCtx<'_>) -> AnyElement {
         super::view::render_editor_surface(body.chat, body.weak, body.path, cx)
@@ -172,7 +176,11 @@ impl FileKind for CodeKind {
         "code"
     }
     fn editor_config(&self) -> Option<EditorConfig> {
-        Some(EditorConfig { ts_lang: self.ts_lang, soft_wrap: true, image_paste: false })
+        Some(EditorConfig {
+            ts_lang: self.ts_lang,
+            soft_wrap: true,
+            image_paste: false,
+        })
     }
     fn render_body(&self, cx: &mut Context<Chat>, body: BodyCtx<'_>) -> AnyElement {
         super::view::render_editor_surface(body.chat, body.weak, body.path, cx)
@@ -184,7 +192,11 @@ impl FileKind for MarkdownKind {
         "markdown"
     }
     fn editor_config(&self) -> Option<EditorConfig> {
-        Some(EditorConfig { ts_lang: "markdown", soft_wrap: true, image_paste: true })
+        Some(EditorConfig {
+            ts_lang: "markdown",
+            soft_wrap: true,
+            image_paste: true,
+        })
     }
     fn supports_view_mode(&self) -> bool {
         true
@@ -252,19 +264,39 @@ impl FileKind for ImageKind {
 
 static TEXT: TextKind = TextKind;
 static MARKDOWN: MarkdownKind = MarkdownKind;
-static IMG_PNG: ImageKind = ImageKind { format: gpui::ImageFormat::Png };
-static IMG_JPEG: ImageKind = ImageKind { format: gpui::ImageFormat::Jpeg };
-static IMG_GIF: ImageKind = ImageKind { format: gpui::ImageFormat::Gif };
-static IMG_WEBP: ImageKind = ImageKind { format: gpui::ImageFormat::Webp };
-static IMG_BMP: ImageKind = ImageKind { format: gpui::ImageFormat::Bmp };
-static IMG_TIFF: ImageKind = ImageKind { format: gpui::ImageFormat::Tiff };
-static IMG_ICO: ImageKind = ImageKind { format: gpui::ImageFormat::Ico };
-static IMG_PNM: ImageKind = ImageKind { format: gpui::ImageFormat::Pnm };
+static IMG_PNG: ImageKind = ImageKind {
+    format: gpui::ImageFormat::Png,
+};
+static IMG_JPEG: ImageKind = ImageKind {
+    format: gpui::ImageFormat::Jpeg,
+};
+static IMG_GIF: ImageKind = ImageKind {
+    format: gpui::ImageFormat::Gif,
+};
+static IMG_WEBP: ImageKind = ImageKind {
+    format: gpui::ImageFormat::Webp,
+};
+static IMG_BMP: ImageKind = ImageKind {
+    format: gpui::ImageFormat::Bmp,
+};
+static IMG_TIFF: ImageKind = ImageKind {
+    format: gpui::ImageFormat::Tiff,
+};
+static IMG_ICO: ImageKind = ImageKind {
+    format: gpui::ImageFormat::Ico,
+};
+static IMG_PNM: ImageKind = ImageKind {
+    format: gpui::ImageFormat::Pnm,
+};
 
 static RUST: CodeKind = CodeKind { ts_lang: "rust" };
 static PYTHON: CodeKind = CodeKind { ts_lang: "python" };
-static JAVASCRIPT: CodeKind = CodeKind { ts_lang: "javascript" };
-static TYPESCRIPT: CodeKind = CodeKind { ts_lang: "typescript" };
+static JAVASCRIPT: CodeKind = CodeKind {
+    ts_lang: "javascript",
+};
+static TYPESCRIPT: CodeKind = CodeKind {
+    ts_lang: "typescript",
+};
 static TSX: CodeKind = CodeKind { ts_lang: "tsx" };
 static GO: CodeKind = CodeKind { ts_lang: "go" };
 static JSON: CodeKind = CodeKind { ts_lang: "json" };
@@ -432,16 +464,34 @@ mod tests {
             kind("png").try_binary(b"\x89PNG\r\n\x1a\nrest"),
             Some(gpui::ImageFormat::Png)
         );
-        assert_eq!(kind("jpg").try_binary(b"\xFF\xD8\xFFxx"), Some(gpui::ImageFormat::Jpeg));
-        assert_eq!(kind("bmp").try_binary(b"BM\x00\x00"), Some(gpui::ImageFormat::Bmp));
+        assert_eq!(
+            kind("jpg").try_binary(b"\xFF\xD8\xFFxx"),
+            Some(gpui::ImageFormat::Jpeg)
+        );
+        assert_eq!(
+            kind("bmp").try_binary(b"BM\x00\x00"),
+            Some(gpui::ImageFormat::Bmp)
+        );
         assert_eq!(
             kind("webp").try_binary(b"RIFF\x00\x00\x00\x00WEBPVP8 "),
             Some(gpui::ImageFormat::Webp)
         );
-        assert_eq!(kind("gif").try_binary(b"GIF89axxx"), Some(gpui::ImageFormat::Gif));
-        assert_eq!(kind("tiff").try_binary(b"II*\x00tiff"), Some(gpui::ImageFormat::Tiff));
-        assert_eq!(kind("ico").try_binary(b"\x00\x00\x01\x00ico"), Some(gpui::ImageFormat::Ico));
-        assert_eq!(kind("pbm").try_binary(b"P6\n1 1\n255\n"), Some(gpui::ImageFormat::Pnm));
+        assert_eq!(
+            kind("gif").try_binary(b"GIF89axxx"),
+            Some(gpui::ImageFormat::Gif)
+        );
+        assert_eq!(
+            kind("tiff").try_binary(b"II*\x00tiff"),
+            Some(gpui::ImageFormat::Tiff)
+        );
+        assert_eq!(
+            kind("ico").try_binary(b"\x00\x00\x01\x00ico"),
+            Some(gpui::ImageFormat::Ico)
+        );
+        assert_eq!(
+            kind("pbm").try_binary(b"P6\n1 1\n255\n"),
+            Some(gpui::ImageFormat::Pnm)
+        );
         // 后缀骗不过：.png 装着文本字节 → None（zed 开图失败 → 灰屏同构）
         assert_eq!(kind("png").try_binary(b"plain text no magic"), None);
         // avif 等过扩展门但 magic 解不出（不在 create_gpui_image 表内）→ None
@@ -497,10 +547,7 @@ mod tests {
     /// 判据，不在本表）。
     #[test]
     fn menus() {
-        assert_eq!(
-            kind("txt").menu_file_actions(true),
-            DEFAULT_FILE_ACTIONS
-        );
+        assert_eq!(kind("txt").menu_file_actions(true), DEFAULT_FILE_ACTIONS);
         let md_src = kind("md").menu_file_actions(true);
         assert_eq!(md_src[0], MenuAction::PreviewToggle);
         assert_eq!(kind("md").menu_file_actions(false), DEFAULT_FILE_ACTIONS);

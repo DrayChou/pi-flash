@@ -9,33 +9,63 @@
 /// P3 再把 `Task*` 映射到 pi 的会话操作。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BotCommand {
-    Bind { code: String },
+    Bind {
+        code: String,
+    },
     Help,
     Status,
     New,
     Reconnect,
     WorkspaceList,
-    WorkspaceSet { value: String },
+    WorkspaceSet {
+        value: String,
+    },
     ModelList,
-    ModelProviderSet { value: String },
-    ModelSet { value: String },
+    ModelProviderSet {
+        value: String,
+    },
+    ModelSet {
+        value: String,
+    },
     ModeList,
-    ModeSet { value: String },
+    ModeSet {
+        value: String,
+    },
     ThoughtLevelList,
-    ThoughtLevelSet { value: String },
+    ThoughtLevelSet {
+        value: String,
+    },
     TaskList,
-    TaskSet { value: String },
+    TaskSet {
+        value: String,
+    },
     ReplyList,
-    ReplySet { value: String },
+    ReplySet {
+        value: String,
+    },
     Stop,
-    PermissionRespond { value: String },
-    ElicitationRespond { value: String },
+    PermissionRespond {
+        value: String,
+    },
+    ElicitationRespond {
+        value: String,
+    },
     ElicitationSubmit,
-    Approve { request_id: String, option_id: String },
-    Deny { request_id: String },
-    Unknown { name: String, raw: String },
+    Approve {
+        request_id: String,
+        option_id: String,
+    },
+    Deny {
+        request_id: String,
+    },
+    Unknown {
+        name: String,
+        raw: String,
+    },
     SelectionCancel,
-    Message { text: String },
+    Message {
+        text: String,
+    },
 }
 
 /// help / 数字菜单的展示顺序（对齐 `commandOrder.ts` 的 `BOT_MENU_COMMAND_ORDER`）。
@@ -61,9 +91,7 @@ fn split_command(text: &str) -> Option<(String, String)> {
         return None;
     }
     let body = &trimmed[1..];
-    let first_space = body
-        .char_indices()
-        .find(|(_, c)| c.is_whitespace());
+    let first_space = body.char_indices().find(|(_, c)| c.is_whitespace());
     match first_space {
         None => Some((body.to_lowercase(), String::new())),
         Some((ix, c)) => Some((
@@ -97,20 +125,12 @@ pub fn parse_bot_command(text: &str) -> BotCommand {
     // （permission / deny / bind 才是这个语义）。
     macro_rules! list_or_set {
         ($list:expr, $build:expr) => {
-            if rest.is_empty() {
-                $list
-            } else {
-                $build
-            }
+            if rest.is_empty() { $list } else { $build }
         };
     }
     macro_rules! with_rest {
         ($build:expr) => {
-            if rest.is_empty() {
-                unknown()
-            } else {
-                $build
-            }
+            if rest.is_empty() { unknown() } else { $build }
         };
     }
 
@@ -119,9 +139,7 @@ pub fn parse_bot_command(text: &str) -> BotCommand {
             if rest.is_empty() {
                 unknown()
             } else {
-                BotCommand::Bind {
-                    code: rest.clone(),
-                }
+                BotCommand::Bind { code: rest.clone() }
             }
         }
         "help" | "帮助" => BotCommand::Help,
@@ -132,7 +150,9 @@ pub fn parse_bot_command(text: &str) -> BotCommand {
         "workspace" | "project" | "项目" => {
             list_or_set!(
                 BotCommand::WorkspaceList,
-                BotCommand::WorkspaceSet { value: rest.clone() }
+                BotCommand::WorkspaceSet {
+                    value: rest.clone()
+                }
             )
         }
         "model" | "模型" => {
@@ -153,29 +173,39 @@ pub fn parse_bot_command(text: &str) -> BotCommand {
         "mode" | "模式" => {
             list_or_set!(
                 BotCommand::ModeList,
-                BotCommand::ModeSet { value: rest.clone() }
+                BotCommand::ModeSet {
+                    value: rest.clone()
+                }
             )
         }
         "thoughtlevel" | "thought_level" | "thought-level" | "think" | "思考" => {
             list_or_set!(
                 BotCommand::ThoughtLevelList,
-                BotCommand::ThoughtLevelSet { value: rest.clone() }
+                BotCommand::ThoughtLevelSet {
+                    value: rest.clone()
+                }
             )
         }
         "task" => {
             list_or_set!(
                 BotCommand::TaskList,
-                BotCommand::TaskSet { value: rest.clone() }
+                BotCommand::TaskSet {
+                    value: rest.clone()
+                }
             )
         }
         "reply" | "回复" => {
             list_or_set!(
                 BotCommand::ReplyList,
-                BotCommand::ReplySet { value: rest.clone() }
+                BotCommand::ReplySet {
+                    value: rest.clone()
+                }
             )
         }
         "stop" | "停止" => BotCommand::Stop,
-        "permission" => with_rest!(BotCommand::PermissionRespond { value: rest.clone() }),
+        "permission" => with_rest!(BotCommand::PermissionRespond {
+            value: rest.clone()
+        }),
         "elicitation" | "answer" | "回答" => {
             if rest.is_empty() {
                 return unknown();
@@ -200,7 +230,9 @@ pub fn parse_bot_command(text: &str) -> BotCommand {
                 _ => unknown(),
             }
         }
-        "deny" => with_rest!(BotCommand::Deny { request_id: rest.clone() }),
+        "deny" => with_rest!(BotCommand::Deny {
+            request_id: rest.clone()
+        }),
         _ => unknown(),
     }
 }
@@ -249,7 +281,9 @@ mod tests {
         );
         assert_eq!(
             cmd("/model model GPT-5"),
-            BotCommand::ModelSet { value: "GPT-5".into() }
+            BotCommand::ModelSet {
+                value: "GPT-5".into()
+            }
         );
     }
 
@@ -258,7 +292,9 @@ mod tests {
         assert_eq!(cmd("/模型"), BotCommand::ModelList);
         assert_eq!(
             cmd("/模型 glm-5"),
-            BotCommand::ModelSet { value: "glm-5".into() }
+            BotCommand::ModelSet {
+                value: "glm-5".into()
+            }
         );
         assert_eq!(
             cmd("/模型 provider zhipu"),
@@ -280,12 +316,16 @@ mod tests {
         assert_eq!(cmd("/模式"), BotCommand::ModeList);
         assert_eq!(
             cmd("/模式 yolo"),
-            BotCommand::ModeSet { value: "yolo".into() }
+            BotCommand::ModeSet {
+                value: "yolo".into()
+            }
         );
         assert_eq!(cmd("/task"), BotCommand::TaskList);
         assert_eq!(
             cmd("/task abc"),
-            BotCommand::TaskSet { value: "abc".into() }
+            BotCommand::TaskSet {
+                value: "abc".into()
+            }
         );
         assert_eq!(cmd("/回复"), BotCommand::ReplyList);
         assert_eq!(
@@ -339,7 +379,13 @@ mod tests {
                 request_id: "req1".into()
             }
         );
-        assert_eq!(cmd("/deny"), BotCommand::Unknown { name: "deny".into(), raw: "/deny".into() });
+        assert_eq!(
+            cmd("/deny"),
+            BotCommand::Unknown {
+                name: "deny".into(),
+                raw: "/deny".into()
+            }
+        );
         // ZCode `const [requestId, optionId] = rest.split(/\s+/)` 只取前两个，多余参数忽略。
         assert_eq!(
             cmd("/approve req1 opt1 extra"),
@@ -360,12 +406,24 @@ mod tests {
                 value: "是的".into()
             }
         );
-        assert_eq!(cmd("/回答"), BotCommand::Unknown { name: "回答".into(), raw: "/回答".into() });
+        assert_eq!(
+            cmd("/回答"),
+            BotCommand::Unknown {
+                name: "回答".into(),
+                raw: "/回答".into()
+            }
+        );
     }
 
     #[test]
     fn bind_without_code_falls_to_unknown() {
-        assert_eq!(cmd("/bind"), BotCommand::Unknown { name: "bind".into(), raw: "/bind".into() });
+        assert_eq!(
+            cmd("/bind"),
+            BotCommand::Unknown {
+                name: "bind".into(),
+                raw: "/bind".into()
+            }
+        );
         assert_eq!(
             cmd("/bind ABC123"),
             BotCommand::Bind {
@@ -396,13 +454,14 @@ mod tests {
     fn permission_requires_argument() {
         assert_eq!(
             cmd("/permission 1"),
-            BotCommand::PermissionRespond {
-                value: "1".into()
-            }
+            BotCommand::PermissionRespond { value: "1".into() }
         );
         assert_eq!(
             cmd("/permission"),
-            BotCommand::Unknown { name: "permission".into(), raw: "/permission".into() }
+            BotCommand::Unknown {
+                name: "permission".into(),
+                raw: "/permission".into()
+            }
         );
     }
 

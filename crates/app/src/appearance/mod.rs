@@ -17,7 +17,6 @@ use crate::i18n::tr;
 use crate::services::workspace::{self, AppSettings, FontSpec};
 use theme::Theme;
 
-
 /// One catalog entry of the theme registry.
 #[derive(Debug, Clone, Copy)]
 pub struct ThemeEntry {
@@ -36,7 +35,10 @@ pub fn registry() -> &'static [ThemeEntry] {
     REGISTRY.get_or_init(|| {
         theme::ALL
             .iter()
-            .map(|(id, _)| ThemeEntry { id, name: theme_display_name(id) })
+            .map(|(id, _)| ThemeEntry {
+                id,
+                name: theme_display_name(id),
+            })
             .collect()
     })
 }
@@ -208,13 +210,18 @@ pub fn save_font(slot: FontSlot, spec: FontSpec) {
 /// 在任何设置档下不变（绝对像素差模型，字体大小设置.md §1）。默认设置值
 /// 15（= 设置页档位「小」，默认档可选），设置里改字号，整窗界面
 /// 文字（含设置页自身）立刻变化（所见即所得）。
-static PANEL_PX: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(15.0f32.to_bits());
+static PANEL_PX: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(15.0f32.to_bits());
 
 /// Startup + save_font 后重算缓存的面板字号（钳制见 FONT_SIZE_MIN/MAX：
 /// 2026-10-10 定夺放宽到 20，2026-10-15 起三槽统一 10–30）。
 pub fn sync_ui_scale() {
     let v = panel_font().size.clamp(FONT_SIZE_MIN, FONT_SIZE_MAX);
-    std::sync::atomic::AtomicU32::store(&PANEL_PX, v.to_bits(), std::sync::atomic::Ordering::Relaxed);
+    std::sync::atomic::AtomicU32::store(
+        &PANEL_PX,
+        v.to_bits(),
+        std::sync::atomic::Ordering::Relaxed,
+    );
 }
 
 /// 界面 chrome 文字字号（base = 12px 设计稿值；生效值 = 面板设置值 +
@@ -265,4 +272,3 @@ pub fn init_font_catalog(cx: &App) {
 pub fn font_catalog() -> &'static [String] {
     FONT_CATALOG.get().map(|v| v.as_slice()).unwrap_or(&[])
 }
-

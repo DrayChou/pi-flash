@@ -18,8 +18,8 @@ use gpui::{App, MouseButton, SharedString, div, prelude::*, px, relative, rgb};
 
 use crate::Chat;
 use crate::TopPanel;
-use crate::i18n::{tf, tr};
 use crate::appearance::theme::Theme;
+use crate::i18n::{tf, tr};
 
 /// ⋯ 菜单入口：把两个面画进设置弹窗同款窗体（遮挡/外点/ESC = 浮层基座）。
 pub(crate) fn session_info_dialog(
@@ -49,10 +49,7 @@ pub(crate) fn session_info_dialog(
             system_prompt_panel(sys.as_ref(), chat, weak, &chat.aux.sysprompt_scroll, t)
         }
         TopPanel::Tools => tool_detail(
-            selected_tool(
-                chat,
-                sys.as_ref().map(|s| s.tools.as_slice()),
-            ),
+            selected_tool(chat, sys.as_ref().map(|s| s.tools.as_slice())),
             sys.as_ref().map(|s| s.tools.as_slice()),
             t,
         ),
@@ -79,7 +76,8 @@ fn selected_tool<'a>(
     chat: &Chat,
     tools: Option<&'a [pi_link::transcript::ToolDecl]>,
 ) -> Option<&'a pi_link::transcript::ToolDecl> {
-    chat.aux.tool_sel
+    chat.aux
+        .tool_sel
         .as_deref()
         .and_then(|name| tools.and_then(|list| list.iter().find(|t| t.name == name)))
         .or_else(|| tools.and_then(|list| list.first()))
@@ -121,51 +119,51 @@ fn system_prompt_panel(
             let segs = pi_link::transcript::segments(s, agent_dir.as_deref());
             let decls = pi_link::transcript::declarations(s);
             let n = segs.len();
-            div().flex().flex_col().children(
-                segs.into_iter().enumerate().map(move |(i, (bucket, text))| {
-                    let color = crate::appearance::theme::bucket_color(bucket);
-                    let bucket_decl = decls
-                        .iter()
-                        .find(|(b, _)| *b == bucket)
-                        .map(|(_, v)| v);
-                    let idx =
-                        pi_link::transcript::SYSTEM_BUCKETS.iter().position(|x| *x == bucket);
-                    let mut seg = div()
-                        .w_full()
-                        .rounded(px(4.))
-                        .bg(gpui::rgba((color << 8) | 0x26))
-                        .px(px(8.))
-                        .py(px(5.))
-                        .mb(if i + 1 < n { px(10.) } else { px(0.) })
-                        .font_family(crate::editor::markdown::MONO_FAMILY)
-                        .text_size(crate::appearance::ui_size(12.))
-                        .line_height(relative(1.6))
-                        .text_color(rgb(t.text_muted))
-                        .child(SharedString::from(text));
-                    if let (Some(decl_list), Some(idx)) = (bucket_decl, idx) {
-                        seg = seg.child(decl_block(
-                            idx,
-                            decl_list,
-                            chat.aux.decl_open[idx],
-                            weak,
-                            t,
-                        ));
-                    }
-                    seg.into_any_element()
-                }),
-            ).into_any_element()
+            div()
+                .flex()
+                .flex_col()
+                .children(
+                    segs.into_iter()
+                        .enumerate()
+                        .map(move |(i, (bucket, text))| {
+                            let color = crate::appearance::theme::bucket_color(bucket);
+                            let bucket_decl =
+                                decls.iter().find(|(b, _)| *b == bucket).map(|(_, v)| v);
+                            let idx = pi_link::transcript::SYSTEM_BUCKETS
+                                .iter()
+                                .position(|x| *x == bucket);
+                            let mut seg = div()
+                                .w_full()
+                                .rounded(px(4.))
+                                .bg(gpui::rgba((color << 8) | 0x26))
+                                .px(px(8.))
+                                .py(px(5.))
+                                .mb(if i + 1 < n { px(10.) } else { px(0.) })
+                                .font_family(crate::editor::markdown::MONO_FAMILY)
+                                .text_size(crate::appearance::ui_size(12.))
+                                .line_height(relative(1.6))
+                                .text_color(rgb(t.text_muted))
+                                .child(SharedString::from(text));
+                            if let (Some(decl_list), Some(idx)) = (bucket_decl, idx) {
+                                seg = seg.child(decl_block(
+                                    idx,
+                                    decl_list,
+                                    chat.aux.decl_open[idx],
+                                    weak,
+                                    t,
+                                ));
+                            }
+                            seg.into_any_element()
+                        }),
+                )
+                .into_any_element()
         }
         // prompt === "" → 空提示词（工具已禁用）；未加载 → 尚未加载
         Some(_) => empty_state(tr("system_prompt.empty_disabled"), t, false),
         None => empty_state(tr("system_prompt.loading"), t, false),
     };
     // 分析块：加载且有内容才画
-    let mut col = div()
-        .flex_1()
-        .min_w_0()
-        .min_h_0()
-        .flex()
-        .flex_col();
+    let mut col = div().flex_1().min_w_0().min_h_0().flex().flex_col();
     if let Some(s) = sys.filter(|s| !s.prompt.is_empty() || !s.tools.is_empty()) {
         col = col.child(stats_block(s, t));
     }
@@ -212,7 +210,14 @@ fn stats_block(sys: &pi_link::transcript::TranscriptSystem, t: &Theme) -> gpui::
     let agent_dir = pi_link::paths::pi_agent_dir();
     let tokens = pi_link::transcript::breakdown(sys, agent_dir.as_deref());
     let total: u64 = tokens.iter().sum();
-    let mut row = vec![stat_cell(tr("tokens.total"), total, total, t.accent, t, true)];
+    let mut row = vec![stat_cell(
+        tr("tokens.total"),
+        total,
+        total,
+        t.accent,
+        t,
+        true,
+    )];
     for (i, bucket) in pi_link::transcript::SYSTEM_BUCKETS.iter().enumerate() {
         row.push(stat_cell(
             bucket_label(*bucket),
@@ -286,36 +291,35 @@ fn decl_block(
                 .child(SharedString::from(title)),
         );
     if open {
-        block = block.child(
-            div().mt(px(2.)).flex().flex_col().gap(px(6.)).children(
-                decls.iter().map(|d| {
-                    div()
-                        .flex()
-                        .flex_col()
-                        .text_size(crate::appearance::ui_size(10.))
-                        .font_family(crate::editor::markdown::MONO_FAMILY)
-                        .line_height(relative(1.5))
-                        .child(
-                            div()
-                                .font_weight(gpui::FontWeight::SEMIBOLD)
-                                .text_color(rgb(t.text))
-                                .child(SharedString::from(d.name.clone())),
-                        )
-                        .child(
-                            div()
-                                .text_color(rgb(t.text_muted))
-                                .child(SharedString::from(d.description.clone())),
-                        )
-                        .into_any_element()
-                }),
-            ),
-        );
+        block = block.child(div().mt(px(2.)).flex().flex_col().gap(px(6.)).children(
+            decls.iter().map(|d| {
+                div()
+                    .flex()
+                    .flex_col()
+                    .text_size(crate::appearance::ui_size(10.))
+                    .font_family(crate::editor::markdown::MONO_FAMILY)
+                    .line_height(relative(1.5))
+                    .child(
+                        div()
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(rgb(t.text))
+                            .child(SharedString::from(d.name.clone())),
+                    )
+                    .child(
+                        div()
+                            .text_color(rgb(t.text_muted))
+                            .child(SharedString::from(d.description.clone())),
+                    )
+                    .into_any_element()
+            }),
+        ));
     }
     block.into_any_element()
 }
 
 /// 一个信息块：色点 + 名称（上）/ token 数 · 比例（下）。一行 8 块，各占 1/8 宽。
-fn stat_cell(    label: &str,
+fn stat_cell(
+    label: &str,
     value: u64,
     total: u64,
     color: u32,
@@ -358,9 +362,9 @@ fn stat_cell(    label: &str,
                                 .text_size(crate::appearance::ui_size(12.))
                                 .font_weight(gpui::FontWeight::SEMIBOLD)
                                 .text_color(rgb(if is_total { t.text } else { t.text_muted }))
-                                .child(SharedString::from(
-                                    crate::services::format::fmt_thousand(value),
-                                )),
+                                .child(SharedString::from(crate::services::format::fmt_thousand(
+                                    value,
+                                ))),
                         )
                         .child(
                             div()
@@ -386,18 +390,22 @@ fn ratio_bar(tokens: &[u64; 7], total: u64) -> gpui::AnyElement {
         .overflow_hidden()
         .flex()
         .flex_row()
-        .children(tokens.iter().enumerate().filter(|(_, v)| **v > 0).map(
-            |(i, v)| {
-                div()
-                    .w(relative(*v as f32 / total as f32))
-                    .h_full()
-                    .bg(rgb(crate::appearance::theme::bucket_color(
-                        pi_link::transcript::SYSTEM_BUCKETS[i],
-                    )))
-                    .when(i + 1 < tokens.len(), |d| d.mr(px(1.)))
-                    .into_any_element()
-            },
-        ))
+        .children(
+            tokens
+                .iter()
+                .enumerate()
+                .filter(|(_, v)| **v > 0)
+                .map(|(i, v)| {
+                    div()
+                        .w(relative(*v as f32 / total as f32))
+                        .h_full()
+                        .bg(rgb(crate::appearance::theme::bucket_color(
+                            pi_link::transcript::SYSTEM_BUCKETS[i],
+                        )))
+                        .when(i + 1 < tokens.len(), |d| d.mr(px(1.)))
+                        .into_any_element()
+                }),
+        )
         .into_any_element()
 }
 
@@ -469,7 +477,10 @@ fn schema_type(schema: &serde_json::Value) -> String {
     if !schema["const"].is_null() {
         return format_value(&schema["const"]);
     }
-    if let Some(values) = schema["enum"].as_array().filter(|_| schema["type"].is_null()) {
+    if let Some(values) = schema["enum"]
+        .as_array()
+        .filter(|_| schema["type"].is_null())
+    {
         let mut out: Vec<String> = Vec::new();
         for v in values {
             let kind = match v {
@@ -558,7 +569,11 @@ fn tool_list(
     t: &Theme,
 ) -> gpui::AnyElement {
     let selected = selected_tool(chat, tools);
-    let mut list = div().id("tool-defs-list").flex_1().min_h_0().overflow_y_scroll();
+    let mut list = div()
+        .id("tool-defs-list")
+        .flex_1()
+        .min_h_0()
+        .overflow_y_scroll();
     match tools {
         Some(list_tools) if !list_tools.is_empty() => {
             let mut rows: Vec<gpui::AnyElement> = Vec::new();
@@ -620,7 +635,8 @@ fn tool_row(
         .font_family(crate::editor::markdown::MONO_FAMILY)
         .text_color(rgb(if active { t.text } else { t.text_muted }))
         .when(active, |d| {
-            d.bg(rgb(t.bg_selected)).font_weight(gpui::FontWeight::SEMIBOLD)
+            d.bg(rgb(t.bg_selected))
+                .font_weight(gpui::FontWeight::SEMIBOLD)
         })
         .cursor_pointer()
         .hover(|s| s.bg(rgb(t.bg_hover)).text_color(rgb(t.text)))
@@ -658,18 +674,23 @@ fn tool_detail(
     let mut body = div().flex().flex_col();
 
     if !decl.description.is_empty() {
-        body = body.child(section_label(tr("tool_defs.description"), "", t)).child(
-            div()
-                .mb(px(18.))
-                .text_size(crate::appearance::ui_size(12.))
-                .line_height(relative(1.55))
-                .text_color(rgb(t.text_muted))
-                .child(SharedString::from(decl.description.clone())),
-        );
+        body = body
+            .child(section_label(tr("tool_defs.description"), "", t))
+            .child(
+                div()
+                    .mb(px(18.))
+                    .text_size(crate::appearance::ui_size(12.))
+                    .line_height(relative(1.55))
+                    .text_color(rgb(t.text_muted))
+                    .child(SharedString::from(decl.description.clone())),
+            );
     }
     body = body.child(section_label(
         tr("tool_defs.params"),
-        &tf("tool_defs.parameters", &[("count", fields.len().to_string())]),
+        &tf(
+            "tool_defs.parameters",
+            &[("count", fields.len().to_string())],
+        ),
         t,
     ));
     if fields.is_empty() {

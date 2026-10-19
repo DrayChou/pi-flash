@@ -21,8 +21,7 @@ fn main() {
         report("<stdin>", &text, verbose);
     } else {
         for path in files {
-            let text = std::fs::read_to_string(path)
-                .unwrap_or_else(|e| panic!("read {path}: {e}"));
+            let text = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {path}: {e}"));
             report(path, &text, verbose);
         }
     }
@@ -31,7 +30,11 @@ fn main() {
 fn report(label: &str, text: &str, verbose: bool) {
     let tokens = pi_link::estimate::estimate_tokens(text);
     if verbose {
-        println!("{label}: {} tokens ({} chars)", tokens, text.chars().count());
+        println!(
+            "{label}: {} tokens ({} chars)",
+            tokens,
+            text.chars().count()
+        );
     } else {
         println!("{tokens}");
     }
