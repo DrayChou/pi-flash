@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>pi-flash · Settings-子代理 页原型 v2（表单化）</title>
+<title>pi-flash · Settings-子代理 页原型</title>
 <style>
   :root {
     --bg: #f4f8f7;
@@ -14,76 +14,58 @@
     --text: #202e2b;
     --text-muted: #455f56;
     --text-dim: #52685f;
-    --text-soft: #8a9d95;
     --text-faint: #a3b0aa;
     --accent: #1e6559;
     --accent-hover: #174f46;
-    --accent-contrast: #ffffff;
     --danger: #c25460;
-    --warn: #b98a12;
     --chrome: #dfe9e5;
     --nav: #eef4f1;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; font-size: 13px; color: var(--text);
+  body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; font-size: 12px; color: var(--text);
          background: var(--chrome); height: 100vh; overflow: hidden;
          display: flex; align-items: center; justify-content: center; }
 
   .settings-mask { position: fixed; inset: 0; background: rgba(32,46,43,.28); display: flex; align-items: center; justify-content: center; }
   .settings { width: min(1060px, 92vw); height: min(700px, 88vh); background: var(--bg);
-              border-radius: 12px; overflow: hidden; display: flex; flex-direction: column;
+              border-radius: 10px; overflow: hidden; display: flex; flex-direction: column;
               box-shadow: 0 18px 50px rgba(32,46,43,.25); }
   .settings-topbar { height: 40px; flex: none; background: var(--chrome); position: relative;
-                     display: flex; align-items: center; user-select: none; }
-  .settings-topbar .title { margin-left: 14px; font-size: 12px; font-weight: 600; color: var(--text-dim); }
+                     display: flex; align-items: center; }
   .settings-topbar .x { position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
-    width: 26px; height: 26px; border-radius: 7px; border: 0; background: transparent; color: var(--text-muted);
+    width: 28px; height: 28px; border-radius: 6px; border: 0; background: transparent; color: var(--text-muted);
     display: flex; align-items: center; justify-content: center; cursor: default; padding: 0; }
   .settings-topbar .x:hover { background: #d8626a; color: #fff; }
-  .settings-topbar .x svg { width: 13px; height: 13px; }
+  .settings-topbar .x svg { width: 12px; height: 12px; }
 
-  .set-nav { width: 160px; flex: none; background: var(--nav); border-right: 1px solid rgba(175,196,186,.4);
-             display: flex; flex-direction: column; padding: 12px 8px; }
+  .set-nav { width: 160px; flex: none; background: var(--nav); border-right: 1px solid var(--border);
+             border-bottom-left-radius: 10px; display: flex; flex-direction: column; padding: 12px 8px 8px; }
   .set-nav button { border: 0; background: transparent; text-align: left; padding: 7.5px 10px;
     border-radius: 8px; margin-bottom: 1px; font-size: 13px; color: var(--text-muted); font-family: inherit;
     cursor: default; display: flex; align-items: center; gap: 9px; }
   .set-nav button svg { width: 15px; height: 15px; flex: none; }
+  .set-nav button.on { background: var(--bg-selected); color: var(--text); font-weight: 600; }
   .set-nav button.on svg { color: var(--accent); }
   .set-nav button:hover { background: var(--bg-hover); color: var(--text); }
-  .set-nav button.on { background: var(--bg-selected); color: var(--text); font-weight: 600; }
-  .set-body { flex: 1; min-width: 0; overflow: hidden; display: flex; }
 
-  .set-split { display: flex; gap: 0; min-height: 0; flex: 1; }
-  .set-split .sp-list { width: 240px; flex: none; border-right: 1px solid var(--border);
-    background: var(--bg); display: flex; flex-direction: column; }
-  .sp-list-scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; }
-  .set-split .sp-detail { flex: 1; min-width: 0; padding: 16px 4px 16px 15px; overflow-y: auto;
-                          display: flex; flex-direction: column; }
-  .sp-head { display: flex; align-items: center; gap: 8px; padding: 8px 8px 3px;
+  .body { flex: 1; min-height: 0; display: flex; }
+
+  .sb { width: 400px; flex: none; background: var(--bg); border-right: 1px solid var(--border);
+        display: flex; flex-direction: column; }
+  .sb-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 6px 0; }
+  .sb-head { display: flex; align-items: center; gap: 8px; padding: 8px 8px 3px;
     font-size: 10px; font-weight: 600; color: var(--text-dim); }
-  .sp-head .path { font-family: Consolas, monospace; font-size: 10.5px; font-weight: 400; color: var(--text-faint); }
-  .sp-head .cnt { margin-left: auto; font-family: Consolas, monospace; font-size: 11px; font-weight: 400; color: var(--text-dim); }
-  .sp-li { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px;
-    margin-bottom: 1px; border-radius: 5px; background: var(--bg); font-size: 12px;
-    color: var(--text-muted); cursor: default; }
-  .sp-li:hover { background: var(--bg-hover); }
-  .sp-li.sel { background: var(--bg-selected); font-weight: 600; color: var(--text); }
-  .sp-li .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--accent); }
-  .sp-li .sub { font-size: 11px; color: var(--text-dim); margin-left: auto; }
-  .sp-li .name { flex: 1; min-width: 0; }
-  .sp-li .badge { font-size: 10.5px; color: var(--text-dim); border: 1px solid var(--border);
-    border-radius: 4px; padding: 0 4px; flex: none; }
-  .sp-li .badge.lock { color: var(--text-soft); }
-  .sp-li .badge.over { color: var(--accent); border-color: var(--accent); }
-  .sp-li .badge.broken { color: var(--danger); border-color: var(--danger); }
-  .sp-li.broken .name, .sp-li.broken .sub { color: var(--danger); }
-  .sp-detail h3 { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex: none; }
-  .badge { font-size: 10.5px; color: var(--text-dim); border: 1px solid var(--border); border-radius: 4px;
-    padding: 0 4px; font-weight: 400; }
-  .badge.over { color: var(--accent); border-color: var(--accent); }
-  .badge.lock { color: var(--text-soft); }
-  .badge.broken { color: var(--danger); border-color: var(--danger); }
-  .badge.ro { color: var(--text-soft); }
+  .sb-head .cnt { font-family: Consolas, monospace; font-size: 11px; font-weight: 400; }
+  .sb-li { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; margin-bottom: 1px;
+    border-radius: 5px; background: var(--bg); font-size: 12px; color: var(--text-muted); cursor: default; }
+  .sb-li:hover { background: var(--bg-hover); }
+  .sb-li.sel { background: var(--bg-selected); font-weight: 600; color: var(--text); }
+  .sb-li .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--accent); }
+  .sb-li .name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .sb-li .act { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+  .detail { flex: 1; min-width: 0; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; }
+
   .btn { height: 28px; padding: 0 12px; border: 1px solid var(--border); border-radius: 6px;
     background: transparent; color: var(--text); font-size: 12px; font-family: inherit; cursor: default;
     display: inline-flex; align-items: center; gap: 8px; }
@@ -93,76 +75,50 @@
   .btn.danger { color: var(--danger); border-color: rgba(194,84,96,.35); }
   .btn.danger:hover { background: rgba(194,84,96,.12); }
 
-  .mono { font-family: Consolas, monospace; }
+  .sw { flex: none; width: 28px; height: 16px; border-radius: 8px; background: var(--bg-selected);
+    border: 1px solid var(--border); position: relative; cursor: default; display: inline-block; }
+  .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 10px; height: 10px;
+    border-radius: 5px; background: var(--bg); }
+  .sw.on { background: var(--accent); border-color: var(--accent); }
+  .sw.on::after { left: 14px; background: var(--bg); }
 
-  .frm { margin-top: 14px; flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px; }
-  .frm-row { display: flex; align-items: flex-start; gap: 12px; padding: 9px 0; }
-  .frm-row > label { width: 96px; flex: none; font-size: 12px; color: var(--text); padding-top: 6px; }
-  .frm-row > label small { display: block; font-size: 10.5px; color: var(--text-faint); font-weight: 400; margin-top: 1px; }
-  .frm-ctl { flex: 1; min-width: 0; }
-  .frm-ctl input[type=text] { width: 100%; height: 30px; border: 1px solid var(--border); border-radius: 6px;
-    background: var(--bg-panel); padding: 0 10px; font-size: 12px; color: var(--text); font-family: inherit; outline: 0; }
-  .frm-ctl input[type=text]:focus { border-color: var(--accent); }
-  .frm-ctl .hint { font-size: 10.5px; color: var(--text-faint); margin-top: 4px; }
-
-  .sel-btn { border: 1px solid var(--border); border-radius: 6px; background: var(--bg-panel);
-    height: 30px; padding: 0 10px; font-size: 12px; color: var(--text); font-family: inherit; cursor: default;
-    display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .row { display: flex; align-items: center; gap: 8px; flex: none; }
+  .row > .nm { width: 96px; flex: none; font-size: 12px; }
+  .row > .ct { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
+  input[type=text] { height: 30px; border: 1px solid var(--border); background: var(--bg-panel);
+    border-radius: 6px; padding: 0 10px; font-size: 12px; color: var(--text); font-family: inherit; outline: 0; }
+  input[type=text]:focus { border-color: var(--accent); }
+  .nm-input { width: 250px; font-weight: 600; }
+  textarea { width: 100%; height: 170px; resize: none; border: 1px solid var(--border);
+    border-radius: 6px; background: var(--bg-panel); padding: 8px 10px; font-size: 12px;
+    line-height: 1.65; color: var(--text); font-family: inherit; outline: 0; }
+  textarea:focus { border-color: var(--accent); }
+  .sel-btn { height: 30px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-panel);
+    padding: 0 10px; font-size: 12px; color: var(--text); font-family: inherit; cursor: default;
+    display: inline-flex; align-items: center; }
   .sel-btn .chev { width: 10px; height: 10px; color: var(--text-dim); flex: none; margin-left: auto; }
-
-
-  .seg { display: flex; align-items: stretch; flex: none; border: 1px solid var(--border);
-    border-radius: 6px; overflow: hidden; background: var(--bg-panel); width: fit-content; }
-  .seg button { border: 0; background: transparent; height: 28px; padding: 0 14px; font-size: 12px;
-    color: var(--text-muted); cursor: default; font-family: inherit; }
-  .seg button.on { background: var(--bg-selected); color: var(--text); font-weight: 600; }
-
-  .frm-ctl textarea { width: 100%; min-height: 170px; resize: vertical; border: 1px solid var(--border);
-    border-radius: 6px; background: var(--bg-panel); padding: 8px 10px; font-size: 12px; line-height: 1.65;
-    color: var(--text); font-family: inherit; outline: 0; }
-  .frm-ctl textarea:focus { border-color: var(--accent); }
-
-  .ed-actions { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 0 2px;
-    border-top: 1px solid rgba(175,196,186,.3); margin-top: 12px; }
-  .ed-head-row { display: flex; align-items: center; gap: 8px; flex: none; }
-  .ed-head-row .nm { width: 96px; flex: none; font-size: 12px; color: var(--text); }
-  .ed-head-row input[type=text] { width: 250px; height: 30px; border: 1px solid var(--border);
-    background: var(--bg-panel); border-radius: 6px; font-size: 12px; color: var(--text);
-    padding: 0 10px; font-family: inherit; outline: 0; }
-  .ed-head-row input[type=text]:focus { border-color: var(--accent); }
-  .sw { flex: none; width: 28px; height: 16px; border-radius: 8px; background: var(--border);
-    position: relative; cursor: default; display: inline-block; }
-  .sw::after { content: ""; position: absolute; top: 3px; left: 2px; width: 10px; height: 10px;
-    border-radius: 5px; background: #fff; }
-  .sw.on { background: var(--accent); }
-  .sw.on::after { transform: translateX(12px); }
-  .scope { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--text-dim); font-weight: 400; }
-  .ed-dirty { display: flex; align-items: center; gap: 6px; color: var(--warn); font-size: 11px; }
-  .ed-dirty i { width: 7px; height: 7px; border-radius: 50%; background: var(--warn); display: inline-block; }
-  .ed-hint { font-size: 11px; color: var(--text-faint); }
 
   .dd { position: relative; width: 250px; }
   .dd-menu { display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 20;
     background: var(--bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
     box-shadow: 0 8px 24px rgba(32,46,43,.16); }
   .dd.open .dd-menu { display: block; }
-  .dd-it { display: flex; align-items: center; gap: 8px; padding: 8px 12px; font-size: 12px; cursor: default; }
+  .dd-it { display: flex; align-items: center; gap: 8px; padding: 7px 10px; font-size: 12px; cursor: default; }
   .dd-it:hover { background: var(--bg-hover); }
   .dd-it::before { content: ""; width: 12px; flex: none; }
   .dd-it.on::before { content: "✓"; color: var(--accent); font-weight: 700; }
-  .dd-it .dd-n { font-family: Consolas, monospace; color: var(--text); }
-  .dd-it.on .dd-n { font-weight: 700; }
-  .dd-it .dd-d { margin-left: auto; font-size: 11px; color: var(--text-faint); }
+  .dd-it .n { font-family: Consolas, monospace; }
+  .dd-it .d { margin-left: auto; font-size: 11px; color: var(--text-faint); }
 
-  .err-bar { flex: none; display: flex; align-items: flex-start; gap: 8px; margin-top: 14px;
-    border: 1px solid rgba(194,84,96,.45); background: rgba(194,84,96,.08); border-radius: 8px;
-    padding: 9px 12px; font-size: 12px; color: var(--danger); line-height: 1.55; }
-  .err-bar svg { width: 14px; height: 14px; flex: none; margin-top: 1px; }
+  .seg { display: flex; align-items: stretch; flex: none; border: 1px solid var(--border);
+    border-radius: 6px; overflow: hidden; background: var(--bg-panel); }
+  .seg button { border: 0; background: transparent; height: 28px; padding: 0 14px; font-size: 12px;
+    color: var(--text-muted); cursor: default; font-family: inherit; }
+  .seg button.on { background: var(--bg-selected); color: var(--text); font-weight: 600; }
 
-  .note { flex: none; font-size: 11px; color: var(--text-faint); margin-top: 10px; line-height: 1.6; }
-  .note b { color: var(--text-dim); font-weight: 600; }
-
-  .frm.ro .frm-ctl { pointer-events: none; opacity: .62; }
+  .detail-head { display: flex; align-items: center; gap: 8px; flex: none; }
+  .frm { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+  .frm.ro { pointer-events: none; opacity: .62; }
   .pane { display: none; flex-direction: column; flex: 1; min-height: 0; }
   .pane.on { display: flex; }
 </style>
@@ -172,10 +128,9 @@
 <div class="settings-mask">
   <div class="settings">
     <div class="settings-topbar">
-      <span class="title">设置</span>
       <button class="x"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M2 2l8 8M10 2l-8 8"/></svg></button>
     </div>
-    <div style="flex:1;min-height:0;display:flex">
+    <div class="body">
       <aside class="set-nav">
         <button><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>界面</button>
         <button><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 15h3M1 9h3M1 15h3"/></svg>模型</button>
@@ -184,140 +139,105 @@
         <button class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="9" cy="12" r="2.2"/><path d="M14 10h4M14 14h4M6.8 9.8h.01M6.8 14.2h.01"/></svg>子代理</button>
         <button><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01M11 6.5h6M11 17.5h6"/></svg>MCP</button>
         <button><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>其他</button>
+        <button><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>关于</button>
+        <button><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M10 13h.01M14 13h.01M18 13h.01M8 16h8"/></svg>快捷键</button>
       </aside>
 
-      <div class="set-body">
-        <div class="pane on">
-          <div class="set-split">
-            <div class="sp-list">
-             <div class="sp-list-scroll">
-              <div class="sp-head">内置<span class="cnt">1</span></div>
-              <div class="sp-li" data-d="d-explorer">
-                <i class="dot"></i><div class="name">explorer</div>
-              </div>
+      <div class="sb">
+        <div class="sb-scroll">
+          <div class="sb-head">内置<span class="cnt" style="margin-left:auto">1</span><button class="btn" style="margin-left:8px">新建</button></div>
+          <div class="sb-li" data-d="d-explorer">
+            <i class="dot"></i><div class="name">explorer</div>
+          </div>
+          <div class="sb-head" style="margin-top:8px">自定义<span class="cnt" style="margin-left:auto">1</span></div>
+          <div class="sb-li sel" data-d="d-reviewer">
+            <i class="dot"></i><div class="name">code-reviewer</div>
+          </div>
+        </div>
+      </div>
 
-              <div class="sp-head">自定义<span class="cnt">1</span><button class="btn" style="margin-left:8px">新建</button></div>
-              <div class="sp-li sel" data-d="d-reviewer">
-                <i class="dot"></i><div class="name">code-reviewer</div>
-              </div>
-             </div>
-            </div>
-
-            <div class="sp-detail">
-
-              <div class="pane on" id="d-reviewer">
-                <div class="ed-head-row">
-                  <span class="nm">名称</span>
-                  <input type="text" value="code-reviewer">
-                  <span style="flex:1"></span>
-                  <button class="btn danger">删除</button>
-                  <button class="btn primary">保存</button>
+      <div class="detail">
+        <div class="pane on" id="d-reviewer">
+          <div class="detail-head">
+            <span class="nm" style="width:96px;flex:none">名称</span>
+            <input type="text" class="nm-input" value="code-reviewer">
+            <span style="flex:1"></span>
+            <button class="btn danger">删除</button>
+            <button class="btn primary">保存</button>
+          </div>
+          <div class="frm">
+            <div class="row"><span class="nm">描述</span><span class="ct"><input type="text" style="width:100%" value="代码评审 · 正确性与边界"></span></div>
+            <div class="row"><span class="nm">模型</span><span class="ct">
+              <button class="sel-btn" style="width:250px;justify-content:space-between">self-hosted/qwen3-next<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button>
+            </span></div>
+            <div class="row"><span class="nm">工具权限</span><span class="ct">
+              <div class="dd" id="dd-tools">
+                <button class="sel-btn dd-btn" type="button" style="width:250px;justify-content:space-between"><span id="dd-tools-val">继承委派者</span><svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button>
+                <div class="dd-menu">
+                  <div class="dd-it on" data-v="继承委派者"><span class="n">继承委派者</span></div>
+                  <div class="dd-it" data-v="read-only"><span class="n">read-only</span><span class="d">4 个只读内置工具</span></div>
+                  <div class="dd-it" data-v="default"><span class="n">default</span><span class="d">4 个内置工具</span></div>
+                  <div class="dd-it" data-v="full"><span class="n">full</span><span class="d">全部内置工具，无扩展</span></div>
                 </div>
-
-                <div class="frm">
-                  <div class="frm-row">
-                    <label>描述</label>
-                    <div class="frm-ctl"><input type="text" value="代码评审 · 正确性与边界"></div>
-                  </div>
-                  <div class="frm-row">
-                    <label>模型</label>
-                    <div class="frm-ctl">
-                      <button class="sel-btn" style="width:100%">self-hosted/qwen3-next<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button>
-                    </div>
-                  </div>
-                  <div class="frm-row">
-                    <label>工具权限</label>
-                    <div class="frm-ctl">
-                      <div class="dd" id="dd-tools">
-                        <button class="sel-btn dd-btn" type="button" style="width:250px;justify-content:space-between"><span id="dd-tools-val">继承委派者</span><svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button>
-                        <div class="dd-menu">
-                          <div class="dd-it on" data-v="继承委派者"><span class="dd-n">继承委派者</span></div>
-                          <div class="dd-it" data-v="read-only"><span class="dd-n">read-only</span><span class="dd-d">4 个只读内置工具</span></div>
-                          <div class="dd-it" data-v="default"><span class="dd-n">default</span><span class="dd-d">4 个内置工具</span></div>
-                          <div class="dd-it" data-v="full"><span class="dd-n">full</span><span class="dd-d">全部内置工具，无扩展</span></div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  <div class="frm-row">
-                    <label>系统提示</label>
-                    <div class="frm-ctl"><textarea spellcheck="false">你是资深代码评审员，只做评审不写代码。
+              </div>
+            </span></div>
+            <div class="row"><span class="nm">系统提示</span><span class="ct">
+              <textarea spellcheck="false">你是资深代码评审员，只做评审不写代码。
 关注正确性、边界条件、并发安全与错误处理。
 
-输出格式：按严重度分级的问题清单 + 每条附修复建议。</textarea></div>
-                  </div>
-                  <div class="frm-row">
-                    <label>最大轮次</label>
-                    <div class="frm-ctl" style="display:flex;align-items:center">
-                      <div class="seg"><button>50</button><button class="on">100</button><button>无限</button></div>
-                      <span style="flex:1"></span>
-                      <span style="font-size:12.5px;color:var(--text);margin-right:8px">注入AGENTS.MD</span>
-                      <i class="sw on"></i>
-                    </div>
-                  </div>
-                </div>
+输出格式：按严重度分级的问题清单 + 每条附修复建议。</textarea>
+            </span></div>
+            <div class="row"><span class="nm">最大轮次</span><span class="ct">
+              <div class="seg"><button>50</button><button class="on">100</button><button>无限</button></div>
+              <span style="flex:1"></span>
+              <span>注入AGENTS.MD</span>
+              <i class="sw on"></i>
+            </span></div>
+          </div>
+        </div>
 
-              </div>
-
-              <div class="pane" id="d-explorer">
-                <div class="ed-head-row">
-                  <span class="nm">名称</span>
-                  <input type="text" value="explorer" readonly>
-                  <span style="flex:1"></span>
-                  <button class="btn">复制为自定义</button>
-                </div>
-
-                <div class="frm ro">
-                  <div class="frm-row">
-                    <label>描述</label>
-                    <div class="frm-ctl"><input type="text" value="只读探索 · 调研与定位" readonly></div>
-                  </div>
-                  <div class="frm-row">
-                    <label>模型</label>
-                    <div class="frm-ctl"><button class="sel-btn" style="width:100%">跟随会话<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button></div>
-                  </div>
-                  <div class="frm-row">
-                    <label>工具权限</label>
-                    <div class="frm-ctl">
-                      <button class="sel-btn" style="width:250px">read-only<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button>
-                    </div>
-                  </div>
-                  <div class="frm-row">
-                    <label>系统提示</label>
-                    <div class="frm-ctl"><textarea readonly>你是只读探索员：调研代码、定位实现、回答问题。
-不执行任何写操作。</textarea></div>
-                  </div>
-                  <div class="frm-row">
-                    <label>最大轮次</label>
-                    <div class="frm-ctl" style="display:flex;align-items:center">
-                      <div class="seg"><button>50</button><button>100</button><button class="on">无限</button></div>
-                      <span style="flex:1"></span>
-                      <span style="font-size:12.5px;color:var(--text);margin-right:8px">注入AGENTS.MD</span>
-                      <i class="sw on"></i>
-                    </div>
-                  </div>
-                </div>
-
-              </div>
-
-
-            </div></div></div></div>
+        <div class="pane" id="d-explorer">
+          <div class="detail-head">
+            <span class="nm" style="width:96px;flex:none">名称</span>
+            <input type="text" class="nm-input" value="explorer" readonly>
+            <span style="flex:1"></span>
+            <button class="btn">复制为自定义</button>
+          </div>
+          <div class="frm ro">
+            <div class="row"><span class="nm">描述</span><span class="ct"><input type="text" style="width:100%" value="只读探索 · 调研与定位" readonly></span></div>
+            <div class="row"><span class="nm">模型</span><span class="ct">
+              <button class="sel-btn" style="width:250px;justify-content:space-between">继承默认<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button>
+            </span></div>
+            <div class="row"><span class="nm">工具权限</span><span class="ct">
+              <button class="sel-btn" style="width:250px;justify-content:space-between">read-only<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button>
+            </span></div>
+            <div class="row"><span class="nm">系统提示</span><span class="ct">
+              <textarea readonly>你是只读探索员：调研代码、定位实现、回答问题。
+不执行任何写操作。</textarea>
+            </span></div>
+            <div class="row"><span class="nm">最大轮次</span><span class="ct">
+              <div class="seg"><button>50</button><button>100</button><button class="on">无限</button></div>
+              <span style="flex:1"></span>
+              <span>注入AGENTS.MD</span>
+              <i class="sw on"></i>
+            </span></div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
 
 <script>
-  document.querySelectorAll('.sp-li').forEach(li => {
+  document.querySelectorAll('.sb-li').forEach(li => {
     li.addEventListener('click', () => {
-      document.querySelectorAll('.sp-li').forEach(x => x.classList.remove('sel'));
+      document.querySelectorAll('.sb-li').forEach(x => x.classList.remove('sel'));
       li.classList.add('sel');
-      document.querySelectorAll('.sp-detail > .pane').forEach(p => p.classList.remove('on'));
+      document.querySelectorAll('.detail > .pane').forEach(p => p.classList.remove('on'));
       const d = document.getElementById(li.dataset.d);
       if (d) d.classList.add('on');
     });
   });
-</script>
-<script>
   const dd = document.getElementById('dd-tools');
   dd.querySelector('.dd-btn').addEventListener('click', e => {
     e.stopPropagation();
