@@ -205,9 +205,9 @@ impl SessionRuntime {
         cx.notify();
     }
 
-    /// 「回到最新」按钮（pi-web scrollToBottom）：reveal 列表末条（锚点期
-    /// 含垫片——reveal 垫片底 = 回到钉顶位，与 pi-web scrollToBottom 落在
-    /// 垫片底同款）。落底后 Bottom 对齐自动归 None 恢复跟随。
+    /// 「回到最新」按钮（pi-web scrollToBottom）：钉顶期回锚点顶，跟尾期交还
+    /// 贴底胶水（目标选取见 [`ChatList::jump_to_bottom`]，那里有跟尾期不能用
+    /// 锚点顶的完整因果）。
     pub(crate) fn scroll_to_bottom(&mut self) {
         self.pager.jump_to_bottom();
     }
