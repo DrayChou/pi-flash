@@ -137,8 +137,9 @@ manager(机制层),只消费目录约定,不拥有定义——预制与自定义
 ```yaml
 description: 代码评审          # 列表展示
 model: provider/id            # 路由
-tools:                        # 工具白名单(含 ext: 选择器)
-  - read
+tools: inherit                # 工具档位(034 配方复用):inherit(委派者)
+                              # / read-only / default / full;无 full+ 档
+                              # (full+ 委派者专属,经 inherit 间接获得)
 maxTurns: 15                  # 🆕 轮次预算:软限(到限 steer 收尾,超限
                               #    abort),覆盖全局默认;缺省 25
 systemPrompt: |               # 🆕 替换式人格(before_agent_start
@@ -155,6 +156,9 @@ appendSystemPrompt: …         # 追加式(与替换并存;替换优先)
 
 - 修改只影响**之后创建的**子代理(dsh 同语义:"修改只影响之后创建的
   Agent");运行中的实例保持其 resourceSnapshot。
+- 🆕 tools 由白名单数组改**档位枚举**(034 配方复用):spawn 时解析
+  inherit→读委派者当前档位配方,转发对应 `--tools`/`-ne` 参数
+  (M1/M2 已实现的白名单裁剪逻辑相应废弃)。
 - 损坏 profile fail-closed(`PROFILE_INVALID`),不静默降级。
 - profile 说明挂进 `namespace: "subagents"` instructions,codemode 脚本
   `describeNamespace()` 可读。
