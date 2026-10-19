@@ -3,12 +3,10 @@
 
 use super::*;
 
-
 use gpui::{SharedString, div, prelude::*, px, relative, rgb, rgba};
 
-use crate::i18n::tr;
 use crate::appearance::theme;
-
+use crate::i18n::tr;
 
 /// pi-web PairedResult：maxHeight 400 滚动、空结果斜体 0.6、错误红字。
 pub(super) fn paired_result(
@@ -44,7 +42,9 @@ pub(super) fn paired_result(
         .font_family(crate::editor::markdown::MONO_FAMILY)
         .text_size(crate::appearance::sess_size(-2.))
         .line_height(relative(1.5))
-        .when(empty, |d| d.italic().text_color(rgb(t.text_dim)).opacity(0.6))
+        .when(empty, |d| {
+            d.italic().text_color(rgb(t.text_dim)).opacity(0.6)
+        })
         .when(!empty && is_error, |d| d.text_color(rgb(0xf87171)))
         .when(!empty && !is_error, |d| d.text_color(rgb(t.text_muted)))
         .child(SharedString::from(text))
@@ -153,11 +153,10 @@ pub(super) fn image_natural_size(bytes: &[u8], format: gpui::ImageFormat) -> Opt
     }
 
     match format {
-        gpui::ImageFormat::Png => {
-            (bytes.len() >= 24 && bytes.starts_with(&[0x89, b'P', b'N', b'G']))
-                .then(|| ok(be32(bytes, 16)?, be32(bytes, 20)?))
-                .flatten()
-        }
+        gpui::ImageFormat::Png => (bytes.len() >= 24
+            && bytes.starts_with(&[0x89, b'P', b'N', b'G']))
+        .then(|| ok(be32(bytes, 16)?, be32(bytes, 20)?))
+        .flatten(),
         gpui::ImageFormat::Jpeg => {
             if !bytes.starts_with(&[0xFF, 0xD8]) {
                 return None;
@@ -176,8 +175,8 @@ pub(super) fn image_natural_size(bytes: &[u8], format: gpui::ImageFormat) -> Opt
                     continue;
                 }
                 // SOF0..SOF15（排除 DHT=C4 / JPG=C8 / DAC=CC），无长度字段
-                let is_sof = (0xC0..=0xCF).contains(&marker)
-                    && !matches!(marker, 0xC4 | 0xC8 | 0xCC);
+                let is_sof =
+                    (0xC0..=0xCF).contains(&marker) && !matches!(marker, 0xC4 | 0xC8 | 0xCC);
                 if is_sof {
                     // 段体：len(2) + precision(1) + height(2) + width(2)
                     return ok(be16(bytes, i + 5)?, be16(bytes, i + 3)?);
@@ -193,22 +192,19 @@ pub(super) fn image_natural_size(bytes: &[u8], format: gpui::ImageFormat) -> Opt
             }
             None
         }
-        gpui::ImageFormat::Gif => {
-            (bytes.len() >= 10 && (bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a")))
-                .then(|| ok(le16(bytes, 6)?, le16(bytes, 8)?))
-                .flatten()
-        }
-        gpui::ImageFormat::Bmp => {
-            (bytes.len() >= 26 && bytes.starts_with(b"BM")).then(|| {
+        gpui::ImageFormat::Gif => (bytes.len() >= 10
+            && (bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a")))
+        .then(|| ok(le16(bytes, 6)?, le16(bytes, 8)?))
+        .flatten(),
+        gpui::ImageFormat::Bmp => (bytes.len() >= 26 && bytes.starts_with(b"BM"))
+            .then(|| {
                 let w = le32(bytes, 18)? as i32;
                 let h = le32(bytes, 22)? as i32;
                 ok(w.unsigned_abs(), h.unsigned_abs())
             })
-            .flatten()
-        }
+            .flatten(),
         gpui::ImageFormat::Webp => {
-            if bytes.len() < 30 || !bytes.starts_with(b"RIFF") || !bytes[8..].starts_with(b"WEBP")
-            {
+            if bytes.len() < 30 || !bytes.starts_with(b"RIFF") || !bytes[8..].starts_with(b"WEBP") {
                 return None;
             }
             match &bytes[12..16] {
@@ -227,7 +223,9 @@ pub(super) fn image_natural_size(bytes: &[u8], format: gpui::ImageFormat) -> Opt
 }
 
 fn be16(b: &[u8], at: usize) -> Option<u32> {
-    Some(u32::from(u16::from_be_bytes(b.get(at..at + 2)?.try_into().ok()?)))
+    Some(u32::from(u16::from_be_bytes(
+        b.get(at..at + 2)?.try_into().ok()?,
+    )))
 }
 
 pub(crate) fn mime_to_image_format(mime: &str) -> Option<gpui::ImageFormat> {
@@ -273,13 +271,17 @@ pub(crate) fn decode_image_cached(
     data: &str,
     format: gpui::ImageFormat,
 ) -> Result<std::sync::Arc<gpui::Image>, ()> {
-    let key = (crate::editor::markdown::hash_str(data), data.len(), format as u8);
+    let key = (
+        crate::editor::markdown::hash_str(data),
+        data.len(),
+        format as u8,
+    );
     IMAGE_DECODE_CACHE.with(|cell| {
         let mut cache = cell.borrow_mut();
         if let Some(pos) = cache.iter().rposition(|(k, _)| *k == key) {
             let entry = cache.remove(pos).expect("pos 来自刚才的迭代");
-            if entry.1 .0.as_str() == data {
-                let image = entry.1 .1.clone();
+            if entry.1.0.as_str() == data {
+                let image = entry.1.1.clone();
                 cache.push_back(entry); // 刷新到队尾（LRU）
                 return image;
             }
@@ -288,13 +290,35 @@ pub(crate) fn decode_image_cached(
             .map(|bytes| std::sync::Arc::new(gpui::Image::from_bytes(format, bytes)));
         cache.push_back((key, (data.to_string(), decoded.clone())));
         while cache.len() > IMAGE_DECODE_CACHE_CAP
-            || cache.iter().map(|(_, v)| v.0.len() + v.1.as_ref().map(|i| i.bytes.len()).unwrap_or(0)).sum::<usize>()
+            || cache
+                .iter()
+                .map(|(_, v)| v.0.len() + v.1.as_ref().map(|i| i.bytes.len()).unwrap_or(0))
+                .sum::<usize>()
                 > IMAGE_DECODE_CACHE_BUDGET_BYTES
         {
-            if cache.pop_front().is_none() {
+            let Some((_, (_, evicted))) = cache.pop_front() else {
                 break;
+            };
+            // gpui 侧解码位图同步放掉：loading_assets 只进不出，驱逐后
+            // 不摘会常驻到进程退出（见 services::asset_evict）
+            if let Ok(image) = evicted {
+                crate::services::asset_evict::queue_evicted(image);
             }
         }
         decoded
+    })
+}
+
+/// 探针（automation snapshot）：（条数，字节估算＝源串+解码字节）
+pub(crate) fn image_cache_probe() -> (usize, usize) {
+    IMAGE_DECODE_CACHE.with(|cell| {
+        let cache = cell.borrow();
+        (
+            cache.len(),
+            cache
+                .iter()
+                .map(|(_, v)| v.0.len() + v.1.as_ref().map(|i| i.bytes.len()).unwrap_or(0))
+                .sum::<usize>(),
+        )
     })
 }

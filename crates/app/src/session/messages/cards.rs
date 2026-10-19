@@ -5,15 +5,32 @@ use super::*;
 
 use std::collections::HashMap;
 
-use gpui::{Animation, AnimationExt, FontWeight, MouseButton, SharedString, TextAlign, div, prelude::*, px, relative, rgb, rgba};
+use gpui::{
+    Animation, AnimationExt, FontWeight, MouseButton, SharedString, TextAlign, div, prelude::*, px,
+    relative, rgb, rgba,
+};
 use pi_link::protocol::Block;
 
 use crate::Chat;
-use crate::i18n::{tf, tr};
-use crate::editor::markdown;
 use crate::appearance::theme;
+use crate::editor::markdown;
+use crate::i18n::{tf, tr};
 use crate::ui::icon;
 
+// 两个 args 缓存的线程局部 LRU（同 MD_PARSE_CACHE 的理由，元素构建只在
+// 主线程；放模块级是为了让探针 [`tool_args_cache_probe`] 够得着）。
+// key = (源文哈希, 长度)，命中后全等校验防碰撞。
+thread_local! {
+    static PREVIEW_CACHE: std::cell::RefCell<
+        std::collections::VecDeque<((u64, usize), (String, String))>,
+    > = const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
+    static READ_PATH_CACHE: std::cell::RefCell<
+        std::collections::VecDeque<((u64, usize), (String, Option<String>))>,
+    > = const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
+}
+/// 字节预算（args 源文各 16MB）：write/edit 的 args 内嵌整个文件内容
+/// （几十 KB～MB 级），只按条数封顶时大文件会话稳态可到几十 MB
+const ARGS_CACHE_BUDGET_BYTES: usize = 16 * 1024 * 1024;
 
 /// pi-web getToolPreview：command/path/file_path/pattern/query 键序取值
 /// 截 120 字符，都没有取首个键的值。
@@ -23,27 +40,26 @@ use crate::ui::icon;
 /// （write/edit 的 args 内嵌整个文件内容，几十 KB 起）是巨轮会话打字延迟
 /// 的大头——缓存后折叠帧只剩一次哈希扫描。
 fn tool_preview(args: &str) -> String {
-    thread_local! {
-        static CACHE: std::cell::RefCell<
-            std::collections::VecDeque<((u64, usize), (String, String))>,
-        > = const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
-    }
     const CAP: usize = 256;
     let key = (crate::editor::markdown::hash_str(args), args.len());
-    CACHE.with(|cell| {
+    PREVIEW_CACHE.with(|cell| {
         let mut cache = cell.borrow_mut();
         if let Some(pos) = cache.iter().rposition(|(k, _)| *k == key) {
             let entry = cache.remove(pos).expect("pos 来自刚才的迭代");
-            if entry.1 .0.as_str() == args {
-                let out = entry.1 .1.clone();
+            if entry.1.0.as_str() == args {
+                let out = entry.1.1.clone();
                 cache.push_back(entry); // 刷新到队尾（LRU）
                 return out;
             }
         }
         let out = tool_preview_uncached(args);
         cache.push_back((key, (args.to_string(), out.clone())));
-        if cache.len() > CAP {
-            cache.pop_front();
+        while cache.len() > CAP
+            || cache.iter().map(|(k, _)| k.1).sum::<usize>() > ARGS_CACHE_BUDGET_BYTES
+        {
+            if cache.pop_front().is_none() {
+                break;
+            }
         }
         out
     })
@@ -54,7 +70,9 @@ fn tool_preview_uncached(args: &str) -> String {
     let Ok(v) = serde_json::from_str::<serde_json::Value>(args) else {
         return String::new();
     };
-    let Some(obj) = v.as_object() else { return String::new() };
+    let Some(obj) = v.as_object() else {
+        return String::new();
+    };
     if obj.is_empty() {
         return String::new();
     }
@@ -70,7 +88,8 @@ fn tool_preview_uncached(args: &str) -> String {
             other => Some(other.to_string()),
         })
     });
-    raw.map(|r| r.chars().take(120).collect()).unwrap_or_default()
+    raw.map(|r| r.chars().take(120).collect())
+        .unwrap_or_default()
 }
 
 /// pi-web summarizeApplyPatchInput：apply_patch 目标文件路径 join 截 120。
@@ -260,7 +279,10 @@ fn render_subagent_card(
             div()
                 .text_size(crate::appearance::sess_size(-2.))
                 .text_color(rgb(t.text))
-                .child(SharedString::from(format!("回答：{}", result.chars().take(600).collect::<String>()))),
+                .child(SharedString::from(format!(
+                    "回答：{}",
+                    result.chars().take(600).collect::<String>()
+                ))),
         );
     }
 
@@ -269,7 +291,9 @@ fn render_subagent_card(
         let weak_open = weak.clone();
         body = body.child(
             div()
-                .id(SharedString::from(format!("sa-open-{msg_ix}-{content_index}")))
+                .id(SharedString::from(format!(
+                    "sa-open-{msg_ix}-{content_index}"
+                )))
                 .flex()
                 .items_center()
                 .gap(px(4.))
@@ -287,15 +311,9 @@ fn render_subagent_card(
 
     // 卡壳（状态色与通用卡一致）
     let (border_c, bg_c) = if is_error {
-        (
-            theme::rgba_a(0xf87171, 0.45),
-            theme::rgba_a(0xf87171, 0.05),
-        )
+        (theme::rgba_a(0xf87171, 0.45), theme::rgba_a(0xf87171, 0.05))
     } else {
-        (
-            theme::rgba_a(0x22c55e, 0.25),
-            theme::rgba_a(0x22c55e, 0.04),
-        )
+        (theme::rgba_a(0x22c55e, 0.25), theme::rgba_a(0x22c55e, 0.04))
     };
     div()
         .flex()
@@ -336,8 +354,18 @@ pub(super) fn render_tool_card(
     // 扩展 details（snake_case），不走通用 diff/preview 主流程。
     if name == "agent" {
         return render_subagent_card(
-            msg_ix, content_index, args, result, is_error, details, duration_s, args_partial,
-            result_arrived, weak, collapsed, t,
+            msg_ix,
+            content_index,
+            args,
+            result,
+            is_error,
+            details,
+            duration_s,
+            args_partial,
+            result_arrived,
+            weak,
+            collapsed,
+            t,
         );
     }
     let key = (msg_ix, content_index);
@@ -403,11 +431,7 @@ pub(super) fn render_tool_card(
         tr("messages.generating_args").to_string()
     } else if is_patch {
         let s = summarize_apply_patch(args);
-        if s.is_empty() {
-            tool_preview(args)
-        } else {
-            s
-        }
+        if s.is_empty() { tool_preview(args) } else { s }
     } else {
         tool_preview(args)
     };
@@ -477,9 +501,9 @@ pub(super) fn render_tool_card(
                 SharedString::from(format!("tchev-{msg_ix}-{content_index}")),
                 Animation::new(std::time::Duration::from_millis(150)),
                 |el, delta| {
-                    el.with_transformation(gpui::Transformation::rotate(
-                        gpui::radians(delta * std::f32::consts::PI),
-                    ))
+                    el.with_transformation(gpui::Transformation::rotate(gpui::radians(
+                        delta * std::f32::consts::PI,
+                    )))
                 },
             )
             .into_any_element()
@@ -551,7 +575,12 @@ pub(super) fn render_tool_card(
 
 /// pi-web 告警框（providerError/truncated 共用结构）：mono 12px、
 /// 1px 边框 + 0.07 底色、圆角 6、pre-wrap。
-pub(super) fn alert_box(text: String, color: u32, border_rgb: u32, _t: &theme::Theme) -> gpui::AnyElement {
+pub(super) fn alert_box(
+    text: String,
+    color: u32,
+    border_rgb: u32,
+    _t: &theme::Theme,
+) -> gpui::AnyElement {
     div()
         .mt(px(8.))
         .px(px(10.))
@@ -584,7 +613,11 @@ fn parse_compaction_summary(summary: &str) -> (String, Vec<String>, Vec<String>)
             k += 1;
             continue;
         };
-        let close = if kind == 0 { "</read-files>" } else { "</modified-files>" };
+        let close = if kind == 0 {
+            "</read-files>"
+        } else {
+            "</modified-files>"
+        };
         let mut j = k + 1;
         while j < lines.len() && lines[j].trim() != close {
             j += 1;
@@ -642,9 +675,7 @@ pub(crate) fn render_custom_msg(
     let mut col = div().w_full().mb(px(16.)).flex().flex_col();
     let custom_type = m.custom_type.as_deref().unwrap_or("");
     match custom_type {
-        "compaction" => {
-            col = col.child(render_compaction_card(m, msg_ix, t, collapsed, weak))
-        }
+        "compaction" => col = col.child(render_compaction_card(m, msg_ix, t, collapsed, weak)),
         "branch_summary" => {
             // pi-web 将 branch_summary 渲为 user 气泡（斜体引言+摘要）；
             // 这里为保持 fork 锚点对齐保留 Custom 角色，渲染为斜体引言 +
@@ -656,9 +687,7 @@ pub(crate) fn render_custom_msg(
                     .text_color(rgb(t.text_muted))
                     .text_size(crate::appearance::ui_size(13.))
                     .mb(px(4.))
-                    .child(SharedString::from(tr(
-                        "branch.detour_note",
-                    ))),
+                    .child(SharedString::from(tr("branch.detour_note"))),
             );
             if !summary.trim().is_empty() {
                 col = col.child(markdown::render(&summary, t, false));
@@ -792,11 +821,11 @@ fn render_compaction_card(
                         .text_size(crate::appearance::ui_size(10.))
                         .text_color(rgb(t.text_dim))
                         .child(SharedString::from(
-                            m.ts.map(crate::services::format::fmt_msg_time).unwrap_or_default(),
+                            m.ts.map(crate::services::format::fmt_msg_time)
+                                .unwrap_or_default(),
                         )),
                 ),
-        )
-        ;
+        );
     // 正文容器（pi-web <div style={{padding:"11px 13px 12px"}}>）：
     // 文件元数据必须挂在这层里面；挂到卡片根上会让分隔线和清单框
     // 顶掉左右 13px 内边距，直接贴住卡片边框
@@ -808,30 +837,28 @@ fn render_compaction_card(
             div()
                 .text_size(crate::appearance::ui_size(15.))
                 .font_weight(FontWeight::BOLD)
-                        .line_height(relative(1.35))
-                        .text_color(rgb(t.text))
-                        .child(SharedString::from(tr("compaction.done"))),
-                )
-                .child(
-                    div()
-                        .mt(px(3.))
-                        .mb(px(10.))
-                        .text_size(crate::appearance::ui_size(14.))
-                        .line_height(relative(1.5))
-                        .text_color(rgb(t.text))
-                        .child(SharedString::from(tr(
-                            "compaction.summary_intro",
-                        ))),
-                )
-                .child(if body.is_empty() {
-                    div()
-                        .text_size(crate::appearance::ui_size(12.))
-                        .text_color(rgb(t.text_dim))
-                        .child(SharedString::from(tr("compaction.no_summary")))
-                        .into_any_element()
-                } else {
-                    markdown::render(&body, t, false)
-                });
+                .line_height(relative(1.35))
+                .text_color(rgb(t.text))
+                .child(SharedString::from(tr("compaction.done"))),
+        )
+        .child(
+            div()
+                .mt(px(3.))
+                .mb(px(10.))
+                .text_size(crate::appearance::ui_size(14.))
+                .line_height(relative(1.5))
+                .text_color(rgb(t.text))
+                .child(SharedString::from(tr("compaction.summary_intro"))),
+        )
+        .child(if body.is_empty() {
+            div()
+                .text_size(crate::appearance::ui_size(12.))
+                .text_color(rgb(t.text_dim))
+                .child(SharedString::from(tr("compaction.no_summary")))
+                .into_any_element()
+        } else {
+            markdown::render(&body, t, false)
+        });
 
     // 文件元数据（pi-web CompactionFileMetadata parity）：
     // <details> 默认收起，summary 行 =「文件上下文：N 读取，M 修改」，
@@ -840,10 +867,16 @@ fn render_compaction_card(
     if total > 0 {
         let mut parts: Vec<String> = Vec::new();
         if !read_files.is_empty() {
-            parts.push(tf("compaction.reads", &[("n", read_files.len().to_string())]));
+            parts.push(tf(
+                "compaction.reads",
+                &[("n", read_files.len().to_string())],
+            ));
         }
         if !modified_files.is_empty() {
-            parts.push(tf("compaction.writes", &[("n", modified_files.len().to_string())]));
+            parts.push(tf(
+                "compaction.writes",
+                &[("n", modified_files.len().to_string())],
+            ));
         }
         // 折叠位复用 runtime.collapsed；usize::MAX 作content_index，
         // 避开同一消息里工具调用用的 (msg_ix, content_index) 键
@@ -878,7 +911,11 @@ fn render_compaction_card(
                         // pi-web 浏览器 <summary> 原生三角（summary 12px muted
                         // 同款尺寸）——原 10px text_faint 字形小到看不清
                         icon(
-                            if open { "chevron-down" } else { "chevron-right" },
+                            if open {
+                                "chevron-down"
+                            } else {
+                                "chevron-right"
+                            },
                             12.,
                             t.text_muted,
                         ),
@@ -895,7 +932,10 @@ fn render_compaction_card(
             );
 
         if open {
-            for (title, files) in [(tr("compaction.modified_files"), &modified_files), (tr("compaction.read_files"), &read_files)] {
+            for (title, files) in [
+                (tr("compaction.modified_files"), &modified_files),
+                (tr("compaction.read_files"), &read_files),
+            ] {
                 if files.is_empty() {
                     continue;
                 }
@@ -957,19 +997,14 @@ fn is_file_writing_tool(name: &str) -> bool {
 fn read_tool_path(args: &str) -> Option<String> {
     // 带线程局部 LRU（同 tool_preview 的理由）：turn_written_files 每帧
     // 扫整轮文件写入工具，write/edit 的 args 内嵌整个文件内容
-    thread_local! {
-        static CACHE: std::cell::RefCell<
-            std::collections::VecDeque<((u64, usize), (String, Option<String>))>,
-        > = const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
-    }
     const CAP: usize = 256;
     let key = (crate::editor::markdown::hash_str(args), args.len());
-    CACHE.with(|cell| {
+    READ_PATH_CACHE.with(|cell| {
         let mut cache = cell.borrow_mut();
         if let Some(pos) = cache.iter().rposition(|(k, _)| *k == key) {
             let entry = cache.remove(pos).expect("pos 来自刚才的迭代");
-            if entry.1 .0.as_str() == args {
-                let out = entry.1 .1.clone();
+            if entry.1.0.as_str() == args {
+                let out = entry.1.1.clone();
                 cache.push_back(entry);
                 return out;
             }
@@ -982,11 +1017,28 @@ fn read_tool_path(args: &str) -> Option<String> {
             .filter(|s| !s.is_empty())
             .map(str::to_string);
         cache.push_back((key, (args.to_string(), out.clone())));
-        if cache.len() > CAP {
-            cache.pop_front();
+        while cache.len() > CAP
+            || cache.iter().map(|(k, _)| k.1).sum::<usize>() > ARGS_CACHE_BUDGET_BYTES
+        {
+            if cache.pop_front().is_none() {
+                break;
+            }
         }
         out
     })
+}
+
+/// 探针（automation snapshot）：两个 args 缓存合计（条数，源文字节）
+pub(crate) fn tool_args_cache_probe() -> (usize, usize) {
+    let preview = PREVIEW_CACHE.with(|cell| {
+        let cache = cell.borrow();
+        (cache.len(), cache.iter().map(|(k, _)| k.1).sum::<usize>())
+    });
+    let read_path = READ_PATH_CACHE.with(|cell| {
+        let cache = cell.borrow();
+        (cache.len(), cache.iter().map(|(k, _)| k.1).sum::<usize>())
+    });
+    (preview.0 + read_path.0, preview.1 + read_path.1)
 }
 
 /// pi-web readApplyPatchPaths parity：appliedFiles > preview > 输入解析，
@@ -1047,23 +1099,32 @@ pub(super) fn turn_written_files(turn: &[&Msg]) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
     let cwd = std::env::current_dir().ok();
-    let push = |raw: String, seen: &mut std::collections::HashSet<String>, out: &mut Vec<String>| {
-        let path = std::path::Path::new(&raw);
-        let resolved = if path.is_absolute() {
-            raw.clone()
-        } else {
-            match &cwd {
-                Some(c) => c.join(raw).to_string_lossy().to_string(),
-                None => return,
+    let push =
+        |raw: String, seen: &mut std::collections::HashSet<String>, out: &mut Vec<String>| {
+            let path = std::path::Path::new(&raw);
+            let resolved = if path.is_absolute() {
+                raw.clone()
+            } else {
+                match &cwd {
+                    Some(c) => c.join(raw).to_string_lossy().to_string(),
+                    None => return,
+                }
+            };
+            if seen.insert(resolved.clone()) {
+                out.push(resolved);
             }
         };
-        if seen.insert(resolved.clone()) {
-            out.push(resolved);
-        }
-    };
     for m in turn {
         for b in &m.blocks {
-            let Block::ToolCall { name, args, is_error, result_arrived, details, .. } = b else {
+            let Block::ToolCall {
+                name,
+                args,
+                is_error,
+                result_arrived,
+                details,
+                ..
+            } = b
+            else {
                 continue;
             };
             if *is_error || !*result_arrived || !is_file_writing_tool(name) {
@@ -1083,11 +1144,17 @@ pub(super) fn turn_written_files(turn: &[&Msg]) -> Vec<String> {
 
 /// pi-web SplitFilesView：双栏 split diff，maxHeight 560 滚动；多文件时
 /// 显示文件头（pi-web sticky 头在 gpui 无对应，退化为普通行）。
-fn split_files_view(files: &[crate::session::diff::DiffFile], t: &theme::Theme) -> gpui::AnyElement {
+fn split_files_view(
+    files: &[crate::session::diff::DiffFile],
+    t: &theme::Theme,
+) -> gpui::AnyElement {
     use crate::session::diff::Row;
     let show_headers = files.len() > 1;
     let mut wrap = div()
-        .id(SharedString::from(SharedString::from(format!("sd-{}", files.len()))))
+        .id(SharedString::from(SharedString::from(format!(
+            "sd-{}",
+            files.len()
+        ))))
         .max_h(px(560.))
         .overflow_y_scroll()
         .min_w_0()
@@ -1172,10 +1239,7 @@ fn diff_cell(
         CellKind::Removed => 0xf87171,
         _ => t.text_dim,
     };
-    let line_no = cell
-        .line_no
-        .map(|n| n.to_string())
-        .unwrap_or_default();
+    let line_no = cell.line_no.map(|n| n.to_string()).unwrap_or_default();
     div()
         .flex()
         .min_w_0()
@@ -1199,9 +1263,10 @@ fn diff_cell(
                 .px(px(5.))
                 .flex_shrink_0()
                 .text_color(rgb(marker_color))
-                .when(matches!(cell.kind, CellKind::Added | CellKind::Removed), |d| {
-                    d.font_weight(FontWeight::BOLD)
-                })
+                .when(
+                    matches!(cell.kind, CellKind::Added | CellKind::Removed),
+                    |d| d.font_weight(FontWeight::BOLD),
+                )
                 .child(SharedString::from(marker)),
         )
         .child(
@@ -1244,9 +1309,21 @@ fn patch_text_view(text: &str, t: &theme::Theme) -> gpui::AnyElement {
                 3
             };
             let (bg, color, bar) = match kind {
-                0 => (gpui::rgba(theme::rgba_a(0x60a5fa, 0.12)), t.accent, t.accent),
-                1 => (gpui::rgba(theme::rgba_a(0x22c55e, 0.12)), 0x22c55e, 0x22c55e),
-                2 => (gpui::rgba(theme::rgba_a(0xf87171, 0.13)), 0xf87171, 0xf87171),
+                0 => (
+                    gpui::rgba(theme::rgba_a(0x60a5fa, 0.12)),
+                    t.accent,
+                    t.accent,
+                ),
+                1 => (
+                    gpui::rgba(theme::rgba_a(0x22c55e, 0.12)),
+                    0x22c55e,
+                    0x22c55e,
+                ),
+                2 => (
+                    gpui::rgba(theme::rgba_a(0xf87171, 0.13)),
+                    0xf87171,
+                    0xf87171,
+                ),
                 _ => (gpui::rgba(0), t.text, 0),
             };
             div()
@@ -1267,17 +1344,13 @@ fn patch_text_view(text: &str, t: &theme::Theme) -> gpui::AnyElement {
                         .border_color(rgb(t.border))
                         .child(SharedString::from((i + 1).to_string())),
                 )
-                .child(
-                    div()
-                        .px(px(10.))
-                        .min_w_0()
-                        .text_color(rgb(color))
-                        .child(SharedString::from(if line.is_empty() {
-                            "\u{a0}".to_string()
-                        } else {
-                            line.to_string()
-                        })),
-                )
+                .child(div().px(px(10.)).min_w_0().text_color(rgb(color)).child(
+                    SharedString::from(if line.is_empty() {
+                        "\u{a0}".to_string()
+                    } else {
+                        line.to_string()
+                    }),
+                ))
         }))
         .into_any_element()
 }

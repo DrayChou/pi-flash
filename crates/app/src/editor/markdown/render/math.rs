@@ -31,7 +31,9 @@ struct Cache {
 }
 
 static CACHE: LazyLock<Mutex<Cache>> = LazyLock::new(|| {
-    Mutex::new(Cache { map: LruCache::new(NonZeroUsize::new(CACHE_CAP).expect("non-zero")) })
+    Mutex::new(Cache {
+        map: LruCache::new(NonZeroUsize::new(CACHE_CAP).expect("non-zero")),
+    })
 });
 
 fn cache_key(latex: &str, display: bool, color: u32) -> u64 {
@@ -56,7 +58,11 @@ fn to_ratex_color(rgb24: u32) -> Color {
 fn render_png(latex: &str, display: bool, color: u32) -> Option<(Arc<Image>, f32, f32)> {
     let nodes = ratex_parser::parse(latex).ok()?;
     let options = LayoutOptions {
-        style: if display { MathStyle::Display } else { MathStyle::Text },
+        style: if display {
+            MathStyle::Display
+        } else {
+            MathStyle::Text
+        },
         color: to_ratex_color(color),
         ..Default::default()
     };
@@ -68,7 +74,12 @@ fn render_png(latex: &str, display: bool, color: u32) -> Option<(Arc<Image>, f32
             font_size: FONT_SIZE,
             padding: 2.0,
             // 透明底：公式直接落在消息背景上，深浅主题通用
-            background_color: Color { r: 0.0, g: 0.0, b: 0.0, a: 0.0 },
+            background_color: Color {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.0,
+            },
             font_dir: String::new(),
             device_pixel_ratio: DPR,
         },
@@ -76,26 +87,48 @@ fn render_png(latex: &str, display: bool, color: u32) -> Option<(Arc<Image>, f32
     .ok()?;
     let w = display_list.width as f32 * FONT_SIZE + 4.0;
     let h = (display_list.height + display_list.depth) as f32 * FONT_SIZE + 4.0;
-    Some((Arc::new(Image::from_bytes(gpui::ImageFormat::Png, png)), w, h))
+    Some((
+        Arc::new(Image::from_bytes(gpui::ImageFormat::Png, png)),
+        w,
+        h,
+    ))
 }
 
 /// 渲染（带缓存）。None = 公式解析/渲染失败。
-pub(crate) fn math_image(
-    latex: &str,
-    display: bool,
-    color: u32,
-) -> Option<(Arc<Image>, f32, f32)> {
+pub(crate) fn math_image(latex: &str, display: bool, color: u32) -> Option<(Arc<Image>, f32, f32)> {
     let key = cache_key(latex, display, color);
-    if let Some(hit) = CACHE.lock().unwrap_or_else(|e| e.into_inner()).map.get(&key) {
+    if let Some(hit) = CACHE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .map
+        .get(&key)
+    {
         return hit.clone();
     }
     let rendered = render_png(latex, display, color);
-    CACHE
+    let evicted = CACHE
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .map
         .put(key, rendered.clone());
+    if let Some(Some((img, _, _))) = evicted {
+        // gpui 侧解码位图同步放掉（loading_assets 只进不出，见 asset_evict）
+        crate::services::asset_evict::queue_evicted(img);
+    }
     rendered
+}
+
+/// 探针（automation snapshot）：（条数，源 PNG 字节）
+pub(crate) fn math_probe() -> (usize, usize) {
+    let cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    (
+        cache.map.len(),
+        cache
+            .map
+            .iter()
+            .map(|(_, v)| v.as_ref().map(|(i, _, _)| i.bytes.len()).unwrap_or(0))
+            .sum(),
+    )
 }
 
 /// 块级公式元素（pi-web KaTeX display parity：居中、上下 0.6em、字号 1.05em）。
@@ -161,8 +194,8 @@ mod tests {
     #[test]
     fn simple_formula_renders_png() {
         // 依赖内嵌字体；渲染失败（无字体/管线坏）则测试失败
-        let (img, w, h) = math_image(r"\frac{1}{2} + \sqrt{x}", true, 0x000000)
-            .expect("formula should render");
+        let (img, w, h) =
+            math_image(r"\frac{1}{2} + \sqrt{x}", true, 0x000000).expect("formula should render");
         assert!(w > 0.0 && h > 0.0);
         assert!(!img.bytes().is_empty(), "png bytes present");
     }
@@ -184,6 +217,9 @@ mod tests {
     fn color_changes_cache_key() {
         let a = math_image(r"x", false, 0x000000).expect("render");
         let b = math_image(r"x", false, 0xffffff).expect("render");
-        assert!(!Arc::ptr_eq(&a.0, &b.0), "different color = different image");
+        assert!(
+            !Arc::ptr_eq(&a.0, &b.0),
+            "different color = different image"
+        );
     }
 }

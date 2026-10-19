@@ -25,7 +25,9 @@ struct Cache {
 }
 
 static CACHE: LazyLock<Mutex<Cache>> = LazyLock::new(|| {
-    Mutex::new(Cache { map: LruCache::new(NonZeroUsize::new(CACHE_CAP).expect("non-zero")) })
+    Mutex::new(Cache {
+        map: LruCache::new(NonZeroUsize::new(CACHE_CAP).expect("non-zero")),
+    })
 });
 
 fn cache_key(source: &str, dark: bool) -> u64 {
@@ -61,7 +63,12 @@ pub(crate) fn diagram_element(source: &str, dark: bool) -> Option<gpui::AnyEleme
             Some(hit) => hit.clone(),
             None => {
                 let rendered = render_svg(source, dark);
-                cache.map.put(key, rendered.clone());
+                if let Some(Some(evicted)) = cache.map.put(key, rendered.clone()) {
+                    // gpui 侧解码位图同步放掉（loading_assets 只进不出，
+                    // 见 services::asset_evict）；流式 mermaid 每次内容变化
+                    // 都是新键，不摘的话旧位图整场常驻
+                    crate::services::asset_evict::queue_evicted(evicted);
+                }
                 rendered
             }
         }
@@ -80,6 +87,19 @@ pub(crate) fn diagram_element(source: &str, dark: bool) -> Option<gpui::AnyEleme
 
 #[allow(unused)]
 fn _unused(_: Arc<Image>) {}
+
+/// 探针（automation snapshot）：（条数，源 SVG 字节）
+pub(crate) fn mermaid_probe() -> (usize, usize) {
+    let cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    (
+        cache.map.len(),
+        cache
+            .map
+            .iter()
+            .map(|(_, v)| v.as_ref().map(|i| i.bytes.len()).unwrap_or(0))
+            .sum(),
+    )
+}
 
 #[cfg(test)]
 mod tests {

@@ -28,8 +28,10 @@ use std::ops::Range;
 use crate::appearance::theme::Theme;
 use crate::i18n::tr;
 use crate::ui::ScrollAxisExt;
-#[cfg(test)] mod real_file_tests;
-#[cfg(test)] mod tests;
+#[cfg(test)]
+mod real_file_tests;
+#[cfg(test)]
+mod tests;
 
 mod doc;
 mod highlight;
@@ -71,18 +73,44 @@ pub(crate) struct Run {
 
 #[derive(Clone, Debug)]
 pub(crate) enum MdBlock {
-    Heading { level: u8, runs: Vec<Run> },
-    Paragraph { runs: Vec<Run> },
-    Code { lang: String, code: String },
-    Quote { blocks: Vec<MdBlock> },
-    ListItem { depth: usize, marker: String, runs: Vec<Run>, task: Option<bool> },
-    Table { head: Vec<Vec<Run>>, rows: Vec<Vec<Vec<Run>>> },
-    Image { url: String, alt: Vec<Run>, width: Option<f32> },
+    Heading {
+        level: u8,
+        runs: Vec<Run>,
+    },
+    Paragraph {
+        runs: Vec<Run>,
+    },
+    Code {
+        lang: String,
+        code: String,
+    },
+    Quote {
+        blocks: Vec<MdBlock>,
+    },
+    ListItem {
+        depth: usize,
+        marker: String,
+        runs: Vec<Run>,
+        task: Option<bool>,
+    },
+    Table {
+        head: Vec<Vec<Run>>,
+        rows: Vec<Vec<Vec<Run>>>,
+    },
+    Image {
+        url: String,
+        alt: Vec<Run>,
+        width: Option<f32>,
+    },
 
     /// 块级公式（$$…$$，v57-2）
-    Math { latex: String },
+    Math {
+        latex: String,
+    },
     /// mermaid 图代码块（v57-3）
-    Mermaid { source: String },
+    Mermaid {
+        source: String,
+    },
     Rule,
 }
 
@@ -106,7 +134,9 @@ thread_local! {
 }
 
 fn active_md_spec() -> crate::services::workspace::FontSpec {
-    MD_SPEC.with(|c| c.borrow().clone()).unwrap_or_else(crate::appearance::file_font)
+    MD_SPEC
+        .with(|c| c.borrow().clone())
+        .unwrap_or_else(crate::appearance::file_font)
 }
 
 fn set_md_spec(s: crate::services::workspace::FontSpec) {
@@ -153,7 +183,10 @@ pub(crate) fn highlight(style: Style, t: &Theme) -> Option<HighlightStyle> {
         },
         // note: gpui 0.2.2 highlights cannot change font family; 正文的行内 code
         // 走 paragraph_element 拆段成等宽盒，此高亮只是表格/标题内的兜底
-        Style::Code => HighlightStyle { background_color: Some(rgb(t.tool_bg).into()), ..Default::default() },
+        Style::Code => HighlightStyle {
+            background_color: Some(rgb(t.tool_bg).into()),
+            ..Default::default()
+        },
         // pi-web a: 下划线 45% 透明（offset gpui 无对应）
         Style::Link => HighlightStyle {
             color: Some(rgb(t.accent).into()),
@@ -172,13 +205,17 @@ pub(crate) fn highlight(style: Style, t: &Theme) -> Option<HighlightStyle> {
             ..Default::default()
         },
         Style::Strike => HighlightStyle {
-            strikethrough: Some(gpui::StrikethroughStyle { thickness: px(1.), ..Default::default() }),
+            strikethrough: Some(gpui::StrikethroughStyle {
+                thickness: px(1.),
+                ..Default::default()
+            }),
             ..Default::default()
         },
         // 公式在渲染前已拆段为图片；防御性落到代码风
-        Style::Math | Style::DisplayMath => {
-            HighlightStyle { background_color: Some(rgb(t.tool_bg).into()), ..Default::default() }
-        }
+        Style::Math | Style::DisplayMath => HighlightStyle {
+            background_color: Some(rgb(t.tool_bg).into()),
+            ..Default::default()
+        },
     };
     Some(h)
 }
@@ -316,7 +353,13 @@ fn block_margins(b: &MdBlock) -> (f32, f32) {
     }
 }
 
-fn render_blocks(blocks: &[MdBlock], depth: usize, t: &Theme, streaming: bool, color: u32) -> gpui::Div {
+fn render_blocks(
+    blocks: &[MdBlock],
+    depth: usize,
+    t: &Theme,
+    streaming: bool,
+    color: u32,
+) -> gpui::Div {
     let mut col = div().flex().flex_col();
     // 间距 = max(前块 mb, 本块 mt)；首块保留自身 mt（引用块内有 padding，
     // 首元素 margin 不折叠出去，与 CSS 一致）
@@ -434,9 +477,9 @@ fn render_code_block_doc(lang: &str, code: &str, t: &Theme) -> gpui::AnyElement 
                 .restrict_scroll_to_axis()
                 .track_scroll(&scroll.handle)
                 .child(
-                    div().flex_none().child(
-                        StyledText::new(text).with_default_highlights(&base, highlights),
-                    ),
+                    div()
+                        .flex_none()
+                        .child(StyledText::new(text).with_default_highlights(&base, highlights)),
                 ),
         )
         // 横向滑块：Scrollbar 必须套显式 absolute 细条（用户气泡/导航浮层
@@ -526,7 +569,10 @@ fn render_code_block(lang: &str, code: &str, t: &Theme, streaming: bool) -> gpui
             text.push_str(&format!("{:>w$}  ", i + 1, w = n_digits));
             highlights.push((
                 start..text.len(),
-                HighlightStyle { color: Some(dim.into()), ..Default::default() },
+                HighlightStyle {
+                    color: Some(dim.into()),
+                    ..Default::default()
+                },
             ));
             // 该行的高亮段
             while seg_ix < segs.len() {
@@ -607,11 +653,9 @@ fn render_code_block(lang: &str, code: &str, t: &Theme, streaming: bool) -> gpui
                         // 锁轴：纵向滚轮穿透给外层页面滚动，横向滚轮只滚本块
                         .restrict_scroll_to_axis()
                         .track_scroll(&scroll.handle)
-                        .child(
-                            div().flex_none().child(
-                                StyledText::new(text).with_default_highlights(&base, highlights),
-                            ),
-                        ),
+                        .child(div().flex_none().child(
+                            StyledText::new(text).with_default_highlights(&base, highlights),
+                        )),
                 )
                 // 横向滑块：显式 absolute 细条（同 render_code_block_doc 注释）
                 .child(
@@ -638,7 +682,10 @@ fn push_color(
     let color = rgb(((c[0] as u32) << 16) | ((c[1] as u32) << 8) | c[2] as u32);
     highlights.push((
         start..end,
-        HighlightStyle { color: Some(color.into()), ..Default::default() },
+        HighlightStyle {
+            color: Some(color.into()),
+            ..Default::default()
+        },
     ));
 }
 
@@ -647,7 +694,14 @@ fn push_color(
 /// 单元格显示宽度权重：ASCII 记 1、CJK/全角记 2（HTML 表 auto layout 的
 /// 近似度量）。
 fn cell_weight(runs: &[Run]) -> usize {
-    runs.iter().map(|r| r.text.chars().map(|c| if (c as u32) > 0x2e80 { 2 } else { 1 }).sum::<usize>()).sum()
+    runs.iter()
+        .map(|r| {
+            r.text
+                .chars()
+                .map(|c| if (c as u32) > 0x2e80 { 2 } else { 1 })
+                .sum::<usize>()
+        })
+        .sum()
 }
 
 fn render_table(head: &[Vec<Run>], rows: &[Vec<Vec<Run>>], t: &Theme) -> gpui::Div {
@@ -672,13 +726,7 @@ fn render_table(head: &[Vec<Run>], rows: &[Vec<Vec<Run>>], t: &Theme) -> gpui::D
     let total: f32 = weights.iter().sum::<usize>() as f32;
     let fracs: Vec<f32> = weights.iter().map(|w| *w as f32 / total).collect();
 
-    let cell_div = |frac: f32| {
-        div()
-            .w(relative(frac))
-            .min_w_0()
-            .px(px(10.))
-            .py(px(6.))
-    };
+    let cell_div = |frac: f32| div().w(relative(frac)).min_w_0().px(px(10.)).py(px(6.));
 
     // 字体大小设置.md：表格头 = 槽位字号，表格内容 = 槽位字号 -1，行高 1.7
     // （字号经 sized_text 挂容器，见其注释）
@@ -688,8 +736,19 @@ fn render_table(head: &[Vec<Run>], rows: &[Vec<Vec<Run>>], t: &Theme) -> gpui::D
         .map(|(ci, cell)| {
             cell_div(fracs[ci])
                 .font_weight(FontWeight::SEMIBOLD)
-                .text_color(rgb(crate::appearance::theme::mix_rgb(t.text, t.text_muted, 0.88)))
-                .child(sized_text(cell, t, BASE, 1.7, crate::appearance::theme::mix_rgb(t.text, t.text_muted, 0.88), FontWeight::SEMIBOLD))
+                .text_color(rgb(crate::appearance::theme::mix_rgb(
+                    t.text,
+                    t.text_muted,
+                    0.88,
+                )))
+                .child(sized_text(
+                    cell,
+                    t,
+                    BASE,
+                    1.7,
+                    crate::appearance::theme::mix_rgb(t.text, t.text_muted, 0.88),
+                    FontWeight::SEMIBOLD,
+                ))
                 .into_any_element()
         })
         .collect();
@@ -704,15 +763,19 @@ fn render_table(head: &[Vec<Run>], rows: &[Vec<Vec<Run>>], t: &Theme) -> gpui::D
         .iter()
         .enumerate()
         .map(|(ri, row)| {
-            let mut line = div()
-                .flex()
-                .border_b_1()
-                .border_color(rgb(t.border));
+            let mut line = div().flex().border_b_1().border_color(rgb(t.border));
             if ri % 2 == 1 {
                 line = line.bg(rgba(t.bg_subtle));
             }
             for (ci, cell) in row.iter().enumerate().take(n_cols) {
-                line = line.child(cell_div(fracs[ci]).child(sized_text(cell, t, 13., 1.7, t.text, FontWeight::NORMAL)));
+                line = line.child(cell_div(fracs[ci]).child(sized_text(
+                    cell,
+                    t,
+                    13.,
+                    1.7,
+                    t.text,
+                    FontWeight::NORMAL,
+                )));
             }
             line.into_any_element()
         })
@@ -732,7 +795,8 @@ fn render_table(head: &[Vec<Run>], rows: &[Vec<Vec<Run>>], t: &Theme) -> gpui::D
 
 /// 图片：本地文件 gpui img() 直渲染；http/不存在 → alt 文本占位。
 /// 相对路径按 md 文件目录解析（IMG_BASE，render_themed 设置）。
-fn render_image(url: &str, width: Option<f32>, alt: &[Run], t: &Theme) -> gpui::AnyElement {    let placeholder = || {
+fn render_image(url: &str, width: Option<f32>, alt: &[Run], t: &Theme) -> gpui::AnyElement {
+    let placeholder = || {
         div()
             .w_full()
             .text_color(rgb(t.text_dim))
@@ -769,12 +833,67 @@ fn render_image(url: &str, width: Option<f32>, alt: &[Run], t: &Theme) -> gpui::
     div()
         .w_full()
         .child(
-            gpui::img(std::sync::Arc::new(gpui::Image::from_bytes(format, bytes)))
+            gpui::img(local_image_cached(format, bytes))
                 .max_w_full()
                 .when_some(width, |d, w| d.w(px(w.max(24.))))
                 .rounded(px(6.)),
         )
         .into_any_element()
+}
+
+// 本地图片缓存：md 源里的 ![](本地路径) 每帧重建元素树，原先每帧
+// std::fs::read + 新建 Arc<Image>；gpui 按内容哈希去重 loading_assets，
+// 但解码位图只进不出。这里线程局部 VecDeque LRU（同 MD_PARSE_CACHE 的
+// 理由，元素构建只在主线程），驱逐时经 asset_evict 同步放掉 gpui 侧位图。
+// 字节预算按源文件字节计（解码位图与源同量级）。
+thread_local! {
+    static LOCAL_IMG_CACHE: std::cell::RefCell<
+        std::collections::VecDeque<
+            ((u64, usize, u8), (Vec<u8>, std::sync::Arc<gpui::Image>)),
+        >,
+    > = const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
+}
+const LOCAL_IMG_CACHE_CAP: usize = 32;
+const LOCAL_IMG_CACHE_BUDGET_BYTES: usize = 64 * 1024 * 1024;
+
+fn local_image_cached(format: gpui::ImageFormat, bytes: Vec<u8>) -> std::sync::Arc<gpui::Image> {
+    let key = (hash_bytes(&bytes), bytes.len(), format as u8);
+    LOCAL_IMG_CACHE.with(|cell| {
+        let mut cache = cell.borrow_mut();
+        if let Some(pos) = cache.iter().rposition(|(k, _)| *k == key) {
+            let entry = cache.remove(pos).expect("pos 来自刚才的迭代");
+            if entry.1.0 == bytes {
+                let image = entry.1.1.clone();
+                cache.push_back(entry); // 刷新到队尾（LRU）
+                return image;
+            }
+        }
+        let image = std::sync::Arc::new(gpui::Image::from_bytes(format, bytes.clone()));
+        cache.push_back((key, (bytes, image.clone())));
+        while cache.len() > LOCAL_IMG_CACHE_CAP
+            || cache.iter().map(|(_, v)| v.0.len()).sum::<usize>() > LOCAL_IMG_CACHE_BUDGET_BYTES
+        {
+            match cache.pop_front() {
+                Some((_, (_, evicted))) => {
+                    // gpui 侧解码位图同步放掉（见 services::asset_evict）
+                    crate::services::asset_evict::queue_evicted(evicted);
+                }
+                None => break,
+            }
+        }
+        image
+    })
+}
+
+/// 探针（automation snapshot）：（条数，源文件字节）
+pub(crate) fn local_img_probe() -> (usize, usize) {
+    LOCAL_IMG_CACHE.with(|cell| {
+        let cache = cell.borrow();
+        (
+            cache.len(),
+            cache.iter().map(|(_, v)| v.0.len()).sum::<usize>(),
+        )
+    })
 }
 
 /// 行内 code 盒（pi-web .markdown-inline-code）：mono（槽位字号 -1.12 =
@@ -831,14 +950,20 @@ fn paragraph_element(runs: &[Run], t: &Theme, color: u32) -> AnyElement {
     if !rich {
         return sized_text(runs, t, BASE, 1.7, color, FontWeight::NORMAL);
     }
-    let flush =
-        |row: gpui::Div, tr: &mut Vec<Run>, t: &Theme, color: u32| -> gpui::Div {
-            if !tr.is_empty() {
-                let taken = std::mem::take(tr);
-                return row.child(div().max_w_full().child(sized_text(&taken, t, BASE, 1.7, color, FontWeight::NORMAL)));
-            }
-            row
-        };
+    let flush = |row: gpui::Div, tr: &mut Vec<Run>, t: &Theme, color: u32| -> gpui::Div {
+        if !tr.is_empty() {
+            let taken = std::mem::take(tr);
+            return row.child(div().max_w_full().child(sized_text(
+                &taken,
+                t,
+                BASE,
+                1.7,
+                color,
+                FontWeight::NORMAL,
+            )));
+        }
+        row
+    };
     let mut row = div().w_full().flex().flex_wrap().items_end();
     let mut text_run: Vec<Run> = Vec::new();
     for r in runs {
@@ -849,12 +974,16 @@ fn paragraph_element(runs: &[Run], t: &Theme, color: u32) -> AnyElement {
             }
             Style::Math => {
                 row = flush(row, &mut text_run, t, color);
-                row = row.child(crate::editor::markdown::render::math::inline_element(&r.text, t));
+                row = row.child(crate::editor::markdown::render::math::inline_element(
+                    &r.text, t,
+                ));
             }
             Style::DisplayMath => {
                 row = flush(row, &mut text_run, t, color);
                 // 块级公式：flex_wrap 下 w_full 独占一行
-                row = row.child(div().w_full().child(crate::editor::markdown::render::math::block_element(&r.text, t)));
+                row = row.child(div().w_full().child(
+                    crate::editor::markdown::render::math::block_element(&r.text, t),
+                ));
             }
             _ => text_run.push(r.clone()),
         }
@@ -886,7 +1015,11 @@ fn render_block(b: &MdBlock, depth: usize, t: &Theme, streaming: bool, color: u3
             let underlined = doc && (*level <= 2);
             div()
                 .w_full()
-                .font_weight(if doc && *level == 1 { FontWeight::BOLD } else { FontWeight::SEMIBOLD })
+                .font_weight(if doc && *level == 1 {
+                    FontWeight::BOLD
+                } else {
+                    FontWeight::SEMIBOLD
+                })
                 .text_size(px(text_size))
                 .line_height(relative(1.35))
                 .when(underlined, |d| {
@@ -894,7 +1027,14 @@ fn render_block(b: &MdBlock, depth: usize, t: &Theme, streaming: bool, color: u3
                         .border_b_1()
                         .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x55)))
                 })
-                .child(runs_element(runs, t, size, 1.35, color, FontWeight::SEMIBOLD))
+                .child(runs_element(
+                    runs,
+                    t,
+                    size,
+                    1.35,
+                    color,
+                    FontWeight::SEMIBOLD,
+                ))
                 .into_any_element()
         }
         MdBlock::Paragraph { runs } => paragraph_element(runs, t, color),
@@ -908,7 +1048,11 @@ fn render_block(b: &MdBlock, depth: usize, t: &Theme, streaming: bool, color: u3
         MdBlock::Quote { blocks } => div()
             .w_full()
             .border_l_3()
-            .border_color(rgb(crate::appearance::theme::mix_rgb(t.border, t.text_muted, 0.75)))
+            .border_color(rgb(crate::appearance::theme::mix_rgb(
+                t.border,
+                t.text_muted,
+                0.75,
+            )))
             .rounded_r(px(6.))
             .bg(rgba(t.bg_subtle))
             .px(px(11.))
@@ -917,7 +1061,12 @@ fn render_block(b: &MdBlock, depth: usize, t: &Theme, streaming: bool, color: u3
             // 内部段落的 StyledText（此前容器色被子元素硬编码 text 覆盖）
             .child(render_blocks(blocks, depth + 1, t, streaming, t.text_muted))
             .into_any_element(),
-        MdBlock::ListItem { depth: d, marker, runs, task } => {
+        MdBlock::ListItem {
+            depth: d,
+            marker,
+            runs,
+            task,
+        } => {
             let task = *task;
             // 悬挂缩进（pi-web ul{padding-left:22px} + li{padding-left:2px}
             // + list-style-position:outside）：marker 落在文字左侧的固定
@@ -938,7 +1087,11 @@ fn render_block(b: &MdBlock, depth: usize, t: &Theme, streaming: bool, color: u3
                 .text_size(px(active_md_spec().size))
                 .line_height(relative(1.7))
                 .font_weight(FontWeight::SEMIBOLD)
-                .text_color(rgb(crate::appearance::theme::mix_rgb(t.accent, t.text_muted, 0.72)));
+                .text_color(rgb(crate::appearance::theme::mix_rgb(
+                    t.accent,
+                    t.text_muted,
+                    0.72,
+                )));
             let marker_el: AnyElement = match task {
                 // c12: 任务项 marker = 14px 复选框（选中 = accent 10% 淡底 +
                 // 55% 边框 + accent 对勾，pi-web :checked 规则）；top:0.35em
@@ -987,17 +1140,28 @@ fn render_block(b: &MdBlock, depth: usize, t: &Theme, streaming: bool, color: u3
                             .mt(px(((first_line - dot) / 2.).max(0.)))
                             .size(px(dot))
                             .rounded(px(dot / 2.))
-                            .bg(rgb(crate::appearance::theme::mix_rgb(t.accent, t.text_muted, 0.72))),
+                            .bg(rgb(crate::appearance::theme::mix_rgb(
+                                t.accent,
+                                t.text_muted,
+                                0.72,
+                            ))),
                     )
                     .into_any_element()
                 }
-                None => slot.child(SharedString::from(marker.clone())).into_any_element(),
+                None => slot
+                    .child(SharedString::from(marker.clone()))
+                    .into_any_element(),
             };
             div()
                 .flex()
                 .pl(px((d * 22) as f32))
                 .child(marker_el)
-                .child(div().flex_1().min_w_0().child(paragraph_element(runs, t, t.text)))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .child(paragraph_element(runs, t, t.text)),
+                )
                 .into_any_element()
         }
         MdBlock::Table { head, rows } => render_table(head, rows, t).into_any_element(),
@@ -1006,7 +1170,9 @@ fn render_block(b: &MdBlock, depth: usize, t: &Theme, streaming: bool, color: u3
         MdBlock::Mermaid { source } => {
             // pi-web MermaidBlock parity：流式期间只显源码；失败回退源码块
             if !streaming {
-                if let Some(el) = crate::editor::markdown::render::mermaid::diagram_element(source, t.dark) {
+                if let Some(el) =
+                    crate::editor::markdown::render::mermaid::diagram_element(source, t.dark)
+                {
                     return el;
                 }
             }
@@ -1095,11 +1261,19 @@ thread_local! {
     > = const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
 }
 const MD_PARSE_CACHE_CAP: usize = 128;
+/// 字节预算（源文 32MB）：大粘贴场景 128 条 × MB 级源文＋解析树的组合曾把
+/// 稳态推高上百 MB；超预算从头驱逐（LRU），解析树随条目一起释放
+const MD_PARSE_CACHE_BUDGET_BYTES: usize = 32 * 1024 * 1024;
 
 /// FNV-1a 按 8 字节块处理（进程内去重键，非加密；命中另有全等校验兜底）
 pub(crate) fn hash_str(s: &str) -> u64 {
+    hash_bytes(s.as_bytes())
+}
+
+/// 字节版 FNV-1a（同 [`hash_str`]；无 str 场景如本地图片缓存用）
+pub(crate) fn hash_bytes(b: &[u8]) -> u64 {
     let mut h = 0xcbf29ce484222325;
-    let mut chunks = s.as_bytes().chunks_exact(8);
+    let mut chunks = b.chunks_exact(8);
     for chunk in &mut chunks {
         let mut word = u64::from_le_bytes(chunk.try_into().unwrap());
         for _ in 0..8 {
@@ -1119,8 +1293,8 @@ fn cached_blocks(src: &str, html: bool) -> std::rc::Rc<Vec<MdBlock>> {
         let mut cache = cell.borrow_mut();
         if let Some(pos) = cache.iter().rposition(|(k, _)| *k == key) {
             let entry = cache.remove(pos).expect("pos 来自刚才的迭代");
-            if entry.1 .0.as_str() == src {
-                let blocks = std::rc::Rc::clone(&entry.1 .1);
+            if entry.1.0.as_str() == src {
+                let blocks = std::rc::Rc::clone(&entry.1.1);
                 cache.push_back(entry); // 刷新到队尾（LRU）
                 return blocks;
             }
@@ -1137,16 +1311,32 @@ fn cached_blocks(src: &str, html: bool) -> std::rc::Rc<Vec<MdBlock>> {
         let events: Vec<Event> = Parser::new_ext(src, opts).collect();
         let parsed = std::rc::Rc::new(parse_blocks(&events, html));
         cache.push_back((key, (src.to_string(), std::rc::Rc::clone(&parsed))));
-        if cache.len() > MD_PARSE_CACHE_CAP {
-            cache.pop_front();
+        while cache.len() > MD_PARSE_CACHE_CAP
+            || cache.iter().map(|(k, _)| k.1).sum::<usize>() > MD_PARSE_CACHE_BUDGET_BYTES
+        {
+            if cache.pop_front().is_none() {
+                break;
+            }
         }
         parsed
     })
 }
 
+/// 探针（automation snapshot）：（条数，源文字节）
+pub(crate) fn md_parse_probe() -> (usize, usize) {
+    MD_PARSE_CACHE.with(|cell| {
+        let cache = cell.borrow();
+        (cache.len(), cache.iter().map(|(k, _)| k.1).sum::<usize>())
+    })
+}
+
 /// Html/InlineHtml 的字面显示（html=false 路径）：标签原文可见。
 fn literal_runs(html_src: &str) -> Vec<Run> {
-    vec![Run { text: html_src.to_string(), style: Style::Normal, url: None }]
+    vec![Run {
+        text: html_src.to_string(),
+        style: Style::Normal,
+        url: None,
+    }]
 }
 
 /// 超长消息（pi-web ⚠ Message content is very large）：提示行 + 纯文本

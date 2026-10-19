@@ -1,10 +1,10 @@
 //! syntect 代码高亮集成：语法集OnceLock、双主题、逐段高亮与 thread_local
 //! LRU 缓存（cap 128）。render_code_block 消费。
 
+use super::*;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{Color, ThemeSet};
 use syntect::parsing::SyntaxSet;
-use super::*;
 
 /// Syntax highlighting state (loaded once; ~100ms cold, cached for process life).
 struct Syn {
@@ -45,10 +45,19 @@ const LIGHT_THEME: &str = "InspiredGitHub";
 /// 空选择器 = 全局默认前景 #D4D4D4。
 fn vs_dark_plus() -> syntect::highlighting::Theme {
     use syntect::highlighting::{Color, StyleModifier, ThemeItem};
-    let fg = |rgb24: u32| Color { r: (rgb24 >> 16) as u8, g: (rgb24 >> 8) as u8, b: rgb24 as u8, a: 0xff };
+    let fg = |rgb24: u32| Color {
+        r: (rgb24 >> 16) as u8,
+        g: (rgb24 >> 8) as u8,
+        b: rgb24 as u8,
+        a: 0xff,
+    };
     let item = |selector: &str, rgb24: u32| ThemeItem {
         scope: selector.parse().expect("valid scope selector"),
-        style: StyleModifier { foreground: Some(fg(rgb24)), background: None, font_style: None },
+        style: StyleModifier {
+            foreground: Some(fg(rgb24)),
+            background: None,
+            font_style: None,
+        },
     };
     let table: &[(&str, u32)] = &[
         ("", 0xd4d4d4),
@@ -96,12 +105,17 @@ pub(super) fn highlight_segments(code: &str, lang: &str, dark: bool) -> Vec<(Str
     let theme = if dark {
         &syn.dark
     } else {
-        syn.ts.themes.get(LIGHT_THEME).unwrap_or_else(|| syn.ts.themes.values().next().unwrap())
+        syn.ts
+            .themes
+            .get(LIGHT_THEME)
+            .unwrap_or_else(|| syn.ts.themes.values().next().unwrap())
     };
     let mut hl = HighlightLines::new(syntax, theme);
     let mut out: Vec<(String, [u8; 3])> = Vec::new();
     for line in syntect::util::LinesWithEndings::from(code) {
-        let Ok(ranges) = hl.highlight_line(line, &syn.ps) else { continue };
+        let Ok(ranges) = hl.highlight_line(line, &syn.ps) else {
+            continue;
+        };
         // 每行起一段新 run（行号 gutter 需要按行插入）
         let mut line_open = false;
         for (style, text) in ranges {
@@ -133,6 +147,9 @@ thread_local! {
     > = const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
 }
 const HL_CACHE_CAP: usize = 128;
+/// 字节预算（代码源 32MB）：大代码块场景 128 条只按条数封顶时稳态可到几十
+/// MB；超预算从头驱逐（LRU）。按 key.1（代码字节数）计，语言串占比极小忽略
+const HL_CACHE_BUDGET_BYTES: usize = 32 * 1024 * 1024;
 
 /// [`highlight_segments`] 的 LRU 包装（渲染热路径一律走这里）。
 pub(super) fn cached_highlight_segments(
@@ -145,17 +162,36 @@ pub(super) fn cached_highlight_segments(
         let mut cache = cell.borrow_mut();
         if let Some(pos) = cache.iter().rposition(|(k, _)| *k == key) {
             let entry = cache.remove(pos).expect("pos 来自刚才的迭代");
-            if entry.1 .0.as_str() == code && entry.1 .1.as_str() == lang {
-                let segs = std::rc::Rc::clone(&entry.1 .2);
+            if entry.1.0.as_str() == code && entry.1.1.as_str() == lang {
+                let segs = std::rc::Rc::clone(&entry.1.2);
                 cache.push_back(entry); // 刷新到队尾（LRU）
                 return segs;
             }
         }
         let segs = std::rc::Rc::new(highlight_segments(code, lang, dark));
-        cache.push_back((key, (code.to_string(), lang.to_string(), std::rc::Rc::clone(&segs))));
-        if cache.len() > HL_CACHE_CAP {
-            cache.pop_front();
+        cache.push_back((
+            key,
+            (
+                code.to_string(),
+                lang.to_string(),
+                std::rc::Rc::clone(&segs),
+            ),
+        ));
+        while cache.len() > HL_CACHE_CAP
+            || cache.iter().map(|(k, _)| k.1).sum::<usize>() > HL_CACHE_BUDGET_BYTES
+        {
+            if cache.pop_front().is_none() {
+                break;
+            }
         }
         segs
+    })
+}
+
+/// 探针（automation snapshot）：（条数，代码源字节）
+pub(crate) fn hl_cache_probe() -> (usize, usize) {
+    HL_CACHE.with(|cell| {
+        let cache = cell.borrow();
+        (cache.len(), cache.iter().map(|(k, _)| k.1).sum::<usize>())
     })
 }

@@ -1,6 +1,7 @@
 //! Service layer (pi-web lib/ parity): UI-free helpers owned by name —
 //! workspace memory, git, formatting.
 
+pub(crate) mod asset_evict;
 pub mod at_file;
 pub mod file_icons;
 pub mod file_index;

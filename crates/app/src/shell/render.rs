@@ -49,6 +49,10 @@ impl Render for Chat {
                 *slot = Some(std::time::Instant::now());
             }
         }
+        // gpui 解码位图回收：PF 侧图片缓存（消息图/mermaid/math/本地图）
+        // 上一帧驱逐的条目在这里统一从 gpui loading_assets 摘除——该表
+        // 只进不出，不主动摘的话解码位图常驻到进程退出（见 asset_evict）
+        crate::services::asset_evict::drain(cx);
         // 010-启动：揭幕前整幅启动页（黑底、居中 logo、非最大化）；揭幕帧
         // 再按 §4 默认最大化（0.2.2 建窗即 Maximized 不可靠，显式 zoom 是
         // 项目已验证路径——原建窗回调里的 zoom 后移到了这里）。
@@ -63,17 +67,17 @@ impl Render for Chat {
         // keep terminal focus alive across frames (render focuses chat input
         // otherwise, which would steal it back every redraw)
         let dialog_input = match &self.dlg.dialog {
-            Some(Dialog::ProviderPicker { input, .. }) | Some(Dialog::SessionSearch { input })
+            Some(Dialog::ProviderPicker { input, .. })
+            | Some(Dialog::SessionSearch { input })
             | Some(Dialog::ProjectPicker { input, .. })
-            | Some(Dialog::FileSearch { input, .. }) => {
-                Some(input.clone())
-            }
+            | Some(Dialog::FileSearch { input, .. }) => Some(input.clone()),
             _ => None,
         }
         .or_else(|| {
             // 042：模型菜单的过滤输入同享焦点保持（每帧不被 composer 抢回）；
             // 过滤框未渲染（<10 条）时不抢——菜单退化为纯鼠标操作
-            self.dlg.model_picker
+            self.dlg
+                .model_picker
                 .as_ref()
                 .filter(|_| self.picker_filter_shown(cx))
                 .map(|p| p.input.clone())
@@ -81,7 +85,8 @@ impl Render for Chat {
         // 详情卡的原地改名输入框也要持有焦点——否则每帧的焦点回收
         // 会把它抢回主输入框，键盘输入进不去
         let card_rename_focus = self
-            .dlg.hover_card
+            .dlg
+            .hover_card
             .as_ref()
             .and_then(|c| c.rename_input.clone());
         let rename_focus = self.dlg.rename_input.clone().or(card_rename_focus);
@@ -93,7 +98,12 @@ impl Render for Chat {
         } else if self.aux.ask.as_ref().is_some_and(|a| a.open) {
             // 问卷卡焦点保持：卡片持 dialog_focus（Tab/Enter/数字键），
             // 用户点进自定义答案输入框后不被抢回；两者都不在时回收给卡片
-            let in_input = self.aux.ask_input.read(cx).focus_handle_in(cx).is_focused(window);
+            let in_input = self
+                .aux
+                .ask_input
+                .read(cx)
+                .focus_handle_in(cx)
+                .is_focused(window);
             if !in_input && !self.dlg.dialog_focus.is_focused(window) {
                 window.focus(&self.dlg.dialog_focus);
             }
@@ -140,8 +150,7 @@ impl Render for Chat {
         } else if let Some(panel) = self.dlg.settings.as_ref() {
             // 焦点在面板任意输入框内就不抢（白名单在 v60/v70 两度漏新输入框，
             // 现由 SettingsPanel::focus_within 结构化自检）
-            if !panel.read(cx).focus_within(window, cx)
-                && !self.dlg.dialog_focus.is_focused(window)
+            if !panel.read(cx).focus_within(window, cx) && !self.dlg.dialog_focus.is_focused(window)
             {
                 window.focus(&self.dlg.dialog_focus);
             }
@@ -167,7 +176,12 @@ impl Render for Chat {
             // 别处造成的真夺焦（对话框/终端/编辑器/设置）走前面各分支，本
             // 分支看不到，blur 收场照常触发）。020-1：文件树并入整合面板
             // 常驻显示，只要面板不是 git 视图就按在树前处理。
-            match self.dlg.tree_edit.as_ref().filter(|_| self.layout.dock_panel != DockPanel::Git) {
+            match self
+                .dlg
+                .tree_edit
+                .as_ref()
+                .filter(|_| self.layout.dock_panel != DockPanel::Git)
+            {
                 Some(edit) if edit.input.read(cx).has_inner() => {
                     let handle = edit.input.read(cx).focus_handle_in(cx);
                     if !handle.is_focused(window) {
@@ -219,26 +233,78 @@ impl Render for Chat {
             let weak_menu = weak.clone();
             let rows: Vec<(String, String, bool)> = match menu {
                 PillMenu::Thinking => [
-                    ("auto", tr("thinking.use_pi_default"), thinking_override.is_none()),
-                    ("off", tr("thinking.off"), thinking_override.as_deref() == Some("off")),
-                    ("minimal", tr("thinking.minimal_reasoning"), thinking_override.as_deref() == Some("minimal")),
-                    ("low", tr("thinking.low_reasoning"), thinking_override.as_deref() == Some("low")),
-                    ("medium", tr("thinking.medium_reasoning"), thinking_override.as_deref() == Some("medium")),
-                    ("high", tr("thinking.high_reasoning"), thinking_override.as_deref() == Some("high")),
-                    ("xhigh", tr("thinking.extra_high_reasoning"), thinking_override.as_deref() == Some("xhigh")),
-                    ("max", tr("thinking.max_reasoning"), thinking_override.as_deref() == Some("max")),
+                    (
+                        "auto",
+                        tr("thinking.use_pi_default"),
+                        thinking_override.is_none(),
+                    ),
+                    (
+                        "off",
+                        tr("thinking.off"),
+                        thinking_override.as_deref() == Some("off"),
+                    ),
+                    (
+                        "minimal",
+                        tr("thinking.minimal_reasoning"),
+                        thinking_override.as_deref() == Some("minimal"),
+                    ),
+                    (
+                        "low",
+                        tr("thinking.low_reasoning"),
+                        thinking_override.as_deref() == Some("low"),
+                    ),
+                    (
+                        "medium",
+                        tr("thinking.medium_reasoning"),
+                        thinking_override.as_deref() == Some("medium"),
+                    ),
+                    (
+                        "high",
+                        tr("thinking.high_reasoning"),
+                        thinking_override.as_deref() == Some("high"),
+                    ),
+                    (
+                        "xhigh",
+                        tr("thinking.extra_high_reasoning"),
+                        thinking_override.as_deref() == Some("xhigh"),
+                    ),
+                    (
+                        "max",
+                        tr("thinking.max_reasoning"),
+                        thinking_override.as_deref() == Some("max"),
+                    ),
                 ]
                 .iter()
                 .map(|(k, d, on)| (k.to_string(), d.to_string(), *on))
                 .collect(),
                 PillMenu::Tools => [
-                    ("chat-only", tr("thinking.chat_only"), preset_key == "chat-only"),
-                    ("read-only", tr("tools.preset_readonly_count"), preset_key == "read-only"),
-                    ("default", tr("tools.preset_full_count"), preset_key == "default"),
+                    (
+                        "chat-only",
+                        tr("thinking.chat_only"),
+                        preset_key == "chat-only",
+                    ),
+                    (
+                        "read-only",
+                        tr("tools.preset_readonly_count"),
+                        preset_key == "read-only",
+                    ),
+                    (
+                        "default",
+                        tr("tools.preset_full_count"),
+                        preset_key == "default",
+                    ),
                     // full：内置 7 件 + 精确集（-ne + 个人扩展/内置扩展，包零注入）
-                    ("full", tr("extensions.builtin_all_desc"), preset_key == "full"),
+                    (
+                        "full",
+                        tr("extensions.builtin_all_desc"),
+                        preset_key == "full",
+                    ),
                     // full+ = full + 本会话选中扩展（默认档；清单按会话保存）
-                    ("custom", tr("tools.preset_full_desc"), preset_key == "custom"),
+                    (
+                        "custom",
+                        tr("tools.preset_full_desc"),
+                        preset_key == "custom",
+                    ),
                 ]
                 .iter()
                 .map(|(k, d, on)| (k.to_string(), d.to_string(), *on))
@@ -322,51 +388,49 @@ impl Render for Chat {
                     });
                 })
             }
-                .child(
-                    {
-                        // 统一定位（用户定稿）：弹窗与按钮水平居中、底缘距
-                        // 按钮顶缘 5px（不遮按钮）；左右钳在视口内。
-                        // 例外：tools 菜单**右对齐**——它锚在输入栏最右侧的
-                        // 胶囊上，居中会被视口右缘钳成「贴边溢」怪位，改为
-                        // 菜单右缘贴按钮右缘（标准下拉式）。
-                        let vp = window.viewport_size();
-                        let gap = px(5.);
-                        let menu_w = px(320.);
-                        let right_align = self.dlg.pill_menu == Some(PillMenu::Tools);
-                        let (anchor_bottom, anchor_left) = match self.dlg.pill_anchor {
-                            Some(a) => {
-                                let bottom = (vp.height - a.top + gap).max(px(8.));
-                                let mut left = if right_align {
-                                    a.right_x - menu_w
-                                } else {
-                                    a.center_x - menu_w / 2.
-                                };
-                                if left + menu_w > vp.width - px(8.) {
-                                    left = vp.width - menu_w - px(8.);
-                                }
-                                (bottom, left.max(px(8.)))
-                            }
-                            None => (px(64.), vp.width - menu_w - px(24.)),
+            .child({
+                // 统一定位（用户定稿）：弹窗与按钮水平居中、底缘距
+                // 按钮顶缘 5px（不遮按钮）；左右钳在视口内。
+                // 例外：tools 菜单**右对齐**——它锚在输入栏最右侧的
+                // 胶囊上，居中会被视口右缘钳成「贴边溢」怪位，改为
+                // 菜单右缘贴按钮右缘（标准下拉式）。
+                let vp = window.viewport_size();
+                let gap = px(5.);
+                let menu_w = px(320.);
+                let right_align = self.dlg.pill_menu == Some(PillMenu::Tools);
+                let (anchor_bottom, anchor_left) = match self.dlg.pill_anchor {
+                    Some(a) => {
+                        let bottom = (vp.height - a.top + gap).max(px(8.));
+                        let mut left = if right_align {
+                            a.right_x - menu_w
+                        } else {
+                            a.center_x - menu_w / 2.
                         };
-                        div()
-                            .absolute()
-                            .bottom(anchor_bottom)
-                            .left(anchor_left)
-                            .min_w(menu_w)
-                            .rounded(px(8.))
-                            .border_1()
-                            .border_color(rgb(t.border))
-                            .bg(rgb(t.bg))
-                            .shadow_lg()
-                            .overflow_hidden()
-                            .flex()
-                            .flex_col()
-                            // 浮层规则 4：点卡片本身不关（菜单项自己关）
-                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                            .children(items)
+                        if left + menu_w > vp.width - px(8.) {
+                            left = vp.width - menu_w - px(8.);
+                        }
+                        (bottom, left.max(px(8.)))
                     }
-                )
-                .into_any_element()
+                    None => (px(64.), vp.width - menu_w - px(24.)),
+                };
+                div()
+                    .absolute()
+                    .bottom(anchor_bottom)
+                    .left(anchor_left)
+                    .min_w(menu_w)
+                    .rounded(px(8.))
+                    .border_1()
+                    .border_color(rgb(t.border))
+                    .bg(rgb(t.bg))
+                    .shadow_lg()
+                    .overflow_hidden()
+                    .flex()
+                    .flex_col()
+                    // 浮层规则 4：点卡片本身不关（菜单项自己关）
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .children(items)
+            })
+            .into_any_element()
         });
 
         // ---- v54 body: panel-col (topbar-l + dock + statusbar) | content-col
@@ -385,7 +449,8 @@ impl Render for Chat {
             .on_mouse_move(move |ev: &gpui::MouseMoveEvent, _, cx| {
                 let _ = weak_for_body.update(cx, |c, cx| {
                     if let Some((start_x, start_w)) = c.layout.slp_drag {
-                        c.layout.slp_w = (start_w + f32::from(ev.position.x) - start_x).clamp(300., 500.);
+                        c.layout.slp_w =
+                            (start_w + f32::from(ev.position.x) - start_x).clamp(300., 500.);
                         cx.notify();
                     }
                     // 020-1 子面板分隔线拖拽：按 dock 实测 bounds 把窗口 y
@@ -408,28 +473,25 @@ impl Render for Chat {
                     }
                 });
             })
-            .on_mouse_up(
-                MouseButton::Left,
-                {
-                    let weak = weak.clone();
-                    move |_, _, cx| {
-                        let _ = weak.update(cx, |c, cx| {
-                            let mut changed = false;
-                            if c.layout.slp_drag.take().is_some() {
-                                changed = true;
-                            }
-                            if c.layout.split_drag {
-                                c.layout.split_drag = false;
-                                changed = true;
-                            }
-                            if changed {
-                                c.persist_ui();
-                                cx.notify();
-                            }
-                        });
-                    }
-                },
-            )
+            .on_mouse_up(MouseButton::Left, {
+                let weak = weak.clone();
+                move |_, _, cx| {
+                    let _ = weak.update(cx, |c, cx| {
+                        let mut changed = false;
+                        if c.layout.slp_drag.take().is_some() {
+                            changed = true;
+                        }
+                        if c.layout.split_drag {
+                            c.layout.split_drag = false;
+                            changed = true;
+                        }
+                        if changed {
+                            c.persist_ui();
+                            cx.notify();
+                        }
+                    });
+                }
+            })
             // tab 拖拽全局兑底 drop：gpui 只在 drop 命中注册目标时才清
             // active_drag，落到无目标处（会话 tab/topbar 空白/其他区域）
             // 会残留——ghost 跟随鼠标不消失，且新拖拽被 has_active_drag
@@ -455,8 +517,9 @@ impl Render for Chat {
                             cx.notify();
                         }
                     }))
-                    .on_mouse_down(MouseButton::Left, cx.listener(
-                        |this, ev: &gpui::MouseDownEvent, _w, cx| {
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, ev: &gpui::MouseDownEvent, _w, cx| {
                             if ev.click_count == 2 {
                                 this.layout.slp_w = 300.;
                                 this.persist_ui();
@@ -465,8 +528,8 @@ impl Render for Chat {
                                 this.layout.slp_drag =
                                     Some((f32::from(ev.position.x), this.layout.slp_w));
                             }
-                        },
-                    ))
+                        }),
+                    ),
             );
             body = body.child(
                 div()
@@ -507,8 +570,9 @@ impl Render for Chat {
                 .when(
                     !panes_hidden && !slp_dragging && !self.layout.slp_hover,
                     |d| {
-                        d.border_l_1()
-                            .border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x99)))
+                        d.border_l_1().border_color(gpui::rgba(
+                            crate::appearance::theme::border_alpha(t, 0x99),
+                        ))
                     },
                 )
                 // hover/拖拽：2px 深色线替换 1px 常驻线（画在左缘 = 交界，
@@ -642,10 +706,7 @@ impl Render for Chat {
             // 守卫在 tree_f2_rename 内
             .on_key_down(cx.listener(|this, ev: &gpui::KeyDownEvent, _window, cx| {
                 let k = &ev.keystroke;
-                if k.key == "f2"
-                    && !k.modifiers.modified()
-                    && this.tree_f2_rename(cx)
-                {
+                if k.key == "f2" && !k.modifiers.modified() && this.tree_f2_rename(cx) {
                     cx.stop_propagation();
                 }
             }))
@@ -655,7 +716,12 @@ impl Render for Chat {
 
         if let Some(panel) = self.dlg.settings.clone() {
             let data = settings::SettingsFormData::snapshot(panel.read(cx), cx);
-            root = root.child(settings::render_settings(self, &weak_for_dialog, &data, window));
+            root = root.child(settings::render_settings(
+                self,
+                &weak_for_dialog,
+                &data,
+                window,
+            ));
         }
         // 弹窗必须挂在 settings **之后**：后渲染者在上——原顺序（dialogs →
         // settings）让设置面板盖住从设置页打开的 ProviderPicker，遮挡层吃掉
@@ -709,26 +775,24 @@ impl Render for Chat {
             };
             root = root.child(
                 slot.child(
+                    div().relative().child(
                         div()
-                            .relative()
-                            .child(
-                                div()
-                                    .id("status-toast")
-                                    .max_w(px(600.))
-                                    .max_h(px(200.))
-                                    .overflow_y_scroll()
-                                    .px(px(20.))
-                                    .py(px(7.))
-                                    .rounded(px(8.))
-                                    .border_2()
-                                    .border_color(rgb(t.border))
-                                    .bg(rgb(t.bg_panel))
-                                    .text_size(crate::appearance::ui_size(12.))
-                                    .text_color(rgb(t.text))
-                                    // 非 flex 块级容器：文本按容器宽度自动换行
-                                    //（flex 会让文本 item 按最大内容宽撑开不换行）
-                                    .child(text),
-                            ),
+                            .id("status-toast")
+                            .max_w(px(600.))
+                            .max_h(px(200.))
+                            .overflow_y_scroll()
+                            .px(px(20.))
+                            .py(px(7.))
+                            .rounded(px(8.))
+                            .border_2()
+                            .border_color(rgb(t.border))
+                            .bg(rgb(t.bg_panel))
+                            .text_size(crate::appearance::ui_size(12.))
+                            .text_color(rgb(t.text))
+                            // 非 flex 块级容器：文本按容器宽度自动换行
+                            //（flex 会让文本 item 按最大内容宽撑开不换行）
+                            .child(text),
+                    ),
                 ),
             );
         }
@@ -753,26 +817,29 @@ impl Render for Chat {
             );
             root = root.child(
                 edge.apply(div().absolute()).child(
+                    div().relative().child(
                         div()
-                            .relative()
+                            .id("ext-notice")
+                            .max_w(px(600.))
+                            .max_h(px(200.))
+                            .overflow_y_scroll()
+                            .px(px(20.))
+                            .py(px(8.))
+                            .rounded(px(8.))
+                            .border_1()
+                            .border_color(rgb(color))
+                            .bg(rgb(t.bg_panel))
+                            .flex()
+                            .items_start()
+                            .gap_2()
+                            .child(div().size(px(7.)).rounded_full().mt(px(4.)).bg(rgb(color)))
                             .child(
                                 div()
-                                    .id("ext-notice")
-                                    .max_w(px(600.))
-                                    .max_h(px(200.))
-                                    .overflow_y_scroll()
-                                    .px(px(20.))
-                                    .py(px(8.))
-                                    .rounded(px(8.))
-                                    .border_1()
-                                    .border_color(rgb(color))
-                                    .bg(rgb(t.bg_panel))
-                                    .flex()
-                                    .items_start()
-                                    .gap_2()
-                                    .child(div().size(px(7.)).rounded_full().mt(px(4.)).bg(rgb(color)))
-                                    .child(div().text_size(crate::appearance::ui_size(12.)).text_color(rgb(t.text)).child(text)),
+                                    .text_size(crate::appearance::ui_size(12.))
+                                    .text_color(rgb(t.text))
+                                    .child(text),
                             ),
+                    ),
                 ),
             );
         }
@@ -785,4 +852,3 @@ impl Render for Chat {
         root
     }
 }
-
