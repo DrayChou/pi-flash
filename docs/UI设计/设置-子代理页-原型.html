@@ -143,6 +143,18 @@
   .ed-dirty { display: flex; align-items: center; gap: 6px; color: var(--warn); font-size: 11px; }
   .ed-dirty i { width: 7px; height: 7px; border-radius: 50%; background: var(--warn); display: inline-block; }
   .ed-hint { font-size: 11px; color: var(--text-faint); }
+  .dd { position: relative; width: 250px; }
+  .dd-menu { display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 20;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+    box-shadow: 0 8px 24px rgba(32,46,43,.16); }
+  .dd.open .dd-menu { display: block; }
+  .dd-it { display: flex; align-items: center; gap: 8px; padding: 8px 12px; font-size: 12.5px; cursor: default; }
+  .dd-it:hover { background: var(--bg-hover); }
+  .dd-it::before { content: ""; width: 12px; flex: none; }
+  .dd-it.on::before { content: "✓"; color: var(--accent); font-weight: 700; }
+  .dd-it .dd-n { font-family: Consolas, monospace; color: var(--text); }
+  .dd-it.on .dd-n { font-weight: 700; }
+  .dd-it .dd-d { margin-left: auto; font-size: 11px; color: var(--text-faint); }
 
   .err-bar { flex: none; display: flex; align-items: flex-start; gap: 8px; margin-top: 14px;
     border: 1px solid rgba(194,84,96,.45); background: rgba(194,84,96,.08); border-radius: 8px;
@@ -242,9 +254,15 @@
                   <div class="frm-row">
                     <label>工具权限</label>
                     <div class="frm-ctl">
-                      <div style="display:flex;align-items:center;gap:10px">
-                        <button class="sel-btn" style="width:250px">继承委派者<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button>
-                                              </div>
+                      <div class="dd" id="dd-tools">
+                        <button class="sel-btn dd-btn" type="button" style="width:250px;justify-content:space-between"><span id="dd-tools-val">继承委派者</span><svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button>
+                        <div class="dd-menu">
+                          <div class="dd-it on" data-v="继承委派者"><span class="dd-n">继承委派者</span></div>
+                          <div class="dd-it" data-v="read-only"><span class="dd-n">read-only</span><span class="dd-d">4 个只读内置工具</span></div>
+                          <div class="dd-it" data-v="default"><span class="dd-n">default</span><span class="dd-d">4 个内置工具</span></div>
+                          <div class="dd-it" data-v="full"><span class="dd-n">full</span><span class="dd-d">全部内置工具，无扩展</span></div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -289,7 +307,7 @@
                   <div class="frm-row">
                     <label>工具权限</label>
                     <div class="frm-ctl">
-                      <button class="sel-btn" style="width:100%">read-only · 4 个只读内置工具<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button>
+                      <button class="sel-btn" style="width:100%">read-only<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button>
                     </div>
                   </div>
                 </div>
@@ -315,6 +333,20 @@
       if (d) d.classList.add('on');
     });
   });
+</script>
+<script>
+  const dd = document.getElementById('dd-tools');
+  dd.querySelector('.dd-btn').addEventListener('click', e => {
+    e.stopPropagation();
+    dd.classList.toggle('open');
+  });
+  dd.querySelectorAll('.dd-it').forEach(it => it.addEventListener('click', () => {
+    dd.querySelectorAll('.dd-it').forEach(x => x.classList.remove('on'));
+    it.classList.add('on');
+    document.getElementById('dd-tools-val').textContent = it.dataset.v;
+    dd.classList.remove('open');
+  }));
+  document.addEventListener('click', () => dd.classList.remove('open'));
 </script>
 </body>
 </html>
