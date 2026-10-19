@@ -116,4 +116,12 @@ describe("delegation description", () => {
 		});
 		assert.match(text, /- broken/);
 	});
+
+	it("carries the when-to-delegate policy", () => {
+		const text = delegationDescription({ inheritsParentContext: false });
+		// 委派政策是模型主动委派的实际驱动（第五批实测：只有机械说明时
+		// 即使系统提示词有鼓励 bullet 也不派）——丢了就是回归
+		assert.match(text, /When to delegate/);
+		assert.match(text, /do not repeat the delegated searches/);
+	});
 });

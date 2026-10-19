@@ -102,6 +102,9 @@ export function delegationDescription(
 		context,
 		"The child's final answer is returned as this tool's result.",
 		`${profiles} Delegate independent work in parallel by issuing several calls in one turn.`,
+		// 委派政策（对齐 ZCode task 工具描述的力度——实测只有机械说明时
+		// 模型从不主动委派，哪怕系统提示词里有鼓励 bullet；见 buglist 第五批）
+		"When to delegate: the task matches one of the profiles above, or answering means sweeping many files or whole directories — research, comparing implementations, locating where something is done, multi-step verification — and you only need the conclusions, not the file dumps. Delegate it and continue the main task; do not repeat the delegated searches yourself, wait for the results. For a single known file, symbol, or value, act directly instead.",
 	].join(" ");
 }
 

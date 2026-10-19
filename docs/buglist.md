@@ -695,3 +695,29 @@ levels 0, do not call"），PF 未做——超深委派有 DEPTH_LIMIT 错误反
 - 面板打开：消息区**不被下推**（浮层盖在消息上）、composer/模型下拉可正常点
 - ✕/再点按钮关面板；行点击开子会话
 
+## 本轮追加（2026-10-19 第五批）——主动委派失败的根因与修复（已无头实测验证）
+
+第四批注入后用户实测仍不主动派。取证：翻用户实测会话的 transcript——
+**两条 guideline 都已进系统提示词 rules 节**（管线通），模型看到的委派
+信息只有：常驻工具清单一行机械说明（"- agent: Delegate a task…"）+
+两条淹没在 12 条规则里的弱 bullet + 工具描述（纯机制无政策）。对照
+ZCode 同模型会自动派：差异在 **ZCode 的 task 工具描述本身是政策文档**
+（when to use / keep the conclusion not the file dumps / don't also run
+it yourself）。
+
+### 修复（第五批）
+
+- tool.ts 委派描述追加 "When to delegate" 政策段：任务匹配 profile、
+  或需要横扫大量文件/目录（调研、对比实现、定位实现、多步验证）且只要
+  结论不要文件转储 → 委派并继续主线、**不要自己重跑委派过的检索**；
+  单一已知文件/符号直接动手
+- promptSnippet（常驻工具清单那行的文案）从机械说明改为带政策：
+  "Delegate self-contained research or multi-step tasks … while it runs"
+- index.ts 第四批缩进打歪的注册段顺手扶正
+
+### 无头实测（vendor pi CLI -p，真模型真调用）
+
+提示「对比一下 pi-flash 的 subagent 实现和 pi-web 的」→ 模型**同帧并行
+派出两条 agent 调用**，均点名 explorer（"pi-flash subagent 调研" /
+"pi-web subagent 调研"），prompt 为结构化调研提纲——即 ZCode 行为。
+已过：扩展 91 测试（新增政策回归断言）。
