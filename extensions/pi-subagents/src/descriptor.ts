@@ -33,8 +33,8 @@ export interface SubagentDescriptor {
 		tools?: string[];
 	};
 	phase: DescriptorPhase;
-	/** Set once the activation settled. */
-	stopReason?: "completed" | "aborted" | "error";
+	/** Set once the activation settled. `max_turns` = the soft limit was blown past. */
+	stopReason?: "completed" | "aborted" | "error" | "max_turns";
 	errorCode?: string;
 	startedAt: string;
 	updatedAt: string;

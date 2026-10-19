@@ -42,26 +42,77 @@ describe("frontmatter", () => {
 });
 
 describe("profileFromDocument", () => {
-	const doc = ["---", "description: lab", "tools:", "  - read", "isolation: worktree", "---", "body"].join("\n");
+	const doc = ["---", "description: lab", "tools: read-only", "isolation: worktree", "---", "body"].join("\n");
 
 	it("builds a profile", () => {
 		const profile = profileFromDocument("explorer", doc, "mem");
 		assert.equal(profile.id, "explorer");
-		assert.deepEqual(profile.tools, ["read"]);
+		assert.equal(profile.tools, "read-only");
 		assert.equal(profile.isolation, "worktree");
 		assert.equal(profile.appendSystemPrompt, "body");
 	});
 
-	it("rejects a non-list tools field", () => {
+	it("rejects a tools value outside the tier enum", () => {
 		const bad = ["---", "tools: read", "---", "x"].join("\n");
 		const error = captureSync(() => profileFromDocument("p", bad, "mem"));
-		assert.match((error as Error).message, /tools must be a list/);
+		assert.match((error as Error).message, /tools must be one of/);
+	});
+
+	it("rejects a tools list — tiers replaced the allowlist", () => {
+		const bad = ["---", "tools:", "  - read", "  - grep", "---", "x"].join("\n");
+		const error = captureSync(() => profileFromDocument("p", bad, "mem"));
+		assert.match((error as Error).message, /tools must be one of/);
 	});
 
 	it("rejects an unsupported isolation", () => {
 		const bad = ["---", "isolation: docker", "---", "x"].join("\n");
 		const error = captureSync(() => profileFromDocument("p", bad, "mem"));
 		assert.match((error as Error).message, /unsupported isolation/);
+	});
+
+	it("parses every v1 field and ignores unknown ones (M4.6)", () => {
+		const doc = [
+			"---",
+			"description: reviewer",
+			"model: deepseek/deepseek-chat",
+			"tools: read-only",
+			"maxTurns: 42",
+			"injectAgentsMd: false",
+			"futureFieldFromVNext: whatever",
+			"---",
+			"append body",
+		].join("\n");
+		const profile = profileFromDocument("reviewer", doc, "mem");
+		assert.equal(profile.description, "reviewer");
+		assert.equal(profile.model, "deepseek/deepseek-chat");
+		assert.equal(profile.tools, "read-only");
+		assert.equal(profile.maxTurns, 42);
+		assert.equal(profile.injectAgentsMd, false);
+		assert.equal(profile.appendSystemPrompt, "append body");
+	});
+
+	it("reads a systemPrompt block scalar as the replacement persona", () => {
+		const doc = [
+			"---",
+			"description: strict reviewer",
+			"systemPrompt: |",
+			"  You are a strict reviewer.",
+			"  Never edit files.",
+			"---",
+			"extra notes",
+		].join("\n");
+		const profile = profileFromDocument("strict", doc, "mem");
+		assert.equal(profile.systemPrompt, "You are a strict reviewer.\nNever edit files.");
+		assert.equal(profile.appendSystemPrompt, "extra notes");
+	});
+
+	it("accepts maxTurns: 0 as the unlimited tier and rejects negatives", () => {
+		const unlimited = profileFromDocument("u", ["---", "maxTurns: 0", "---", "x"].join("\n"), "mem");
+		assert.equal(unlimited.maxTurns, 0);
+		const negative = captureSync(() =>
+			profileFromDocument("n", ["---", "maxTurns: -1", "---", "x"].join("\n"), "mem"),
+		);
+		assert.match((negative as Error).message, /maxTurns must be a non-negative integer/);
 	});
 });
 

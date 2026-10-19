@@ -58,6 +58,13 @@ export const DELEGATION_PARAMETERS = {
 		model: { type: "string", description: "Exact model override, `provider/model`." },
 		cwd: { type: "string", description: "Working directory for the child; defaults to the caller's." },
 		label: { type: "string", description: "Short label shown in the transcript." },
+		maxloop: {
+			type: "integer",
+			minimum: 0,
+			description:
+				"Estimated turns this task needs; the child wraps up at the budget and is cut off if it ignores the wrap-up. " +
+				"0 means no budget; omitted defaults to 100.",
+		},
 		background: {
 			type: "boolean",
 			description: "Return immediately with a child id and report the answer when it completes.",
@@ -92,6 +99,7 @@ export async function runDelegation(
 		model?: string;
 		cwd?: string;
 		label?: string;
+		maxloop?: number;
 		background?: boolean;
 	},
 	context: DelegationContext,
@@ -101,6 +109,10 @@ export async function runDelegation(
 		if (!options.allowedProfiles.includes(input.profile)) {
 			return failure(SubagentErrorCode.PROFILE_INVALID, `profile not allowed: ${input.profile}`);
 		}
+	}
+	// `0` is the "unlimited" tier (no budget), so only a negative value is rejected.
+	if (input.maxloop !== undefined && (!Number.isSafeInteger(input.maxloop) || input.maxloop < 0)) {
+		return failure(SubagentErrorCode.START_REJECTED, `maxloop must be a non-negative integer, got ${input.maxloop}`);
 	}
 	const delivery: Delivery = input.background ? "parent" : "caller";
 	try {
@@ -114,6 +126,7 @@ export async function runDelegation(
 			cwd: input.cwd ?? context.cwd,
 			label: input.label,
 			delivery,
+			maxTurns: input.maxloop,
 			signal: context.signal,
 		});
 		if (delivery === "parent") {

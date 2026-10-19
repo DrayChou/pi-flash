@@ -283,7 +283,9 @@ export class SubagentManager {
 							? "interrupted"
 							: "failed",
 				stopReason: result.stopReason,
-				errorCode: result.errorCode,
+				// A blown turn budget is a distinct terminal state, not a generic
+				// failure: the card shows "轮次用尽" rather than a bare error code.
+				errorCode: result.stopReason === "max_turns" ? "MAX_TURNS" : result.errorCode,
 				updatedAt: this.#now().toISOString(),
 			};
 			this.#emit(record);

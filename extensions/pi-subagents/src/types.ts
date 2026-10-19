@@ -46,12 +46,17 @@ export interface SubagentRequest {
 	model?: string;
 	/** Short human label shown in the parent transcript. */
 	label?: string;
+	/**
+	 * Per-call turn budget (the delegator's `maxloop` estimate). Wins over the
+	 * profile's `maxTurns`; when neither is set the backend applies its default.
+	 */
+	maxTurns?: number;
 	delivery: Delivery;
 	/** Cancels work that has not been published yet. */
 	signal?: AbortSignal;
 }
 
-export type StopReason = "completed" | "aborted" | "error";
+export type StopReason = "completed" | "aborted" | "error" | "max_turns";
 
 export interface SubagentUsage {
 	input: number;

@@ -15,12 +15,12 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import type { ChildSession, SessionFactory, SessionFactoryOptions } from "./backends/local.ts";
+import type { ChildSession, ResolvedComposition, SessionFactory, SessionFactoryOptions } from "./backends/local.ts";
 import { LocalProvider } from "./backends/local.ts";
 import { DESCRIPTOR_TYPE, parseDescriptor, reconcileOnStart, type SubagentDescriptor } from "./descriptor.ts";
 import { SubagentError, SubagentErrorCode } from "./errors.ts";
 import { SubagentManager } from "./manager.ts";
-import { defaultProfilePaths, loadProfile } from "./profile.ts";
+import { TOOL_TIER_WHITELISTS, defaultProfilePaths, loadProfile } from "./profile.ts";
 import { DELEGATION_PARAMETERS, delegationDescription, runDelegation } from "./tool.ts";
 
 const DEFAULT_CAPACITY = 8;
@@ -70,6 +70,14 @@ function createSessionFactory(ctx: ExtensionContext, parentSessionFile: string |
 		const loader = new sdk.DefaultResourceLoader({
 			cwd: options.cwd,
 			agentDir: sdk.getAgentDir(),
+			// Persona from the profile. `systemPrompt` fully replaces pi's default; the
+			// body (`appendSystemPrompt`) adds to it. Both were previously parsed but
+			// never reaching the loader — M4.3 fixes that.
+			...(options.systemPrompt ? { systemPrompt: options.systemPrompt } : {}),
+			...(options.appendSystemPrompt ? { appendSystemPrompt: [options.appendSystemPrompt] } : {}),
+			// `injectAgentsMd: false` suppresses project context files (AGENTS.md) —
+			// dsh's agent-instructions loader has no off switch, we do (044 §3).
+			...(options.injectAgentsMd === false ? { noContextFiles: true } : {}),
 			extensionFactories: [
 				{
 					name: "subagent-child-marker",
@@ -125,6 +133,10 @@ function createSessionFactory(ctx: ExtensionContext, parentSessionFile: string |
 				return undefined;
 			},
 			abort: () => session.abort(),
+			// Turn-limit plumbing (M4.1): the backend steers a wrap-up at the budget
+			// and aborts when the child ignores it. Both go through the real session.
+			steer: (text: string) => session.steer(text),
+			subscribe: (listener: (event: unknown) => void) => session.subscribe(listener as never),
 			dispose: () => session.dispose(),
 			sessionFile: sessionFile ?? parentFile,
 		};
@@ -160,6 +172,8 @@ interface AgentSessionLike {
 	prompt(text: string): Promise<void>;
 	getLastAssistantText(): string | undefined;
 	abort(): Promise<void>;
+	steer(text: string): Promise<"queued" | "handled">;
+	subscribe(listener: (event: unknown) => void): () => void;
 	dispose(): void;
 	sessionFile?: string;
 }
@@ -228,7 +242,7 @@ export default function piSubagents(pi: ExtensionAPI): void {
 			name: "spawn",
 			factory: makeFactory(ctx),
 			inheritsParentContext: false,
-			resolvePrompt: (request) => resolveProfile(ctx, request.profile, request.model),
+			resolveComposition: (request) => resolveComposition(ctx, request.profile, request.model),
 		});
 
 	const forkProvider = (ctx: ExtensionContext) =>
@@ -236,7 +250,7 @@ export default function piSubagents(pi: ExtensionAPI): void {
 			name: "fork",
 			factory: makeFactory(ctx),
 			inheritsParentContext: true,
-			resolvePrompt: (request) => resolveProfile(ctx, request.profile, request.model),
+			resolveComposition: (request) => resolveComposition(ctx, request.profile, request.model),
 		});
 
 	pi.registerTool({
@@ -288,6 +302,7 @@ export default function piSubagents(pi: ExtensionAPI): void {
 					model: typeof params.model === "string" ? params.model : undefined,
 					cwd: typeof params.cwd === "string" ? params.cwd : undefined,
 					label: typeof params.label === "string" ? params.label : undefined,
+					maxloop: typeof params.maxloop === "number" ? params.maxloop : undefined,
 					background: params.background === true,
 				},
 				{
@@ -470,16 +485,28 @@ function readDescriptors(ctx: ExtensionContext): SubagentDescriptor[] {
 	return out;
 }
 
-async function resolveProfile(
+/**
+ * Resolve the profile's contribution to one child's setup.
+ *
+ * The `tools` tier becomes an allowlist here (M4.5): `inherit` stays `undefined`
+ * so the child keeps the delegator's own assembly, while the three concrete
+ * tiers expand to whitelists. `model` passed by the delegator wins over the
+ * profile's.
+ */
+async function resolveComposition(
 	ctx: ExtensionContext,
 	profileId: string | undefined,
 	model: string | undefined,
-): Promise<{ appendSystemPrompt?: string; tools?: string[]; model?: string }> {
+): Promise<ResolvedComposition> {
 	if (!profileId) return { model };
 	const profile = await loadProfile(profileId, defaultProfilePaths(ctx.cwd));
+	const tools = profile.tools && profile.tools !== "inherit" ? [...TOOL_TIER_WHITELISTS[profile.tools]] : undefined;
 	return {
+		systemPrompt: profile.systemPrompt,
 		appendSystemPrompt: profile.appendSystemPrompt,
-		tools: profile.tools,
+		tools,
 		model: model ?? profile.model,
+		injectAgentsMd: profile.injectAgentsMd,
+		maxTurns: profile.maxTurns,
 	};
 }
