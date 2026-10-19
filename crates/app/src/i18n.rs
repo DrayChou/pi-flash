@@ -559,6 +559,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("shortcuts.group_terminal", "终端", "終端", "Terminal"),
     ("shortcuts.md_scroll", "滚动预览", "滾動預覽", "Scroll the preview"),
     ("shortcuts.md_scroll_hint", "↑/↓ 三行，PgUp/PgDn 翻页，Home/End 首尾（预览持焦时生效）", "↑/↓ 三行，PgUp/PgDn 翻頁，Home/End 首尾（預覽持焦時生效）", "↑/↓ three lines, PgUp/PgDn page, Home/End ends (when the preview has focus)"),
+    ("shortcuts.rename_hint", "选中文件或目录时", "選中檔案或目錄時", "When a file or folder is selected"),
     ("shortcuts.search_files", "搜索文件", "搜尋檔案", "Search files"),
     ("shortcuts.term_word_jump_hint", "直接发送到终端；Ctrl+←/→ 已留给切标签（任意焦点可切）", "直接發送到終端；Ctrl+←/→ 已留給切標籤（任意焦點可切）", "Sent to the terminal; Ctrl+←/→ is reserved for tab switching under any focus"),
     ("shortcuts.term_word_jump_left", "跳词向左", "跳詞向左", "Jump word left"),
