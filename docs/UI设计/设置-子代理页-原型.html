@@ -122,6 +122,10 @@
   .ed-actions { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 0 2px;
     border-top: 1px solid rgba(175,196,186,.3); margin-top: 12px; }
   .ed-head-row { display: flex; align-items: center; gap: 8px; flex: none; }
+  .ed-head-row input[type=text] { width: 50%; height: 30px; border: 1px solid var(--border);
+    background: var(--bg-panel); border-radius: 6px; font-size: 12.5px; color: var(--text);
+    padding: 0 10px; font-family: inherit; outline: 0; }
+  .ed-head-row input[type=text]:focus { border-color: var(--accent); }
   .sw { flex: none; width: 28px; height: 16px; border-radius: 8px; background: var(--border);
     position: relative; cursor: default; display: inline-block; }
   .sw::after { content: ""; position: absolute; top: 3px; left: 2px; width: 10px; height: 10px;
@@ -133,7 +137,7 @@
   .ed-dirty i { width: 7px; height: 7px; border-radius: 50%; background: var(--warn); display: inline-block; }
   .ed-hint { font-size: 11px; color: var(--text-faint); }
 
-  .dd { position: relative; width: 250px; }
+  .dd { position: relative; width: 50%; }
   .dd-menu { display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 20;
     background: var(--bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
     box-shadow: 0 8px 24px rgba(32,46,43,.16); }
@@ -200,16 +204,13 @@
 
               <div class="pane on" id="d-reviewer">
                 <div class="ed-head-row">
+                  <input type="text" value="code-reviewer">
                   <span style="flex:1"></span>
                   <button class="btn danger">删除</button>
                   <button class="btn primary">保存</button>
                 </div>
 
                 <div class="frm">
-                  <div class="frm-row">
-                    <label>名称</label>
-                    <div class="frm-ctl"><input type="text" value="code-reviewer"></div>
-                  </div>
                   <div class="frm-row">
                     <label>描述</label>
                     <div class="frm-ctl"><input type="text" value="代码评审 · 正确性与边界"></div>
@@ -259,15 +260,12 @@
 
               <div class="pane" id="d-explorer">
                 <div class="ed-head-row">
+                  <input type="text" value="explorer" readonly>
                   <span style="flex:1"></span>
                   <button class="btn">复制为自定义</button>
                 </div>
 
                 <div class="frm ro">
-                  <div class="frm-row">
-                    <label>名称</label>
-                    <div class="frm-ctl"><input type="text" value="explorer" readonly></div>
-                  </div>
                   <div class="frm-row">
                     <label>描述</label>
                     <div class="frm-ctl"><input type="text" value="只读探索 · 调研与定位" readonly></div>
@@ -279,7 +277,7 @@
                   <div class="frm-row">
                     <label>工具权限</label>
                     <div class="frm-ctl">
-                      <button class="sel-btn" style="width:100%">read-only<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button>
+                      <button class="sel-btn" style="width:50%">read-only<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button>
                     </div>
                   </div>
                   <div class="frm-row">
