@@ -136,8 +136,8 @@
   .ed-dirty { display: flex; align-items: center; gap: 6px; color: var(--warn); font-size: 11px; }
   .ed-dirty i { width: 7px; height: 7px; border-radius: 50%; background: var(--warn); display: inline-block; }
   .ed-hint { font-size: 11px; color: var(--text-faint); }
-  .name-input { width: 240px; height: 30px; border: 1px solid transparent; background: transparent;
-    border-radius: 7px; font-size: 14px; font-weight: 600; color: var(--text); padding: 0 8px;
+  .name-input { width: 240px; height: 30px; border: 1px solid var(--border); background: var(--bg-panel);
+    border-radius: 6px; font-size: 14px; font-weight: 600; color: var(--text); padding: 0 10px;
     font-family: inherit; outline: 0; }
   .name-input:hover { background: var(--bg-panel); }
   .name-input:focus { border-color: var(--accent); background: var(--bg-panel); }
@@ -196,7 +196,7 @@
                 
               </div>
 
-              <div class="sp-head" style="margin-top:10px">自定义<span style="flex:1"></span><button class="btn sm">新建子代理</button></div>
+              <div class="sp-head" style="margin-top:10px">自定义<span style="flex:1"></span><button class="btn sm">新建</button></div>
               <div class="sp-li sel" data-d="d-reviewer">
                 <div class="name">code-reviewer<span class="sub">代码评审 · 正确性与边界</span></div>
                 
@@ -226,27 +226,6 @@
                     </div>
                   </div>
                   <div class="frm-row">
-                    <label>轮次预算</label>
-                    <div class="frm-ctl">
-                      <div class="stepper"><button>−</button><b>15</b><button>+</button></div>
-                    </div>
-                  </div>
-                  <div class="frm-row">
-                  </div>
-                  <div class="frm-row">
-                    <label>系统提示词</label>
-                    <div class="frm-ctl"><textarea spellcheck="false">你是资深代码评审员，只做评审不写代码。
-关注正确性、边界条件、并发安全与错误处理。
-
-输出格式：按严重度分级的问题清单 + 每条附修复建议。</textarea></div>
-                  </div>
-                  <div class="frm-row">
-                    <label>项目指令</label>
-                    <div class="frm-ctl" style="display:flex;align-items:center;padding-top:5px">
-                      <i class="sw on"></i>
-                                          </div>
-                  </div>
-                  <div class="frm-row">
                     <label>工具权限</label>
                     <div class="frm-ctl">
                       <div class="dd" id="dd-tools">
@@ -258,6 +237,25 @@
                           <div class="dd-it" data-v="full"><span class="dd-n">full</span><span class="dd-d">全部内置工具，无扩展</span></div>
                         </div>
                       </div>
+                    </div>
+                  </div>
+                  <div class="frm-row">
+                    <label>系统提示词</label>
+                    <div class="frm-ctl"><textarea spellcheck="false">你是资深代码评审员，只做评审不写代码。
+关注正确性、边界条件、并发安全与错误处理。
+
+输出格式：按严重度分级的问题清单 + 每条附修复建议。</textarea></div>
+                  </div>
+                  <div class="frm-row">
+                    <label>注入AGENTS.MD</label>
+                    <div class="frm-ctl" style="display:flex;align-items:center;padding-top:5px">
+                      <i class="sw on"></i>
+                                          </div>
+                  </div>
+                  <div class="frm-row">
+                    <label>最大轮次</label>
+                    <div class="frm-ctl">
+                      <div class="stepper"><button>−</button><b>15</b><button>+</button></div>
                     </div>
                   </div>
                 </div>
@@ -281,8 +279,10 @@
                     <div class="frm-ctl"><button class="sel-btn" style="width:100%">跟随会话<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button></div>
                   </div>
                   <div class="frm-row">
-                    <label>轮次预算</label>
-                    <div class="frm-ctl"><div class="stepper"><button>−</button><b>25</b><button>+</button></div></div>
+                    <label>工具权限</label>
+                    <div class="frm-ctl">
+                      <button class="sel-btn" style="width:100%">read-only<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button>
+                    </div>
                   </div>
                   <div class="frm-row">
                     <label>系统提示词</label>
@@ -290,16 +290,14 @@
 不执行任何写操作。</textarea></div>
                   </div>
                   <div class="frm-row">
-                    <label>项目指令</label>
+                    <label>注入AGENTS.MD</label>
                     <div class="frm-ctl" style="display:flex;align-items:center;padding-top:5px">
                       <i class="sw on"></i>
                                           </div>
                   </div>
                   <div class="frm-row">
-                    <label>工具权限</label>
-                    <div class="frm-ctl">
-                      <button class="sel-btn" style="width:100%">read-only<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button>
-                    </div>
+                    <label>最大轮次</label>
+                    <div class="frm-ctl"><div class="stepper"><button>−</button><b>25</b><button>+</button></div></div>
                   </div>
                 </div>
 
