@@ -75,6 +75,9 @@ pub struct MarketEntry {
     pub kinds: Vec<MarketKind>,
     #[serde(default)]
     pub repo: Option<String>,
+    /// 发布者（npm `publisher.username`）；未知 = None
+    #[serde(default)]
+    pub author: Option<String>,
 }
 
 impl MarketEntry {
@@ -153,6 +156,30 @@ pub fn format_downloads(n: u64) -> String {
     }
 }
 
+/// 某个 npm 时间戳（ISO 8601）距 `now_unix` 的天数（0 = 今天，负数 = 未来）。
+/// 只取日期部分；解析失败 → None。
+pub fn days_since(iso: &str, now_unix: i64) -> Option<i64> {
+    let date = iso.get(0..10)?;
+    let y = date.get(0..4)?.parse::<i64>().ok()?;
+    let m = date.get(5..7)?.parse::<i64>().ok()?;
+    let d = date.get(8..10)?.parse::<i64>().ok()?;
+    if !(1..=12).contains(&m) || !(1..=31).contains(&d) {
+        return None;
+    }
+    Some(now_unix.div_euclid(86_400) - days_from_civil(y, m, d))
+}
+
+/// 公历 → 自 1970-01-01 起的天数（Howard Hinnant 算法，省一个 chrono 依赖）。
+fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let mp = (m + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
 // ---------------------------------------------------------------------------
 // 解析（纯函数）
 // ---------------------------------------------------------------------------
@@ -185,12 +212,20 @@ struct SearchPkg {
     date: String,
     #[serde(default)]
     links: SearchLinks,
+    #[serde(default)]
+    publisher: Option<SearchPublisher>,
 }
 
 #[derive(Default, Deserialize)]
 struct SearchDownloads {
     #[serde(default)]
     monthly: u64,
+}
+
+#[derive(Default, Deserialize)]
+struct SearchPublisher {
+    #[serde(default)]
+    username: Option<String>,
 }
 
 #[derive(Default, Deserialize)]
@@ -218,6 +253,12 @@ pub fn parse_search_page(body: &str) -> Result<MarketPage, String> {
                     .trim_end_matches(".git")
                     .to_string()
             }),
+            author: o
+                .package
+                .publisher
+                .and_then(|p| p.username)
+                .map(|u| u.trim().to_string())
+                .filter(|u| !u.is_empty()),
         })
         .collect();
     Ok(MarketPage {
@@ -440,6 +481,22 @@ mod tests {
         assert!(!e.is_extension());
         e.kinds = vec![MarketKind::Extension, MarketKind::Skill];
         assert!(e.is_extension());
+    }
+
+    #[test]
+    fn parse_author_and_days_since() {
+        let body = r#"{"objects":[{"package":{"name":"x","publisher":{"username":"nicopreme"}}}]}"#;
+        let page = parse_search_page(body).unwrap();
+        assert_eq!(page.entries[0].author.as_deref(), Some("nicopreme"));
+        // 2026-10-20T12:00:00Z 的秒数 = 1792497600
+        assert_eq!(
+            days_since("2026-10-19T22:33:01.605Z", 1_792_497_600),
+            Some(1)
+        );
+        assert_eq!(days_since("2026-10-20T00:10:00Z", 1_792_497_600), Some(0));
+        assert_eq!(days_since("1970-01-01", 0), Some(0));
+        assert_eq!(days_since("", 0), None);
+        assert_eq!(days_since("garbage", 0), None);
     }
 
     #[test]

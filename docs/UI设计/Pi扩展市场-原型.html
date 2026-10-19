@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pi-flash · Pi扩展市场（040-1 设计稿 v4 · 单列卡片 + 翻页）</title>
+<style>
+/* ===================== 设计系统（mist / one-dark 双主题） ===================== */
+:root {
+  --bg: #f4f8f7;          --bg-panel: #e9f0ee;   --bg-hover: #e0eae7;
+  --bg-selected: #d7e4df; --border: #afc4ba;     --chrome: #dfe9e5;
+  --text: #202e2b;        --text-muted: #455f56; --text-dim: #52685f;
+  --text-soft: #8a9d95;   --text-faint: #a3b0aa;
+  --accent: #1e6559;      --accent-hover: #174f46; --accent-contrast: #ffffff;
+  --danger: #c25460;      --danger-hover: #d8626a;
+  --accent-wash: rgba(30,101,89,.10);
+  --hairline: rgba(175,196,186,.45);
+  --shadow-card: 0 1px 2px rgba(24,50,42,.05);
+  --shadow-hover: 0 6px 20px rgba(24,50,42,.10);
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+  --ui: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+  --thumb-grid: rgba(30,101,89,.16);
+}
+html[data-theme="dark"] {
+  --bg: #22252b;          --bg-panel: #282c33;   --bg-hover: #343843;
+  --bg-selected: #3b3f4a; --border: #353a45;     --chrome: #23262c;
+  --text: #d7dadf;        --text-muted: #9ea4af; --text-dim: #828996;
+  --text-soft: #767d8a;   --text-faint: #6b7280;
+  --accent: #6189eb;      --accent-hover: #7ba0f0; --accent-contrast: #ffffff;
+  --danger: #df5561;      --danger-hover: #e0666f;
+  --accent-wash: rgba(97,137,235,.14);
+  --hairline: rgba(53,58,69,.9);
+  --shadow-card: 0 1px 2px rgba(0,0,0,.35);
+  --shadow-hover: 0 8px 24px rgba(0,0,0,.42);
+  --thumb-grid: rgba(97,137,235,.22);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--ui); background: #cfd9d5; color: var(--text);
+  padding: 26px 20px 56px; display: flex; flex-direction: column; align-items: center; gap: 20px;
+  -webkit-font-smoothing: antialiased;
+}
+html[data-theme="dark"] body { background: #14171b; }
+
+/* 设计稿外壳（非界面本身） */
+.sheet-head { width: 1180px; display: flex; align-items: baseline; gap: 10px;
+  font-size: 12px; color: #3c4a45; }
+html[data-theme="dark"] .sheet-head { color: #8b949e; }
+.sheet-head b { font-size: 13px; font-weight: 600; color: #26332f; }
+html[data-theme="dark"] .sheet-head b { color: #cfd6dd; }
+.sheet-head .spacer { flex: 1; }
+.sheet-head button { font: inherit; font-size: 11px; padding: 4px 10px; border-radius: 6px;
+  border: 1px solid rgba(60,74,69,.35); background: transparent; color: inherit; cursor: pointer; }
+.sheet-head button:hover { background: rgba(255,255,255,.5); }
+html[data-theme="dark"] .sheet-head button:hover { background: rgba(255,255,255,.08); }
+
+/* ===================== 窗口 ===================== */
+.win { width: 1180px; height: 760px; flex: none; background: var(--bg);
+  border-radius: 10px; overflow: hidden; border: 1px solid rgba(0,0,0,.08);
+  box-shadow: 0 24px 60px rgba(20,35,30,.22); display: flex; flex-direction: column; }
+
+/* 顶栏 */
+.topbar { height: 40px; background: var(--chrome); display: flex; align-items: center; flex: none;
+  border-bottom: 1px solid var(--hairline); }
+.tb-btn { width: 30px; height: 30px; border-radius: 7px; display: grid; place-items: center;
+  color: var(--text-muted); }
+.tb-btn:hover { background: var(--bg-hover); color: var(--text); }
+.tb-btn svg { width: 18px; height: 18px; }
+.tb-left { margin-left: 6px; display: flex; }
+.tb-btn + .tb-btn { margin-left: 4px; }
+.tabs { flex: 1; display: flex; align-items: flex-end; gap: 4px; padding-left: 10px; height: 100%; min-width: 0; }
+.tab { height: 36px; padding: 0 12px; display: flex; align-items: center; gap: 8px;
+  font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+.tab svg { width: 15px; height: 15px; flex: none; }
+.tab.act { background: var(--bg); color: var(--text); font-weight: 600; border: 1px solid var(--hairline);
+  border-bottom-color: var(--bg); border-radius: 9px 9px 0 0; margin-bottom: -1px; height: 37px; }
+.tab .x { opacity: 0; display: grid; place-items: center; }
+.tab.act .x { opacity: .55; }
+.wctrl { display: flex; margin-left: auto; }
+.wctrl div { width: 44px; height: 40px; display: grid; place-items: center; color: var(--text-muted); }
+.wctrl div:hover { background: var(--bg-hover); }
+.wctrl .close:hover { background: #c94a4a; color: #fff; }
+.wctrl svg { width: 10px; height: 10px; }
+
+/* ===================== 页面 ===================== */
+.page { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+.toolbar { flex: none; display: flex; align-items: center; gap: 8px; padding: 12px 20px 8px; }
+.search { position: relative; width: 340px; flex: none; }
+.search svg.ico { position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  width: 14px; height: 14px; color: var(--text-soft); pointer-events: none; }
+.search input { width: 100%; height: 32px; border-radius: 7px; border: 1px solid var(--hairline);
+  background: var(--bg); color: var(--text); font: inherit; font-size: 12px; padding: 0 10px 0 30px; outline: none; }
+.search input::placeholder { color: var(--text-soft); }
+.search input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash); }
+
+.select { position: relative; height: 32px; display: flex; align-items: center; gap: 8px;
+  padding: 0 26px 0 10px; border: 1px solid var(--hairline); border-radius: 7px;
+  font-size: 12px; color: var(--text-muted); background: var(--bg); cursor: pointer; }
+.select:hover { color: var(--text); border-color: var(--text-faint); }
+.select svg { position: absolute; right: 8px; width: 12px; height: 12px; opacity: .7; }
+
+.spacer { flex: 1; }
+.seg { display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--bg-panel);
+  border: 1px solid var(--hairline); height: 30px; align-items: center; }
+.seg button { font: inherit; font-size: 12px; height: 26px; padding: 0 12px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--text-muted); cursor: pointer; }
+.seg button:hover { color: var(--text); }
+.seg button.act { background: var(--bg); color: var(--text); font-weight: 600; box-shadow: var(--shadow-card); }
+
+.btn { font: inherit; font-size: 12px; height: 30px; padding: 0 13px; border-radius: 7px;
+  display: inline-flex; align-items: center; gap: 6px; border: 1px solid transparent;
+  cursor: pointer; white-space: nowrap; }
+.btn svg { width: 13px; height: 13px; }
+.btn.primary { background: var(--accent); color: var(--accent-contrast); font-weight: 600; }
+.btn.primary:hover { background: var(--accent-hover); }
+.btn.ghost { border-color: var(--hairline); color: var(--text); background: transparent; }
+.btn.ghost:hover { background: var(--bg-hover); }
+.btn.quiet { color: var(--text-dim); background: transparent; }
+.btn.quiet:hover { background: var(--bg-hover); color: var(--text); }
+.btn[disabled] { opacity: .45; cursor: default; }
+.btn.sm { height: 28px; padding: 0 12px; border-radius: 6px; }
+.btn.icon { width: 28px; padding: 0; justify-content: center; }
+.btn .n { font-variant-numeric: tabular-nums; opacity: .85; }
+
+/* 摘要行 */
+.summary { flex: none; display: flex; align-items: baseline; gap: 10px; padding: 0 20px 10px;
+  font-size: 11px; color: var(--text-soft); }
+.summary .count { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.summary .dot { width: 2px; height: 2px; border-radius: 50%; background: var(--text-faint); }
+.summary .safety { margin-left: auto; display: flex; align-items: center; gap: 5px; }
+.summary .safety svg { width: 12px; height: 12px; }
+.summary .safety a { color: var(--text-dim); text-decoration: none; border-bottom: 1px dotted var(--border); }
+
+/* ===================== 单列卡片列表 ===================== */
+.list { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column;
+  gap: 10px; padding: 0 20px 6px; }
+
+.pkg {
+  position: relative; flex: none;
+  display: grid; grid-template-columns: 88px minmax(0, 1fr) 104px; gap: 16px;
+  padding: 14px 16px; border: 1px solid var(--hairline); border-radius: 10px;
+  background: var(--bg); box-shadow: var(--shadow-card);
+  transition: border-color .12s ease, box-shadow .12s ease, transform .12s ease;
+}
+.pkg:hover { border-color: rgba(30,101,89,.42); box-shadow: var(--shadow-hover); }
+html[data-theme="dark"] .pkg:hover { border-color: rgba(97,137,235,.45); }
+
+/* 预览缩略（有 pi.image 才显示；无图时淡网格占位） */
+.thumb { width: 88px; height: 72px; border-radius: 7px; border: 1px solid var(--hairline);
+  background:
+    repeating-linear-gradient(0deg, var(--thumb-grid) 0 1px, transparent 1px 12px),
+    repeating-linear-gradient(90deg, var(--thumb-grid) 0 1px, transparent 1px 12px),
+    var(--bg-panel);
+  align-self: start; position: relative; overflow: hidden; }
+.thumb::after { content: ""; position: absolute; left: 0; right: 0; bottom: 26%; height: 1px;
+  background: var(--accent); opacity: .5; }
+
+.body { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.name { font-size: 15px; font-weight: 600; letter-spacing: -.01em; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.ver { font-family: var(--mono); font-size: 10px; color: var(--text-faint); padding: 1px 5px;
+  border: 1px solid var(--hairline); border-radius: 4px; flex: none; }
+.chip { font-size: 10px; height: 18px; line-height: 16px; padding: 0 6px; border-radius: 4px;
+  border: 1px solid var(--hairline); color: var(--text-dim); flex: none; display: inline-flex; align-items: center; }
+.chip.ext { background: var(--accent-wash); border-color: transparent; color: var(--accent); font-weight: 600;
+  text-transform: uppercase; letter-spacing: .04em; }
+html[data-theme="dark"] .chip.ext { color: var(--accent-hover); }
+
+.desc { font-size: 12.5px; line-height: 19px; color: var(--text-muted); max-width: 760px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+.meta { display: flex; align-items: center; gap: 10px; font-size: 11.5px; color: var(--text-soft);
+  font-variant-numeric: tabular-nums; }
+.meta b { color: var(--text-dim); font-weight: 600; }
+.meta .sep { width: 2px; height: 2px; border-radius: 50%; background: var(--text-faint); }
+
+.links { display: flex; align-items: center; gap: 14px; font-size: 11.5px; color: var(--text-soft); }
+.links a { display: inline-flex; align-items: center; gap: 4px; color: inherit; text-decoration: none; }
+.links a:hover { color: var(--accent); }
+.links svg { width: 12px; height: 12px; opacity: .85; }
+
+/* 安装命令条（官方同款：整条 mono 行，无复制键） */
+.cmd { margin-top: 2px; display: flex; align-items: center; gap: 8px; max-width: 760px;
+  height: 30px; padding: 0 10px; border-radius: 6px; background: var(--bg-panel);
+  border: 1px solid var(--hairline); }
+.cmd .prompt { font-family: var(--mono); font-size: 11px; color: var(--text-faint); }
+.cmd code { font-family: var(--mono); font-size: 11px; color: var(--text-dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pkg:hover .cmd code { color: var(--text); }
+
+/* 右侧动作 */
+.acts { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.reveal { opacity: 0; transition: opacity .12s ease; }
+.pkg:hover .reveal, .pkg:focus-within .reveal { opacity: 1; }
+
+/* 已安装态左侧细轨 */
+.pkg.installed::before { content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; width: 2px;
+  border-radius: 2px; background: var(--accent); opacity: .45; }
+
+/* 底栏 */
+.foot { flex: none; display: flex; align-items: center; gap: 12px; height: 52px; padding: 0 20px;
+  border-top: 1px solid var(--hairline); font-size: 12px; color: var(--text-muted); }
+.pager { font: inherit; font-size: 12px; height: 30px; padding: 0 12px; border-radius: 6px;
+  border: 1px solid var(--hairline); background: transparent; color: var(--text-muted); cursor: pointer; }
+.pager:hover { background: var(--bg-hover); color: var(--text); }
+.pager[disabled] { opacity: .38; cursor: default; }
+.foot .pages { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.pg { font: inherit; font-size: 12px; width: 32px; height: 30px; border-radius: 6px;
+  border: 1px solid var(--hairline); background: transparent; color: var(--text-muted);
+  cursor: pointer; font-variant-numeric: tabular-nums; }
+.pg:hover { background: var(--bg-hover); color: var(--text); }
+.pg.act { background: var(--accent-wash); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+html[data-theme="dark"] .pg.act { color: var(--accent-hover); }
+.foot .dots { color: var(--text-faint); padding: 0 2px; }
+
+/* 横幅 */
+.banner { display: flex; align-items: center; gap: 8px; margin: 0 20px 10px; padding: 7px 10px;
+  border-radius: 7px; font-size: 11px; }
+.banner svg { width: 13px; height: 13px; flex: none; }
+.banner.warn { background: rgba(224,169,98,.16); color: #8a5a13; }
+html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: #e0a562; }
+.banner.err { background: rgba(194,84,96,.13); color: var(--danger); }
+.banner .grow { flex: 1; }
+
+/* ===================== 状态变体（评审用） ===================== */
+.states { width: 1180px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.card { background: var(--bg); border-radius: 10px; border: 1px solid rgba(0,0,0,.08);
+  box-shadow: var(--shadow-card); overflow: hidden; display: flex; flex-direction: column; height: 300px; }
+.card h4 { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--text-soft); padding: 12px 14px 10px; border-bottom: 1px solid var(--hairline); }
+.card .bodyc { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 10px; gap: 8px; }
+.skel { display: flex; gap: 12px; padding: 12px 10px; border: 1px solid var(--hairline); border-radius: 10px; }
+.skel .bar { background: var(--bg-panel); border-radius: 4px; height: 10px; }
+.skel .stack { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+.empty { flex: 1; display: grid; place-items: center; text-align: center; color: var(--text-soft);
+  font-size: 12px; gap: 6px; }
+.empty .big { font-size: 13px; color: var(--text-dim); font-weight: 600; }
+.mini { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px; align-items: center;
+  padding: 10px 12px; border: 1px solid var(--hairline); border-radius: 8px; }
+</style>
+</head>
+<body>
+
+<div class="sheet-head">
+  <b>040-1 Pi扩展市场 · v4</b>
+  <span>单列卡片（对齐 pi.dev 官方信息结构，单列排布）· 1180×760 · mist</span>
+  <span class="spacer"></span>
+  <button id="themeBtn">切换到 one-dark</button>
+</div>
+
+<div class="win">
+  <!-- 顶栏 -->
+  <div class="topbar">
+    <div class="tb-left">
+      <div class="tb-btn" title="收放功能面板">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>
+      </div>
+      <div class="tb-btn" title="菜单">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </div>
+    </div>
+    <div class="tabs">
+      <div class="tab">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3v2M16 3v2M4 8h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z"/></svg>
+        <span>对比一下p</span>
+      </div>
+      <div class="tab act">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        <span>Pi扩展市场</span>
+        <span class="x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:11px;height:11px"><path d="M6 6l12 12M18 6 6 18"/></svg></span>
+      </div>
+    </div>
+    <div class="wctrl">
+      <div><svg viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.2"><path d="M2 6h8"/></svg></div>
+      <div><svg viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.2"><rect x="2.5" y="2.5" width="7" height="7"/></svg></div>
+      <div class="close"><svg viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.3"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7"/></svg></div>
+    </div>
+  </div>
+
+  <div class="page">
+    <!-- 工具栏 -->
+    <div class="toolbar">
+      <div class="search">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+        <input placeholder="搜索扩展名称或说明">
+      </div>
+      <div class="select" title="排序">
+        最多下载
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div class="spacer"></div>
+      <div class="seg">
+        <button class="act">未安装</button>
+        <button>已安装</button>
+      </div>
+      <button class="btn primary">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"/></svg>
+        全部更新 <span class="n">2</span>
+      </button>
+    </div>
+
+    <!-- 摘要行 -->
+    <div class="summary">
+      <span class="count">12,365</span><span>个结果</span>
+      <span class="dot"></span><span>只展示扩展（技能/提示词/主题不列出）</span>
+    </div>
+
+    <!-- 单列卡片列表 -->
+    <div class="list">
+
+      <!-- 1 未安装 -->
+      <div class="pkg">
+        <div class="thumb"></div>
+        <div class="body">
+          <div class="head">
+            <span class="name">billion-context</span>
+            <span class="ver">v0.1.202</span>
+            <span class="chip ext">extension</span>
+          </div>
+          <div class="desc">A context-compression plugin — small context windows are enough, 5× fewer tokens, month-long single sessions, and better compression quality.</div>
+          <div class="meta"><b>ranxianglei</b><span class="sep"></span><span><b>1.8M</b>/mo</span><span class="sep"></span><span>12 小时前</span></div>
+          <div class="links">
+            <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h16v13H4z"/><path d="M4 7V4h16v3"/></svg>npm</a>
+            <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="9" r="2.5"/><path d="M6 8.5v7M18 11.5c0 3-3 3.5-6 3.5"/></svg>repo</a>
+          </div>
+          <div class="cmd"><span class="prompt">$</span><code>pi install npm:billion-context</code></div>
+        </div>
+        <div class="acts"><button class="btn primary sm">安装</button></div>
+      </div>
+
+      <!-- 2 已安装 · 有新版 -->
+      <div class="pkg installed">
+        <div class="thumb"></div>
+        <div class="body">
+          <div class="head">
+            <span class="name">pi-mcp-adapter</span>
+            <span class="ver">v5.3.2</span>
+            <span class="chip ext">extension</span>
+          </div>
+          <div class="desc">MCP (Model Context Protocol) adapter extension for Pi coding agent — add MCP servers and their tools to a session.</div>
+          <div class="meta"><b>nicopreme</b><span class="sep"></span><span><b>1.5M</b>/mo</span><span class="sep"></span><span>2 天前</span></div>
+          <div class="links">
+            <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h16v13H4z"/><path d="M4 7V4h16v3"/></svg>npm</a>
+            <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="9" r="2.5"/><path d="M6 8.5v7M18 11.5c0 3-3 3.5-6 3.5"/></svg>repo</a>
+          </div>
+          <div class="cmd"><span class="prompt">$</span><code>pi install npm:pi-mcp-adapter</code></div>
+        </div>
+        <div class="acts">
+          <button class="btn ghost sm icon" title="卸载">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>
+          </button>
+          <button class="btn primary sm">更新</button>
+        </div>
+      </div>
+
+      <!-- 3 已安装 · 最新 -->
+      <div class="pkg installed">
+        <div class="thumb"></div>
+        <div class="body">
+          <div class="head">
+            <span class="name">pi-web-access</span>
+            <span class="ver">v0.42.0</span>
+            <span class="chip ext">extension</span>
+          </div>
+          <div class="desc">Web search, URL fetching, GitHub repo cloning, PDF extraction, YouTube video understanding, and local video analysis for Pi.</div>
+          <div class="meta"><b>nicopreme</b><span class="sep"></span><span><b>792.8K</b>/mo</span><span class="sep"></span><span>2 天前</span></div>
+          <div class="links">
+            <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h16v13H4z"/><path d="M4 7V4h16v3"/></svg>npm</a>
+            <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="9" r="2.5"/><path d="M6 8.5v7M18 11.5c0 3-3 3.5-6 3.5"/></svg>repo</a>
+          </div>
+          <div class="cmd"><span class="prompt">$</span><code>pi install npm:pi-web-access</code></div>
+        </div>
+        <div class="acts">
+          <button class="btn ghost sm icon" title="卸载">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- 4 多资源类型 -->
+      <div class="pkg">
+        <div class="thumb"></div>
+        <div class="body">
+          <div class="head">
+            <span class="name">pi-subagents</span>
+            <span class="ver">v0.79.1</span>
+            <span class="chip ext">extension</span>
+            <span class="chip">技能</span>
+            <span class="chip">提示词</span>
+          </div>
+          <div class="desc">Single-agent delegation and scripted multi-agent workflows, with a live widget and fleet view.</div>
+          <div class="meta"><b>nicopreme</b><span class="sep"></span><span><b>573.0K</b>/mo</span><span class="sep"></span><span>1 天前</span></div>
+          <div class="links">
+            <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h16v13H4z"/><path d="M4 7V4h16v3"/></svg>npm</a>
+            <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="9" r="2.5"/><path d="M6 8.5v7M18 11.5c0 3-3 3.5-6 3.5"/></svg>repo</a>
+          </div>
+          <div class="cmd"><span class="prompt">$</span><code>pi install npm:pi-subagents</code></div>
+        </div>
+        <div class="acts"><button class="btn primary sm">安装</button></div>
+      </div>
+
+    </div>
+
+    <!-- 底栏：翻页（对齐官方分页：← Previous / 页码 / Next →） -->
+    <div class="foot">
+      <button class="pager nav" disabled>← 上一页</button>
+      <div class="pages">
+        <button class="pg act">1</button>
+        <button class="pg">2</button>
+        <button class="pg">3</button>
+        <button class="pg">4</button>
+        <button class="pg">5</button>
+        <button class="pg">6</button>
+        <span class="dots">…</span>
+        <button class="pg">248</button>
+      </div>
+      <button class="pager nav">下一页 →</button>
+    </div>
+  </div>
+</div>
+
+<!-- 状态变体 -->
+<div class="states">
+  <div class="card">
+    <h4>加载中（骨架 + 分批上屏）</h4>
+    <div class="bodyc">
+      <div class="skel"><div class="bar" style="width:88px;height:72px;border-radius:7px"></div>
+        <div class="stack"><div class="bar" style="width:42%;height:12px"></div><div class="bar" style="width:88%"></div><div class="bar" style="width:64%"></div><div class="bar" style="width:36%"></div></div></div>
+      <div class="skel"><div class="bar" style="width:88px;height:72px;border-radius:7px"></div>
+        <div class="stack"><div class="bar" style="width:34%;height:12px"></div><div class="bar" style="width:80%"></div><div class="bar" style="width:52%"></div><div class="bar" style="width:40%"></div></div></div>
+      <div class="foot" style="border:0;padding:0 4px;margin-top:auto">
+        <span>第 <b>1</b> / 248 页 · 12,365 条</span><div class="spacer"></div>
+        <span style="display:flex;align-items:center;gap:6px">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="width:12px;height:12px"><path d="M12 3a9 9 0 1 0 9 9" stroke-linecap="round"/></svg>载入中…
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h4>离线降级（首页快照可用）</h4>
+    <div class="bodyc">
+      <div class="banner warn" style="margin:0">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3.5 21 20H3L12 3.5Z"/><path d="M12 9.5v4.5M12 16.6v.1"/></svg>
+        <span class="grow">网络不可用，显示本地缓存的 50 条</span>
+        <button class="btn ghost sm" style="height:24px">重试</button>
+      </div>
+      <div class="mini"><span style="font-size:12.5px;font-weight:600">billion-context</span><button class="btn primary sm">安装</button></div>
+      <div class="mini"><span style="font-size:12.5px;font-weight:600">pi-mcp-adapter</span><button class="btn primary sm">安装</button></div>
+      <div class="mini"><span style="font-size:12.5px;font-weight:600">pi-web-access</span><button class="btn primary sm">安装</button></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h4>空 / 错误</h4>
+    <div class="bodyc" style="gap:12px">
+      <div class="empty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" style="width:26px;height:26px;opacity:.6"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+        <div class="big">没有匹配的扩展</div>
+        <div>换个关键词，或清空搜索看热门</div>
+      </div>
+      <div class="banner err" style="margin:0">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v6M12 16.6v.1"/></svg>
+        <span class="grow">加载失败：network: connection refused</span>
+        <button class="btn ghost sm" style="height:24px">重试</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const btn = document.getElementById('themeBtn');
+  btn.addEventListener('click', () => {
+    const dark = document.documentElement.dataset.theme === 'dark';
+    document.documentElement.dataset.theme = dark ? '' : 'dark';
+    btn.textContent = dark ? '切换到 one-dark' : '切换到 mist';
+  });
+</script>
+</body>
+</html>
