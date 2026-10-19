@@ -18,7 +18,7 @@ use crate::ContentView;
 use crate::TabKey;
 use crate::appearance::theme::theme as T;
 use crate::i18n::tr;
-use crate::ui::tokens::align;
+use crate::ui::tokens::{align, space};
 
 /// tab 拖拽载荷（zed `DraggedTab` 单 pane 版）：`ix` 供悬停插入侧判定
 /// （zed drag_over 的 `ix < dragged_tab.ix` 同式）；`key` 供 drop 落位
@@ -112,6 +112,17 @@ pub(crate) fn topbar_l(_chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> impl g
             tr("titlebar.toggle_sidebar"),
             cx.listener(|this, _: &gpui::MouseDownEvent, _w, cx| {
                 this.toggle_panes(cx);
+            }),
+        )))
+        // 040-1 「菜单」三横钮（紧贴收放钮右侧）：目前只有「Pi扩展市场」
+        // 一项，浮层渲染挂 render.rs 根（dlg.market_menu = 按钮锚点）。
+        .child(div().ml(px(space::SP2)).child(icon_btn(
+            "market-menu",
+            "menu",
+            tr("titlebar.menu"),
+            cx.listener(|this, ev: &gpui::MouseDownEvent, _w, cx| {
+                this.dlg.market_menu = Some((f32::from(ev.position.x), f32::from(ev.position.y)));
+                cx.notify();
             }),
         )))
         // drag filler: the empty middle is the drag region (HTCAPTION —
@@ -303,6 +314,14 @@ fn tab_strip(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyElement 
                 false,
                 Some("history"),
                 ContentView::Changelog,
+            ),
+            // 040-1 Pi 扩展市场标准页
+            crate::PanelTab::PiExtMarket => (
+                tr("market.tab").into(),
+                None,
+                false,
+                Some("menu"),
+                ContentView::PiExtMarket,
             ),
         };
         // 文件 tab 行尾标记（023）：冲突 ! > 脏点。zed parity（DiskState::

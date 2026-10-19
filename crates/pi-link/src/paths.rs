@@ -156,6 +156,12 @@ pub fn registry_cache_file() -> Option<PathBuf> {
     file("registry-cache.json")
 }
 
+/// `~/.pi-flash/pi-ext-market-cache.json` — Pi 扩展市场首页快照（040-1：
+/// 单文件、≤50 条、<100KB；启动延迟加载只预取首页写它）。
+pub fn pi_ext_market_cache_file() -> Option<PathBuf> {
+    file("pi-ext-market-cache.json")
+}
+
 /// `~/.pi-flash/registry-dump.mjs` — 注册表 dump 一次性脚本（每次 dump 重写）。
 pub fn registry_dump_script_file() -> Option<PathBuf> {
     file("registry-dump.mjs")

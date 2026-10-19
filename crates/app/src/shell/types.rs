@@ -104,6 +104,8 @@ pub(crate) enum ContentView {
     File,
     /// 081 更新日志 tab（PanelTab::Changelog；markdown 渲染）
     Changelog,
+    /// 040-1 Pi 扩展市场 tab（PanelTab::PiExtMarket；标准页）
+    PiExtMarket,
 }
 
 /// psp 列表方式（⋯ 菜单）。
@@ -245,6 +247,8 @@ pub(crate) enum PanelTab {
     File(PathBuf),
     /// 081 更新日志（新版本首启自动打开；无外部资源，纯渲染）
     Changelog,
+    /// 040-1 Pi 扩展市场（标准页；菜单-三横按钮打开）
+    PiExtMarket,
 }
 
 /// tab 稳定键（2026-10-14 标签拖拽换位引入）：拖拽发起时记 key，drop 时
@@ -255,6 +259,7 @@ pub(crate) enum TabKey {
     Term(usize),
     File(PathBuf),
     Changelog,
+    PiExtMarket,
 }
 
 impl PanelTab {
@@ -263,6 +268,7 @@ impl PanelTab {
             PanelTab::Term(id) => TabKey::Term(*id),
             PanelTab::File(p) => TabKey::File(p.clone()),
             PanelTab::Changelog => TabKey::Changelog,
+            PanelTab::PiExtMarket => TabKey::PiExtMarket,
         }
     }
 }
@@ -283,6 +289,7 @@ impl PanelTab {
             PanelTab::Term(_) => ContentView::Term,
             PanelTab::File(_) => ContentView::File,
             PanelTab::Changelog => ContentView::Changelog,
+            PanelTab::PiExtMarket => ContentView::PiExtMarket,
         }
     }
 }

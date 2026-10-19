@@ -31,6 +31,8 @@ pub(crate) fn content_main(
         }
         // 081 更新日志 tab（新版本首启自动打开）
         ContentView::Changelog => changelog_view(chat).into_any_element(),
+        // 040-1 Pi 扩展市场标准页
+        ContentView::PiExtMarket => crate::market::pi_ext_market::page(chat, weak),
     };
     div()
         .id("content-main")
@@ -165,6 +167,7 @@ pub(crate) fn term_view(
         .map(|tab| match tab {
             crate::PanelTab::File(_) => div().into_any_element(),
             crate::PanelTab::Changelog => div().into_any_element(),
+            crate::PanelTab::PiExtMarket => div().into_any_element(),
             crate::PanelTab::Term(id) => {
                 let tix = chat.ws.terminals.iter().position(|t| t.id == id);
                 let Some(tix) = tix else {

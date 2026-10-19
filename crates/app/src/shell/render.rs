@@ -735,6 +735,12 @@ impl Render for Chat {
         if let Some(el) = settings::models::remove_provider_confirm_overlay(self, cx) {
             root = root.child(el);
         }
+        // 040-1 topbar 三横菜单浮层（入口：Pi扩展市场）
+        if self.dlg.market_menu.is_some() {
+            let vp = window.viewport_size();
+            let vp = (f32::from(vp.width), f32::from(vp.height));
+            root = root.child(market::pi_ext_market::menu_layer(self, vp, t, cx));
+        }
         // psp 悬浮层（tooltip / 详情卡 / 菜单 / 确认）
         root = root.child(function_panel::psp_overlays::psp_overlays(self, window, cx));
         // toolbar pill popup menus

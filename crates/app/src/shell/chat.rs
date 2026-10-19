@@ -50,6 +50,8 @@ pub(crate) struct AuxUi {
     pub(crate) changelog_scroll: gpui::ScrollHandle,
     /// 082 Pi 扩展更新检测状态（新会话页通知 + 设置·扩展页箭头/按钮消费）
     pub(crate) plugin_updates: services::plugin_updates::UpdatesState,
+    /// 040-1 市场域状态簇（Pi 扩展市场页；后续多个市场在此并列）
+    pub(crate) market: crate::market::MarketUi,
     /// 微信远程控制桥（060）：transport + 待答 ExtUi 请求
     pub(crate) remote: remote_control::RemoteControl,
     /// 工具定义弹窗左列表选中的工具名（pi-web ToolDefinitionsPanel 的
@@ -243,6 +245,10 @@ pub(crate) struct DlgUi {
     /// 子代理浮层面板（044-1 §1）：Some = 开着（1s 轮询启动），None = 关闭
     /// （轮询停止）。rows 是累积的 descriptor 投影，offset 是下一轮续读起点。
     pub(crate) subagent_panel: Option<crate::session::SubagentPanel>,
+    /// 040-1 topbar 三横「菜单」浮层：Some = 开着，值为按钮锚点（x, y）。
+    /// 渲染挂 render.rs 根（与 psp_overlays 同层），菜单项目前只有
+    /// 「Pi扩展市场」。
+    pub(crate) market_menu: Option<(f32, f32)>,
 }
 
 /// 会话池簇（4ea 字段重组）：常驻 runtime 池 + 注意力指针 + 索引缓存
@@ -617,6 +623,7 @@ impl Chat {
                 settings: None,
                 pending_send: None,
                 subagent_panel: None,
+                market_menu: None,
             },
             psp: PspUi {
                 projects: Vec::new(),
@@ -693,6 +700,7 @@ impl Chat {
                 changelog: None,
                 changelog_scroll: gpui::ScrollHandle::new(),
                 plugin_updates: services::plugin_updates::UpdatesState::default(),
+                market: crate::market::MarketUi::default(),
                 remote: remote_control::RemoteControl::new(),
                 tool_sel: None,
                 sysprompt_scroll: gpui::ScrollHandle::new(),
@@ -734,6 +742,8 @@ impl Chat {
                 if this
                     .update(cx, |chat, cx| {
                         chat.cfg.pkg_op = None;
+                        // 040-1：市场页行内按钮的转圈随 op 收尾清零
+                        chat.aux.market.pi_ext.pending = None;
                         chat.set_status(msg, cx);
                         // CLI op 改的是盘上的 settings.json；globals 是启动时
                         // 的内存副本，不重读则 reload_settings_panel 只会拷到

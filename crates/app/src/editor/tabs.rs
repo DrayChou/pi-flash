@@ -169,7 +169,7 @@ impl Chat {
         // 关掉当前 tab 后内容区回退：终端→浏览区遗留→chat；
         // 更新日志（081）→ 剩余 tab 激活最近的，没有则回会话
         if was_active && self.layout.content_view == view {
-            if view == ContentView::Changelog {
+            if matches!(view, ContentView::Changelog | ContentView::PiExtMarket) {
                 match self.ws.active_panel_tab {
                     Some(nix) => {
                         let v = self
@@ -575,6 +575,7 @@ impl Chat {
         let view = match self.ws.panel_tabs.get(ix) {
             Some(PanelTab::Term(_)) => ContentView::Term,
             Some(PanelTab::Changelog) => ContentView::Changelog,
+            Some(PanelTab::PiExtMarket) => ContentView::PiExtMarket,
             Some(PanelTab::File(_)) => ContentView::File,
             None => return,
         };

@@ -16,6 +16,7 @@ pub mod credentials;
 pub mod estimate;
 pub mod extensions;
 pub mod json;
+pub mod market;
 pub mod mcp;
 pub mod models_json;
 pub mod paths;

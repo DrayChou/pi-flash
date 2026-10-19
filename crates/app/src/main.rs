@@ -35,6 +35,7 @@ mod function_panel;
 mod i18n;
 #[cfg(test)]
 mod i18n_audit;
+mod market;
 mod models_config;
 mod remote_control;
 mod services;

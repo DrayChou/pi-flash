@@ -343,6 +343,25 @@ pub fn package_description(source: &str) -> Option<String> {
     package_description_in(&crate::config::agent_dir(), source)
 }
 
+/// 包内 package.json 的 `version`（市场页「已装 vs 最新」比对；best-effort：
+/// 未安装 / 无字段返回 None）。
+pub fn package_installed_version_in(agent_dir: &Path, source: &str) -> Option<String> {
+    let text =
+        std::fs::read_to_string(package_install_dir_in(agent_dir, source).join("package.json"))
+            .ok()?;
+    let v = crate::config::parse_lenient(&text).ok()?;
+    v.get("version")
+        .and_then(|d| d.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
+/// [`package_installed_version_in`] at the real agent dir.
+pub fn package_installed_version(source: &str) -> Option<String> {
+    package_installed_version_in(&crate::config::agent_dir(), source)
+}
+
 /// 列表展示名：去掉 `npm:` 前缀（040），其余来源原样。
 pub fn display_source(source: &str) -> &str {
     source.strip_prefix("npm:").unwrap_or(source)

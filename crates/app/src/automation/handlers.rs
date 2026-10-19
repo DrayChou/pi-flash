@@ -286,6 +286,7 @@ pub(super) fn dispatch(
                     ContentView::Term => "term",
                     ContentView::File => "file",
                     ContentView::Changelog => "changelog",
+                    ContentView::PiExtMarket => "pi-ext-market",
                 },
             }))
         }
