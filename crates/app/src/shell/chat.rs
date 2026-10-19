@@ -76,6 +76,9 @@ pub(crate) struct CfgUi {
     /// settings.modelThinkingLevels — per-`provider/modelId` recorded levels
     pub(crate) mc_model_thinking: Vec<(String, String)>,
     pub(crate) mc_skills: Vec<pi_link::skills::SkillEntry>,
+    /// Settings-子代理页的 Agent 定义（044-1 §2）：内置 + 自定义（自定义在前，
+    /// 同名覆盖内置）。
+    pub(crate) mc_agents: Vec<pi_link::agents::AgentProfile>,
     pub(crate) mc_pkgs_global: Vec<serde_json::Value>,
     pub(crate) mc_pkgs_project: Vec<serde_json::Value>,
     /// 扩展页 CLI op（install/remove）进行中：转圈按 op 种类落按钮；op 泵
@@ -659,6 +662,7 @@ impl Chat {
                 mc_default_thinking: None,
                 mc_model_thinking: Vec::new(),
                 mc_skills: Vec::new(),
+                mc_agents: Vec::new(),
                 mc_pkgs_global: Vec::new(),
                 mc_pkgs_project: Vec::new(),
                 pkg_op: None,

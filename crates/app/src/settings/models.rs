@@ -200,6 +200,9 @@ impl Chat {
         // 只会得到旧列表（“点了没反应”）。同时回写缓存，让 composer 的
         // skill 命令跟手。
         self.cfg.mc_skills = self.skills_fresh();
+        // 子代理页：盘上现读（~/.pi/agent/agents/*.md + 内置；自定义在前，
+        // 同名覆盖内置）——同 skills/MCP，写盘后必须重读才跟手
+        self.cfg.mc_agents = pi_link::agents::list_all_agents();
         // 043：MCP 盘上现读——project_ctx 是启动缓存，本页写盘后重读只会
         // 拷到旧列表（040 globals 内存副本同款教训）
         let (mcp_servers, mcp_errors) = pi_link::mcp::load(self.project());

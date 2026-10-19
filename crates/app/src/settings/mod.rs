@@ -6,6 +6,7 @@
 //! 不再建模任何 subagent 配置。
 
 pub(crate) mod about;
+pub(crate) mod agents;
 pub(crate) mod custom_models;
 pub(crate) mod general;
 pub(crate) mod mcp;
@@ -36,6 +37,8 @@ pub(crate) const TAB_MODELS: u8 = 1;
 pub(crate) const TAB_SKILLS: u8 = 2;
 pub(crate) const TAB_PLUGINS: u8 = 3;
 pub(crate) const TAB_MCP: u8 = 4;
+/// 子代理页（044-1 §2）：Agent 定义管理（内置/自定义）。
+pub(crate) const TAB_AGENTS: u8 = 9;
 pub(crate) const TAB_MISC: u8 = 5;
 pub(crate) const TAB_REMOTE: u8 = 6;
 pub(crate) const TAB_ABOUT: u8 = 7;
@@ -71,6 +74,24 @@ pub(crate) struct SettingsPanel {
     // -- MCP 页【配置MCP】表单（043：粘贴框 + 名称，全局 only）
     pub mcp_add: gpui::Entity<TextInput>,
     pub mcp_name: gpui::Entity<TextInput>,
+    // -- 子代理页表单（044-1 §2）
+    pub ag_name: gpui::Entity<TextInput>,
+    pub ag_desc: gpui::Entity<TextInput>,
+    pub ag_prompt: gpui::Entity<TextInput>,
+    pub ag_turns_n: gpui::Entity<TextInput>,
+    /// 模型（None = 键省略 = 继承会话模型）
+    pub ag_model: Option<String>,
+    /// 工具档位（inherit/read-only/default/full）
+    pub ag_tools: String,
+    /// 最大轮次档
+    pub ag_turns: pi_link::agents::MaxTurnsTier,
+    pub ag_inject: bool,
+    /// 哪个下拉开着（0=模型 1=工具；None=全关）
+    pub ag_popup: Option<u8>,
+    /// 下拉外点收起守卫（模型/工具两个共享）
+    pub ag_dd: gpui::Entity<DropdownState>,
+    /// 有未保存改动（表单头黄点 + 保存键可用）
+    pub ag_dirty: bool,
     pub error: Option<String>,
     /// 界面页：打开的字体下拉（槽位 ix；None=全关）
     pub font_popup: Option<usize>,
@@ -173,6 +194,47 @@ impl SettingsPanel {
                 })
             },
             mcp_name: panel_live_input(tr("mcp.field_name"), cx),
+            ag_name: panel_live_input("", cx),
+            ag_desc: panel_live_input("", cx),
+            ag_prompt: {
+                let weak_ag = cx.weak_entity();
+                cx.new(|cx| {
+                    TextInput::new(cx)
+                        .placeholder(tr("agents.prompt_ph"))
+                        .multiline()
+                        .on_change(Box::new(move |_, cx| {
+                            if let Some(p) = weak_ag.upgrade() {
+                                p.update(cx, |s, cx| {
+                                    s.ag_dirty = true;
+                                    cx.notify();
+                                });
+                            }
+                        }))
+                })
+            },
+            ag_turns_n: {
+                let weak_tn = cx.weak_entity();
+                cx.new(|cx| {
+                    TextInput::new(cx)
+                        .numeric(true)
+                        .placeholder("25")
+                        .on_change(Box::new(move |_, cx| {
+                            if let Some(p) = weak_tn.upgrade() {
+                                p.update(cx, |s, cx| {
+                                    s.ag_dirty = true;
+                                    cx.notify();
+                                });
+                            }
+                        }))
+                })
+            },
+            ag_model: None,
+            ag_tools: "inherit".into(),
+            ag_turns: pi_link::agents::MaxTurnsTier::Hundred,
+            ag_inject: true,
+            ag_popup: None,
+            ag_dd: cx.new(|_| DropdownState::new()),
+            ag_dirty: false,
             error: None,
             font_popup: None,
             font_dd: cx.new(|_| DropdownState::new()),
@@ -228,6 +290,10 @@ impl SettingsPanel {
             &self.mcp_add,
             &self.mcp_name,
             &self.font_filter,
+            &self.ag_name,
+            &self.ag_desc,
+            &self.ag_prompt,
+            &self.ag_turns_n,
         ];
         self.focus.is_focused(window)
             || inputs.iter().any(|e| e.read(cx).focus_handle_in(cx).is_focused(window))
@@ -245,6 +311,15 @@ impl SettingsPanel {
                 .cfg.mc_pkgs_global
                 .first()
                 .map(pi_link::skills::entry_source)
+                .unwrap_or_default(),
+            // 子代理页：默认选第一个自定义条目（无则第一个内置）
+            TAB_AGENTS => chat
+                .cfg
+                .mc_agents
+                .iter()
+                .find(|a| a.origin.is_custom())
+                .or_else(|| chat.cfg.mc_agents.first())
+                .map(|a| a.id.clone())
                 .unwrap_or_default(),
             // 043：MCP 页打开**一律进新增模式**——section 预选第一行会让
             // 「新增」误走编辑改名路径（静默删掉被预选的条目，实测踩过）；
@@ -281,6 +356,21 @@ pub(crate) struct SettingsFormData {
     pub mcp_add: gpui::Entity<TextInput>,
     pub mcp_name: gpui::Entity<TextInput>,
     pub mcp_add_value: String,
+    pub ag_name: gpui::Entity<TextInput>,
+    pub ag_desc: gpui::Entity<TextInput>,
+    pub ag_prompt: gpui::Entity<TextInput>,
+    pub ag_turns_n: gpui::Entity<TextInput>,
+    pub ag_model: Option<String>,
+    pub ag_tools: String,
+    pub ag_turns: pi_link::agents::MaxTurnsTier,
+    pub ag_inject: bool,
+    pub ag_popup: Option<u8>,
+    pub ag_dd: gpui::Entity<DropdownState>,
+    pub ag_dirty: bool,
+    /// 表单三个文本域的值快照（只读态渲染静态文本用；视图无 cx）
+    pub ag_name_value: String,
+    pub ag_desc_value: String,
+    pub ag_prompt_value: String,
     pub error: Option<String>,
     pub font_popup: Option<usize>,
     pub font_dd: gpui::Entity<DropdownState>,
@@ -317,6 +407,20 @@ impl SettingsFormData {
             mcp_add: p.mcp_add.clone(),
             mcp_name: p.mcp_name.clone(),
             mcp_add_value: p.mcp_add.read(cx).value().to_string(),
+            ag_name: p.ag_name.clone(),
+            ag_desc: p.ag_desc.clone(),
+            ag_prompt: p.ag_prompt.clone(),
+            ag_turns_n: p.ag_turns_n.clone(),
+            ag_model: p.ag_model.clone(),
+            ag_tools: p.ag_tools.clone(),
+            ag_turns: p.ag_turns,
+            ag_inject: p.ag_inject,
+            ag_popup: p.ag_popup,
+            ag_dd: p.ag_dd.clone(),
+            ag_dirty: p.ag_dirty,
+            ag_name_value: p.ag_name.read(cx).value().to_string(),
+            ag_desc_value: p.ag_desc.read(cx).value().to_string(),
+            ag_prompt_value: p.ag_prompt.read(cx).value().to_string(),
             error: p.error.clone(),
             font_popup: p.font_popup,
             font_dd: p.font_dd.clone(),
@@ -335,7 +439,7 @@ pub(crate) fn render_settings(
     window: &gpui::Window,
 ) -> gpui::AnyElement {
     let t = T();
-    let SettingsFormData { focus: _focus, tab, section, key_input, key_visible, model_filter, model_filter_value, enabled_filter, enabled_filter_value, model_free_only, mj_name, mj_base, mj_key, mj_id, mj_mname, mj_ctx, mj_api, mj_reasoning, install_input, mcp_add, mcp_add_value, mcp_name, error, font_popup, font_dd, font_filter, font_filter_value, size_popup, size_dd } =
+    let SettingsFormData { focus: _focus, tab, section, key_input, key_visible, model_filter, model_filter_value, enabled_filter, enabled_filter_value, model_free_only, mj_name, mj_base, mj_key, mj_id, mj_mname, mj_ctx, mj_api, mj_reasoning, install_input, mcp_add, mcp_add_value, mcp_name, error, font_popup, font_dd, font_filter, font_filter_value, size_popup, size_dd, .. } =
         d.clone();
     let weak_close = weak.clone();
 
@@ -350,6 +454,10 @@ pub(crate) fn render_settings(
         ),
         TAB_SKILLS => {
             let (sidebar, detail) = crate::settings::skills::mc_skills_view(chat, weak, &section);
+            two_pane(sidebar, detail)
+        }
+        TAB_AGENTS => {
+            let (sidebar, detail) = crate::settings::agents::mc_agents_view(chat, weak, &section, d);
             two_pane(sidebar, detail)
         }
         TAB_PLUGINS => crate::settings::plugins::mc_plugins_view(
@@ -481,11 +589,12 @@ fn two_pane(sidebar: gpui::AnyElement, detail: gpui::AnyElement) -> gpui::AnyEle
 fn nav_items(tab: u8, weak_close: gpui::WeakEntity<Chat>) -> Vec<gpui::AnyElement> {
     let t = T();
     // tr() 传 &'static 键返回 &'static；显式标注避免数组被推断成临时生命周期
-    let items: [(u8, &'static str, &'static str); 8] = [
+    let items: [(u8, &'static str, &'static str); 9] = [
         (TAB_GENERAL, tr("settings.tab.appearance"), "monitor"),
         (TAB_MODELS, tr("settings.tab.models"), "cpu"),
         (TAB_SKILLS, tr("settings.tab.skills"), "layers"),
         (TAB_PLUGINS, tr("settings.tab.extensions"), "plug"),
+        (TAB_AGENTS, tr("settings.tab.agents"), "user-round"),
         (TAB_MCP, tr("settings.tab.mcp"), "server"),
         (TAB_MISC, tr("settings.tab.misc"), "ellipsis"),
         (TAB_ABOUT, tr("settings.tab.about"), "info"),
