@@ -78,6 +78,8 @@ pub(crate) fn boot() {
     if moved > 0 {
         eprintln!("[startup] migrated {moved} legacy pi-flash file(s) → ~/.pi-flash/");
     }
+    // dev-flags（重型模块发版排除）状态一眼可见：关掉的功能为什么没了
+    eprintln!("[startup] dev-flags: {}", pi_link::dev_flags::summary());
     // 存量清洗（幂等）：注册表里落在当前安装根内的历史脏条目——0.1.x 更新
     // 交接 spawn 不设 cwd，继承的老 payload 目录曾被当项目写进来（「payload
     // 项目删了每次启动又回来」的根因，pi_link::paths::is_app_install_path）。

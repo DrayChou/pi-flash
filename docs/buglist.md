@@ -771,3 +771,31 @@ N小时前）+ `⏱时长 · Nk tokens`。头部加聚合：`N 个子代理 | �
 - 默认（删/改 dev-flags.json 后重启）：无按钮、无设置页、对话里无 agent 工具
 - `{"subagents": true}` 重启：全部恢复
 - `PI_FLASH_SUBAGENTS=0` 压过旗标文件
+
+## 本轮追加（2026-10-19 第八批）——dev-flags 配置化（机制泛化）
+
+用户拍板：开关走**配置文件**不走删文件；此后其他重型模块的发版排除统一
+走 dev-flags.json。子代理 = 首个配置化模块，机制泛化落地：
+
+- 新 pi-link 模块 `dev_flags.rs`：`KNOWN` 键注册表（现仅 "subagents"）、
+  `enabled(key)`（env `PI_FLASH_<键大写>` 覆盖 > 文件键值 > false）、
+  `from_file`/`summary()`；解析换 `config::read_json`（**dev-flags.json 支持
+  // 注释/尾逗号**，缺文件=空对象，坏文件 fail-closed 全关）
+- app `workspace::dev_flag_enabled(key)`（OnceLock 快照 KNOWN 全键，渲染
+  安全，重启生效）；`subagents_enabled()` 变薄包装，5 个调用点零改动
+- `subagents::ext_path()` 的 env 短路移除（政策归 dev_flags，定位归定位）
+- `startup::boot()` 启动打 `[startup] dev-flags: subagents=off` 行 +
+  未知键 typo 提示
+- 本机 pi-flash-dev/dev-flags.json 呈配置态：`{ "subagents": false }` 带注释头
+
+### 后续模块接入（约定）
+
+KNOWN 加键 → 消费点调 `workspace::dev_flag_enabled("键")` → env 覆盖自动
+获得。候选：remote_control（有 TAB_REMOTE 隐藏先例 + 独立 wxprobe crate）、
+automation（现 env 默认关，迁移只是换钥匙）、terminal（alacritty 重依赖）、
+updater；markdown 不建议（与内容区三态耦合）。
+
+### 验证项
+
+- cargo run 启动 stderr 出现 `[startup] dev-flags: subagents=off`
+- false 关态三处隐藏齐全；改 true 重启全恢复；`PI_FLASH_SUBAGENTS=0` 压制

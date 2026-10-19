@@ -1021,12 +1021,27 @@ pub fn autohide_icons() -> bool {
     app_settings().autohide_icons.unwrap_or(true)
 }
 
+/// 开发旗标快照（dev_flags::KNOWN 全键，进程内首读一次）。渲染期每帧调用
+/// 安全；文件改动重启（重新 cargo run）生效。
+fn dev_flag_snapshot() -> &'static std::collections::HashMap<String, bool> {
+    static SNAPSHOT: OnceLock<std::collections::HashMap<String, bool>> = OnceLock::new();
+    SNAPSHOT.get_or_init(|| {
+        pi_link::dev_flags::KNOWN
+            .iter()
+            .map(|key| (key.to_string(), pi_link::dev_flags::enabled(key)))
+            .collect()
+    })
+}
+
+/// 开发旗标查询（键 = 模块名，见 pi-link `dev_flags::KNOWN`；缺键 = false）。
+pub fn dev_flag_enabled(key: &str) -> bool {
+    dev_flag_snapshot().get(key).copied().unwrap_or(false)
+}
+
 /// subagent 功能总开关（开发旗标，默认关；dev-flags.json /
-/// PI_FLASH_SUBAGENTS 控制）。进程内缓存一次——改动重启（重新 cargo run）
-/// 生效；渲染期每帧调用安全。
+/// PI_FLASH_SUBAGENTS 控制）。
 pub fn subagents_enabled() -> bool {
-    static ENABLED: OnceLock<bool> = OnceLock::new();
-    *ENABLED.get_or_init(pi_link::subagents::dev_enabled)
+    dev_flag_enabled("subagents")
 }
 
 /// 文件树 git 标识开关（设置-界面；默认关 = 清爽目录树，023 定案）。
@@ -1082,13 +1097,6 @@ pub fn chat_content_width() -> f32 {
 
 fn clamp_chat_width(v: u64) -> u32 {
     (v as u32).clamp(CHAT_WIDTH_MIN, CHAT_WIDTH_MAX)
-}
-
-/// 会话内容宽度写盘（滑块松手 / 复位按钮）。
-pub fn set_chat_content_width(width: u32) {
-    let mut s = app_settings();
-    s.chat_content_width = Some(clamp_chat_width(width as u64) as u64);
-    save_app_settings(&s);
 }
 
 /// 拖动中的实时预览：只改内存缓存不落盘（每帧一个 MouseMove，逐帧写

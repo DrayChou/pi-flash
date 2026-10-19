@@ -13,6 +13,7 @@ pub mod catalog;
 pub mod client;
 pub mod config;
 pub mod credentials;
+pub mod dev_flags;
 pub mod estimate;
 pub mod extensions;
 pub mod json;
