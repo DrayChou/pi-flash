@@ -279,7 +279,6 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     // 界面页：会话内容宽度（消息列 + composer 胶囊同源；pi-web chatContentWidth）
     ("settings.chat_width", "会话内容宽度", "會話內容寬度", "Chat content width"),
     ("settings.chat_width_hint", "消息与输入框的最大宽度", "訊息與輸入框的最大寬度", "Max width shared by messages and the composer"),
-    ("settings.reset_default", "复位", "復位", "Reset"),
     ("settings.show_thinking", "展示思考", "展示思考", "Show thinking"),
     ("settings.show_thinking_hint", "思考默认展开或收起", "思考預設展開或收起", "thinking blocks expand by default or collapse to one line"),
     // 界面页：部分操作隐藏（dock 两操作栏不常用 icon 自动隐藏总开关）

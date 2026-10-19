@@ -72,12 +72,11 @@ pub(crate) fn mc_general_view(
     // 自带 py(13)）
     // 会话内容宽度（消息列 + composer 胶囊同源；pi-web chatContentWidth
     // parity）：拖动即实时预览（消息列与胶囊同步变宽/变窄），松手写盘。
-    // 「复位」无需确认——再拖回来即可，不存在不可逆后果
+    // 无复位钮（用户定夺：冗余——再拖回去即可，不存在不可逆后果）
     let chat_w = crate::services::workspace::chat_content_width();
     let w_min = crate::services::workspace::CHAT_WIDTH_MIN as f32;
     let w_max = crate::services::workspace::CHAT_WIDTH_MAX as f32;
     let w_step = crate::services::workspace::CHAT_WIDTH_STEP as f32;
-    let w_default = crate::services::workspace::CHAT_WIDTH_DEFAULT as f32;
     col = col.child(
         div().mt(px(7.)).child(set_row(
             tr("settings.chat_width"),
@@ -104,18 +103,7 @@ pub(crate) fn mc_general_view(
                     w_step,
                     weak,
                 ))
-                .child(config_button(
-                    "general-chat-width-reset",
-                    weak,
-                    tr("settings.reset_default"),
-                    Btn::Secondary,
-                    true,
-                    chat_w == w_default,
-                    move |_c, cx| {
-                        crate::services::workspace::set_chat_content_width(w_default as u32);
-                        cx.notify();
-                    },
-                ))
+                // 复位钮已拨（用户定夺：冗余——再拖回来即可，无不可逆后果）
                 .into_any_element(),
             t,
         )),
