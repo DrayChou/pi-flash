@@ -16,56 +16,40 @@ const COL_W: f32 = 600.;
 
 pub(crate) fn mc_shortcuts_view(window: &Window) -> gpui::AnyElement {
     // 全局：前五项 keymap 反查，后两键走渲染根兜底（无 action，见模块注释）
-    let global: Vec<(&str, &str, Option<Keystroke>)> = vec![
+    let global: Vec<(&str, Option<Keystroke>)> = vec![
         (
             tr("psp.open_project"),
-            "",
             action_key(&crate::OpenProjectPicker, window),
         ),
-        (tr("psp.new_session"), "", action_key(&crate::NewSession, window)),
+        (tr("psp.new_session"), action_key(&crate::NewSession, window)),
         (
             tr("psp.search_sessions"),
-            "",
             action_key(&crate::OpenSessionSearch, window),
         ),
         (
             tr("shortcuts.search_files"),
-            "",
             action_key(&crate::OpenFileSearch, window),
         ),
         (
             tr("psp.maximize_session_list"),
-            "",
             action_key(&crate::MaximizeSessionList, window),
         ),
         (
             tr("file_tree.maximize"),
-            "",
             action_key(&crate::MaximizeFileTree, window),
         ),
-        (
-            tr("shortcuts.view_left"),
-            tr("shortcuts.view_left_hint"),
-            Some(bare_key("ctrl-left")),
-        ),
-        (
-            tr("shortcuts.view_right"),
-            tr("shortcuts.view_right_hint"),
-            Some(bare_key("ctrl-right")),
-        ),
+        (tr("shortcuts.view_left"), Some(bare_key("ctrl-left"))),
+        (tr("shortcuts.view_right"), Some(bare_key("ctrl-right"))),
     ];
-    let file_tree: Vec<(&str, &str, Option<Keystroke>)> = vec![(
-        tr("file_tree.rename"),
-        tr("shortcuts.rename_hint"),
-        Some(bare_key("f2")),
-    )];
+    let file_tree: Vec<(&str, Option<Keystroke>)> =
+        vec![(tr("file_tree.rename"), Some(bare_key("f2")))];
 
     // 弹窗 body 是 block 容器（taffy block 不解析流内auto margin），居中
     // 走 items_center + max_w
     let mut root = div().w_full().flex().flex_col().items_center();
     let mut col = div().w_full().max_w(px(COL_W)).flex().flex_col();
 
-    // 组：组名 + 细线延伸 + 条数；行内只有标题/说明 + 点线引导（无编号）
+    // 组：组名 + 细线延伸 + 条数；行内只有标题 + 点线引导（无编号、无说明）
     let groups = vec![
         (tr("shortcuts.group_global"), global),
         (tr("shortcuts.group_file_tree"), file_tree),
@@ -74,9 +58,9 @@ pub(crate) fn mc_shortcuts_view(window: &Window) -> gpui::AnyElement {
     for (gi, (name, entries)) in groups.into_iter().enumerate() {
         col = col.child(group_title(name, entries.len(), gi == 0));
         let last = entries.len().saturating_sub(1);
-        for (ri, (title, desc, key)) in entries.into_iter().enumerate() {
+        for (ri, (title, key)) in entries.into_iter().enumerate() {
             row_ix += 1;
-            col = col.child(index_row(row_ix, title, desc, key.as_ref(), ri != last));
+            col = col.child(index_row(row_ix, title, key.as_ref(), ri != last));
         }
     }
 
@@ -132,21 +116,18 @@ fn group_title(name: &str, count: usize, first: bool) -> gpui::AnyElement {
         .into_any_element()
 }
 
-/// 索引行：`打开项目 ················ [Ctrl][+][P]`（无编号，文案左缘=
-/// 原数字列起点，即 px(2) 内边距处）。sep_below = 组内行间细分隔线（组尾行
+/// 索引行：`打开项目 ················ [Ctrl][+][P]`（无编号、无说明行，
+/// 文案左缘 = 原数字列起点，即 px(2) 内边距处）。sep_below = 组内行间细分隔线（组尾行
 /// 与下一组标题之间不画）。悬停整行淡 accent 底（group/group_hover，见
 /// docs/agents/gpui.md）。
 fn index_row(
     ix: usize,
     title: &str,
-    desc: &str,
     key: Option<&Keystroke>,
     sep_below: bool,
 ) -> gpui::AnyElement {
     let t = T();
-    let mut name_col = div()
-        .flex()
-        .flex_col()
+    let name_col = div()
         .flex_shrink_0()
         .child(
             div()
@@ -155,15 +136,6 @@ fn index_row(
                 .text_color(rgb(t.text))
                 .child(SharedString::from(title.to_string())),
         );
-    if !desc.is_empty() {
-        name_col = name_col.child(
-            div()
-                .mt(px(1.5))
-                .text_size(crate::appearance::ui_size(11.))
-                .text_color(rgb(t.text_dim))
-                .child(SharedString::from(desc.to_string())),
-        );
-    }
     div()
         .id(SharedString::from(format!("sc-row-{ix}")))
         .group("sc-row")
