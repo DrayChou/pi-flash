@@ -34,6 +34,8 @@
 ## 里程碑索引
 - 2026-10-19 subagent M1：`extensions/pi-subagents`（dsh 调用机制 + pi 原生执行）
   落地并接进 PF spawn 链（`-e`），PF 内实测委派通过；64 单测全绿。
+- 2026-10-19 subagent 子会话判定改 marker（`subagent/child` custom entry），
+  修正 parentSession 误杀 fork 分支的回归；INDEX_VERSION 2→3。
 
 （新 → 旧；一行一条，细节看对应提交）
 
