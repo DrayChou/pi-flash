@@ -36,6 +36,10 @@ export interface SessionFactoryOptions {
 	parentSession?: string;
 	/** True when the child must start from the parent's completed history. */
 	inheritParentContext?: boolean;
+	/** Stamped into the child's marker entry (side-bar filtering keys on it). */
+	providerName?: string;
+	/** Delegation depth, recorded in the marker entry. */
+	depth?: number;
 }
 
 export type SessionFactory = (options: SessionFactoryOptions) => Promise<ChildSession>;
@@ -140,6 +144,8 @@ export class LocalProvider implements Provider {
 				appendSystemPrompt: composition.appendSystemPrompt,
 				tools: composition.tools,
 				inheritParentContext: this.#options.inheritsParentContext,
+				providerName: this.#options.name,
+				depth: request.depth,
 			});
 		} catch (error) {
 			throw asSubagentError(error, SubagentErrorCode.START_REJECTED);

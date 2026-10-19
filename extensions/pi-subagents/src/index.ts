@@ -12,6 +12,8 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 import type { ChildSession, SessionFactory, SessionFactoryOptions } from "./backends/local.ts";
 import { LocalProvider } from "./backends/local.ts";
@@ -24,6 +26,9 @@ import { DELEGATION_PARAMETERS, delegationDescription, runDelegation } from "./t
 const DEFAULT_CAPACITY = 8;
 const DEFAULT_MAX_DEPTH = 1;
 const TOOL_NAME = "agent";
+/// Must match `SUBAGENT_CHILD_MARKER` in `pi-link/src/sessions.rs`: the side-bar
+/// filter keys on this custom entry, never on `parentSession`.
+const CHILD_MARKER_TYPE = "subagent/child";
 
 /** Session file -> delegation depth, so a child that reloads this extension still knows its depth. */
 const childDepths = new Map<string, number>();
@@ -56,12 +61,45 @@ function createSessionFactory(ctx: ExtensionContext, parentSessionFile: string |
 		const sessionManager = sdk.SessionManager.create(options.cwd, parent.getSessionDir?.(), {
 			parentSession: parentFile,
 		});
+		// Marker extension: the child stamps its own file with a `subagent/child`
+		// custom entry at session_start. Session-file filtering (pi-link/sessions.rs)
+		// keys on THIS marker, never on `parentSession` — pi-native forks carry that
+		// header too and must keep their sidebar rows.
+		// agentDir is mandatory for DefaultResourceLoader (resolvePath chokes on
+		// undefined on Windows); reuse the parent's own agent dir.
+		const loader = new sdk.DefaultResourceLoader({
+			cwd: options.cwd,
+			agentDir: sdk.getAgentDir(),
+			// Custom loader → pi 不再套默认 agentDir；传 undefined 会在
+			// resolvePath() 炸掉（undefined.startsWith）。
+			agentDir: join(homedir(), ".pi", "agent"),
+			extensionFactories: [
+				{
+					name: "subagent-child-marker",
+					hidden: true,
+					factory: (childPi: { on(event: string, handler: () => void): void; appendEntry(type: string, data?: unknown): void }) => {
+						childPi.on("session_start", () => {
+							try {
+								childPi.appendEntry(CHILD_MARKER_TYPE, { provider: options.providerName, depth: options.depth });
+							} catch {
+								// Missing marker degrades to "child shows in the list"; never fatal.
+							}
+						});
+					},
+				},
+			],
+		});
+		await loader.reload();
 		const { session } = await sdk.createAgentSession({
 			cwd: options.cwd,
 			model,
 			sessionManager,
+			resourceLoader: loader,
 			...(options.tools && options.tools.length > 0 ? { tools: options.tools } : {}),
 		});
+		// SDK sessions don't auto-bind the extension runtime: without this the
+		// marker's session_start never fires and the entry is never written.
+		await (session as unknown as { bindExtensions(bindings: unknown): Promise<void> }).bindExtensions({});
 		const sessionFile = session.sessionFile;
 		if (sessionFile) childDepths.set(sessionFile, currentDepthOf(ctx) + 1);
 		return {
@@ -76,6 +114,7 @@ function createSessionFactory(ctx: ExtensionContext, parentSessionFile: string |
 
 interface SdkLike {
 	createAgentSession(options: Record<string, unknown>): Promise<{ session: AgentSessionLike }>;
+	getAgentDir(): string;
 	SessionManager: {
 		create(
 			cwd: string,
@@ -83,6 +122,11 @@ interface SdkLike {
 			options?: { id?: string; parentSession?: string },
 		): unknown;
 	};
+	DefaultResourceLoader: new (options?: {
+		cwd?: string;
+		agentDir?: string;
+		extensionFactories?: unknown[];
+	}) => { reload(): Promise<void> };
 }
 
 interface AgentSessionLike {

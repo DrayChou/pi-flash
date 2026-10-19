@@ -39,6 +39,12 @@ const PREVIEW_LINES: usize = 40;
 /// full-parse cap: it's a best-effort salvage, not a real preview.
 const PARTIAL_PREVIEW_CHARS: usize = 50;
 
+/// 子代理子会话的专属标记（custom entry 的 customType，由扩展在子会话
+/// session_start 时落盘）。与父会话里的 `subagent/descriptor` 是两个东西：
+/// descriptor 记录委派事实（落父会话），marker 标记"这个会话是子代理"（落
+/// 子会话自己）。侧栏过滤只认后者。
+const SUBAGENT_CHILD_MARKER: &str = "subagent/child";
+
 const NEEDLE_MESSAGE: &str = "\"type\":\"message\"";
 const NEEDLE_SESSION_INFO: &str = "\"type\":\"session_info\"";
 
@@ -92,7 +98,7 @@ pub fn sessions_root() -> Option<PathBuf> {
 /// v2: `scan_file` salvages previews from prefix-truncated first user
 /// lines (huge first paste ⇒ "(empty)" rows); v1 caches hold the old
 /// empty previews on dormant files, so they are dropped once on load.
-const INDEX_VERSION: u64 = 2;
+const INDEX_VERSION: u64 = 3;
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
 struct IndexEntry {
@@ -108,11 +114,11 @@ struct IndexEntry {
     /// 旧版索引文件无此字段 → 0（下次指纹失效时全量重数一次后落盘）。
     #[serde(default)]
     count_bytes: u64,
-    /// Session 父链：子代理会话的 header 带 `parentSession`。这类会话是真实
-    /// 会话（可打开/可检视），但不该混进侧栏的项目会话列表——否则每次委派都
-    /// 会在列表里多出一行「子代理首条 prompt」。
+    /// 子代理专属标记：子会话文件里的 `subagent/child` custom entry（由扩展
+    /// 在子会话 session_start 时落盘）。**不能**改用 header 的 `parentSession`
+    /// 判定——pi 原生 fork 的分支会话同样带它，那是要正常上侧栏的用户会话。
     #[serde(default)]
-    parent: Option<String>,
+    child_marker: bool,
 }
 
 impl IndexEntry {
@@ -139,7 +145,7 @@ impl IndexEntry {
 
     /// Subagent session: listed only through its parent, never as a peer row.
     fn is_child(&self) -> bool {
-        self.parent.as_ref().is_some_and(|p| !p.is_empty())
+        self.child_marker
     }
 }
 
@@ -521,7 +527,7 @@ fn scan_file(path: &Path, modified: SystemTime, size: u64, prev: Option<&IndexEn
     let prefix = read_prefix(path, PREFIX_BYTES);
     let mut id = String::new();
     let mut cwd = String::new();
-    let mut parent: Option<String> = None;
+    let mut child_marker = false;
     let mut preview = String::new();
     for line in prefix.lines().take(PREVIEW_LINES) {
         let Ok(v) = crate::json::parse_value(line) else {
@@ -538,10 +544,14 @@ fn scan_file(path: &Path, modified: SystemTime, size: u64, prev: Option<&IndexEn
             Some("session") => {
                 id = v["id"].as_str().unwrap_or("").to_string();
                 cwd = v["cwd"].as_str().unwrap_or("").to_string();
-                parent = v["parentSession"]
-                    .as_str()
-                    .filter(|p| !p.is_empty())
-                    .map(str::to_string);
+            }
+            Some("custom") => {
+                // 子代理标记（扩展在子会话 session_start 时 appendEntry，位置
+                // 紧随 header，必在 prefix 窗口内）。header 的 parentSession
+                // 不可用作判定：pi 原生 fork 的分支同样带它。
+                if v["customType"].as_str() == Some(SUBAGENT_CHILD_MARKER) {
+                    child_marker = true;
+                }
             }
             Some("message") => {
                 if v["message"]["role"].as_str() == Some("user") && preview.is_empty() {
@@ -603,7 +613,7 @@ fn scan_file(path: &Path, modified: SystemTime, size: u64, prev: Option<&IndexEn
         name,
         message_count,
         count_bytes,
-        parent,
+        child_marker,
     })
 }
 
@@ -1253,16 +1263,32 @@ mod tests {
     }
 
     #[test]
-    fn list_skips_child_sessions() {
-        // 045：子代理会话（header 带 parentSession）是真会话，但不占侧栏行。
+    fn list_skips_child_sessions_but_keeps_forks() {
+        // 045：子代理会话靠自体内的 `subagent/child` marker 排除；pi 原生 fork
+        // 分支（header 带 parentSession 但无 marker）是用户会话，必须上行。
+        // 回归背景：曾用 parentSession 判定，把用户的 fork 置顶会话从侧栏全杀。
         let root = temp_root("children");
         let parent = write_session(&root, "D:\\proj-c", "parent1", BODY);
         let group = parent.parent().unwrap().to_path_buf();
+
+        // fork 分支：header 带 parentSession，无 marker。
+        let fork = group.join("2026-09-26T00-00-02-000Z_fork1.jsonl");
+        std::fs::write(
+            &fork,
+            format!(
+                "{{\"type\":\"session\",\"version\":3,\"id\":\"fork1\",\"cwd\":\"D:\\\\proj-c\",\"parentSession\":\"{}\"}}\n{}",
+                parent.display().to_string().replace('\\', "\\\\"),
+                BODY
+            ),
+        )
+        .unwrap();
+
+        // subagent 子会话：header 带 parentSession + 自体 marker entry。
         let child = group.join("2026-09-26T00-00-01-000Z_child1.jsonl");
         std::fs::write(
             &child,
             format!(
-                "{{\"type\":\"session\",\"version\":3,\"id\":\"child1\",\"cwd\":\"D:\\\\proj-c\",\"parentSession\":\"{}\"}}\n{}",
+                "{{\"type\":\"session\",\"version\":3,\"id\":\"child1\",\"cwd\":\"D:\\\\proj-c\",\"parentSession\":\"{}\"}}\n{{\"type\":\"custom\",\"customType\":\"subagent/child\",\"id\":\"m1\",\"data\":{{\"provider\":\"spawn\",\"depth\":1}}}}\n{}",
                 parent.display().to_string().replace('\\', "\\\\"),
                 BODY
             ),
@@ -1270,16 +1296,23 @@ mod tests {
         .unwrap();
 
         let mut s = Scanner::open(&root);
-        let listed = s.list_for_cwd("D:\\proj-c", 10);
-        assert_eq!(listed.len(), 1, "只有父会话上行: {listed:?}");
-        assert_eq!(listed[0].id, "parent1");
+        let mut listed = s.list_for_cwd("D:\\proj-c", 10);
+        listed.sort_by(|a, b| a.id.cmp(&b.id));
+        assert_eq!(
+            listed.iter().map(|i| i.id.as_str()).collect::<Vec<_>>(),
+            vec!["fork1", "parent1"],
+            "fork 上行、子代理被排除: {listed:?}"
+        );
 
-        // 子会话仍可被解析（父链记录在索引里），只是不出现在列表结果里。
+        // 子会话文件本身仍可解析，且 marker 被识别。
         let mtime = std::fs::metadata(&child).unwrap().modified().unwrap();
         let entry = scan_file(&child, mtime, std::fs::metadata(&child).unwrap().len(), None)
             .expect("child scan ok");
-        assert!(entry.is_child(), "parentSession 应被识别为子会话");
-        assert_eq!(entry.id, "child1");
+        assert!(entry.is_child(), "marker 应被识别为子会话");
+        let fmtime = std::fs::metadata(&fork).unwrap().modified().unwrap();
+        let fork_entry = scan_file(&fork, fmtime, std::fs::metadata(&fork).unwrap().len(), None)
+            .expect("fork scan ok");
+        assert!(!fork_entry.is_child(), "fork 无 marker，不是子会话");
         let _ = std::fs::remove_dir_all(&root);
     }
 

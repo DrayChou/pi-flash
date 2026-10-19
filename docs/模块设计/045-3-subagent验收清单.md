@@ -28,8 +28,12 @@ cargo run -p app
 - 最终回答含子代理返回的 `PF-SUBAGENT-OK`
 - 子会话文件落在**父会话同目录**(`~/.pi/agent/sessions/<encoded-cwd>/`),
   header 带 `parentSession`;父会话 jsonl 有 `subagent/descriptor` 条目
-- **侧栏不该多出行**:子会话带 `parentSession`,索引层识别为子会话并从项目会话
-  列表/计数中排除(`sessions.rs` `IndexEntry::is_child`);仍可按路径打开检视
+- **侧栏不该多出行**:子会话自体落 `subagent/child` custom entry(扩展在子会话
+  session_start 时经 inline extension appendEntry),索引层据此排除
+  (`sessions.rs` `IndexEntry::child_marker`);仍可按路径打开检视
+- **pi 原生 fork 分支必须正常上行**:fork 的 header 同样带 `parentSession`,
+  但无 marker——**禁止**用 `parentSession` 判定子会话(2026-10-19 事故:曾据此
+  把用户 fork 的置顶会话从侧栏全杀)
 
 实测记录(2026-10-19):PF 界面确认通过。同轮快照 `messages` 为
 user → assistant(tool_calls=1)→ assistant("PF-SUBAGENT-OK");子会话文件与
@@ -132,6 +136,11 @@ You are a probe. Answer in one word.
 
 - 工具卡为通用渲染(无 subagent 专属卡片、无子会话跳转)——属 044 宿主侧
 - 子会话当前只是「不上列表」;在父会话下**嵌套展示**属 044 的 M3
+- marker 机制落地前的存量子会话文件(无 marker)无法被识别排除——M1 落地
+  不足一天、存量已归档,不做迁移
+- 子会话 loader 带 marker inline extension(不注册工具),与"子会话不装配
+  pi-subagents"的防孙代约束不冲突;自定义 loader 必须显式传 `agentDir`,
+  否则 pi 的 `resolvePath(undefined)` 崩(`undefined.startsWith`)
 - CLI 用 `--no-session` 时父会话无文件 → 子会话拿不到 `parentSession`,
   会作为普通会话出现(仅影响 CLI 冒烟,PF 恒有会话文件)
 - 后台投递(`background: true`)只回 childId,完成通知未接宿主(M3)
