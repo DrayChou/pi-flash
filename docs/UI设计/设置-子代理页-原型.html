@@ -180,20 +180,16 @@
         <div class="pane on">
           <div class="set-split">
             <div class="sp-list">
-              <div class="sp-head">内置<span class="path">随 pi-subagents 扩展</span><span class="cnt">1</span></div>
+              <div class="sp-head">内置<span class="cnt">1</span></div>
               <div class="sp-li" data-d="d-explorer">
                 <div class="name">explorer<span class="sub">只读探索 · 调研与定位</span></div>
-                <span class="badge lock">内置</span>
+                
               </div>
 
-              <div class="sp-head" style="margin-top:10px">自定义<span class="path">~\.pi\agent\agents</span><span class="cnt">2</span></div>
+              <div class="sp-head" style="margin-top:10px"></div>
               <div class="sp-li sel" data-d="d-reviewer">
                 <div class="name">code-reviewer<span class="sub">代码评审 · 正确性与边界</span></div>
-                <span class="badge over">覆盖内置</span>
-              </div>
-              <div class="sp-li broken" data-d="d-broken">
-                <div class="name">broken-scan<span class="sub">无法解析</span></div>
-                <span class="badge broken">损坏</span>
+                
               </div>
 
               <button class="add-btn">
@@ -206,77 +202,66 @@
 
               <div class="pane on" id="d-reviewer">
                 <h3>code-reviewer
-                  <span class="badge over">覆盖内置</span>
+                  
                   <span style="flex:1"></span>
-                  <span class="scope">作用域<span class="badge">自定义</span></span>
-                  <button class="ghost-btn danger">删除</button>
+                                    <button class="ghost-btn danger">删除</button>
                 </h3>
 
                 <div class="frm">
                   <div class="frm-row">
-                    <label>描述<small>列表与委派时展示</small></label>
+                    <label>描述</label>
                     <div class="frm-ctl"><input type="text" value="代码评审 · 正确性与边界" placeholder="展示给模型的简短说明"></div>
                   </div>
                   <div class="frm-row">
-                    <label>模型<small>留空跟随会话</small></label>
+                    <label>模型</label>
                     <div class="frm-ctl">
                       <button class="sel-btn" style="width:100%">deepseek/deepseek-chat<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button>
                     </div>
                   </div>
                   <div class="frm-row">
-                    <label>轮次预算<small>到限提醒收尾，超限中止</small></label>
+                    <label>轮次预算</label>
                     <div class="frm-ctl">
-                      <div class="stepper"><button>−</button><b>15</b><button>+</button><span class="hint" style="margin-left:4px">默认 25</span></div>
+                      <div class="stepper"><button>−</button><b>15</b><button>+</button></div>
                     </div>
                   </div>
                   <div class="frm-row">
-                    <label>人格<small>替换将不含默认助手设定</small></label>
-                    <div class="frm-ctl">
-                      <div class="seg"><button class="on">追加到默认</button><button>完全替换</button></div>
-                    </div>
                   </div>
                   <div class="frm-row">
-                    <label>系统提示词<small>该子代理的职责与方法</small></label>
+                    <label>系统提示词</label>
                     <div class="frm-ctl"><textarea spellcheck="false">你是资深代码评审员，只做评审不写代码。
 关注正确性、边界条件、并发安全与错误处理。
 
 输出格式：按严重度分级的问题清单 + 每条附修复建议。</textarea></div>
                   </div>
                   <div class="frm-row">
-                    <label>项目指令<small>AGENTS.md 是否进上下文</small></label>
+                    <label>项目指令</label>
                     <div class="frm-ctl" style="display:flex;align-items:center;padding-top:5px">
                       <i class="sw on"></i>
                       <span class="hint" style="margin:0 0 0 10px">注入项目 AGENTS.md</span>
                     </div>
                   </div>
                   <div class="frm-row">
-                    <label>工具档位<small>复用会话档位配方</small></label>
+                    <label>工具档位</label>
                     <div class="frm-ctl">
                       <div style="display:flex;align-items:center;gap:10px">
                         <button class="sel-btn" style="width:250px">inherit · 继承委派者<svg class="chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5L6 8l3.5-3.5"/></svg></button>
                         <span class="hint" style="margin:0">控制该子代理可调用的工具范围</span>
                       </div>
-                      <div class="hint">read-only 只读内置 · default 内置工具 · full 全部内置无扩展；full+ 仅委派者可用，经「继承」获得</div>
                     </div>
                   </div>
                 </div>
 
                 <div class="ed-actions">
-                  <button class="g-btn">放弃</button>
-                  <button class="g-btn primary">保存</button>
-                  <span class="ed-dirty"><i></i>未保存</span>
-                  <span class="ed-hint">Ctrl+S</span>
+                                    <button class="g-btn primary">保存</button>
+                  
                 </div>
-                <div class="note"><b>修改只影响之后创建的子代理</b>，运行中的实例保持启动时快照。
-                  与内置 <span class="mono">code-reviewer</span> 同名，<b>优先于内置</b>生效。</div>
               </div>
 
               <div class="pane" id="d-explorer">
                 <h3>explorer
-                  <span class="badge ro">只读</span>
+                  
                   <span style="flex:1"></span>
-                  <span class="scope">作用域<span class="badge lock">内置</span></span>
-                  <button class="ghost-btn accent">复制为自定义</button>
+                                    <button class="ghost-btn accent">复制为自定义</button>
                 </h3>
 
                 <div class="frm ro">
@@ -291,10 +276,6 @@
                   <div class="frm-row">
                     <label>轮次预算</label>
                     <div class="frm-ctl"><div class="stepper"><button>−</button><b>25</b><button>+</button></div></div>
-                  </div>
-                  <div class="frm-row">
-                    <label>人格</label>
-                    <div class="frm-ctl"><div class="seg"><button class="on">追加到默认</button><button>完全替换</button></div></div>
                   </div>
                   <div class="frm-row">
                     <label>系统提示词</label>
@@ -319,28 +300,8 @@
                 <div class="ed-actions">
                   <button class="g-btn primary" style="background:var(--accent);color:#fff;font-weight:600">复制为自定义</button>
                 </div>
-                <div class="note">内置定义随 pi-subagents 扩展出厂、不可编辑；<b>复制为自定义</b>后可任意修改，
-                  自定义同名<b>覆盖内置</b>。</div>
               </div>
 
-              <div class="pane" id="d-broken">
-                <h3>broken-scan
-                  <span class="badge">自定义</span><span class="badge broken">损坏</span>
-                  <span style="flex:1"></span>
-                  <button class="ghost-btn danger">删除</button>
-                </h3>
-                <div class="err-bar">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
-                  <span>配置无法解析：line 7 · <span class="mono">tools</span> 应为列表。
-                    损坏的定义不参与委派（fail-closed），修复保存后自动恢复。</span>
-                </div>
-                <div class="ed-actions" style="margin-top:16px">
-                  <button class="g-btn primary">打开文件修复</button>
-                  <span class="ed-hint mono">~\.pi\agent\agents\broken-scan.md</span>
-                </div>
-                <div class="note">表单无法呈现损坏配置，<b>打开文件修复</b>用源码编辑器定位问题行；
-                  平时编辑均走上方表单，<b>配置将由 PF 统一管理存储</b>（不再依赖手工改明文，防误改与注入）。</div>
-              </div>
 
             </div></div></div></div>
     </div>
