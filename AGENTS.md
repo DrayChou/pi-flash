@@ -35,7 +35,7 @@ RUST_MIN_STACK=33554432 cargo test -p pi-link   # 协议/路径测试都在 pi-l
 - 架构设计：`docs/ARCHITECTURE.md`；复刻计划：`docs/PORT_PLAN.md`
 - 模块设计：`docs/模块设计/`（编号即模块，正文里的 0xx/vNN 引用都指这里）
 - 领域陷阱笔记：`docs/agents/`（见下方「领域笔记」节）
-- 调研归档：`docs/调研/`（外部项目调研报告，如 dsh 插件框架调研）
+- 调研笔记：本地 `docs/调研/`（外部项目调研报告；**已 gitignore，不入库**，正文别再用链接引它）
 - 软件分发：`docs/模块设计/080-软件分发.md`；发版唯一路径：`docs/RELEASE.md`
 - bug 追踪：`docs/buglist.md`；
 - 进度：`docs/progress.md`；

@@ -37,3 +37,6 @@ dist/
 # 公开仓库不留；事实来源是本地 Dolt 库（上面的 .dolt/），bd init 会重新生成这些文件。
 .beads/
 pi-flash-dev/
+
+docs/调研/
+.agents/skills
