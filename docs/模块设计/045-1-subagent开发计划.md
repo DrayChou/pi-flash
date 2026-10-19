@@ -84,6 +84,20 @@ preset-selection 分支(我们走 profile,见 045 §8),预计落到 3000–3500 
 
 ## 3. M3:parent 投递(v2 后台)+ 宿主契约
 
+> **进度(2026-10-19):M3 扩展侧闭环(3.5 宿主联调待 044)。**
+> - 3.1 parent 投递 ✓:`background:true` 立即回 childId;完成经
+>   `ctx.ui.notify`(onCompleted → 会话级 notify 绑定)+ 终态 descriptor entry
+> - 3.2 中断三层 ✓:`subagent_interrupt`(settled=noop / live=停轮次留队列/
+>   unknown=稳定分码)
+> - 3.3 控制工具三件 ✓:`subagent_send`/`subagent_interrupt`/`subagent_list`
+>   (schema 全局一份;list=父会话 catalog 全历史含 settled)
+> - 3.4 孤儿对账 ✓:session_start 对账 `aborted:true`(宿主退出≈中止),
+>   标 interrupted;resume=直接打开子会话文件(子会话是普通 pi 会话,PF
+>   既有能力),无需扩展支持
+> - 3.5 setWidget:待 044 联调定稿
+> - 修复:DescriptorPhase 补 `completed` 终态(原先 completed 错标 interrupted);
+>   `subagent_list` execute 签名(第 5 参 ctx)
+
 | # | 任务 | 验收 |
 |---|---|---|
 | 3.1 | `delivery: 'parent'`:立即返回 childId、完成走 `ctx.ui.notify` + entry | CLI 后台委派不阻塞父 turn |

@@ -89,7 +89,7 @@ describe("SubagentManager.start", () => {
 		const activation = await manager.start(baseRequest());
 		provider.children[0].complete("ok");
 		await activation.wait();
-		assert.deepEqual(seen, ["provisioning", "active", "interrupted"]);
+		assert.deepEqual(seen, ["provisioning", "active", "completed"]);
 	});
 });
 
@@ -194,5 +194,52 @@ describe("SubagentManager settlement", () => {
 		await shutdown;
 		assert.equal(provider.children[0].interrupts, 1);
 		assert.equal((await first.wait()).stopReason, "aborted");
+	});
+});
+
+describe("SubagentManager parent delivery + control", () => {
+	it("parent delivery completes without blocking start", async () => {
+		const completed: string[] = [];
+		const { manager, provider } = setup({}, { onCompleted: (r) => completed.push(r.text) });
+		const activation = await manager.start(baseRequest({ delivery: "parent" }));
+		// start() returned while the child is still running (ScriptedChild holds result).
+		assert.equal(provider.children[0].disposals, 0);
+		provider.children[0].complete("answer");
+		await activation.wait();
+		await tick();
+		assert.deepEqual(completed, ["answer"]);
+	});
+
+	it("lists children of a parent with phases", async () => {
+		const { manager, provider } = setup();
+		await manager.start(baseRequest({ label: "one" }));
+		await manager.start(baseRequest({ label: "two" }));
+		const list = manager.list("parent-a");
+		assert.deepEqual(list.map((d) => d.label), ["one", "two"]);
+		assert.deepEqual(list.map((d) => d.phase), ["active", "active"]);
+		provider.children[0].complete("x");
+		await manager.activation("sub-1")!.wait();
+		assert.equal(manager.list("parent-a")[0].phase, "completed");
+	});
+
+	it("interrupt on a settled child is a no-op", async () => {
+		const { manager, provider } = setup();
+		const activation = await manager.start(baseRequest());
+		provider.children[0].complete("done");
+		await activation.wait();
+		assert.equal(await manager.interruptChild("sub-1"), "noop");
+	});
+
+	it("interrupt on a live child reports interrupted", async () => {
+		const { manager, provider } = setup();
+		await manager.start(baseRequest());
+		assert.equal(await manager.interruptChild("sub-1"), "interrupted");
+		assert.equal(provider.children[0].interrupts, 1);
+	});
+
+	it("interrupt on an unknown child rejects with a stable code", async () => {
+		const { manager } = setup();
+		const error = await manager.interruptChild("ghost").catch((e: unknown) => e);
+		assert.equal((error as SubagentError).code, SubagentErrorCode.PROVIDER_UNKNOWN);
 	});
 });

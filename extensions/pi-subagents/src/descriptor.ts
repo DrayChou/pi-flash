@@ -11,7 +11,7 @@
 export const DESCRIPTOR_TYPE = "subagent/descriptor";
 export const DESCRIPTOR_VERSION = 1;
 
-export type DescriptorPhase = "provisioning" | "active" | "interrupted" | "failed";
+export type DescriptorPhase = "provisioning" | "active" | "completed" | "interrupted" | "failed";
 
 export interface SubagentDescriptor {
 	version: number;

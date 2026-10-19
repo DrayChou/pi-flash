@@ -273,7 +273,12 @@ export class SubagentManager {
 			this.#untrackChild(record);
 			record.descriptor = {
 				...record.descriptor,
-				phase: result.stopReason === "completed" ? "interrupted" : "failed",
+				phase:
+					result.stopReason === "completed"
+						? "completed"
+						: result.stopReason === "aborted"
+							? "interrupted"
+							: "failed",
 				stopReason: result.stopReason,
 				errorCode: result.errorCode,
 				updatedAt: this.#now().toISOString(),
@@ -285,6 +290,47 @@ export class SubagentManager {
 			return result;
 		})();
 		return record.settled;
+	}
+
+	/**
+	 * Descriptors of one parent's children — the full history (live, settled,
+	 * failed), start order. This is the parent's catalog: settled children stay
+	 * listed (dsh 的 subagentCatalog 语义), unlike `childrenOf` which tracks
+	 * only in-flight ownership.
+	 */
+	list(parentId: string): SubagentDescriptor[] {
+		return [...this.#records.values()]
+			.filter((record) => record.parentId === parentId)
+			.map((record) => ({ ...record.descriptor }));
+	}
+
+	/** Find a live activation by child id. */
+	activation(childId: string): Activation | undefined {
+		const record = this.#records.get(childId);
+		return record ? this.#activationOf(record) : undefined;
+	}
+
+	/** Descriptor snapshot for one child. */
+	descriptorOf(childId: string): SubagentDescriptor | undefined {
+		const record = this.#records.get(childId);
+		return record ? { ...record.descriptor } : undefined;
+	}
+
+	/**
+	 * Three-layer interrupt (dsh semantics): a settled child is a no-op, a live
+	 * child's current turn stops while its queue and descendants are kept, and
+	 * a missing child is a stable error. Never throws for already-settled ids.
+	 */
+	async interruptChild(childId: string): Promise<"interrupted" | "noop"> {
+		const record = this.#records.get(childId);
+		if (!record) {
+			throw new SubagentError(SubagentErrorCode.PROVIDER_UNKNOWN, `unknown child: ${childId}`);
+		}
+		if (record.state === "settled" || record.state === "settling" || !record.admissionOpen) {
+			return "noop";
+		}
+		await this.activation(childId)!.interrupt();
+		return "interrupted";
 	}
 
 	/** Abort every live activation, then wait for all of them to finish cleanup. */

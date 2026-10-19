@@ -205,10 +205,19 @@ export default function piSubagents(pi: ExtensionAPI): void {
 	// through this closure.
 	let persist: (descriptor: SubagentDescriptor) => void = () => {};
 
+	// Parent-delivery completion hook (v2 background): routed to the live
+	// session's ui.notify; rebound on every session_start.
+	let notifyParent: (message: string) => void = () => {};
+
 	const manager = new SubagentManager({
 		capacity: numberFromEnv("PI_SUBAGENTS_CAPACITY", DEFAULT_CAPACITY),
 		maxDepth: numberFromEnv("PI_SUBAGENTS_MAX_DEPTH", DEFAULT_MAX_DEPTH),
 		onDescriptor: (descriptor) => persist(descriptor),
+		onCompleted: (result) => {
+			const head = result.stopReason === "completed" ? "子代理完成" : `子代理结束（${result.errorCode ?? result.stopReason}）`;
+			const text = result.text.length > 400 ? `${result.text.slice(0, 400)}…` : result.text;
+			notifyParent(`${head} ${result.childId}: ${text}`);
+		},
 	});
 
 	const makeFactory = (ctx: ExtensionContext): SessionFactory =>
@@ -293,6 +302,121 @@ export default function piSubagents(pi: ExtensionAPI): void {
 		},
 	});
 
+	// ---- 控制工具（045 M3.3；schema 复用：全局一份，父/可续子共用语义）----
+
+	pi.registerTool({
+		name: "subagent_send",
+		label: "Subagent Send",
+		description:
+			"Send a follow-up message to a running or parked child agent (only local children accept input; external engines run once).",
+		promptSnippet: "Send more work to a running child agent",
+		parameters: {
+			type: "object",
+			properties: {
+				childId: { type: "string", description: "Child id, e.g. sub-1." },
+				message: { type: "string", description: "Follow-up message for the child." },
+			},
+			required: ["childId", "message"],
+		} as unknown as never,
+		exposure: "direct",
+		namespace: { name: "subagents" },
+		async execute(_toolCallId: string, params: Record<string, unknown>) {
+			const childId = String(params.childId ?? "");
+			const activation = manager.activation(childId);
+			if (!activation) {
+				return {
+					content: [{ type: "text", text: `PROVIDER_UNKNOWN: unknown child ${childId}` }],
+					structuredContent: { errorCode: "PROVIDER_UNKNOWN" },
+					details: { errorCode: "PROVIDER_UNKNOWN" },
+					isError: true,
+				} as never;
+			}
+			try {
+				await activation.send(String(params.message ?? ""));
+				return {
+					content: [{ type: "text", text: `delivered to ${childId}` }],
+					structuredContent: { childId, delivered: true },
+					details: { childId },
+				} as never;
+			} catch (error) {
+				const code = SubagentError.is(error) ? error.code : "ADMISSION_CLOSED";
+				return {
+					content: [{ type: "text", text: `${code}: ${(error as Error).message}` }],
+					structuredContent: { errorCode: code },
+					details: { errorCode: code },
+					isError: true,
+				} as never;
+			}
+		},
+	});
+
+	pi.registerTool({
+		name: "subagent_interrupt",
+		label: "Subagent Interrupt",
+		description:
+			"Interrupt a child agent. Running local children stop their current turn (queued input and their own children are kept); settled children are a no-op.",
+		promptSnippet: "Stop a child agent's current work",
+		parameters: {
+			type: "object",
+			properties: { childId: { type: "string" } },
+			required: ["childId"],
+		} as unknown as never,
+		exposure: "direct",
+		namespace: { name: "subagents" },
+		async execute(_toolCallId: string, params: Record<string, unknown>) {
+			const childId = String(params.childId ?? "");
+			try {
+				const outcome = await manager.interruptChild(childId);
+				return {
+					content: [{ type: "text", text: `${childId}: ${outcome}` }],
+					structuredContent: { childId, outcome },
+					details: { childId, outcome },
+				} as never;
+			} catch (error) {
+				const code = SubagentError.is(error) ? error.code : "PROVIDER_UNKNOWN";
+				return {
+					content: [{ type: "text", text: `${code}: ${(error as Error).message}` }],
+					structuredContent: { errorCode: code },
+					details: { errorCode: code },
+					isError: true,
+				} as never;
+			}
+		},
+	});
+
+	pi.registerTool({
+		name: "subagent_list",
+		label: "Subagent List",
+		description: "List this session's child agents with id, phase, label, provider and depth.",
+		promptSnippet: "List delegated child agents",
+		parameters: { type: "object", properties: {} } as unknown as never,
+		exposure: "direct",
+		namespace: { name: "subagents" },
+		async execute(
+			_toolCallId: string,
+			_params: Record<string, unknown>,
+			_signal: AbortSignal | undefined,
+			_onUpdate: unknown,
+			ctx: ExtensionContext,
+		) {
+			const parentId = (ctx.sessionManager as unknown as { sessionFile?: string }).sessionFile ?? "draft";
+			const children = manager.list(parentId).map((d) => ({
+				childId: d.childId,
+				phase: d.phase,
+				label: d.label,
+				provider: d.provider,
+				depth: d.depth,
+				profile: d.profile,
+				stopReason: d.stopReason,
+			}));
+			return {
+				content: [{ type: "text", text: JSON.stringify(children) }],
+				structuredContent: { children },
+				details: { children },
+			} as never;
+		},
+	});
+
 	pi.on("session_start", async (_event, ctx) => {
 		// Re-register providers for this session's context (the factory closes over it).
 		manager.registry.unregister("spawn");
@@ -307,9 +431,19 @@ export default function piSubagents(pi: ExtensionAPI): void {
 			}
 		};
 
+		notifyParent = (message: string) => {
+			try {
+				void ctx.ui.notify(message, "info");
+			} catch {
+				// Notifications are best-effort (headless/JSON modes have no UI).
+			}
+		};
+
 		const inFlight = readDescriptors(ctx);
 		if (inFlight.length > 0) {
-			const reconciled = reconcileOnStart(inFlight, { aborted: false });
+			// Orphan reconciliation: the host going away counts as an abort
+			// (crash vs cancel is refined by agent_settled.aborted on live runs).
+			const reconciled = reconcileOnStart(inFlight, { aborted: true });
 			for (const descriptor of reconciled) persist(descriptor);
 		}
 	});
