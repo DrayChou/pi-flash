@@ -52,7 +52,7 @@ fn cwd_json(chat: &Chat) -> String {
 fn surface_one(chat: &Chat, window: &gpui::Window, cx: &Context<Chat>, name: &str) -> Value {
     match name {
         "app" => app_surface(chat, window, cx),
-        "sessions" => sessions_surface(chat),
+        "sessions" => sessions_surface(chat, cx),
         "session" => session_surface(chat, cx),
         "composer" => composer_surface(chat),
         "files" => files_surface(chat, cx),
@@ -303,7 +303,7 @@ fn app_surface(chat: &Chat, window: &gpui::Window, cx: &Context<Chat>) -> Value 
     })
 }
 
-fn sessions_surface(chat: &Chat) -> Value {
+fn sessions_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
     let sessions: Vec<Value> = chat
         .pool
         .sessions
@@ -350,6 +350,34 @@ fn sessions_surface(chat: &Chat) -> Value {
         .iter()
         .map(|p| p.display().to_string())
         .collect();
+    // 内存探针：各缓存（条数, 字节）+ 队列 + 活跃会话 transcript 规模——
+    // 长跑内存回归验收用（退役/驱逐前后对照）
+    let (active_msgs, active_sys_msgs) = chat
+        .pool
+        .runtimes
+        .get(&chat.pool.active_key)
+        .map(|rt| rt.read(cx).mem_probe())
+        .unwrap_or((0, 0));
+    let (img_n, img_bytes) = crate::session::messages::image_cache_probe();
+    let (md_n, md_bytes) = crate::editor::markdown::md_parse_probe();
+    let (hl_n, hl_bytes) = crate::editor::markdown::hl_cache_probe();
+    let (limg_n, limg_bytes) = crate::editor::markdown::local_img_probe();
+    let (args_n, args_bytes) = crate::session::messages::tool_args_cache_probe();
+    let (mm_n, mm_bytes) = crate::editor::markdown::render::mermaid::mermaid_probe();
+    let (math_n, math_bytes) = crate::editor::markdown::render::math::math_probe();
+    let mem = json!({
+        "runtimes": chat.pool.runtimes.len(),
+        "active_msgs": active_msgs,
+        "active_system_msgs": active_sys_msgs,
+        "asset_evict_pending": crate::services::asset_evict::pending_len(),
+        "img_cache": {"len": img_n, "bytes": img_bytes},
+        "md_parse": {"len": md_n, "bytes": md_bytes},
+        "hl_cache": {"len": hl_n, "bytes": hl_bytes},
+        "local_img": {"len": limg_n, "bytes": limg_bytes},
+        "tool_args": {"len": args_n, "bytes": args_bytes},
+        "mermaid": {"len": mm_n, "bytes": mm_bytes},
+        "math": {"len": math_n, "bytes": math_bytes},
+    });
     json!({
         "cwd": cwd_json(chat),
         "active_key": chat.pool.active_key,
@@ -359,6 +387,7 @@ fn sessions_surface(chat: &Chat) -> Value {
         "projects": projects,
         "pending_tabs": pending_tabs,
         "session_pins": session_pins,
+        "mem": mem,
     })
 }
 
@@ -477,7 +506,8 @@ fn files_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
     let active_tab_ix = (chat.layout.content_view != ContentView::Chat)
         .then_some(chat.ws.active_panel_tab)
         .flatten();
-    let active_tab_bounds = active_tab_ix.and_then(|ix| chat.layout.tabs_scroll.bounds_for_item(ix));
+    let active_tab_bounds =
+        active_tab_ix.and_then(|ix| chat.layout.tabs_scroll.bounds_for_item(ix));
     let rows: Vec<Value> = chat
         .ws
         .tree_rows

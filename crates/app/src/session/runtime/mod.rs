@@ -392,6 +392,12 @@ impl SessionRuntime {
         self.last_activity = std::time::Instant::now();
     }
 
+    /// 探针（automation snapshot）：（消息条数，system 消息条数）——
+    /// 退役回收的前后对照用。
+    pub(crate) fn mem_probe(&self) -> (usize, usize) {
+        (self.messages.len(), self.system_msgs.len())
+    }
+
     pub(crate) fn refresh_state(&self) {
         if let Some(session) = &self.agent.session {
             let _ = session.send(&Command::GetState);

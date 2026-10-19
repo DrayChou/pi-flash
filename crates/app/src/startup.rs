@@ -621,8 +621,11 @@ fn spawn_external_append_watch(cx: &mut gpui::Context<Chat>) {
     .detach();
 }
 
-/// 60s 空闲回收（pi-web idle-timeout parity）：非活动会话进程空闲超 10 分钟
-/// 就杀掉（清单/内存状态不动）。
+/// 60s 空闲回收（pi-web idle-timeout parity）：非活动会话空闲超 10 分钟就
+/// 杀掉 pi 进程，并连 runtime 实体一起退役——transcript（messages 含工具
+/// 结果全文、system_msgs 含整份系统提示词）随实体释放，是长跑内存的
+/// 大头；清单/psp 标记不动，回开走 open_session 的 tail 秒开路径（磁盘
+/// 尾巴 + 后台重挂），与冷启动打开旧会话同一条路。活跃会话永不退役。
 fn spawn_idle_recycle(cx: &mut gpui::Context<Chat>) {
     cx.spawn(async move |this, cx| {
         loop {
@@ -632,6 +635,8 @@ fn spawn_idle_recycle(cx: &mut gpui::Context<Chat>) {
             let ok = this
                 .update(cx, |chat, cx| {
                     let idle_cap = std::time::Duration::from_secs(600);
+                    // 先收集后摘除：退役即 drop 实体，不在遍历中动 map
+                    let mut retire: Vec<String> = Vec::new();
                     for (key, rt) in &chat.pool.runtimes {
                         if *key == chat.pool.active_key {
                             continue;
@@ -641,9 +646,17 @@ fn spawn_idle_recycle(cx: &mut gpui::Context<Chat>) {
                             !r.agent_running
                                 && r.last_activity.elapsed() > idle_cap
                                 && r.agent.session.is_some()
+                                && r.ext_queue.is_empty()
                         };
                         if idle {
+                            retire.push(key.clone());
+                        }
+                    }
+                    for key in retire {
+                        if let Some(rt) = chat.pool.runtimes.remove(&key) {
                             rt.update(cx, |r2, _| r2.shutdown_process());
+                            // rt 在此 drop：transcript 随实体释放；
+                            // session_tail_cache 不动，供秒开回切
                         }
                     }
                 })
