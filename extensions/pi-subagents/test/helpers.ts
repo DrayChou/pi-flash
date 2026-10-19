@@ -49,6 +49,10 @@ export class ScriptedChild implements ChildHandle {
 		this.interrupts += 1;
 	}
 
+	session_file(): string | undefined {
+		return undefined;
+	}
+
 	result(): Promise<SubagentResult> {
 		return this.#result;
 	}

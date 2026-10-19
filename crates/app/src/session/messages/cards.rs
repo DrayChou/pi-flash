@@ -101,6 +101,215 @@ pub(super) fn result_is_empty(result: &str) -> bool {
     r.is_empty() || r == "(no output)"
 }
 
+/// 044：subagent 专属卡。数据源（扩展 `pi-subagents` 的 details，snake_case）：
+/// `child_id` / `status`(running) / `stop_reason` / `session_file` /
+/// `duration_ms` / `total_tokens` / `cost_total` / `error_code`；args 里取
+/// `label` / `prompt`。布局：头部（子代理 · 标签 · 状态徽标 · 耗时 · tokens ·
+/// 成本）+ 展开正文（prompt 与子代理回答）+ 「打开子会话」跳转。
+#[allow(clippy::too_many_arguments)]
+fn render_subagent_card(
+    msg_ix: usize,
+    content_index: usize,
+    args: &str,
+    result: &str,
+    is_error: bool,
+    details: Option<&serde_json::Value>,
+    duration_s: Option<i64>,
+    args_partial: bool,
+    result_arrived: bool,
+    weak: &gpui::WeakEntity<Chat>,
+    collapsed: &HashMap<(usize, usize), bool>,
+    t: &theme::Theme,
+) -> gpui::Div {
+    let key = (msg_ix, content_index);
+    let expanded = collapsed.get(&key).copied().unwrap_or(false);
+    let d = details.cloned().unwrap_or_default();
+    let child_id = d.get("child_id").and_then(|v| v.as_str()).unwrap_or("—");
+    let running = d.get("status").and_then(|v| v.as_str()) == Some("running");
+    let stop_reason = d.get("stop_reason").and_then(|v| v.as_str()).unwrap_or("");
+    let session_file = d
+        .get("session_file")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(std::path::PathBuf::from);
+    let total_tokens = d.get("total_tokens").and_then(|v| v.as_u64());
+    let cost_total = d.get("cost_total").and_then(|v| v.as_f64());
+    let error_code = d.get("error_code").and_then(|v| v.as_str());
+
+    let args_v = serde_json::from_str::<serde_json::Value>(args).ok();
+    let label = args_v
+        .as_ref()
+        .and_then(|v| v.get("label"))
+        .and_then(|x| x.as_str())
+        .filter(|s| !s.is_empty());
+    let prompt = args_v
+        .as_ref()
+        .and_then(|v| v.get("prompt"))
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    // 状态徽标：运行中(黄) / 完成(绿) / 失败(红，分码优先)
+    let (phase_text, phase_c) = if is_error || error_code.is_some() {
+        (error_code.unwrap_or("error").to_string(), 0xf87171)
+    } else if running || (!result_arrived && stop_reason.is_empty()) {
+        ("运行中".to_string(), 0xeab308)
+    } else {
+        ("完成".to_string(), 0x22c55e)
+    };
+
+    // 度量行：耗时（事件 duration_s 优先，回退 details.duration_ms）+ tokens + 成本
+    let mut metrics: Vec<String> = Vec::new();
+    if let Some(sec) = duration_s {
+        metrics.push(format!("{sec}s"));
+    } else if let Some(ms) = d.get("duration_ms").and_then(|v| v.as_u64()) {
+        if ms >= 1000 {
+            metrics.push(format!("{:.1}s", ms as f64 / 1000.0));
+        } else if ms > 0 {
+            metrics.push(format!("{ms}ms"));
+        }
+    }
+    if let Some(tok) = total_tokens {
+        metrics.push(format!("{tok} tok"));
+    }
+    if let Some(cost) = cost_total {
+        metrics.push(format!("¥{cost:.4}"));
+    }
+
+    // 标题：label 优先，退 prompt 截断
+    let title = label
+        .map(str::to_string)
+        .unwrap_or_else(|| prompt.chars().take(40).collect());
+
+    // 头部（点击=折叠切换，复用 weak_toggle 模式）
+    let weak_toggle = weak.clone();
+    let mut head = div()
+        .id(SharedString::from(format!("sa-{msg_ix}-{content_index}")))
+        .flex()
+        .items_center()
+        .gap(px(7.))
+        .px(px(10.))
+        .py(px(6.))
+        .min_w_0()
+        .flex_1()
+        .text_size(crate::appearance::sess_size(-2.))
+        .cursor_pointer()
+        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+            let _ = weak_toggle.update(cx, |c, cx| {
+                let rt = c.rt();
+                rt.update(cx, |r, _| {
+                    let next = !r.collapsed.get(&key).copied().unwrap_or(false);
+                    r.collapsed.insert(key, next);
+                });
+                cx.notify();
+            });
+        })
+        .child(
+            div()
+                .flex_shrink_0()
+                .font_family(crate::editor::markdown::MONO_FAMILY)
+                .text_size(crate::appearance::sess_size(-3.))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(rgb(0x60a5fa))
+                .child("子代理"),
+        );
+    if !title.is_empty() {
+        head = head.child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .text_ellipsis()
+                .text_color(rgb(t.text))
+                .child(SharedString::from(title)),
+        );
+    }
+    head = head.child(
+        div()
+            .flex_shrink_0()
+            .text_size(crate::appearance::sess_size(-3.))
+            .text_color(rgb(phase_c))
+            .child(SharedString::from(phase_text)),
+    );
+    for m in &metrics {
+        head = head.child(
+            div()
+                .flex_shrink_0()
+                .font_family(crate::editor::markdown::MONO_FAMILY)
+                .text_size(crate::appearance::sess_size(-3.))
+                .text_color(rgb(t.text_muted))
+                .child(SharedString::from(m.clone())),
+        );
+    }
+
+    // 展开正文：prompt + 子代理回答 + 错误分码
+    let mut body = div().flex().flex_col().gap(px(6.)).px(px(10.)).pb(px(8.));
+    if !prompt.is_empty() {
+        body = body.child(
+            div()
+                .text_size(crate::appearance::sess_size(-2.))
+                .text_color(rgb(t.text_muted))
+                .child(SharedString::from(format!("任务：{prompt}"))),
+        );
+    }
+    if result_arrived && !result.trim().is_empty() {
+        body = body.child(
+            div()
+                .text_size(crate::appearance::sess_size(-2.))
+                .text_color(rgb(t.text))
+                .child(SharedString::from(format!("回答：{}", result.chars().take(600).collect::<String>()))),
+        );
+    }
+
+    // 「打开子会话」：子会话是普通 pi 会话，直接 open_session（只读检视+可续跑）
+    if let Some(sf) = session_file {
+        let weak_open = weak.clone();
+        body = body.child(
+            div()
+                .id(SharedString::from(format!("sa-open-{msg_ix}-{content_index}")))
+                .flex()
+                .items_center()
+                .gap(px(4.))
+                .cursor_pointer()
+                .text_size(crate::appearance::sess_size(-2.))
+                .text_color(rgb(0x60a5fa))
+                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                    let _ = weak_open.update(cx, |c, cx| {
+                        c.open_session(sf.clone(), false, cx);
+                    });
+                })
+                .child("↗ 打开子会话"),
+        );
+    }
+
+    // 卡壳（状态色与通用卡一致）
+    let (border_c, bg_c) = if is_error {
+        (
+            theme::rgba_a(0xf87171, 0.45),
+            theme::rgba_a(0xf87171, 0.05),
+        )
+    } else {
+        (
+            theme::rgba_a(0x22c55e, 0.25),
+            theme::rgba_a(0x22c55e, 0.04),
+        )
+    };
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(4.))
+        .px(px(2.))
+        .py(px(2.))
+        .border_1()
+        .border_color(gpui::rgba(border_c))
+        .bg(gpui::rgba(bg_c))
+        .rounded(px(6.))
+        .overflow_hidden()
+        .child(head)
+        .when(expanded, |dd| dd.child(body))
+}
+
 /// 「工作详情」组内的 pi-web ToolCallBlock 卡片（v56-2 c8/c9）。
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::too_many_arguments)]
@@ -121,6 +330,14 @@ pub(super) fn render_tool_card(
     t: &theme::Theme,
 ) -> gpui::Div {
     let _ = images; // c11 渲染
+    // 044：subagent 专属卡（扩展 pi-subagents 的 agent 工具）——数据源为
+    // 扩展 details（snake_case），不走通用 diff/preview 主流程。
+    if name == "agent" {
+        return render_subagent_card(
+            msg_ix, content_index, args, result, is_error, details, duration_s, args_partial,
+            result_arrived, weak, collapsed, t,
+        );
+    }
     let key = (msg_ix, content_index);
     // pi-web isToolCallExpanded：模块级记忆，默认全部折叠
     let expanded = collapsed.get(&key).copied().unwrap_or(false);

@@ -271,6 +271,9 @@ export class SubagentManager {
 			record.slot.release();
 			record.state = "settled";
 			this.#untrackChild(record);
+			// 回写子会话文件路径：宿主“打开子会话”跳转的数据源（044）。
+			record.descriptor.sessionFile = record.handle?.session_file() ?? record.descriptor.sessionFile;
+			result.session_file = record.descriptor.sessionFile;
 			record.descriptor = {
 				...record.descriptor,
 				phase:

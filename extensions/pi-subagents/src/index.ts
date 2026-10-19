@@ -271,7 +271,7 @@ export default function piSubagents(pi: ExtensionAPI): void {
 			toolCallId: string,
 			params: Record<string, unknown>,
 			_signal: AbortSignal | undefined,
-			_onUpdate: unknown,
+			onUpdate: ((partial: unknown) => void) | undefined,
 			ctx: ExtensionContext,
 		) {
 			const depth = currentDepthOf(ctx);
@@ -297,6 +297,7 @@ export default function piSubagents(pi: ExtensionAPI): void {
 					signal: ctx.signal,
 					parentToolCallId: toolCallId,
 				},
+				onUpdate ? (partial) => onUpdate(partial as never) : undefined,
 			);
 			return result as never;
 		},

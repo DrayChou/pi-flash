@@ -66,6 +66,7 @@ class LocalChild implements ChildHandle {
 	#run: Promise<void> | undefined;
 	#failure: unknown;
 	#disposed = false;
+	#started_at: number | undefined;
 
 	constructor(id: string, session: ChildSession) {
 		this.id = id;
@@ -99,18 +100,24 @@ class LocalChild implements ChildHandle {
 		await this.#session.abort();
 	}
 
+	session_file(): string | undefined {
+		return this.#session.sessionFile;
+	}
+
 	async result(): Promise<SubagentResult> {
 		if (this.#run) await this.#run;
 		const usage = this.#session.usage?.();
+		const durationMs = this.#started_at !== undefined ? Date.now() - this.#started_at : undefined;
 		if (this.#failure) {
 			const failure = asSubagentError(this.#failure, SubagentErrorCode.START_REJECTED);
-			return { childId: this.id, text: "", stopReason: "error", errorCode: failure.code, usage };
+			return { childId: this.id, text: "", stopReason: "error", errorCode: failure.code, usage, durationMs };
 		}
 		return {
 			childId: this.id,
 			text: this.#session.lastAssistantText() ?? "",
 			stopReason: "completed",
 			usage,
+			durationMs,
 		};
 	}
 

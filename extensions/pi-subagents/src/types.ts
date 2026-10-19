@@ -67,6 +67,8 @@ export interface SubagentResult {
 	stopReason: StopReason;
 	usage?: SubagentUsage;
 	durationMs?: number;
+	/** Persisted session file of the child (host "open child session" jump target). */
+	session_file?: string;
 	/** Present when `stopReason` is not `completed`. */
 	errorCode?: string;
 }
@@ -80,6 +82,8 @@ export interface ChildHandle {
 	send(message: string): Promise<void>;
 	/** Stop the child's current turn; queued input and descendants are kept. */
 	interrupt(): Promise<void>;
+	/** Persisted session file of the child, when durable. */
+	session_file(): string | undefined;
 	/** Settles with the child's final answer. */
 	result(): Promise<SubagentResult>;
 	/** Release the child and its resources. Idempotent. */

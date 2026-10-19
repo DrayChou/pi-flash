@@ -95,6 +95,7 @@ export async function runDelegation(
 		background?: boolean;
 	},
 	context: DelegationContext,
+	on_update?: (partial: ToolResultLike) => void,
 ): Promise<ToolResultLike> {
 	if (options.allowedProfiles && options.allowedProfiles.length > 0 && input.profile) {
 		if (!options.allowedProfiles.includes(input.profile)) {
@@ -119,9 +120,20 @@ export async function runDelegation(
 			return {
 				content: [{ type: "text", text: `started subagent ${activation.childId}` }],
 				structuredContent: { childId: activation.childId, status: "started" },
-				details: { childId: activation.childId, delivery },
+				details: { child_id: activation.childId, delivery, status: "started", label: input.label },
 			};
 		}
+		// 运行中进度（044 卡片状态行数据源）：accept 完成即发一次。
+		on_update?.({
+			content: [{ type: "text", text: `subagent ${activation.childId} running` }],
+			structuredContent: { childId: activation.childId, status: "running" },
+			details: {
+				child_id: activation.childId,
+				status: "running",
+				label: input.label,
+				profile: input.profile,
+			},
+		});
 		const result = await activation.wait();
 		return success(result);
 	} catch (error) {
@@ -133,6 +145,8 @@ export async function runDelegation(
 }
 
 function success(result: SubagentResult): ToolResultLike {
+	const usage = result.usage as Record<string, unknown> | undefined;
+	const cost = usage && (usage["cost"] as Record<string, unknown> | undefined);
 	return {
 		content: [{ type: "text", text: result.text }],
 		structuredContent: {
@@ -142,9 +156,18 @@ function success(result: SubagentResult): ToolResultLike {
 			usage: result.usage,
 			durationMs: result.durationMs,
 		},
-		details: { childId: result.childId, stopReason: result.stopReason },
+		// 卡片数据源（Rust 侧读 details，snake_case）。
+		details: {
+			child_id: result.childId,
+			stop_reason: result.stopReason,
+			session_file: result.session_file,
+			duration_ms: result.durationMs,
+			total_tokens: usage?.["totalTokens"],
+			cost_total: cost?.["total"],
+			error_code: result.errorCode,
+		},
 		isError: result.stopReason === "error",
-		...(result.usage ? { usage: result.usage as Record<string, unknown> } : {}),
+		...(usage ? { usage } : {}),
 	};
 }
 
