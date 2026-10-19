@@ -59,8 +59,14 @@ cd extensions/pi-subagents && node --test "test/*.test.ts"
 
 ### C1 单代理冒烟
 
+**必须带 `--session-dir tmp/smoke` 隔离**：`--no-session` 只隔离父会话，
+子会话仍按 cwd 落进用户真实 sessions 目录；旧扩展产物无 marker，无法自动
+识别，曾污染侧栏需手工归档（2026-10-19）。
+
 ```bash
-$PI -e extensions/pi-subagents/src/index.ts --model deepseek/deepseek-flash --no-session \
+mkdir -p tmp/smoke
+$PI -e extensions/pi-subagents/src/index.ts --session-dir tmp/smoke \
+  --model deepseek/deepseek-flash --no-session \
   -p "Use the agent tool exactly once with prompt 'Reply with exactly: PONG-7'. Then report it."
 ```
 
