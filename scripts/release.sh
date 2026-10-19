@@ -55,6 +55,16 @@ NODE_BIN=$(command -v node || true)
 cp "$NODE_BIN" dist/pi-flash/node.exe
 cp -r vendor/pi dist/pi-flash/vendor/
 
+# 045：subagent 扩展随包分发（PF 用 `-e <path>` 挂载，运行时 lazy import SDK，
+# 无需构建）。放在 exe 旁的 extensions/，与 subagents.rs 的查找顺序一致。
+if [[ -d extensions/pi-subagents ]]; then
+  mkdir -p dist/pi-flash/extensions
+  cp -r extensions/pi-subagents dist/pi-flash/extensions/
+  echo "    subagent 扩展已随包分发"
+else
+  echo "    ⚠ extensions/pi-subagents 缺失，本包将没有 agent 工具"
+fi
+
 # 裁掉非宿主平台 esbuild 二进制（vendor/pi 416MB 里 284MB 是 26 个平台副本，
 # 每包只用 win32-x64 一个 → 下载体积 200MB+ → ≈120MB；见 080 §1.2）。
 # pi 1.2.0 起不再依赖 esbuild（bundle 零引用、依赖树无平台包）——目录不存在

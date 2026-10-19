@@ -126,6 +126,11 @@ pub fn spawn(
             cmd.arg("-e").arg(ext);
         }
     }
+    // 045 M1：subagent 扩展。存在则挂上（`-ne` 下显式 `-e` 仍生效），模型因此
+    // 多出 `agent` 工具；缺失只是没有该工具，不影响启动。
+    if let Some(ext) = crate::subagents::ext_path() {
+        cmd.arg("-e").arg(ext);
+    }
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;

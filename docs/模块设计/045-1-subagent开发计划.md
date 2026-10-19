@@ -30,11 +30,14 @@ preset-selection 分支(我们走 profile,见 045 §8),预计落到 3000–3500 
 
 **目标**:`agent(prompt)` 在 pi CLI 里可用,子会话是完整 pi session,结果即工具结果。
 
-> **进度(2026-10-18)**:1.1/1.2/1.3/1.4/1.5/1.6/1.10 已落地并通过测试
-> (`extensions/pi-subagents`,64 测试全绿)。1.7 fork 后端以同一 `LocalProvider`
-> (`inheritsParentContext: true`)提供,首次体验证待 CLI 冒烟。1.8 工具面已接
-> (caller/parent 双投递+稳定分码)。1.9 深度护卡当前只有运行期一层
-> (`childDepths` 映射),构造期 loader 不装配待补。
+> **进度(2026-10-19)**:**M1 已闭环并在 PF 内实测通过**。1.1–1.8/1.10 落地
+> (`extensions/pi-subagents`,64 测试全绿);1.9 深度护栏依赖构造期事实
+> (子会话由 `createAgentSession` 创建,默认资源发现不含 `-e` 路径 → 孙代无
+> `agent` 工具),运行期 `childDepths` 作兜底。
+>
+> **宿主接入(提前于原计划)**:`pi-link/src/subagents.rs` 定位扩展,
+> `client.rs` 在 spawn 时追加 `-e`;`scripts/release.sh` 随包分发。PF 内验收
+> 步骤见 [045-3](045-3-subagent验收清单.md)。
 
 | # | 任务 | 产出 | 验收 |
 |---|---|---|---|
