@@ -89,7 +89,7 @@
   .btn.primary:hover { background: var(--accent-hover); }
   .btn.danger { color: var(--danger); border-color: rgba(194,84,96,.35); }
   .btn.danger:hover { background: rgba(194,84,96,.12); }
-  .btn.sm { height: 24px; padding: 0 8px; font-size: 11px; }
+
   .mono { font-family: Consolas, monospace; }
 
   .frm { margin-top: 14px; flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px; }
@@ -136,11 +136,7 @@
   .ed-dirty { display: flex; align-items: center; gap: 6px; color: var(--warn); font-size: 11px; }
   .ed-dirty i { width: 7px; height: 7px; border-radius: 50%; background: var(--warn); display: inline-block; }
   .ed-hint { font-size: 11px; color: var(--text-faint); }
-  .name-input { width: 240px; height: 30px; border: 1px solid var(--border); background: var(--bg-panel);
-    border-radius: 6px; font-size: 14px; font-weight: 600; color: var(--text); padding: 0 10px;
-    font-family: inherit; outline: 0; }
-  .name-input:hover { background: var(--bg-panel); }
-  .name-input:focus { border-color: var(--accent); background: var(--bg-panel); }
+
   .dd { position: relative; width: 250px; }
   .dd-menu { display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 20;
     background: var(--bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
@@ -196,7 +192,7 @@
                 
               </div>
 
-              <div class="sp-head" style="margin-top:10px">自定义<span style="flex:1"></span><button class="btn sm">新建</button></div>
+              <div class="sp-head" style="margin-top:10px">自定义<span style="flex:1"></span><button class="btn">新建</button></div>
               <div class="sp-li sel" data-d="d-reviewer">
                 <div class="name">code-reviewer<span class="sub">代码评审 · 正确性与边界</span></div>
                 
@@ -208,13 +204,16 @@
 
               <div class="pane on" id="d-reviewer">
                 <div class="ed-head-row">
-                  <input class="name-input" value="code-reviewer">
                   <span style="flex:1"></span>
                   <button class="btn danger">删除</button>
                   <button class="btn primary">保存</button>
                 </div>
 
                 <div class="frm">
+                  <div class="frm-row">
+                    <label>名称</label>
+                    <div class="frm-ctl"><input type="text" value="code-reviewer"></div>
+                  </div>
                   <div class="frm-row">
                     <label>描述</label>
                     <div class="frm-ctl"><input type="text" value="代码评审 · 正确性与边界"></div>
@@ -264,12 +263,15 @@
 
               <div class="pane" id="d-explorer">
                 <div class="ed-head-row">
-                  <input class="name-input" value="explorer" readonly>
                   <span style="flex:1"></span>
                   <button class="btn">复制为自定义</button>
                 </div>
 
                 <div class="frm ro">
+                  <div class="frm-row">
+                    <label>名称</label>
+                    <div class="frm-ctl"><input type="text" value="explorer" readonly></div>
+                  </div>
                   <div class="frm-row">
                     <label>描述</label>
                     <div class="frm-ctl"><input type="text" value="只读探索 · 调研与定位" readonly></div>
