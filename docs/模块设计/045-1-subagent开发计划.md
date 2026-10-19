@@ -59,6 +59,19 @@ preset-selection 分支(我们走 profile,见 045 §8),预计落到 3000–3500 
 
 **目标**:不动 M1 机制,叠 pi 能力面。
 
+> **进度(2026-10-19):M2 闭环。**
+> - 2.1 outputSchema 已声明,脚本拿 structuredContent ✓
+> - 2.2 fan-out 实测:`Promise.allSettled` 两路 agent,子会话并行,脚本内
+>   直接编程聚合结果 ✓
+> - 2.3 usage:子会话是独立 session,nested-call 上卷**不适用**(它只管
+>   同会话 executeTool 链);改为 ChildSession.usage() 从子会话末条
+>   assistant message 取 usage,经工具结果 usage 字段回流(token 明细+成本) ✓
+> - 2.4 prepareLoadout:**不需要自写**——codemode 内建扩展统一处理
+>   `codemode.mode:"only"`(所有 declared 工具含 agent 都被其隐藏)
+> - 2.5 子会话 extensionFactories 装配 codemode/tool_search/MCP ✓
+>   (实测子会话 sandbox 含 codemode + 用户 mcp.json 服务器;防孙代在
+>   codemode 层天然成立——子会话 sandbox 无 agent 工具)
+
 | # | 任务 | 验收 |
 |---|---|---|
 | 2.1 | `exposure: "direct"` + `outputSchema`/`structuredContent` 正式化 | 模型直调 + 脚本调双通 |

@@ -70,9 +70,6 @@ function createSessionFactory(ctx: ExtensionContext, parentSessionFile: string |
 		const loader = new sdk.DefaultResourceLoader({
 			cwd: options.cwd,
 			agentDir: sdk.getAgentDir(),
-			// Custom loader → pi 不再套默认 agentDir；传 undefined 会在
-			// resolvePath() 炸掉（undefined.startsWith）。
-			agentDir: join(homedir(), ".pi", "agent"),
 			extensionFactories: [
 				{
 					name: "subagent-child-marker",
@@ -87,24 +84,46 @@ function createSessionFactory(ctx: ExtensionContext, parentSessionFile: string |
 						});
 					},
 				},
-			],
+				// 045 M2.5：子会话是“一等公民 pi session”——codemode / tool_search /
+				// MCP 显式装配（SDK 会话默认不加载内建扩展，pi-web 就栽在这里）。
+				// 官方姿势见 examples/sdk/14-codemode-mcp.ts。
+				sdk.createCodemodeExtension?.({ mode: "on" }),
+				sdk.createToolSearchExtension?.(),
+				sdk.createMcpExtension?.(),
+			].filter((f): f is NonNullable<typeof f> => Boolean(f)),
 		});
 		await loader.reload();
+		// codemode / tool_search 注册为 inactive；用 defaultTools 的 `+name`
+		// 追加语义激活。与 profile 白名单（createAgentSession 的 tools 参数）
+		// 相互独立：白名单裁模型面工具，codemode 是子会话基础设施。
+		const settingsManager = sdk.SettingsManager.create(options.cwd, sdk.getAgentDir());
+		settingsManager.applyOverrides?.({ defaultTools: ["+codemode", "+tool_search"] });
 		const { session } = await sdk.createAgentSession({
 			cwd: options.cwd,
 			model,
 			sessionManager,
+			settingsManager,
 			resourceLoader: loader,
 			...(options.tools && options.tools.length > 0 ? { tools: options.tools } : {}),
 		});
 		// SDK sessions don't auto-bind the extension runtime: without this the
-		// marker's session_start never fires and the entry is never written.
+		// marker's session_start never fires and MCP never connects.
 		await (session as unknown as { bindExtensions(bindings: unknown): Promise<void> }).bindExtensions({});
 		const sessionFile = session.sessionFile;
 		if (sessionFile) childDepths.set(sessionFile, currentDepthOf(ctx) + 1);
 		return {
 			prompt: (text: string) => session.prompt(text),
 			lastAssistantText: () => session.getLastAssistantText(),
+			usage: () => {
+				// Child token usage = its final assistant message's usage.
+				const messages = (session as unknown as { messages?: Array<{ role?: string; usage?: unknown }> }).messages ?? [];
+				for (let i = messages.length - 1; i >= 0; i -= 1) {
+					if (messages[i].role === "assistant") {
+						return messages[i].usage as Record<string, unknown> | undefined;
+					}
+				}
+				return undefined;
+			},
 			abort: () => session.abort(),
 			dispose: () => session.dispose(),
 			sessionFile: sessionFile ?? parentFile,
@@ -127,6 +146,14 @@ interface SdkLike {
 		agentDir?: string;
 		extensionFactories?: unknown[];
 	}) => { reload(): Promise<void> };
+	SettingsManager: {
+		create(cwd?: string, agentDir?: string): {
+			applyOverrides?(overrides: Record<string, unknown>): void;
+		};
+	};
+	createCodemodeExtension?(options?: Record<string, unknown>): unknown;
+	createToolSearchExtension?(): unknown;
+	createMcpExtension?(): unknown;
 }
 
 interface AgentSessionLike {
@@ -209,6 +236,21 @@ export default function piSubagents(pi: ExtensionAPI): void {
 		description: delegationDescription({ inheritsParentContext: false, defaultProfile: undefined }),
 		promptSnippet: "Delegate a task to a child agent with its own session",
 		parameters: DELEGATION_PARAMETERS as unknown as never,
+		// 045 M2.1：声明后 codemode 脚本拿 structuredContent（而非文本），
+		// fan-out 结果可直接编程聚合。
+		outputSchema: {
+			type: "object",
+			properties: {
+				childId: { type: "string" },
+				text: { type: "string" },
+				status: { type: "string", description: "started (background) | completed | error" },
+				stopReason: { type: "string" },
+				usage: { type: "object" },
+				durationMs: { type: "number" },
+				errorCode: { type: "string" },
+			},
+			required: ["childId"],
+		} as unknown as never,
 		exposure: "direct",
 		namespace: {
 			name: "subagents",

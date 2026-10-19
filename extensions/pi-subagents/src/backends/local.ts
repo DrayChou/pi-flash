@@ -6,7 +6,7 @@
  * suite) and lets the extension entry decide how a real session is created.
  */
 
-import type { ChildHandle, Provider, ProviderCapabilities, SubagentRequest, SubagentResult } from "../types.ts";
+import type { ChildHandle, Provider, ProviderCapabilities, SubagentRequest, SubagentResult, SubagentUsage } from "../types.ts";
 import { asSubagentError, SubagentError, SubagentErrorCode } from "../errors.ts";
 
 /** The slice of an `AgentSession` a subagent needs. */
@@ -15,6 +15,8 @@ export interface ChildSession {
 	prompt(text: string): Promise<void>;
 	/** Latest assistant text, used as the child's answer. */
 	lastAssistantText(): string | undefined;
+	/** Token usage of the child's last run (assistant message usage). */
+	usage?(): SubagentUsage | undefined;
 	/** Stop the current run, keeping queued work. */
 	abort(): Promise<void>;
 	/** Release the session. Idempotent. */
@@ -99,11 +101,17 @@ class LocalChild implements ChildHandle {
 
 	async result(): Promise<SubagentResult> {
 		if (this.#run) await this.#run;
+		const usage = this.#session.usage?.();
 		if (this.#failure) {
 			const failure = asSubagentError(this.#failure, SubagentErrorCode.START_REJECTED);
-			return { childId: this.id, text: "", stopReason: "error", errorCode: failure.code };
+			return { childId: this.id, text: "", stopReason: "error", errorCode: failure.code, usage };
 		}
-		return { childId: this.id, text: this.#session.lastAssistantText() ?? "", stopReason: "completed" };
+		return {
+			childId: this.id,
+			text: this.#session.lastAssistantText() ?? "",
+			stopReason: "completed",
+			usage,
+		};
 	}
 
 	async dispose(): Promise<void> {

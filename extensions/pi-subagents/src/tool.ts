@@ -45,6 +45,8 @@ export interface ToolResultLike {
 	structuredContent?: Record<string, unknown>;
 	details?: unknown;
 	isError?: boolean;
+	/** Child-session token usage; pi surfaces it on the tool result (not main-context accounting). */
+	usage?: Record<string, unknown>;
 }
 
 export const DELEGATION_PARAMETERS = {
@@ -142,6 +144,7 @@ function success(result: SubagentResult): ToolResultLike {
 		},
 		details: { childId: result.childId, stopReason: result.stopReason },
 		isError: result.stopReason === "error",
+		...(result.usage ? { usage: result.usage as Record<string, unknown> } : {}),
 	};
 }
 
