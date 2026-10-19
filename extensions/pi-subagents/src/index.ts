@@ -46,9 +46,20 @@ function createSessionFactory(ctx: ExtensionContext, parentSessionFile: string |
 	return async (options: SessionFactoryOptions): Promise<ChildSession> => {
 		const sdk = await importSdk();
 		const model = await resolveModel(sdk, ctx, options.model);
+		const parent = ctx.sessionManager as unknown as {
+			getSessionDir?: () => string | undefined;
+			getSessionFile?: () => string | undefined;
+		};
+		const parentFile = parentSessionFile ?? parent.getSessionFile?.();
+		// Children live beside the parent so hosts can find and open them, and the
+		// header records the parent link (045: parentSession).
+		const sessionManager = sdk.SessionManager.create(options.cwd, parent.getSessionDir?.(), {
+			parentSession: parentFile,
+		});
 		const { session } = await sdk.createAgentSession({
 			cwd: options.cwd,
 			model,
+			sessionManager,
 			...(options.tools && options.tools.length > 0 ? { tools: options.tools } : {}),
 		});
 		const sessionFile = session.sessionFile;
@@ -58,13 +69,20 @@ function createSessionFactory(ctx: ExtensionContext, parentSessionFile: string |
 			lastAssistantText: () => session.getLastAssistantText(),
 			abort: () => session.abort(),
 			dispose: () => session.dispose(),
-			sessionFile: sessionFile ?? parentSessionFile,
+			sessionFile: sessionFile ?? parentFile,
 		};
 	};
 }
 
 interface SdkLike {
 	createAgentSession(options: Record<string, unknown>): Promise<{ session: AgentSessionLike }>;
+	SessionManager: {
+		create(
+			cwd: string,
+			sessionDir?: string,
+			options?: { id?: string; parentSession?: string },
+		): unknown;
+	};
 }
 
 interface AgentSessionLike {
@@ -111,14 +129,16 @@ function currentDepthOf(ctx: ExtensionContext): number {
 }
 
 export default function piSubagents(pi: ExtensionAPI): void {
+	// Descriptors are persisted as custom entries, so a restart can tell which
+	// children never settled. `persist` is rebound per session; the manager reads it
+	// through this closure.
+	let persist: (descriptor: SubagentDescriptor) => void = () => {};
+
 	const manager = new SubagentManager({
 		capacity: numberFromEnv("PI_SUBAGENTS_CAPACITY", DEFAULT_CAPACITY),
 		maxDepth: numberFromEnv("PI_SUBAGENTS_MAX_DEPTH", DEFAULT_MAX_DEPTH),
+		onDescriptor: (descriptor) => persist(descriptor),
 	});
-
-	// Descriptors are persisted as custom entries, so a restart can tell which
-	// children never settled. Declared here, wired to the live context per session.
-	let persist: (descriptor: SubagentDescriptor) => void = () => {};
 
 	const makeFactory = (ctx: ExtensionContext): SessionFactory =>
 		createSessionFactory(ctx, (ctx.sessionManager as unknown as { sessionFile?: string }).sessionFile);
@@ -152,7 +172,13 @@ export default function piSubagents(pi: ExtensionAPI): void {
 			instructions:
 				"Each child runs in its own pi session. Ask for independent work in parallel by issuing several calls in one turn.",
 		},
-		async execute(toolCallId: string, params: Record<string, unknown>, ctx: ExtensionContext) {
+		async execute(
+			toolCallId: string,
+			params: Record<string, unknown>,
+			_signal: AbortSignal | undefined,
+			_onUpdate: unknown,
+			ctx: ExtensionContext,
+		) {
 			const depth = currentDepthOf(ctx);
 			const parentId = (ctx.sessionManager as unknown as { sessionFile?: string }).sessionFile ?? "draft";
 			const result = await runDelegation(
