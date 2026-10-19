@@ -1,0 +1,117 @@
+import assert from "node:assert/strict";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, it } from "node:test";
+
+import { SubagentError, SubagentErrorCode } from "../src/errors.ts";
+import { listProfiles, loadProfile, parseFrontmatter, profileFromDocument } from "../src/profile.ts";
+import { captureSync } from "./helpers.ts";
+
+const code = (error: unknown) => (error as SubagentError).code;
+
+describe("frontmatter", () => {
+	it("reads scalars, lists, and the body", () => {
+		const doc = [
+			"---",
+			"description: Explores the repo",
+			"model: deepseek/flash",
+			"tools:",
+			"  - read",
+			"  - grep",
+			"---",
+			"",
+			"Work read-only. Report findings.",
+		].join("\n");
+		const { data, body } = parseFrontmatter(doc);
+		assert.equal(data.description, "Explores the repo");
+		assert.deepEqual(data.tools, ["read", "grep"]);
+		assert.equal(body, "Work read-only. Report findings.");
+	});
+
+	it("treats a document without frontmatter as a pure prompt", () => {
+		const { data, body } = parseFrontmatter("Just instructions.");
+		assert.deepEqual(data, {});
+		assert.equal(body, "Just instructions.");
+	});
+
+	it("fails on unterminated frontmatter", () => {
+		const error = captureSync(() => parseFrontmatter("---\nmodel: x\n"));
+		assert.match((error as Error).message, /unterminated frontmatter/);
+	});
+});
+
+describe("profileFromDocument", () => {
+	const doc = ["---", "description: lab", "tools:", "  - read", "isolation: worktree", "---", "body"].join("\n");
+
+	it("builds a profile", () => {
+		const profile = profileFromDocument("explorer", doc, "mem");
+		assert.equal(profile.id, "explorer");
+		assert.deepEqual(profile.tools, ["read"]);
+		assert.equal(profile.isolation, "worktree");
+		assert.equal(profile.appendSystemPrompt, "body");
+	});
+
+	it("rejects a non-list tools field", () => {
+		const bad = ["---", "tools: read", "---", "x"].join("\n");
+		const error = captureSync(() => profileFromDocument("p", bad, "mem"));
+		assert.match((error as Error).message, /tools must be a list/);
+	});
+
+	it("rejects an unsupported isolation", () => {
+		const bad = ["---", "isolation: docker", "---", "x"].join("\n");
+		const error = captureSync(() => profileFromDocument("p", bad, "mem"));
+		assert.match((error as Error).message, /unsupported isolation/);
+	});
+});
+
+describe("profile loading", () => {
+	it("prefers the project directory over the global one", async () => {
+		const root = await mkdtemp(join(tmpdir(), "pi-subagents-"));
+		const globalDir = join(root, "global");
+		const projectDir = join(root, "project");
+		await mkdir(globalDir, { recursive: true });
+		await mkdir(projectDir, { recursive: true });
+		await writeFile(join(globalDir, "explorer.md"), "---\ndescription: global\n---\nglobal body");
+		await writeFile(join(projectDir, "explorer.md"), "---\ndescription: project\n---\nproject body");
+
+		const profile = await loadProfile("explorer", { globalDir, projectDir });
+		assert.equal(profile.description, "project");
+		assert.equal(profile.appendSystemPrompt, "project body");
+	});
+
+	it("falls back to the global directory", async () => {
+		const root = await mkdtemp(join(tmpdir(), "pi-subagents-"));
+		const globalDir = join(root, "global");
+		await mkdir(globalDir, { recursive: true });
+		await writeFile(join(globalDir, "writer.md"), "---\ndescription: global\n---\nbody");
+
+		const profile = await loadProfile("writer", { globalDir, projectDir: join(root, "missing") });
+		assert.equal(profile.description, "global");
+	});
+
+	it("rejects unknown profiles with a stable code", async () => {
+		const root = await mkdtemp(join(tmpdir(), "pi-subagents-"));
+		const error = await loadProfile("ghost", { globalDir: root, projectDir: root }).catch((e: unknown) => e);
+		assert.equal(code(error), SubagentErrorCode.PROFILE_INVALID);
+	});
+
+	it("rejects path traversal in profile ids", async () => {
+		const error = await loadProfile("../etc/passwd", { globalDir: "/tmp", projectDir: "/tmp" }).catch((e: unknown) => e);
+		assert.equal(code(error), SubagentErrorCode.PROFILE_INVALID);
+	});
+
+	it("lists profiles from both directories without duplicates", async () => {
+		const root = await mkdtemp(join(tmpdir(), "pi-subagents-"));
+		const globalDir = join(root, "global");
+		const projectDir = join(root, "project");
+		await mkdir(globalDir, { recursive: true });
+		await mkdir(projectDir, { recursive: true });
+		await writeFile(join(globalDir, "a.md"), "---\n---\n");
+		await writeFile(join(globalDir, "b.md"), "---\n---\n");
+		await writeFile(join(projectDir, "b.md"), "---\n---\n");
+		await writeFile(join(projectDir, "c.md"), "---\n---\n");
+
+		assert.deepEqual(await listProfiles({ globalDir, projectDir }), ["a", "b", "c"]);
+	});
+});
