@@ -22,8 +22,7 @@ RUST_MIN_STACK=33554432 cargo test -p pi-link   # 协议/路径测试都在 pi-l
 - UI绘制遵循 docs\UI设计\UI组件规范.md
 - **发布产物不落本机**：构建产物只留在 `target/`（如 `target/release/pi-flash.exe`），禁止复制/替换本机已安装的 `D:\softwares\...\payload\pi-flash.exe`，也不要在 payload 目录生成 `.new` 之类的暂存文件——装不装、何时装由用户自己决定
 - CHANGELOG发版驱动，平时勿碰！
-- **不跑 rustfmt**：`cargo fmt` / `rustfmt <file>` 一律不用（本仓无 rustfmt-clean 基线，点名文件也会洗出无关 diff，点名 `mod.rs` 更会连洗整个子树）；**发版前也不做“先统一 fmt”**（理由与代价实测见 [engineering.md](docs/agents/engineering.md)）。排版靠手写，写入时对齐下面 6 条；`scripts/fmt.sh` 仅留 `--check`/`--check --all` 只读诊断
-- **手写排版 6 条**（多 agent 多人写同一个仓的共识，只为风格一致，不是硬格式）：① 4 空格缩进、禁 TAB、禁行尾空格；② `use` 分三组（`std` / 外部 crate / `crate::`），组内不重排别人的；③ 不折硬行宽——单行能写完就单行，宁可长行也不要为限宽把 `let … else { return }` / 小 struct 字面量拆成 3 行；④ 字段 ≥4 或真超宽才竖排；⑤ 改哪行动哪行，**禁整文件重排**（这条比前 5 条都重要，等价于禁 fmt）；⑥ 空行：项间 1 行，禁连续 ≥2 空行
+- **排版不用管**：本仓是 rustfmt-clean 仓（基线 `b36f9b2`，登记在 `.git-blame-ignore-revs`），`.githooks/pre-commit` 会对暂存的 `crates/**.rs` **自动**跑 rustfmt 并重新暂存——不需要记任何排版规则，也不需要自己跑 fmt。`vendor/**` 永不格式化（vendored 上游副本）、`i18n.rs` 的 TABLE 靠 `#[rustfmt::skip]` 豁免（删了那个属性 `i18n_audit` 就炸）。手工入口仅 `scripts/fmt.sh`。**发版前不做统一格式化**（理由见 [engineering.md](docs/agents/engineering.md)）
 - 如非用户授权，禁止修改Settings模块！
 
 # 路径

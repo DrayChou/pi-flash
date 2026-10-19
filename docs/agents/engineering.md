@@ -117,110 +117,58 @@
    按 TAB 解析永远不命中，old path 还会被当成独立条目。修法：X/Y 为 R/C 时
    消费紧跟的下一条记录。
 
-## 格式化：本仓不跑 rustfmt（2026-10-20 起彻底弃用）
+## 格式化：全自动（pre-commit 机械处理，2026-10-20 转向）
 
-**政策**：`cargo fmt`、`rustfmt <file>`、`scripts/fmt.sh` 的写盘模式**一律不用**。
-排版靠手写（本仓风：紧凑、长行、少折行），交付前不做任何格式化动作。
-`scripts/fmt.sh` 已退化成墓碑：除 `--check <file.rs>`（只读诊断）外全部报错退出。
+**现状**：本仓是 rustfmt-clean 仓。**排版不需要记任何规则，也不需要主动跑任何命令**：
 
-为什么从「只格式化点名文件」再退一步——历史账（2026-10-18 三次洪泛、
-2026-10-19 `mod.rs` 连洗子树、2026-10-19 洪泛混进功能提交）说明「受控入口」
-仍然不够：
+- `.githooks/pre-commit` 对本次暂存的 `crates/**.rs` 跑 rustfmt，改了就自动
+  `git add` 回暂存区 → 提交里看到的已是格式化后的版本（有未暂存改动的文件会跳过，
+  留到下次提交处理）。
+- 配置在仓库根 `rustfmt.toml`（`edition = "2024"`）。
+- **`vendor/**` 永不格式化**：gpui / gpui-component 是 vendored 上游副本（workspace
+  exclude），格式化会把本地补丁面炸开。钩子与 `scripts/fmt.sh` 都用 `crates/*.rs`
+  的 pathspec 限死。
+- `crates/app/src/i18n.rs` 的 TABLE 由文件内 `#[rustfmt::skip]` **局部**豁免（该文件
+  其余部分照常格式化）。**那个属性不能删**：`i18n_audit` 按行解析表行（行 trim 后
+  以 `(` 起 + 切 4 列），折行即 panic（实测 812 → 2546 行）。
+- 基线提交 `b36f9b2`（121 个文件）登记在根 `.git-blame-ignore-revs`。
+- 手工入口（平时用不到）：`scripts/fmt.sh <file.rs>` / `--all` / `--check --all`。
 
-- 本仓 200+ `.rs` **绝大多数不是 rustfmt-clean**（原作者紧凑手写风）。哪怕只
-  点名一个文件，rustfmt 也会把该文件里**所有无关行**重排 → 功能提交混进大片
-  纯排版 diff，review 失真、cherry-pick 冲突（`1f66410` 就是这样带上
-  `markdown/*`、`shell/render.rs` 的排版改动）。
-- `rustfmt` 只改排版（换行/缩进/`use` 排序），**不改语义**；编译器、测试、
-  reviewer 都不看排版 ⇒ 格式化**收益恒为零、风险恒不为零**。
-- `cargo fmt -- <file>` 里的 `--` 是**给 rustfmt 追加参数**，主体照样整包。
-- 本仓没有 `cargo fmt --check` 门禁，也没有统一风格计划 ⇒ 不存在任何
-  「必须格式化」的外部约束。
+### 为什么现在能放开（此前 2026-10-18 曾全面禁用 rustfmt）
 
-真要做全仓统一风格：那是**人工决策的独立事项**（单独 `style:` 提交 + 同时挂
-CI 门禁），不是交付流程的一步。当前结论：不做。
+当时禁 fmt 不是口味问题，而是**「没有基线」**导致的三件事：
 
-### 附带雷：`i18n.rs` 的 TABLE 被 test 按行解析
+1. 整包或单文件格式化都会把无关行重排 → 功能提交掺进大片纯排版 diff
+   （`1f66410` 实录：`markdown/*`、`shell/render.rs` 的噪音）。
+2. `rustfmt mod.rs` 递归洗**整棵子树**（点名 2 个文件，实际脏了 33 个）。
+3. `i18n.rs` TABLE 被按行解析，折行即爆。
 
-`i18n_audit::keys_and_translations_are_complete` 按行解析 `i18n.rs` 的
-TABLE（行 trim 后以 `(` 开头 + 拆出 4 列），表行**必须一行一条**。rustfmt
-会把超宽表行折成多行 → audit 只解析到零头（实测 552 → 233）直接 panic
-「TABLE 解析异常」。所以任何格式化动作都必须跳开 `crates/app/src/i18n.rs`
-（旧版 `fmt.sh` 内部写死了 SKIP，现在写盘模式已下线，这条留着防手工误跑）。
+有基线之后三条同时消失：格式化**幂等**（只动你新写的行）、子树已 clean（递归 =
+空操作）、表行被 `#[rustfmt::skip]` 冻结。于是「格式化」从**风险动作**变成
+**机械动作**，可以放心交给钩子——这也正是「排版问题用脚本解决、别变成 agent
+的记忆负担」这条原则的落地方式。
 
-误伤恢复：`git checkout HEAD -- crates/app/src/i18n.rs` 再重插新增表行
-（表行统一 `, ` 分隔单行格式）。
+### 发版前不做统一格式化（2026-10-20 定案，仍然有效）
 
-### 附带雷：点名 `mod.rs` = 洗整个模块树（2026-10-19 实测）
+1. **发出去的必须是测过的那份**：release 阶段只做校验 / 构建 / 打包，不该改源码。
+2. **洪泛只是换日子**：`git blame` 失真、`git bisect` 与热修 cherry-pick 全废。
+3. 每版都要重付一次代价（只洗「上版以来」的提交）。
+4. 版本间 diff 全是折行，审计与用户看不见真变更。
 
-rustfmt 递归解析 `mod` 声明：`rustfmt mod.rs` 会把**该目录全部子模块**
-一起格式化。点名 `markdown/mod.rs` + `services/mod.rs` 两个文件，实际
-脏了 12 → 33 个文件（markdown/\*、services/\* 全军覆没）。结论：`mod.rs` 是
-rustfmt 的最佳放大器，这也是「点名文件」方案被废弃的直接原因；万一手工跑了，
-用 `git status --short` 核对波及面、`git checkout HEAD -- <无辜文件>` 回滚。
+`scripts/release.sh` 头部已写死「绝不在此处插格式化步骤」。
 
-### 现在的三道防线（都是事故网，不是流程步骤）
+### 事故处置
 
-| 层 | 位置 | 拦什么 |
-|---|---|---|
-| 入口防 | `scripts/fmt.sh` | **写盘格式化已下线**：除 `--check`（只读诊断，可配 `--all`）外，任何调用（文件列表 / 目录 / `-p 包名`）都报错退出 |
-| 提交防 | `.githooks/pre-commit`（`core.hooksPath=.githooks`） | **大批量入库**：单次暂存 ≥30 文件即拦（逃生 `--no-verify` / `PI_FLASH_ALLOW_BULK=1`）——拦的是「洪泛被顺手 add 进来」这类事故 |
-| 救火 | `scripts/fmt-flood-clean.sh` | 万一有人手工跑了 rustfmt：把工作区 `.rs` 洪泛封进 stash（可恢复），非 `.rs` 改动留在工作区 |
+| 症状 | 处置 |
+|---|---|
+| 有人手工跑了整包 rustfmt，工作区一片脏 | `scripts/fmt-flood-clean.sh`（.rs 封进 stash，可恢复） |
+| 只想回滚某个被洗的文件 | `git checkout HEAD -- <path>` |
+| 基线本身要撤掉 | `git revert b36f9b2`，并把该行从 `.git-blame-ignore-revs` 删掉，然后 `git config --unset blame.ignoreRevsFile` |
+| 想确认基线是否完好 | `scripts/fmt.sh --check --all`（期望：`0 个不符合`） |
+
+### 新克隆 checklist
 
 ```bash
-scripts/fmt.sh --check <file.rs>   # 只读诊断单个文件
-scripts/fmt.sh --check --all       # 全仓只读扫一遍（统计用，不是门禁）
-git status --short                 # 交付前自检：不该出现自己没编辑过的 .rs
+git config core.hooksPath .githooks                      # 自动格式化 + 批量拦截
+git config blame.ignoreRevsFile .git-blame-ignore-revs   # blame 跳过基线提交
 ```
-
-**为什么连「点名文件」也不留**：否定式规则（「禁止整包 fmt」）对 agent 约束力
-不足，本仓连踩四次；而「只点名文件」这条退让仍然会把该文件里无关的行洗进
-提交（`1f66410` 的排版噪音就是这么来的）。让写盘路径在命令行上根本不存在，
-比记住规则可靠。
-
-## 多 agent 风格不一致：为什么不在发版前统一 fmt（2026-10-20 定案）
-
-背景：本仓由多个 agent / 多个模型分头写，手写排版习惯确实有差异。有人提议
-「发版前跑一次统一 fmt」。**结论：不做**，理由不是道德洁癖，是发版流程的
-硬约束：
-
-1. **发出去的东西没测过 / 测过的没发**。发布包里必须先是「跑过测试的源码」；
-   fmt 之后要么重跑全套测试（发版窗口被拖长），要么带着未验证的字节发出去。
-   release 阶段该做的只有编译 / 测试 / 打包，不该动源码。
-2. **洪泛只是换了日子**。昨天的问题是「排版 diff 混进功能提交」，发版版只是
-   把它改成「混进发版提交」：`git blame` 全仓失效、`git bisect` 与热修
-   cherry-pick 全废，回滚一个小补丁要跨两次全局重排。
-3. **每版都要重付一次代价**。发版前格式化只洗「上版之后的提交」，等于每版
-   做一次局部全仓重排——风险不是一次性的，是经常性的。
-4. **版本间 diff 噪声**：0.1.x→0.1.y 的 diff 全是折行，审计/用户看不见真变更。
-
-### 实测基线（2026-10-20，`scripts/fmt.sh --check --all`）
-
-- 已跟踪 `.rs` **516** 个，其中 **285** 个（55%）不是 rustfmt-clean → 真做一次
-  全仓基线 = 约 1.1 万行纯排版 diff。
-- 基座卫生其实已经很干净：**0 个文件含 TAB 缩进，0 个含行尾空格**。所谓
-  「风格不一致」基本只剩折行 `use` 排序差异，阅读不受影响——这正是「不值得
-  为它付出上面四条代价」的直接依据。
-- 唯一硬阻塞是 `crates/app/src/i18n.rs`：rustfmt 会把它从 812 行推到 2546 行
-  （TABLE 每条折成 5 行），而 `i18n_audit::table_rows` 是按行切 4 列，直接挂。
-
-### 现有的替代方案（已在用）
-
-- **写入时对齐**：`AGENTS.md` 铁律里的「手写排版 6 条」（缩进/`use` 分组/不折
-  硬行宽/禁整文件重排/空行），成本 0 diff，多 agent 从源头收敛。
-- **只读体检**：`scripts/fmt.sh --check --all` 给统计（没挂进 CI/钩子，不进任何流程）。
-- **提交防**：`pre-commit` 的 ≥30 文件拦截仍然是真正的事故网。
-
-### 如果将来真要统一：正确姿势（一次性，不进发版流程）
-
-1. 先解掉 i18n 硬阻塞：TABLE 改成「一行一个字符串字面量 + 分隔符拆分」（`|`
-   或 `\u{1}`），rustfmt 不改字符串内容 → 表行永不被折；同步改 `i18n_audit`。
-2. 挑功能冻结窗口（往日最后合入，其它会话 rebase 冲击可控）。
-3. `scripts/fmt.sh` 临时开回写盘模式，跑一次全仓（跳过/已改造的 i18n）。
-4. **单独一个 `style: 全仓 rustfmt（基线）` 提交**，并把该提交 SHA 写进
-   `.git-blame-ignore-revs`（`git config blame.ignoreRevsFile`）→ blame 不被污染。
-5. 上增量门禁：`pre-commit` 只对**本次暂存的 .rs** 跑 `rustfmt --check`（基线之后
-   不再产生洪泛，此时门禁才有意义）。
-6. 基线提交后本仓就变成 rustfmt-clean 仓，那时才可重新讨论「要不要格式化」。
-
-哪一步没做（尤其 1 和 5），就不要开始——半途的基线是「既脏又有门禁」的最差状态。

@@ -1,0 +1,1 @@
+b36f9b2 style: 全仓 rustfmt 基线（crates/**；vendor 豁免；i18n TABLE 用 #[rustfmt::skip] 局部豁免）
