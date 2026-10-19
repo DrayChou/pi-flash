@@ -76,7 +76,7 @@ pub(super) fn ctx_tip_element(
         .bottom(px(24.)) // 环命中区 26px，压顶 2px 防接缝死区
         // 相对圆环居中：向左/右对称扩张 + flex 居中。手算 left 偏移要跟着
         // 环的 padding(4)+负 margin(-4) 一起走，对称扩张则天然以环为轴，
-        // 环宽变了也不用改常数。±260 > 420/2 保证面板不被压缩。
+        // 环宽变了也不用改常数。±260 > 460/2 保证面板不被压缩。
         .left(px(-260.))
         .right(px(-260.))
         .pb(px(12.))
@@ -89,7 +89,9 @@ pub(super) fn ctx_tip_element(
         // 无 mousedown handler，点击照常落到下层消息
         .child(
             div()
-                .w(px(420.))
+                // 面板 460 宽（2026-10-20 从 420 +40：英文下底部三钮并排
+                // 超长溢出，加宽后仍每行 2 列网格）
+                .w(px(460.))
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .child(ctx_usage_panel(
                     stats,
@@ -292,7 +294,7 @@ fn ctx_section(
         .into_any_element()
 }
 
-/// 二列数据网格（用户定夺：面板 420 宽、每行 2 列砍高度）：cells 按行
+/// 二列数据网格（用户定夺：面板 460 宽、每行 2 列砍高度）：cells 按行
 /// 填充，每格半宽，左格 pr 出列缝——两列的百分比值各自贴半宽右缘对齐。
 fn ctx_grid2(cells: Vec<gpui::Div>) -> gpui::AnyElement {
     div()
