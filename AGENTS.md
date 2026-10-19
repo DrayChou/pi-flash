@@ -26,8 +26,9 @@ RUST_MIN_STACK=33554432 cargo test -p pi-link   # 协议/路径测试都在 pi-l
 - 如非用户授权，禁止修改Settings模块！
 
 # 并行开发
-- **提交前必跑 `git status`**（仅开工扫一次不够——中途可能有人加入）：只 add 自己改过的文件，永不 `git add -A`；发现列表里有非自己产生的改动 → `scripts/agent-workspace.sh <名字>` 建克隆转平行作业。
-- 克隆用前/推送前 `git pull --rebase`；单会话无冲突时照常用黄金仓库。
+- **开工先 `scripts/agent-workspace.sh <名字>` 建克隆，cd 进克隆再干活**（黄金仓库永不写入），无条件、不判断。
+- 提交只 add 自己改过的文件，永不 `git add -A`；克隆用前/推送前 `git pull --rebase`。
+- 验收 = push 后黄金仓库可见；克隆用完删除，防僵尸堆盘。
 
 # 路径
 - vendored pi：`vendor/pi`（package.json+lock 入库；node_modules 走 `npm ci` 不入库）
