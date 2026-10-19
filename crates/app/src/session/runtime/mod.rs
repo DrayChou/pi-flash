@@ -328,11 +328,12 @@ impl SessionRuntime {
                 extra.push("--tools".into());
                 extra.push("read,bash,edit,write".into());
             }
-            // full：内置 7 件（--tools）+ 精确集（-ne + 个人扩展 + 内置扩展）
-            // ⇒ 插件一个不装 ⇒ 系统提示词零插件注入（034 §1.2）
+            // full：内置 7 件 + agent（045 subagent，内置植入能力）（--tools）
+            // + 精确集（-ne + 个人扩展 + 内置扩展）⇒ 插件一个不装 ⇒
+            // 系统提示词零插件注入（034 §1.2）
             "full" => {
                 extra.push("--tools".into());
-                extra.push("bash,read,edit,write,grep,find,ls".into());
+                extra.push("bash,read,edit,write,grep,find,ls,agent".into());
                 extra.extend(crate::session::tools_recipe::full_args(&self.cwd));
             }
             // 自定义（原 full+plugins）：不发 --tools（注册级 allowlist 会把
