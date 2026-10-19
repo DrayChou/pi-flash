@@ -112,12 +112,50 @@ createAgentSessionFromServices({
   `agent_settled.aborted` 区分取消与崩溃)。
 - 按 resourceSnapshot 可 resume(复用同一子 session 文件续跑)。
 
-## 8. profile
+## 8. profile = Agent 定义(用户资产)
 
-- `.md` frontmatter:model / appendSystemPrompt / 工具白名单(含 `ext:` 选择器)/
-  skills / 上下文继承(截断上限)/ `isolation: worktree`。
-- 全局(`~/.pi/agent/agents/`)与项目(`.pi/agents/`)两级;内置 profile 只读
-  可开关,损坏 fail-closed。
+**概念分层(2026-10-19 定案)**:profile 不是扩展私有数据,是**用户的
+Agent 定义资产**(「类」);委派产生的运行记录是「实例」。pi-subagents 是
+manager(机制层),只消费目录约定,不拥有定义——预制与自定义两层由此
+解耦(对齐 dsh「bundle 内置 preset + 补丁自定义」的概念,载体用 pi 的
+目录发现,不搬 cordis 体系)。
+
+### 8.1 存放与来源(解析顺序:同名 用户文件 > 包 > 内置)
+
+| 来源 | 路径/载体 | 说明 |
+|---|---|---|
+| 用户自定义 | `~/.pi/agent/agents/*.md` | 用户资产目录(与 skills/ extensions/ prompts/ themes/ 同级同构) |
+| 项目共享 | `<cwd>/.pi/agents/*.md` | 可进 git,团队共享;覆盖同名全局 |
+| 已安装包 | pi package 内 `agents/` 目录 | `pi install` 分发(pi 包资源类型扩展,后续) |
+| 内置 | 扩展代码内常量 | 随 pi-subagents 出厂,只读 |
+
+用户资产惯例(与 skills/prompts/themes 同级),非扩展私有——PF/CLI/扩展
+三方共享同一文件,零自有存储。
+
+### 8.2 字段集 v1(frontmatter)
+
+```yaml
+description: 代码评审          # 列表展示
+model: provider/id            # 路由
+tools:                        # 工具白名单(含 ext: 选择器)
+  - read
+maxTurns: 15                  # 🆕 轮次预算:软限(到限 steer 收尾,超限
+                              #    abort),覆盖全局默认;缺省 25
+systemPrompt: |               # 🆕 替换式人格(before_agent_start
+  你是代码评审员…               #    systemPrompt override;优先于追加)
+appendSystemPrompt: …         # 追加式(与替换并存;替换优先)
+```
+
+(追加的语义对齐 pi 官方 SYSTEM.md/APPEND_SYSTEM.md 两档。)
+
+后续字段(不进 v1):skills、inheritContextLimit、isolation(worktree)、
+输出契约。
+
+### 8.3 生命周期
+
+- 修改只影响**之后创建的**子代理(dsh 同语义:"修改只影响之后创建的
+  Agent");运行中的实例保持其 resourceSnapshot。
+- 损坏 profile fail-closed(`PROFILE_INVALID`),不静默降级。
 - profile 说明挂进 `namespace: "subagents"` instructions,codemode 脚本
   `describeNamespace()` 可读。
 
