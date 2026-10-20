@@ -628,10 +628,11 @@ pub(crate) fn psp_view(
     panel.into_any_element()
 }
 
-/// 020-1 会话子面板控制栏（38px、无下 border）：左三 icon+文字（大图标
-/// LG18）= 项目（打开项目）/ 会话（新建会话）/ 搜索；右二纯 icon（小图标
-/// MD16）= 列表切换（项目分组 ↔ 最近会话，图标随模式换）+ 最大化（本面板
-/// 填满、文件树收起到操作栏）。左缘 = ICON_LINE 12（容器 pl4 + 钮 px8）、
+/// 020-1 会话子面板控制栏（38px、无下 border）：左二 icon+文字（大图标
+/// LG18）= 项目（打开项目）/ 会话（新建会话）；右三纯 icon（小图标 MD16）
+/// = 搜索 + 列表切换（项目分组 ↔ 最近会话，图标随模式换）+ 最大化（本面板
+/// 填满、文件树收起到操作栏）。搜索已降级为小 icon 并入右侧组（去掉文字，
+/// 与右侧钮同宽 26 同档 MD16）。左缘 = ICON_LINE 12（容器 pl4 + 钮 px8）、
 /// 右缘 = LIST_PX 10，与文件树操作栏同线。
 ///
 /// **自动隐藏**：右侧「列表切换」常态不可见（opacity 0），鼠标进入本控制栏
@@ -645,8 +646,8 @@ fn psp_ctrl_bar(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -
     let w_search = weak.clone();
     let w_toggle = weak.clone();
     let w_max = weak.clone();
-    // 钮盒：h30（tokens::panel_ctrl::BTN_H）px8 gap6，左三带文字（ui_size
-    // 12.5 Semibold），右二定宽 26 纯 icon（与文件树操作栏钮盒同宽，列对
+    // 钮盒：h30（tokens::panel_ctrl::BTN_H）px8 gap6，左二带文字（ui_size
+    // 12.5 Semibold），右三定宽 26 纯 icon（与文件树操作栏钮盒同宽，列对
     // 齐见下方注释）；hover = bg_hover + 前景变亮（icon 走同名 group 的
     // group_hover 同步变色）
     let btn = |id: &'static str| {
@@ -673,7 +674,7 @@ fn psp_ctrl_bar(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -
             .size(px(size))
             .into_any_element()
     };
-    // 列表切换钮（右二之一）链外组好再进 child（child 实参位置不能写
+    // 列表切换钮（右三之一）链外组好再进 child（child 实参位置不能写
     // let）。自动隐藏（设置-界面「部分操作隐藏」，默认 on）= 常态透明、
     // 控制栏 hover 显影；命中区/布局不动，关掉开关则恒显
     let list_toggle = btn("psp-list-toggle")
@@ -700,7 +701,7 @@ fn psp_ctrl_bar(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -
         // 左线 = ICON_LINE（4 + 钮内边距 8）；右缘 = LIST_PX
         .pl(px(4.))
         .pr(px(align::LIST_PX))
-        // 左三：icon+文字
+        // 左二：icon+文字
         .child(
             btn("psp-open-project")
                 .with_tip_action("psp.open_project", &crate::OpenProjectPicker)
@@ -722,18 +723,21 @@ fn psp_ctrl_bar(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -
                 .child(icon("icon-new-chat", 19.))
                 .child(tr("psp.session_label")),
         )
+        .child(div().flex_1())
+        // 右三：纯 icon（钮盒 26 = 文件树操作栏 bar_btn 同款，bar gap 2 →
+        // 与下方操作栏右缘逐列对齐：最大化列、次列图标中心严格同 x）。
+        // 搜索居本组最左 = 右缘定宽对齐不动，只往左多占一列
         .child(
             btn("psp-search")
+                .w(px(26.))
+                .px(px(0.))
+                .justify_center()
                 .with_tip_action("psp.search_sessions", &crate::OpenSessionSearch)
                 .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                     let _ = w_search.update(cx, |c, cx| c.open_session_search(cx));
                 })
-                .child(icon("search", crate::ui::tokens::icon::LG))
-                .child(tr("psp.search")),
+                .child(icon("search", crate::ui::tokens::icon::MD)),
         )
-        .child(div().flex_1())
-        // 右二：纯 icon（钮盒 26 = 文件树操作栏 bar_btn 同款，bar gap 2 →
-        // 与下方操作栏右缘逐列对齐：最大化列、次列图标中心严格同 x）
         .child(
             // 列表切换：图标随当前模式换（分组 = folder-list，扁平 =
             // icon-flat），点击直切，不再走 ⋯ 菜单（020-1 定稿）

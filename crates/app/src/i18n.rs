@@ -566,7 +566,6 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("psp.project_deleted", "项目已删除（{n} 个会话）", "", ""),
     ("psp.project_groups", "项目分组列表", "", ""),
     ("psp.recent_sessions", "最近会话列表", "", ""),
-    ("psp.search", "搜索", "搜尋", "Search"),
     ("psp.search_sessions", "搜索会话", "搜尋會話", "Search sessions"),
     ("psp.session_label", "会话", "會話", "Sessions"),
     ("psp.sessions_count", "{n} 个会话", "{n} 個會話", "{n} sessions"),
