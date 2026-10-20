@@ -149,6 +149,10 @@ impl SessionRuntime {
     /// 不翻页——只改上屏半边、回显又钉回去，「立即刷屏」照样发生（三次
     /// 验收根因，events.rs 尾部同款注释）。
     ///
+    /// 打断只退役**跟尾期**的锚点：钉顶期（内容还短于一屏）保留锚点，插话
+    /// 气泡只是追加在当前屏内内容之后，几何原地不动——退役会把短内容拽到
+    /// 屏底（用户报障：首条钉顶、思考中插话，消息全落到屏幕下半部分）。
+    ///
     /// 槽不渲染卡片：乐观气泡即呈现。
     pub(crate) fn interrupt_deliver(&mut self, entry: QueuedInput, cx: &mut Context<Self>) {
         // 打断先行：先 abort 当前回复（半截截断）——旧输出流的 delta 立刻断流
@@ -167,9 +171,12 @@ impl SessionRuntime {
         }
         let pin = !self.agent_running;
         if !pin {
-            // 打断在跑的轮次：退出锚点/垫片切回普通贴底跟随，消息追加在流
-            // 尾部、视图跟着流走，新回复在其下继续长
-            self.pager.release();
+            // 打断在跑的轮次：不翻页、消息追加在流尾部。锚点**只在跟尾期**退役
+            // （垫片已归零、卸掉不跳，且轮末内容缩水时不会被拽回上一轮的钉顶
+            // 位）；钉顶期保留锚点——内容还短于一屏，摘掉垫片 Bottom 胶水会把
+            // 整块内容拽到屏底（用户报障：首条消息已钉顶、思考中插话，所有
+            // 消息落到屏幕下半部分）。详见 ChatList::release_if_following。
+            self.pager.release_if_following();
         }
         if !entry.text.is_empty() && !entry.text.starts_with("/skill:") {
             self.optimistic_send(entry.text.clone(), pin, cx);

@@ -1150,4 +1150,30 @@ mod pin_regression_tests {
             assert_eq!(r.pager.anchor_ix(), None, "打断回显不钉顶");
         });
     }
+
+    /// 用户报障回归锁（2026-10-21）：首条消息已钉顶、agent 思考中再发一条
+    /// steer——打断投递不得退役钉顶锚点。钉顶期（内容还短于一屏）退役 = 摘
+    /// 垫片，Bottom 胶水把整块内容拽到屏底（「所有消息落到屏幕下半部分」）。
+    /// 几何锁见 chat_list.rs `interrupt_while_pinned_keeps_position`。
+    #[gpui::test]
+    fn steer_while_pinned_keeps_anchor(cx: &mut TestAppContext) {
+        let rt = runtime(cx);
+        rt.update(cx, |r, cx| {
+            r.optimistic_send("第一条".into(), true, cx);
+            assert_eq!(r.pager.anchor_ix(), Some(0), "首条照常钉顶");
+            r.agent_running = true;
+            r.input = "第二条".into();
+            r.steer_input(cx);
+        });
+        rt.read_with(cx, |r, _| {
+            assert_eq!(
+                r.pager.anchor_ix(),
+                Some(0),
+                "钉顶期打断不退役锚点（昵了就落到屏幕下半部）"
+            );
+            assert_eq!(r.messages.len(), 2, "插话气泡接在下面");
+            assert_eq!(r.messages[1].role, crate::session::messages::Role::User);
+            assert!(r.interrupt_pending.is_some(), "打断槽持有本条");
+        });
+    }
 }
