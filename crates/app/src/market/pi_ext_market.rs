@@ -968,7 +968,7 @@ fn toolbar(
     // 全部更新(n)
     let n = chat.aux.plugin_updates.available();
     let label = if n > 0 {
-        format!("{}  {n}", tr("market.update_all"))
+        format!("{} {n}", tr("market.update_all"))
     } else {
         tr("market.update_all").to_string()
     };
@@ -1183,21 +1183,7 @@ fn pkg_card(
                         .items_center()
                         .gap(gpui::px(space::SP4))
                         .min_w_0()
-                        .child(
-                            gpui::div()
-                                .text_size(crate::appearance::ui_size(15.))
-                                .line_height(crate::appearance::ui_size(20.))
-                                .font_weight(gpui::FontWeight::SEMIBOLD)
-                                .text_color(gpui::rgb(if row.enabled {
-                                    t.text
-                                } else {
-                                    t.text_muted
-                                }))
-                                .overflow_hidden()
-                                .whitespace_nowrap()
-                                .text_ellipsis()
-                                .child(SharedString::from(row.name.clone())),
-                        )
+                        .child(name_link(row, t))
                         .children((!row.version.is_empty()).then(|| badge(&row.version, t)))
                         .child(gpui::div().flex_1())
                         .children(switch(row, weak)),
@@ -1282,6 +1268,30 @@ fn thumb_grid(t: &'static Theme) -> AnyElement {
             .bg(gpui::rgba(crate::appearance::theme::rgba_a(t.accent, 0.5))),
     )
     .into_any_element()
+}
+
+/// 扩展名称：可点，点开浏览器原始说明页（`npmjs.com/package/<name>`，
+/// README 就在那里）。hover 转 accent，与卡片里其他链接同一反馈。
+fn name_link(row: &RowData, t: &'static Theme) -> AnyElement {
+    let url = format!("https://www.npmjs.com/package/{}", row.name);
+    gpui::div()
+        .id(SharedString::from(format!("pi-ext-name-{}", row.name)))
+        .min_w_0()
+        .text_size(crate::appearance::ui_size(15.))
+        .line_height(crate::appearance::ui_size(20.))
+        .font_weight(gpui::FontWeight::SEMIBOLD)
+        .text_color(gpui::rgb(if row.enabled { t.text } else { t.text_muted }))
+        .cursor_pointer()
+        .hover(|s| s.text_color(gpui::rgb(t.accent)))
+        .overflow_hidden()
+        .whitespace_nowrap()
+        .text_ellipsis()
+        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+            cx.stop_propagation();
+            cx.open_url(&url);
+        })
+        .child(SharedString::from(row.name.clone()))
+        .into_any_element()
 }
 
 fn badge(text: &str, t: &'static Theme) -> AnyElement {
