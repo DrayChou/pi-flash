@@ -551,8 +551,15 @@ struct RowData {
 const LIST_ID: &str = "pi-ext-market-list";
 
 /// 页面主体（content.rs `ContentView::PiExtMarket` 分支）。
-pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
+pub(crate) fn page(
+    chat: &Chat,
+    weak: &gpui::WeakEntity<Chat>,
+    window: &mut gpui::Window,
+) -> AnyElement {
     let t: &'static Theme = T();
+    // 工具栏右端分段控件 / 摘要行右端「全部更新」共用列宽：两处右缘都贴
+    // PAGE_RIGHT，等宽才能左右缘同时对齐（设计稿竖向对齐）。
+    let side_w = side_col_w(window);
     let st = &chat.aux.market.pi_ext;
     let installed = chat.pi_ext_installed_sources();
     let pending_source = st.pending.clone();
@@ -670,7 +677,7 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
         .min_h_0()
         .flex()
         .flex_col()
-        .child(toolbar(chat, weak, t));
+        .child(toolbar(chat, weak, t, side_w));
 
     if let Some(banner) = banner(chat, weak, t) {
         col = col.child(banner);
@@ -701,7 +708,7 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
                 ))
                 // 「全部更新」在摘要行右端
                 .child(gpui::div().flex_1())
-                .child(update_all_button(chat, weak, busy_any)),
+                .child(update_all_button(chat, weak, busy_any, side_w)),
         );
     } else {
         let count = if st.total > 0 {
@@ -736,7 +743,7 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
                 .child(tr("market.only_ext").to_string())
                 // 「全部更新」在摘要行右端
                 .child(gpui::div().flex_1())
-                .child(update_all_button(chat, weak, busy_any)),
+                .child(update_all_button(chat, weak, busy_any, side_w)),
         );
     }
 
@@ -813,7 +820,12 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
 }
 
 /// 工具栏：搜索 + 排序（固定最多下载）+ 未安装/已安装 + 全部更新(n)。
-fn toolbar(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> AnyElement {
+fn toolbar(
+    chat: &Chat,
+    weak: &gpui::WeakEntity<Chat>,
+    t: &'static Theme,
+    side_w: f32,
+) -> AnyElement {
     let st = &chat.aux.market.pi_ext;
     let mut bar = gpui::div()
         .flex_shrink_0()
@@ -981,6 +993,9 @@ fn toolbar(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> Any
         .gap(gpui::px(space::SP1))
         .p(gpui::px(space::SP1))
         .h(gpui::px(crate::ui::tokens::btn::MD_H))
+        // 列宽由 side_col_w 定：与摘要行「全部更新」同宽（竖向左右缘对齐）
+        .w(gpui::px(side_w))
+        .flex_shrink_0()
         .rounded(gpui::px(radius::CARD))
         .border_1()
         .border_color(gpui::rgb(t.border))
@@ -1004,8 +1019,11 @@ fn toolbar(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> Any
                 .id(id)
                 .h(gpui::px(24.))
                 .px(gpui::px(crate::ui::tokens::btn::SM_PX))
+                .flex_1()
+                .min_w_0()
                 .flex()
                 .items_center()
+                .justify_center()
                 .rounded(gpui::px(radius::CTRL))
                 .text_size(crate::appearance::ui_size(11.))
                 .when(active, |d| {
@@ -1030,24 +1048,73 @@ fn toolbar(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> Any
 }
 
 /// 「全部更新 (n)」按钮：放在摘要行右端（与结果数同行，右对齐）。
-fn update_all_button(chat: &Chat, weak: &gpui::WeakEntity<Chat>, busy_any: bool) -> AnyElement {
+/// 宽度取 `side_w`（= 工具栏分段控件宽）→ 与上方 switch 左右缘对齐。
+fn update_all_button(
+    chat: &Chat,
+    weak: &gpui::WeakEntity<Chat>,
+    busy_any: bool,
+    side_w: f32,
+) -> AnyElement {
     let n = chat.aux.plugin_updates.available();
     let label = if n > 0 {
         format!("{} {n}", tr("market.update_all"))
     } else {
         tr("market.update_all").to_string()
     };
+    let disabled = n == 0 || busy_any || chat.aux.plugin_updates.checking;
     let weak_all = weak.clone();
-    crate::ui::button(
-        "pi-ext-update-all",
-        label,
-        BtnSize::Md,
-        BtnVariant::Secondary,
-        n == 0 || busy_any || chat.aux.plugin_updates.checking,
-        move |_, _, cx| {
+    // 走 button_base 才能带 w_full（ui::button 不支持自加宽度）
+    let el = crate::ui::button_base("pi-ext-update-all", BtnSize::Md, BtnVariant::Secondary)
+        .w_full()
+        .child(label);
+    let el = if disabled {
+        el.opacity(0.5)
+    } else {
+        el.on_mouse_down(MouseButton::Left, move |_, _, cx| {
             let _ = weak_all.update(cx, |c, cx| c.pi_ext_update_all(cx));
-        },
-    )
+        })
+    };
+    gpui::div()
+        .w(gpui::px(side_w))
+        .flex_shrink_0()
+        .child(el)
+        .into_any_element()
+}
+
+/// 右侧共列宽：工具栏「未安装 | 已安装」分段控件与摘要行「全部更新」共用。
+///
+/// = 最长标签（SEMIBOLD 实测，随界面字号/语言缩放）+ 分段钮左右内距 +
+/// 分段壳的描边·内衬·段间缝。不写死字面量，换语言不会截字。
+fn side_col_w(window: &mut gpui::Window) -> f32 {
+    let size = crate::appearance::ui_size(11.);
+    let font = gpui::Font {
+        family: crate::appearance::panel_font().family.into(),
+        features: gpui::FontFeatures::default(),
+        fallbacks: None,
+        // 选中段是 SEMIBOLD —— 按它量宽，选哪个段都不会溢出
+        weight: gpui::FontWeight::SEMIBOLD,
+        style: gpui::FontStyle::Normal,
+    };
+    let measure = |text: &str| -> f32 {
+        let run = gpui::TextRun {
+            len: text.len(),
+            font: font.clone(),
+            color: gpui::black(),
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        };
+        f32::from(
+            window
+                .text_system()
+                .layout_line(text, size, &[run], None)
+                .width,
+        )
+    };
+    let label =
+        measure(tr("market.filter.not_installed")).max(measure(tr("market.filter.installed")));
+    let seg_btn = label + crate::ui::tokens::btn::SM_PX * 2.;
+    seg_btn * 2. + space::SP1 * 3. + 2.
 }
 
 /// 离线黄条 / 错误红条（有则渲染）。
