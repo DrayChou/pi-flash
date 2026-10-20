@@ -34,7 +34,7 @@ const BATCH: usize = 8;
 /// 搜索框去抖。
 /// 卡片固定行高（vlist 等高行）。设计稿 v28：卡 110 = head 20 + 描述 36 + 底行 24
 /// + 内距 10×2 + 边框 2；行高 = 110 + 行间 SP4(8) = 118。
-const CARD_H: f32 = 118.;
+const CARD_H: f32 = 136.;
 /// 缩略槽宽高。
 const THUMB_W: f32 = 88.;
 const THUMB_H: f32 = 72.;
@@ -53,8 +53,11 @@ const PAGER_H: f32 = 44.;
 const ROW_PAD_R: f32 = space::SP7;
 /// 右缘内缩 = 行右边距：工具栏按钮 / 摘要 / 翻页条 ⊥ **卡片外框右缘**。
 const PAGE_RIGHT: f32 = ROW_PAD_R;
-/// 描述行宽上限（设计稿 v28：不让一行拉到十几百 px）。
-const DESC_MAX_W: f32 = 640.;
+/// 描述行高（行高 18 × 行数）。用 `line_clamp` 硬截行（gpui 按行数 shape），
+/// 不用固定高度盖裁（会出现半行）。
+const DESC_LINE_H: f32 = 18.;
+/// 描述最多行数。
+const DESC_LINES: usize = 3;
 /// 整页内容栏上限（工具栏/摘要/列表/翻页同栏，超宽窗口整体居中）
 const PAGE_MAX_W: f32 = 1080. + PAGE_LEFT + ROW_PAD_R;
 
@@ -720,7 +723,16 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
     // 末条不被削；total 未知时只有第 1 页（翻页按钮禁用）。
     // 翻页条**两个页签都渲染**（已安装页签 = 本地全量、无分页 → 整条禁用占位），
     // 底部结构与未安装页签完全一致：末卡不会贴到窗口底边，页面高度也不跳。
-    col = col.child(pager(weak, st.page, st.total_pages(), st.loading, t));
+    //
+    // 页数口径：未安装 = npm 搜索全局 total 折算；已安装 = **本地条数**
+    // （已装列表是本地全量、不分页 → 只有第 1 页，不能用全局 total
+    // 算出「第 1 / 248 页」这种说走的计数）。
+    let (pager_page, pager_pages) = if st.filter == ExtFilter::Installed {
+        (1usize, 1usize)
+    } else {
+        (st.page, st.total_pages())
+    };
+    col = col.child(pager(weak, pager_page, pager_pages, st.loading, t));
     gpui::div()
         .flex()
         .flex_col()
@@ -1198,14 +1210,24 @@ fn pkg_card(
                 // 右内距 = 动作簇宽 + 8 —— 说明右缘与命令胶囊右缘同线，
                 // **绝不伸进按钮空间**（用户定稿）
                 .children((!row.desc.is_empty()).then(|| {
+                    // 右内距 = 动作簇宽 + 8（与设置-扩展页同口径）：
+                    // 描述右缘 ⊥ **命令胶囊右缘**，绝不伸进按钮空间。
+                    // 宽度不再限 640：描述应跟到卡片内容右缘为止（按钮列在右）。
+                    let acts_w = match row.status {
+                        RowStatus::NotInstalled => 40.,    // [安装]
+                        RowStatus::UpdateAvailable => 72., // [垃圾][更新]
+                        RowStatus::Installed => 24.,       // [垃圾]
+                    };
                     gpui::div()
                         .w_full()
-                        .max_w(gpui::px(DESC_MAX_W))
+                        .pr(gpui::px(acts_w + 8.))
                         .text_size(crate::appearance::ui_size(12.))
-                        .line_height(crate::appearance::ui_size(18.))
+                        .line_height(crate::appearance::ui_size(DESC_LINE_H))
                         .text_color(gpui::rgb(t.text_muted))
-                        .h(crate::appearance::ui_size(18.) * 2.)
-                        .overflow_hidden()
+                        // 硬截行而不是固高盖裁：line_clamp 按行数 shape，
+                        // 行高恰好整数行 → 不会出现半行。
+                        .line_clamp(DESC_LINES)
+                        .h(crate::appearance::ui_size(DESC_LINE_H) * DESC_LINES as f32)
                         .child(SharedString::from(row.desc.clone()))
                         .into_any_element()
                 }))
@@ -1570,18 +1592,18 @@ fn actions(
             .flex()
             .items_center()
             .justify_center()
-            .rounded(gpui::px(radius::CTRL))
+            .rounded(gpui::px(5.))
             .border_1()
-            .border_color(gpui::rgb(t.border))
-            .bg(gpui::rgb(t.bg))
+            .border_color(gpui::rgba(crate::appearance::theme::danger_alpha(t, 0x59)))
+            .bg(gpui::rgba(crate::appearance::theme::danger_alpha(t, 0x0f)))
             .cursor_pointer()
-            .hover(|s| s.bg(gpui::rgb(t.bg_hover)))
+            .hover(|s| s.bg(gpui::rgba(crate::appearance::theme::danger_wash(t))))
             .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                 cx.stop_propagation();
                 let n = n.clone();
                 let _ = weak_r.update(cx, |c, cx| c.pi_ext_remove(n, cx));
             })
-            .child(crate::ui::icon("icon-trash-solid", 12., t.text_muted)),
+            .child(crate::ui::icon("icon-trash-solid", 12., t.danger)),
     );
 
     // 有新版：更新键；已最新：什么都不加（卸载 icon 已是唯一动作）
