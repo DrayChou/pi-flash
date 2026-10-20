@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>pi-flash · Pi扩展市场（040-1 设计稿 v23 · 单列三段式卡片 · 一屏一页）</title>
+<title>pi-flash · Pi扩展市场（040-1 设计稿 v24 · 单列三段式卡片 · 一屏一页 · 排序下拉带值）</title>
 <style>
 /* ===================== 设计系统（mist / one-dark 双主题） ===================== */
 :root {
@@ -100,7 +100,22 @@ html[data-theme="dark"] .sheet-head button:hover { background: rgba(255,255,255,
   padding: 0 24px 0 10px; border: 1px solid var(--hairline); border-radius: 6px;
   font-size: 12px; color: var(--text-muted); background: var(--bg); cursor: pointer; }
 .select:hover { color: var(--text); border-color: var(--text-faint); }
-.select svg { position: absolute; right: 8px; width: 12px; height: 12px; opacity: .7; }
+.select > svg.chev { position: absolute; right: 8px; width: 12px; height: 12px; opacity: .7; }
+.select.on { color: var(--text); border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-wash); }
+.select.on > svg.chev { transform: rotate(180deg); }
+/* 下拉菜单：三个值 + 选中打勾（贴着触发器左缘、宽于触发器） */
+.menu { position: absolute; top: calc(100% + 6px); left: 0; min-width: 148px; z-index: 30;
+  display: none; padding: 4px; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; box-shadow: var(--shadow-hover); }
+.menu.open { display: block; }
+.menu button { width: 100%; height: 28px; display: flex; align-items: center; gap: 8px;
+  padding: 0 8px; border: 0; border-radius: 6px; background: transparent; font: inherit;
+  font-size: 12px; color: var(--text-muted); text-align: left; cursor: pointer; white-space: nowrap; }
+.menu button:hover { background: var(--bg-hover); color: var(--text); }
+.menu button.act { background: var(--accent-wash); color: var(--accent); font-weight: 600; }
+.menu button .tick { width: 12px; height: 12px; flex: none; opacity: 0; }
+.menu button.act .tick { opacity: 1; }
 
 .spacer { flex: 1; }
 .seg { display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--bg-panel);
@@ -245,7 +260,7 @@ html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: 
 <body>
 
 <div class="sheet-head">
-  <b>040-1 Pi扩展市场 · v23（一屏放下：列表不内滚，每页 5 条 / 淡色按钮 / 限宽居中 / 无扩展标签 / 搜索按钮置排序后）</b>
+  <b>040-1 Pi扩展市场 · v24（排序下拉带值列表：最多下载 / 最近更新 / 名称 A–Z · 一屏 5 条 · 淡色按钮 · 限宽居中 · 无扩展标签）</b>
   <span>单列三段式卡片（左 缩略 72 / 中 文本 / 右 动作列 96：开关在顶、动作在底，同一条右缘）· 1180×760 · mist</span>
   <span class="spacer"></span>
   <button id="themeBtn">切换到 one-dark</button>
@@ -279,8 +294,14 @@ html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: 
         <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
         <input placeholder="搜索扩展名称或说明">
       </div>
-      <div class="select">最多下载
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      <div class="select on" id="sortSel">
+        <span id="sortLabel">最多下载</span>
+        <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+        <div class="menu open" id="sortMenu">
+          <button class="act" data-v="最多下载"><svg class="tick" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 13l4 4L19 7"/></svg>最多下载</button>
+          <button data-v="最近更新"><svg class="tick" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 13l4 4L19 7"/></svg>最近更新</button>
+          <button data-v="名称 A–Z"><svg class="tick" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 13l4 4L19 7"/></svg>名称 A–Z</button>
+        </div>
       </div>
       <button class="btn ghost">搜索</button>
       <div class="spacer"></div>
@@ -408,6 +429,31 @@ function cardHtml(i) {
 const list = document.getElementById('list');
 list.innerHTML = Array.from({ length: 5 }, (_, i) => cardHtml(i)).join('');
 list.querySelectorAll('.sw').forEach(sw => sw.addEventListener('click', () => sw.classList.toggle('on')));
+
+// 排序下拉：点触发器展开/收起，选项写回标签，点外面 / ESC 收起
+const sel = document.getElementById('sortSel');
+const menu = document.getElementById('sortMenu');
+const label = document.getElementById('sortLabel');
+sel.addEventListener('click', (e) => {
+  e.stopPropagation();
+  menu.classList.toggle('open');
+  sel.classList.toggle('on', menu.classList.contains('open'));
+});
+menu.querySelectorAll('button').forEach(b => b.addEventListener('click', (e) => {
+  e.stopPropagation();
+  menu.querySelectorAll('button').forEach(x => x.classList.remove('act'));
+  b.classList.add('act');
+  label.textContent = b.dataset.v;
+  menu.classList.remove('open');
+  sel.classList.remove('on');
+}));
+document.addEventListener('click', () => {
+  menu.classList.remove('open');
+  sel.classList.remove('on');
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { menu.classList.remove('open'); sel.classList.remove('on'); }
+});
 
 const btn = document.getElementById('themeBtn');
 btn.addEventListener('click', () => {
