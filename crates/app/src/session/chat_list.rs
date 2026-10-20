@@ -100,10 +100,6 @@ struct Core {
     settled: Cell<bool>,
     /// 内容长过内容区：spacer 归零、交还贴底胶水跟随尾部
     following: Cell<bool>,
-    /// 打断投递钉住锁（2026-10-20 用户定稿「agent 正在输出不应该刷屏」）：
-    /// 立即/插话钉住期间**不翻转跟尾**——新回复在视口下方生长，用户不动
-    /// 滚轮视口就钉在打断消息顶。滚轮（free_scroll）即解除，恢复标准跟尾。
-    follow_lock: Cell<bool>,
     /// 结算尝试次数（渲染帧驱动，带上限防病态循环）
     settle_attempts: Cell<u32>,
     /// 导航点击钉住的轮次（v63-7）：点击定位后选中段固定为该轮——贴底
@@ -131,7 +127,6 @@ impl ChatList {
             free_scroll: Cell::new(false),
             settled: Cell::new(false),
             following: Cell::new(false),
-            follow_lock: Cell::new(false),
             settle_attempts: Cell::new(0),
             nav_pinned: Cell::new(None),
         });
@@ -148,8 +143,6 @@ impl ChatList {
                 if ev.is_scrolled {
                     // 物理滚动交还位置推导（v63-7）：导航钉住的选中段失效
                     core.nav_pinned.set(None);
-                    // 用户滚轮 = 打断钉住锁解除（恢复标准跟尾语义）
-                    core.follow_lock.set(false);
                 }
                 let now = !ev.is_scrolled;
                 if core.at_bottom.replace(now) != now {
@@ -294,8 +287,6 @@ impl ChatList {
             self.core.settled.set(false);
             self.core.following.set(false);
             self.core.free_scroll.set(false);
-            // 新一次发言重新决定跟尾策略（打断投递随后置锁）
-            self.core.follow_lock.set(false);
             self.core.settle_attempts.set(0);
         }
         // 先落账：条目进树后 scroll_to 才有得钉（越界会被钳到列表尾）
@@ -404,7 +395,6 @@ impl ChatList {
         self.core.spacer_px.set(0.);
         self.core.settled.set(false);
         self.core.following.set(false);
-        self.core.follow_lock.set(false);
         self.core.free_scroll.set(false);
         self.state.reset(msgs);
         self.core.listed.set(Listed {
@@ -420,16 +410,6 @@ impl ChatList {
     /// 普通滚轮走 free_scroll 软状态，不进这里。
     pub(crate) fn release(&self) {
         self.core.detach(&self.state);
-    }
-
-    /// 打断投递钉住锁（chat_list 模块头 `follow_lock`）：锁住 = 不翻转跟尾、
-    /// 第 6 步持续钉锚点顶；滚轮即解除。打断消息上屏后由调用方置位。
-    pub(crate) fn set_follow_lock(&self, on: bool) {
-        self.core.follow_lock.set(on);
-        if on {
-            // 置锁瞬间的翻转判定立即失效复位（跟着锁走，不留半拍跟尾）
-            self.core.following.set(false);
-        }
     }
 
     /// 垫片结算：唯一定「钉顶 or 跟尾」的地方（垫片取值见 [`spacer_target`]）。
@@ -467,9 +447,6 @@ impl ChatList {
             return;
         };
         let (spacer_px, follow) = spacer_target(avail, below);
-        // 打断钉住锁：锁住期间不翻转跟尾（spacer 保持常数、第 6 步持续钉
-        // 锚点顶），新回复在视口下方生长——「agent 正在输出不应该刷屏」。
-        let follow = follow && !self.core.follow_lock.get();
         self.core.settled.set(true);
         self.core.spacer_px.set(spacer_px);
         let was_following = self.core.following.replace(follow);
@@ -501,10 +478,6 @@ impl ChatList {
         let Some(below) = self.content_below(ix, last).map(f32::from) else {
             return false;
         };
-        // 打断钉住锁：判定恒「不跟尾」，无翻转可言（防每帧补账空转）
-        if self.core.follow_lock.get() {
-            return false;
-        }
         let (_, follow) = spacer_target(avail, below);
         follow != self.core.following.get()
     }
@@ -540,7 +513,6 @@ impl Core {
         self.listed.set(Listed { spacer: false, ..l });
         self.settled.set(false);
         self.following.set(false);
-        self.follow_lock.set(false);
         self.free_scroll.set(false);
     }
 }
