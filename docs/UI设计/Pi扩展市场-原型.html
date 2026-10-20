@@ -138,9 +138,14 @@ html[data-theme="dark"] .sheet-head button:hover { background: rgba(255,255,255,
   transition: border-color .12s ease, box-shadow .12s ease; }
 .pkg:hover { border-color: rgba(30,101,89,.42); box-shadow: var(--shadow-hover); }
 html[data-theme="dark"] .pkg:hover { border-color: rgba(97,137,235,.45); }
-.thumb { width: 88px; height: 72px;
-  display: grid; place-items: center; color: var(--text-faint); flex: none; }
-.thumb svg { width: 26px; height: 26px; }
+.thumb { width: 88px; height: 72px; border-radius: 7px; border: 1px solid var(--hairline);
+  background:
+    repeating-linear-gradient(0deg, var(--thumb-grid) 0 1px, transparent 1px 12px),
+    repeating-linear-gradient(90deg, var(--thumb-grid) 0 1px, transparent 1px 12px),
+    var(--bg-panel);
+  flex: none; position: relative; overflow: hidden; }
+.thumb::after { content: ""; position: absolute; left: 0; right: 0; bottom: 26%; height: 1px;
+  background: var(--accent); opacity: .5; }
 
 .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
 .head { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -363,7 +368,7 @@ function cardHtml(i) {
   const cmd = installed ? '' :
     `<span class="cmd"><span class="prompt">$</span><code>pi install npm:${full}</code></span>`;
   return `<div class="pkg">
-    <div class="thumb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg></div>
+    <div class="thumb"></div>
     <div class="body">
       <div class="head">
         <span class="name">${full}</span>
