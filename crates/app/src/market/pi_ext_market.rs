@@ -1040,7 +1040,9 @@ fn pkg_card(
         .bg(gpui::rgb(t.bg))
         .hover(|s| s.bg(gpui::rgb(t.bg_hover)))
         .child(
-            // 缩略槽（v1 无网络图：淡底 + 占位图标，位置留给 v2 的 pi.image）
+            // 缩略槽（v1 无网络图）：底色用 bg_selected——bg_panel 与卡片
+            // 底几乎同色（用户圈注）；占位图标 = image（相框+山，no-image
+            // 同款，图标库现成），位置留给 v2 的 pi.image
             gpui::div()
                 .w(gpui::px(THUMB_W))
                 .h(gpui::px(THUMB_H))
@@ -1051,8 +1053,8 @@ fn pkg_card(
                 .rounded(gpui::px(radius::CTRL))
                 .border_1()
                 .border_color(gpui::rgb(t.border))
-                .bg(gpui::rgb(t.bg_panel))
-                .child(crate::ui::icon("plug", 20., t.text_faint)),
+                .bg(gpui::rgb(t.bg_selected))
+                .child(crate::ui::icon("image", 24., t.text_faint)),
         )
         .child(
             gpui::div()
