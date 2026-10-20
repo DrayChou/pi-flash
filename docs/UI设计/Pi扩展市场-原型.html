@@ -86,7 +86,7 @@ html[data-theme="dark"] .sheet-head button:hover { background: rgba(255,255,255,
 /* ===================== 页面 ===================== */
 .page { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
-.toolbar { flex: none; display: flex; align-items: center; gap: 8px; padding: 12px 26px 8px; }
+.toolbar { flex: none; display: flex; align-items: center; gap: 8px; padding: 12px 26px 8px 10px; }
 .search { position: relative; width: 340px; flex: none; }
 .search svg.ico { position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
   width: 14px; height: 14px; color: var(--text-soft); pointer-events: none; }
@@ -127,7 +127,7 @@ html[data-theme="dark"] .sheet-head button:hover { background: rgba(255,255,255,
 .btn .n { font-variant-numeric: tabular-nums; opacity: .85; }
 
 /* 摘要行 */
-.summary { flex: none; display: flex; align-items: baseline; gap: 10px; padding: 0 26px 10px;
+.summary { flex: none; display: flex; align-items: baseline; gap: 10px; padding: 0 26px 10px 10px;
   font-size: 11px; color: var(--text-soft); }
 .summary .count { color: var(--text-dim); font-variant-numeric: tabular-nums; }
 .summary .dot { width: 2px; height: 2px; border-radius: 50%; background: var(--text-faint); }
@@ -225,7 +225,7 @@ html[data-theme="dark"] .chip.ext { color: var(--accent-hover); }
   border-radius: 2px; background: var(--accent); opacity: .45; }
 
 /* 底栏 */
-.foot { flex: none; display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 26px;
+.foot { flex: none; display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 26px 0 10px;
   border-top: 1px solid var(--hairline); font-size: 12px; color: var(--text-muted); }
 .pager { font: inherit; font-size: 12px; height: 28px; padding: 0 12px; border-radius: 6px;
   border: 1px solid var(--hairline); background: transparent; color: var(--text-muted); cursor: pointer; }
@@ -241,7 +241,7 @@ html[data-theme="dark"] .pg.act { color: var(--accent-hover); }
 .foot .dots { color: var(--text-faint); padding: 0 2px; }
 
 /* 横幅 */
-.banner { display: flex; align-items: center; gap: 8px; margin: 0 26px 10px; padding: 7px 10px;
+.banner { display: flex; align-items: center; gap: 8px; margin: 0 26px 10px 10px; padding: 7px 10px;
   border-radius: 7px; font-size: 11px; }
 .banner svg { width: 13px; height: 13px; flex: none; }
 .banner.warn { background: rgba(224,169,98,.16); color: #8a5a13; }
@@ -269,7 +269,7 @@ html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: 
 <body>
 
 <div class="sheet-head">
-  <b>040-1 Pi扩展市场 · v13（开关小档 24×14）</b>
+  <b>040-1 Pi扩展市场 · v14（左缘对齐卡片外框）</b>
   <span>单列卡片（对齐 pi.dev 官方信息结构，单列排布）· 1180×760 · mist</span>
   <span class="spacer"></span>
   <button id="themeBtn">切换到 one-dark</button>

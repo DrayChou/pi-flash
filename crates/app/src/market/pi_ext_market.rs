@@ -43,10 +43,10 @@ const THUMB_W: f32 = 88.;
 const THUMB_H: f32 = 72.;
 /// 最多可翻到第几页（npm 搜索分页深度保守上限；也是本次会话的内存天花板）。
 const MAX_PAGES: usize = 20;
-/// 页面内容列左右内缩 = 列表容器 SP5(10) + 卡片内 padding SP7(16)。
-/// 工具栏 / 摘要 / 翻页条都用它，**右缘与卡片里的动作按钮严格同一竖线**
-/// （2026-10-20 用户要求：上方按钮要和列表中的按钮对齐）。
-const PAGE_INSET: f32 = space::SP5 + space::SP7;
+/// 左缘内缩 = 列表容器内缩 SP5(10)：工具栏 / 摘要 / 翻页条的**左缘与卡片外框同一竖线**。
+const PAGE_LEFT: f32 = space::SP5;
+/// 右缘内缩 = SP5(10) + 卡片内 padding SP7(16)：**右缘与卡片里的动作按钮同一竖线**。
+const PAGE_RIGHT: f32 = space::SP5 + space::SP7;
 
 /// 「未安装 / 已安装」筛选（040-1 UI 设计）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -515,7 +515,8 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
                 .flex()
                 .items_center()
                 .gap(gpui::px(space::SP3))
-                .px(gpui::px(PAGE_INSET))
+                .pl(gpui::px(PAGE_LEFT))
+                .pr(gpui::px(PAGE_RIGHT))
                 .pb(gpui::px(space::SP5))
                 .text_size(crate::appearance::ui_size(11.))
                 .text_color(gpui::rgb(t.text_soft))
@@ -575,7 +576,8 @@ fn toolbar(
         .flex()
         .items_center()
         .gap(gpui::px(space::SP4))
-        .px(gpui::px(PAGE_INSET))
+        .pl(gpui::px(PAGE_LEFT))
+        .pr(gpui::px(PAGE_RIGHT))
         .pt(gpui::px(space::SP6))
         .pb(gpui::px(space::SP3))
         .border_b_1()
@@ -685,7 +687,8 @@ fn banner(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> Opti
             .flex()
             .items_center()
             .gap(gpui::px(space::SP3))
-            .mx(gpui::px(PAGE_INSET))
+            .ml(gpui::px(PAGE_LEFT))
+            .mr(gpui::px(PAGE_RIGHT))
             .mt(gpui::px(space::SP2))
             .px(gpui::px(space::SP4))
             .py(gpui::px(space::SP2))
@@ -1243,7 +1246,8 @@ fn pager(
         .flex()
         .items_center()
         .gap(gpui::px(space::SP6))
-        .px(gpui::px(PAGE_INSET))
+        .pl(gpui::px(PAGE_LEFT))
+        .pr(gpui::px(PAGE_RIGHT))
         .border_t_1()
         .border_color(gpui::rgb(t.border));
 
