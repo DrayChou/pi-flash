@@ -159,9 +159,15 @@ impl Chat {
         let input = cx.new(|cx| {
             let mut ti = TextInput::new(cx).placeholder(tr("market.search_placeholder"));
             // **打字不触发搜索**（npm 是海量远端数据，逐键打过去是灾难）；
-            // 回车 / 「搜索」按钮 = 显式提交才搜
-            ti.set_on_submit(Box::new(move |_, cx| {
-                let _ = weak.update(cx, |c, cx| c.pi_ext_search_now(cx));
+            // 回车 / 「搜索」按钮 = 显式提交才搜。
+            //
+            // ⚠ 回调里**不能**回头 `input.read(cx)`：本回调就是 TextInput 自己
+            // 在 update 中发出的，重复租会直接 panic「cannot read … while it
+            // is already being updated」——就是「回车搜索程序崩掉」的原因。
+            // 它已经把提交值传进来了，直接用。
+            ti.set_on_submit(Box::new(move |v, cx| {
+                let q = v.to_string();
+                let _ = weak.update(cx, |c, cx| c.pi_ext_search_with(q, cx));
             }));
             ti
         });
@@ -232,6 +238,14 @@ impl Chat {
 
     /// 显式搜索（「搜索」按钮 / 回车）：读输入框文本 → query → 回第一页。
     /// 打字**不**触发搜索（用户定稿：海量远端内容禁止逐键自动搜）。
+    /// 用**已知词**搜（回车回调路径：值由 TextInput 传入，不碰实体）。
+    pub(crate) fn pi_ext_search_with(&mut self, query: String, cx: &mut gpui::Context<Self>) {
+        self.aux.market.pi_ext.query = query;
+        self.pi_ext_reload(cx);
+    }
+
+    /// 读输入框再搜（「搜索」按钮路径：按钮事件不在 TextInput 的
+    /// update 里，这里 `read` 是合法的）。
     pub(crate) fn pi_ext_search_now(&mut self, cx: &mut gpui::Context<Self>) {
         let v = self
             .aux
@@ -241,8 +255,7 @@ impl Chat {
             .as_ref()
             .map(|i| i.read(cx).value().to_string())
             .unwrap_or_default();
-        self.aux.market.pi_ext.query = v;
-        self.pi_ext_reload(cx);
+        self.pi_ext_search_with(v, cx);
     }
 
     /// 筛选切换：纯客户端重算，**0 网络**。

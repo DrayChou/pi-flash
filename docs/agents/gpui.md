@@ -162,6 +162,14 @@
   字面量（release 里 panic 才格式化、dump 未必有，但**入栈的静态字符串指针**
   能在 `.rdata` 里认出来）常能直接认出是 `unwrap`/`expect`/索引类。
 - 双重租约：事件派发期间同步 update/drop 正被派发的实体 → `cx.defer`；自动化 keys 同理（INPUT_KEYS 走 window.defer）。
+- **实体自己的回调里回头读它自己 = 双租 panic = 进程直接消失。**
+  `TextInput::set_on_submit/on_change` 的回调是在 TextInput 自己的 `update`
+  里发起的，回调里再 `input.read(cx)`（哪怕绕经 `Chat` 的方法）立刻撞
+  `cannot read … while it is already being updated`（`app/entity_map.rs:184`
+  `double_lease_panic`）。**回调已经给了值就用回调参数**（`on_submit(&str)` /
+  `on_change(&str)`），别回头摸实体。实例：插件市场搜索框回车即崩（040-1，
+  2026-10-20），`pi_ext_search_now()` 读输入框 → 改成 `pi_ext_search_with(v)`，
+  按钮路径才允许 `read`（按钮事件不在输入框的 update 里）。
 - `window.update`/`chat.update` 不 flatten（catch_unwind 四层嵌套）；vendored `WeakEntity::update` 签名与 Zed 上游不同，别照抄；渲染期读取的实体会注册 window invalidator（InputState notify 即重渲染）。
 - **vendored gpui 0.2.2 的 `Entity` 子元素每帧无条件重渲染**（view.rs `impl Element for Entity` 直接 `view.render()`，没有脏检查复用）；唯一复用路径是 `AnyView::cached(style)`（未 notify 即回收上一帧 layout+paint，`window.refresh()` 会击穿）。后果：composer 每键 `Chat` notify = **全窗口重建**（消息区 markdown 元素 + dock + chrome 全连坐）。消息列表是 `list()` 闭包不是实体，吃不到 cached——要隔离只有把轮次包实体 + cached（大手术）。在此前提下，Chat::render 每帧路径严禁 O(会话规模) 的分配：命令表/模型目录/全文拷贝都要门控或借用化（composer 打字卡顿 2026-10-12 排查的落点：slash_commands 深克隆、new_session_default 全目录扫描、set_value 镜像克隆）。
 
