@@ -78,9 +78,9 @@ mod card_metrics {
     pub(super) fn desc_h() -> f32 {
         f32::from(crate::appearance::ui_size(super::DESC_LINE_H)) * super::DESC_LINES as f32
     }
-    /// 底行高（SM 按钮档 24）。
+    /// 底行高（MD 按钮档 28；页面按钮统一 MD）。
     pub(super) fn bottom_h() -> f32 {
-        crate::ui::tokens::btn::SM_H
+        crate::ui::tokens::btn::MD_H
     }
     /// 文本列的子元素：标题 / 描述 / 弹性占位 / 底行 —— 共 4 个。
     /// flex 列的 gap 在**6 个相邻对之间**各生效 1 次，共 3 个间隙。
@@ -1041,7 +1041,7 @@ fn update_all_button(chat: &Chat, weak: &gpui::WeakEntity<Chat>, busy_any: bool)
     crate::ui::button(
         "pi-ext-update-all",
         label,
-        BtnSize::Sm,
+        BtnSize::Md,
         BtnVariant::Secondary,
         n == 0 || busy_any || chat.aux.plugin_updates.checking,
         move |_, _, cx| {
@@ -1080,7 +1080,7 @@ fn banner(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> Opti
                 .child(crate::ui::button(
                     "pi-ext-retry",
                     tr("market.retry"),
-                    BtnSize::Sm,
+                    BtnSize::Md,
                     BtnVariant::Secondary,
                     false,
                     move |_, _, cx| {
@@ -1106,7 +1106,7 @@ fn banner(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> Opti
                 .child(crate::ui::button(
                     "pi-ext-retry-2",
                     tr("market.retry"),
-                    BtnSize::Sm,
+                    BtnSize::Md,
                     BtnVariant::Secondary,
                     false,
                     move |_, _, cx| {
@@ -1625,7 +1625,7 @@ fn actions(
         group = group.child(crate::ui::button(
             format!("pi-ext-install-{name}"),
             tr("market.btn.install"),
-            BtnSize::Sm,
+            BtnSize::Md,
             BtnVariant::Secondary,
             busy_any,
             move |_, _, cx| {
@@ -1637,19 +1637,19 @@ fn actions(
     }
 
     // 已安装：卸载 icon 恒在**最左**（不再有「已安装」文字键）。
-    // 垃圾桶：24×24 / 普通描边（v20 用户定稿：市场页不要红色按钮），
+    // 垃圾桶：28×28 / 普通描边（v20 用户定稿：市场页不要红色按钮），
     // hover 淡底。确认浮层（mc_ask_remove_package）仍走高危确认。
     let weak_r = weak.clone();
     let n = name.clone();
     group = group.child(
         gpui::div()
             .id(SharedString::from(format!("pi-ext-remove-{name}")))
-            .size(gpui::px(crate::ui::tokens::btn::SM_H))
+            .size(gpui::px(crate::ui::tokens::btn::MD_H))
             .flex_shrink_0()
             .flex()
             .items_center()
             .justify_center()
-            .rounded(gpui::px(5.))
+            .rounded(gpui::px(radius::CTRL))
             .border_1()
             .border_color(gpui::rgba(crate::appearance::theme::danger_alpha(t, 0x59)))
             .bg(gpui::rgba(crate::appearance::theme::danger_alpha(t, 0x0f)))
@@ -1670,7 +1670,7 @@ fn actions(
         group = group.child(crate::ui::button(
             format!("pi-ext-update-{name}"),
             tr("market.btn.update"),
-            BtnSize::Sm,
+            BtnSize::Md,
             BtnVariant::Secondary,
             busy_any,
             move |_, _, cx| {
