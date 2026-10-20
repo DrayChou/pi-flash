@@ -81,7 +81,21 @@ fn search_bar(
     let has_matches = ui.matches > 0;
 
     // ---- 查询行 --------------------------------------------------------
-    let mut query_row = div().flex().items_center().gap(px(space::SP2)).w_full();
+    // Zed 截图首位 = ✕（收起搜索）：PF 对应「关搜索 tab」
+    let mut query_row = div()
+        .flex()
+        .items_center()
+        .gap(px(space::SP2))
+        .w_full()
+        .child(icon_toggle(
+            "psq-close",
+            "close",
+            false,
+            weak,
+            "search.close",
+            false,
+            |c, cx| c.close_search_tab(cx),
+        ));
     if let Some(q) = ui.query.clone() {
         query_row = query_row.child(
             div()

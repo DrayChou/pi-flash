@@ -500,38 +500,42 @@ fn composer_surface(chat: &Chat) -> Value {
     })
 }
 
-/// 083 项目搜索面：开关/计数/阶段 + 结果行预览（前 40 行）。
+/// 083 项目搜索面：开关/计数/阶段 + 结果块预览（前 6 块、每块前 12 行）。
 pub(crate) fn search_surface(chat: &Chat) -> Value {
     let ui = &chat.ws.search;
-    let rows: Vec<Value> = ui
-        .rows
+    let blocks: Vec<Value> = ui
+        .blocks
         .iter()
-        .take(40)
-        .map(|row| match row {
-            crate::search::Row::Header {
-                rel,
-                count,
-                path_only,
-            } => json!({"kind": "header", "path": rel, "count": count, "path_only": path_only}),
-            crate::search::Row::Line {
-                line,
-                hit,
-                ordinal,
-                text,
-                ..
-            } => json!({
-                "kind": "line",
-                "line": line,
-                "hit": hit,
-                "ordinal": ordinal,
-                // 正文截断到 240 字符（快照只做断言，不搬运整段代码）
-                "text": text.chars().take(240).collect::<String>(),
-            }),
+        .take(6)
+        .map(|block| {
+            let lines: Vec<Value> = block
+                .segments
+                .iter()
+                .flatten()
+                .take(12)
+                .map(|line| {
+                    json!({
+                        "line": line.line,
+                        "hit": line.hit,
+                        "ordinal": line.ordinal,
+                        // 正文截断到 200 字符（快照只做断言，不搬运整段代码）
+                        "text": line.text.chars().take(200).collect::<String>(),
+                    })
+                })
+                .collect();
+            json!({
+                "path": block.rel,
+                "path_only": block.path_only,
+                "count": block.count,
+                "segments": block.segments.len(),
+                "lines": lines,
+            })
         })
         .collect();
     json!({
         "shown": chat.layout.content_view == ContentView::Search,
         "query": ui.query_text,
+        "replace": ui.replace_text,
         "phase": match ui.phase {
             crate::search::Phase::Idle => "idle",
             crate::search::Phase::Running => "running",
@@ -548,9 +552,10 @@ pub(crate) fn search_surface(chat: &Chat) -> Value {
         "limit": ui.limit,
         "error": ui.error,
         "notice": ui.notice.as_ref().map(|(m, bad)| json!({"text": m, "failed": bad})),
-        "row_count": ui.rows.len(),
-        "row_h": crate::search::ROW_H,
-        "rows": rows,
+        "block_count": ui.blocks.len(),
+        "line_h": crate::search::LINE_H,
+        "header_h": crate::search::HEADER_H,
+        "blocks": blocks,
     })
 }
 
@@ -780,7 +785,6 @@ fn dialogs_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
         Dialog::SessionInfo { .. } => "session_info",
         Dialog::FileDirty { .. } => "file_dirty",
         Dialog::WxQr => "wx_qr",
-        Dialog::FileSearch { .. } => "file_search",
     });
     // 打开项目菜单：列表数据随弹窗一起上报（扫描是异步回填，UI 测试
     // 据此轮询就绪）
@@ -794,15 +798,8 @@ fn dialogs_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
         _ => Vec::new(),
     };
     // 文件搜索命中随弹窗上报（后台扫盘异步回填，UI 测试据此轮询就绪）
-    let file_search_hits: Vec<Value> = match chat.dlg.dialog.as_ref() {
-        Some(Dialog::FileSearch { .. }) => {
-            chat.ws.file_search_hits.iter().map(|r| json!(r)).collect()
-        }
-        _ => Vec::new(),
-    };
     json!({
         "dialog": dialog,
-        "file_search_hits": file_search_hits,
         // 模型菜单可见行数（UI 测试断言用：空列表 = 新会话页拉不到目录；
         // 042 起数据源 = pill 化模型菜单的 picker_models）
         "model_rows": match chat.dlg.model_picker.as_ref() {

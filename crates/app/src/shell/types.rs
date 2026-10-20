@@ -58,13 +58,6 @@ pub(crate) enum Dialog {
     /// 「远程控制」页签入口已隐藏（2026-10-10 定），自动化 WX_QR_OPEN 仍可打开。
     /// 不持数据 —— 内容全从 `chat.aux.remote.qr` 现读，泵更新即重绘。
     WxQr,
-    /// 021 文件树操作栏「搜索文件」：500×500 居中窗，按文件名过滤当前项目
-    /// 清单（load_listing 现扫，命中在 `file_search_hits`）。`scroll` 挂
-    /// 结果列表自绘滚动条（跨帧复用，vlist.rs「血案」注释）。
-    FileSearch {
-        input: gpui::Entity<TextInput>,
-        scroll: gpui::ScrollHandle,
-    },
 }
 
 /// ⋯ 菜单的两个面：系统提示词原文 / 已加载工具的声明。各自画在设置弹窗

@@ -6,50 +6,6 @@
 use super::{TreeEdit, TreeEditKind, TreeValidation};
 use crate::*;
 
-/// 文件搜索命中上限（pi-web file-index 打分截断同量级；500×500 弹窗
-/// 内滚动翻不完 200 行之外的内容已够用）。
-const FILE_SEARCH_LIMIT: usize = 200;
-
-/// 文件清单缓存条目（key = cwd；021 细节定稿：60s TTL，最多 10 份——
-/// 超限整表清空，at_index 同策略）。
-struct ListingEntry {
-    files: std::sync::Arc<Vec<String>>,
-    built: std::time::Instant,
-}
-
-static LISTING_CACHE: std::sync::LazyLock<
-    std::sync::Mutex<std::collections::HashMap<String, ListingEntry>>,
-> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
-
-/// 带 60s×10 缓存的文件清单（git ls-files / BFS 回退）。命中 TTL 内
-/// 直接复用——弹窗里逐字过滤不再每键重扫盘；TTL 过期或换 cwd 才真扫。
-fn cached_listing(cwd: &Path) -> std::sync::Arc<Vec<String>> {
-    const TTL: std::time::Duration = std::time::Duration::from_secs(60);
-    const MAX_PROJECTS: usize = 10;
-    let key = cwd.to_string_lossy().to_string();
-    if let Ok(cache) = LISTING_CACHE.lock() {
-        if let Some(e) = cache.get(&key) {
-            if e.built.elapsed() < TTL {
-                return e.files.clone();
-            }
-        }
-    }
-    let files = std::sync::Arc::new(crate::services::file_index::load_listing(cwd).files);
-    if let Ok(mut cache) = LISTING_CACHE.lock() {
-        if cache.len() >= MAX_PROJECTS {
-            cache.clear();
-        }
-        cache.insert(
-            key,
-            ListingEntry {
-                files: files.clone(),
-                built: std::time::Instant::now(),
-            },
-        );
-    }
-    files
-}
-
 impl Chat {
     // -------------------------------------------------------------------
     // 操作栏
@@ -68,100 +24,13 @@ impl Chat {
         cx.notify();
     }
 
-    /// 「搜索文件」：500×500 居中弹窗（同 Dialog 体系，焦点/ESC/外点
-    /// 关闭全走 dialog_shell）。再点一次操作栏按钮 = 关（toggle 语义）。
+    /// 「搜索文件」：**打开 083 项目搜索面板**（文件 + 内容同搜）。
+    ///
+    /// 2026-10-21 用户定案：原来的 700×500 弹窗（`Dialog::FileSearch`，只按
+    /// 文件名过滤清单）退役，入口统一到 Zed 式搜索面板（Ctrl+L / Ctrl+Shift+F
+    /// / 本按钮三条路同一个方法），面板打开即聚焦查询框。
     pub(crate) fn open_file_search(&mut self, cx: &mut Context<Self>) {
-        if matches!(self.dlg.dialog, Some(Dialog::FileSearch { .. })) {
-            self.dlg.dialog = None;
-            cx.notify();
-            return;
-        }
-        let weak = cx.weak_entity();
-        let weak_esc = weak.clone();
-        let input = cx.new(|cx| {
-            TextInput::new(cx)
-                .placeholder(tr("file_tree.search_files"))
-                .on_change(Box::new(move |q: &str, cx: &mut App| {
-                    let _ = weak.update(cx, |c, cx| c.file_search_changed(q, cx));
-                }))
-                .on_escape(Box::new(move |cx: &mut App| {
-                    // 关弹窗会 drop 派发事件的输入框实体——defer 出帧再关
-                    // （provider_picker_dialog 同款 dispatch-lease 规避）
-                    let weak = weak_esc.clone();
-                    cx.defer(move |cx| {
-                        let _ = weak.update(cx, |c, cx| {
-                            c.dlg.dialog = None;
-                            cx.notify();
-                        });
-                    });
-                }))
-        });
-        self.ws.file_search_hits.clear();
-        self.ws.file_search_needle.clear();
-        self.ws.file_search_gen += 1;
-        self.dlg.dialog = Some(Dialog::FileSearch {
-            input,
-            scroll: gpui::ScrollHandle::new(),
-        });
-        cx.notify();
-    }
-
-    /// 查询词变化：防抖 250ms 后台扫盘（load_listing = git ls-files，非
-    /// git 目录 BFS 回退），代际丢陈旧响应（search_changed 同款）。
-    pub(crate) fn file_search_changed(&mut self, q: &str, cx: &mut Context<Self>) {
-        self.ws.file_search_gen += 1;
-        let epoch = self.ws.file_search_gen;
-        let needle = q.trim().to_string();
-        self.ws.file_search_needle = needle.clone();
-        self.ws.file_search_hits.clear();
-        if needle.is_empty() {
-            self.ws.file_search_scanning = false;
-            cx.notify();
-            return;
-        }
-        self.ws.file_search_scanning = true;
-        // 无项目态：没有可搜索的工作区
-        let Some(cwd) = self.ws.cwd.clone() else {
-            self.ws.file_search_scanning = false;
-            return;
-        };
-        cx.spawn(async move |weak, cx| {
-            cx.background_executor()
-                .timer(std::time::Duration::from_millis(250))
-                .await;
-            let cancelled = weak
-                .update(cx, |c, _| c.ws.file_search_gen != epoch)
-                .unwrap_or(true);
-            if cancelled {
-                return;
-            }
-            let hits = cx
-                .background_spawn(async move {
-                    let files = cached_listing(&cwd);
-                    filter_file_names(&files, &needle)
-                })
-                .await;
-            let _ = weak.update(cx, |c, cx| {
-                if c.ws.file_search_gen != epoch {
-                    return;
-                }
-                c.ws.file_search_scanning = false;
-                c.ws.file_search_hits = hits;
-                cx.notify();
-            });
-        })
-        .detach();
-    }
-
-    /// 命中行点击：打开文件 tab（主体渲染/编辑器配置由 kind handler 决定；
-    /// 10MB/二进制闸同样生效）。
-    pub(crate) fn open_file_search_hit(&mut self, rel: &str, cx: &mut Context<Self>) {
-        // 无项目态：命中清单本就不可能存在，防御
-        let Some(cwd) = self.ws.cwd.clone() else {
-            return;
-        };
-        self.dlg.dialog = None;
-        self.open_file_tab(cwd.join(rel), cx);
+        self.open_project_search(cx);
     }
 
     // -------------------------------------------------------------------
@@ -981,70 +850,4 @@ fn wire_tree_edit(
             let _ = weak.update(cx, |c, cx| c.tree_edit_validate(&v, cx));
         }));
     });
-}
-
-/// 文件名子串过滤 + 排序：名字前缀命中 > 名字包含 >（带 `/` 的查询）
-/// 整路径包含；同档路径短者先。上限 [`FILE_SEARCH_LIMIT`]。
-fn filter_file_names(files: &[String], needle: &str) -> Vec<String> {
-    let n = needle.to_lowercase();
-    let mut scored: Vec<(u8, String)> = files
-        .iter()
-        .filter(|f| {
-            let name = f.rsplit(['/']).next().unwrap_or(f);
-            if name.to_lowercase().contains(&n) {
-                true
-            } else if n.contains('/') {
-                f.to_lowercase().contains(&n)
-            } else {
-                false
-            }
-        })
-        .map(|f| {
-            let name = f.rsplit(['/']).next().unwrap_or(f);
-            let rank = if name.to_lowercase().starts_with(&n) {
-                0u8
-            } else {
-                1u8
-            };
-            (rank, f.clone())
-        })
-        .collect();
-    scored.sort_by(|a, b| {
-        a.0.cmp(&b.0)
-            .then_with(|| a.1.len().cmp(&b.1.len()))
-            .then_with(|| a.1.cmp(&b.1))
-    });
-    scored.truncate(FILE_SEARCH_LIMIT);
-    scored.into_iter().map(|(_, f)| f).collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::filter_file_names;
-
-    #[test]
-    fn file_name_filter_ranks_and_caps() {
-        let files: Vec<String> = vec![
-            "src/lib.rs".into(),
-            "src/main.rs".into(),
-            "docs/main.md".into(),
-            "target/debug/main.exe".into(),
-        ];
-        // 名字前缀命中排前；同档路径短者先（main.exe 同为前缀命中）
-        let hits = filter_file_names(&files, "main");
-        assert_eq!(
-            hits,
-            vec![
-                "src/main.rs".to_string(),
-                "docs/main.md".to_string(),
-                "target/debug/main.exe".to_string()
-            ]
-        );
-        // 带 / 的查询走整路径匹配
-        let hits = filter_file_names(&files, "src/main");
-        assert_eq!(hits, vec!["src/main.rs".to_string()]);
-        // 大小写不敏感
-        let hits = filter_file_names(&files, "LIB");
-        assert_eq!(hits, vec!["src/lib.rs".to_string()]);
-    }
 }

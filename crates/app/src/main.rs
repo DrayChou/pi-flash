@@ -296,8 +296,9 @@ fn main() {
                 KeyBinding::new("ctrl-p", OpenProjectPicker, None),
                 KeyBinding::new("ctrl-n", NewSession, None),
                 KeyBinding::new("ctrl-k", OpenSessionSearch, None),
-                // 全局文件搜索（Ctrl+L，None 上下文任意焦点可用；与文件树
-                // 工具栏「搜索文件」钮同一方法，再按一次 = 关）
+                // 全局文件搜索（Ctrl+L）：与文件树工具栏「搜索文件」钮同一
+                // 方法 = 083 搜索面板（文件+内容同搜）。2026-10-21 起旧弹窗
+                // 退役，两条快捷键同一面板
                 KeyBinding::new("ctrl-l", OpenFileSearch, None),
                 // 083 项目搜索（Ctrl+Shift+F，Zed project_search::ToggleFocus
                 // 同键；None 上下文任意焦点可用，再按一次回到查询框）

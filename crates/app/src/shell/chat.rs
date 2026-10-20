@@ -411,12 +411,6 @@ pub(crate) struct WsUi {
     /// `expanded_dirs` / `pin_view` 当前属于哪个项目（切项目时据此归档，
     /// 用归档时的原拼写路径写盘）
     pub(crate) tree_owner: Option<(String, PathBuf)>,
-    /// 021 文件搜索（Dialog::FileSearch）：命中（相对路径清单切片）、
-    /// 查询词镜像与扫描状态（防抖代际同 search_gen）
-    pub(crate) file_search_hits: Vec<String>,
-    pub(crate) file_search_needle: String,
-    pub(crate) file_search_gen: u64,
-    pub(crate) file_search_scanning: bool,
     pub(crate) file_cache: std::collections::HashMap<PathBuf, FileTab>,
     /// 083 项目搜索状态（搜索条输入/开关/结果行模型；tab 单例，切 tab 不丢）
     pub(crate) search: crate::search::SearchUi,
@@ -505,10 +499,6 @@ impl Chat {
                 pinned: Vec::new(),
                 tree_memory: std::collections::HashMap::new(),
                 tree_owner: None,
-                file_search_hits: Vec::new(),
-                file_search_needle: String::new(),
-                file_search_gen: 0,
-                file_search_scanning: false,
                 file_cache: std::collections::HashMap::new(),
                 search: crate::search::SearchUi::default(),
                 pending_jump: None,

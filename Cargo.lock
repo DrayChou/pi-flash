@@ -129,6 +129,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 name = "app"
 version = "0.2.1"
 dependencies = [
+ "aho-corasick",
  "alacritty_terminal",
  "anyhow",
  "base64 0.22.1",
@@ -137,6 +138,7 @@ dependencies = [
  "dunce",
  "ego-tree",
  "encoding_rs",
+ "fancy-regex 0.19.2",
  "futures",
  "globset",
  "gpui",
@@ -2136,6 +2138,17 @@ name = "fancy-regex"
 version = "0.16.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "998b056554fbe42e03ae0e152895cd1a7e1002aec800fdc6635d20270260c46f"
+dependencies = [
+ "bit-set",
+ "regex-automata",
+ "regex-syntax",
+]
+
+[[package]]
+name = "fancy-regex"
+version = "0.19.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d301f5bf187b3c295fce6468d3875037a0bccc5f6b151c63cac2f85babf21912"
 dependencies = [
  "bit-set",
  "regex-automata",

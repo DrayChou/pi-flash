@@ -45,6 +45,11 @@ dunce = "1"
 # 的 globset 同实现）
 regex = "1"
 globset = "0.4"
+# Zed search.rs 原码依赖（字面量多模式匹配 + 支持 lookaround 的正则）：
+# 照抄 Zed 的查询层就必须用同一套 —— fancy_regex 版本与 syntect 锁定的
+# 0.16 对齐，避免重复编译两份
+fancy-regex = "0.19"
+aho-corasick = "1"
 # 文件树：gitignore 匹配（Zed worktree 同款）+ fs 监听（Zed fs 层同款）
 ignore = "0.4"
 notify = "7"

@@ -69,8 +69,7 @@ impl Render for Chat {
         let dialog_input = match &self.dlg.dialog {
             Some(Dialog::ProviderPicker { input, .. })
             | Some(Dialog::SessionSearch { input })
-            | Some(Dialog::ProjectPicker { input, .. })
-            | Some(Dialog::FileSearch { input, .. }) => Some(input.clone()),
+            | Some(Dialog::ProjectPicker { input, .. }) => Some(input.clone()),
             _ => None,
         }
         .or_else(|| {
