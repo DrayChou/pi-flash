@@ -42,6 +42,9 @@ const THUMB_H: f32 = 72.;
 const MAX_PAGES: usize = 20;
 /// 左缘内缩 = 列表容器内缩 SP5(10)：工具栏 / 摘要 / 翻页条的**左缘与卡片外框同一竖线**。
 const PAGE_LEFT: f32 = space::SP5;
+/// 翻页条高（底部高度）。列表底部留白与它同高：
+/// 「已安装」页签没有翻页条，若不留这一尺寸，末卡就胶在窗口底边上。
+const PAGER_H: f32 = 44.;
 /// 行右边距 = SP7(16) = 滚动条 8 + 间隙 8：滚动条压不到卡片。
 ///
 /// 为何不用容器 pr：`vlist` 的滚动条是 wrapper 内的
@@ -715,9 +718,9 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
 
     // 翻页条：未安装页签**恒常渲染**。底部永远占 44px，列表不会被撑到底边、
     // 末条不被削；total 未知时只有第 1 页（翻页按钮禁用）。
-    if st.filter == ExtFilter::NotInstalled {
-        col = col.child(pager(weak, st.page, st.total_pages(), st.loading, t));
-    }
+    // 翻页条**两个页签都渲染**（已安装页签 = 本地全量、无分页 → 整条禁用占位），
+    // 底部结构与未安装页签完全一致：末卡不会贴到窗口底边，页面高度也不跳。
+    col = col.child(pager(weak, st.page, st.total_pages(), st.loading, t));
     gpui::div()
         .flex()
         .flex_col()
@@ -1640,7 +1643,7 @@ fn pager(
 ) -> AnyElement {
     let mut bar = gpui::div()
         .flex_shrink_0()
-        .h(gpui::px(44.))
+        .h(gpui::px(PAGER_H))
         .flex()
         .items_center()
         .gap(gpui::px(space::SP6))
