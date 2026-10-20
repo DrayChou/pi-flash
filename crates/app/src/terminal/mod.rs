@@ -982,29 +982,29 @@ mod tests {
     fn exit_swallow_detection() {
         // cmd 风格：提示符后紧跟命令
         let cmd = test_term(40, 3, b"d:\\proj>exit");
-        assert!(should_swallow_exit(&cmd));
+        assert!(is_bare_exit(&cmd));
         // PowerShell 风格 + 命令前后空白
         let ps = test_term(40, 3, b"PS D:\\proj> exit ");
-        assert!(should_swallow_exit(&ps));
+        assert!(is_bare_exit(&ps));
         // bash 风格（$ 提示符）
         let sh = test_term(40, 3, b"bi@host:/d/x$ exit");
-        assert!(should_swallow_exit(&sh));
+        assert!(is_bare_exit(&sh));
         // 大小写不敏感
         let upper = test_term(40, 3, b"d:\\proj>EXIT");
-        assert!(should_swallow_exit(&upper));
+        assert!(is_bare_exit(&upper));
         // 无提示符风格的裸行
         let bare = test_term(40, 3, b"exit");
-        assert!(should_swallow_exit(&bare));
+        assert!(is_bare_exit(&bare));
         // 带参数/别的命令/空行：不拦
         let with_arg = test_term(40, 3, b"d:\\proj>exit 0");
-        assert!(!should_swallow_exit(&with_arg));
+        assert!(!is_bare_exit(&with_arg));
         let other = test_term(40, 3, b"d:\\proj>dir");
-        assert!(!should_swallow_exit(&other));
+        assert!(!is_bare_exit(&other));
         let empty = test_term(40, 3, b"d:\\proj>");
-        assert!(!should_swallow_exit(&empty));
+        assert!(!is_bare_exit(&empty));
         // python REPL：exit() 是合法调用，不吞
         let py = test_term(40, 3, b">>> exit()");
-        assert!(!should_swallow_exit(&py));
+        assert!(!is_bare_exit(&py));
     }
 
     #[test]
@@ -1563,11 +1563,20 @@ impl Chat {
         };
         // 裸 `exit` 拦截：内嵌终端里 shell 退出只会留下一块「Process
         // exited」死面，没有再进去的路。Enter 时看一眼光标行，命令就是
-        // `exit` 就把 Enter 吞掉（文本留在行上、不发给 shell）。全屏应用
-        // 不掺和；真想关 shell 关 tab，退出 ssh 也请关 tab。
+        // `exit` 就当作用户要关这个终端——直接关掉 tab（同点 tab 的 ×，
+        // PTY Shutdown 一并走）。`exit 0` 等带参数的不算，照常执行（出
+        // 横幅不崩）；全屏应用不掺和。
         if k.key == "enter" && !mode.contains(TermMode::ALT_SCREEN) {
-            let swallow = should_swallow_exit(&tab.term.lock());
-            if swallow {
+            let bare_exit = is_bare_exit(&tab.term.lock());
+            let tab_id = tab.id;
+            if bare_exit
+                && let Some(ix) = self
+                    .ws
+                    .panel_tabs
+                    .iter()
+                    .position(|t| matches!(t, crate::PanelTab::Term(id) if *id == tab_id))
+            {
+                self.close_tab_at(ix, cx);
                 cx.stop_propagation();
                 return;
             }

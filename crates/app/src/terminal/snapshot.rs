@@ -198,11 +198,11 @@ pub fn snapshot(
     out
 }
 
-/// 裸 `exit` 拦截判定：光标所在输入行剥掉提示符（cmd/PS 的 `>`、
-/// bash/fish 的 `$`、zsh 的 `%`、root 的 `#`）后正好是 `exit`（大小写
-/// 不敏感、允许首尾空白）→ true。alt screen 由调用方先行排除。
-/// `exit 0` / `exit()` 这类带尾巴的不算裸 exit，不拦。
-pub fn should_swallow_exit(term: &Term<Proxy>) -> bool {
+/// 裸 `exit` 判定：光标所在输入行剥掉提示符（cmd/PS 的 `>`、bash/fish
+/// 的 `$`、zsh 的 `%`、root 的 `#`）后正好是 `exit`（大小写不敏感、允许
+/// 首尾空白）→ true。alt screen 由调用方先行排除。`exit 0` / `exit()`
+/// 这类带尾巴的不算裸 exit。命中时由调用方决定动作（当前 = 关终端 tab）。
+pub fn is_bare_exit(term: &Term<Proxy>) -> bool {
     let content = term.renderable_content();
     let line = content.cursor.point.line.0;
     let grid = term.grid();
