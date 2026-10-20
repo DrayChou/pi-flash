@@ -21,6 +21,7 @@
 
 use gpui::prelude::*;
 use gpui::{AnyElement, SharedString, WeakEntity, div, px, rgb};
+use std::rc::Rc;
 
 use super::{Phase, ResultBlock, ResultLine};
 use crate::Chat;
@@ -31,6 +32,10 @@ use crate::i18n::tr;
 const GUTTER_W: f32 = 46.;
 /// 段间距（同文件多段摘录）
 const SEGMENT_GAP: f32 = 6.;
+
+/// 打开结果的动作：`(块下标, 目标行, 命中序号, &mut App)`。抽成闭包是为了让
+/// 渲染层不依赖 `Chat`（无头布局测试能直接跑生产渲染代码，见 tests）。
+type OnOpen = Rc<dyn Fn(usize, u32, Option<usize>, &mut gpui::App)>;
 
 /// editor 行高倍数（`editor/view.rs`：Zed `BufferLineHeight::Comfortable`）
 const LINE_HEIGHT: f32 = 1.618;
@@ -63,23 +68,41 @@ pub(super) fn view(chat: &mut Chat, weak: &WeakEntity<Chat>, t: &'static Theme) 
     let blocks = ui.blocks.clone();
     let active = ui.active;
     let weak_rows = weak.clone();
+    let on_open: OnOpen = Rc::new(move |block_ix, line, ordinal, cx| {
+        let _ = weak_rows.update(cx, |chat, cx| {
+            chat.search_open_block(block_ix, line, ordinal, cx)
+        });
+    });
+    results_shell(
+        t,
+        gpui::list(ui.list.clone(), move |ix, _window, _cx| {
+            match blocks.get(ix) {
+                Some(block) => render_block(ix, block, active, &on_open),
+                None => div().into_any_element(),
+            }
+        })
+        // list 自身要 flex_1 从父列拿高度（Auto 尺寸下会被布局成 0 高）
+        .flex_1()
+        .min_h_0(),
+    )
+    .into_any_element()
+}
+
+/// 结果区外壳。**必须是 flex 列**：gpui 的 `div` 默认不是 flex 容器，缺
+/// `flex().flex_col()` 时内部 list 拿不到定高 → 高度 0，结果全丢（2026-10-21
+/// 用户实测「只显示计数 1/222 不显示内容」的根因）。与 md 预览
+/// （`editor/markdown/doc.rs`）的列表容器配方逐字一致；抽成函数是为了让
+/// [`tests::results_shell_lays_out_list`] 能直接测生产代码的布局。
+fn results_shell(t: &'static Theme, list: impl gpui::IntoElement) -> gpui::Stateful<gpui::Div> {
     div()
         .id("search-results")
         .flex_1()
         .min_h_0()
+        .min_w_0()
+        .flex()
+        .flex_col()
         .bg(rgb(t.bg))
-        .child(
-            gpui::list(ui.list.clone(), move |ix, _window, _cx| {
-                match blocks.get(ix) {
-                    Some(block) => render_block(ix, block, active, &weak_rows),
-                    None => div().into_any_element(),
-                }
-            })
-            // list 自身要 flex_1 从父列拿高度（Auto 尺寸下会被布局成 0 高）
-            .flex_1()
-            .min_h_0(),
-        )
-        .into_any_element()
+        .child(list)
 }
 
 /// 一个文件结果块：组头 + 若干摘录段（**整宽**，无外边距/圆角/边框）。
@@ -87,7 +110,7 @@ fn render_block(
     block_ix: usize,
     block: &ResultBlock,
     active: Option<usize>,
-    weak: &WeakEntity<Chat>,
+    on_open: &OnOpen,
 ) -> AnyElement {
     let t = T();
     let card = div()
@@ -95,7 +118,7 @@ fn render_block(
         .w_full()
         .flex()
         .flex_col()
-        .child(header_row(block_ix, block, weak));
+        .child(header_row(block_ix, block, on_open));
     if block.path_only {
         return card.into_any_element();
     }
@@ -133,7 +156,7 @@ fn render_block(
                 block_ix,
                 line,
                 active,
-                weak,
+                on_open,
                 seg_ix,
                 line_ix,
                 per_line.get(line_ix).map(Vec::as_slice).unwrap_or(&[]),
@@ -144,7 +167,7 @@ fn render_block(
 }
 
 /// 组头：▾ + 文件图标 + 文件名 + 路径 + 命中数 + 「打开文件 Alt+Enter」。
-fn header_row(block_ix: usize, block: &ResultBlock, weak: &WeakEntity<Chat>) -> AnyElement {
+fn header_row(block_ix: usize, block: &ResultBlock, on_open: &OnOpen) -> AnyElement {
     let t = T();
     let name: SharedString = block
         .rel
@@ -162,7 +185,7 @@ fn header_row(block_ix: usize, block: &ResultBlock, weak: &WeakEntity<Chat>) -> 
     } else {
         crate::i18n::tf("search.match_count", &[("n", block.count.to_string())]).into()
     };
-    let weak_row = weak.clone();
+    let click = on_open.clone();
     div()
         .id(SharedString::from(format!("psb-h-{block_ix}")))
         .h(px(28.))
@@ -179,7 +202,7 @@ fn header_row(block_ix: usize, block: &ResultBlock, weak: &WeakEntity<Chat>) -> 
         .cursor_pointer()
         .hover(move |s| s.bg(rgb(t.bg_hover)))
         .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
-            let _ = weak_row.update(cx, |chat, cx| chat.search_open_block(block_ix, 1, None, cx));
+            click(block_ix, 1, None, cx);
         })
         .child(crate::ui::icon(
             "chevron-down",
@@ -241,7 +264,7 @@ fn render_line(
     block_ix: usize,
     line: &ResultLine,
     active: Option<usize>,
-    weak: &WeakEntity<Chat>,
+    on_open: &OnOpen,
     seg_ix: usize,
     line_ix: usize,
     runs: &[(String, [u8; 3])],
@@ -249,7 +272,7 @@ fn render_line(
     let t = T();
     let font = crate::appearance::file_font();
     let is_active = line.hit && active.is_some() && line.ordinal == active;
-    let weak_row = weak.clone();
+    let click = on_open.clone();
     let ordinal = line.ordinal;
     let line_no = line.line;
     let row_h = line_h();
@@ -273,9 +296,7 @@ fn render_line(
         .cursor_pointer()
         .hover(move |s| s.bg(rgb(t.bg_hover)))
         .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
-            let _ = weak_row.update(cx, |chat, cx| {
-                chat.search_open_block(block_ix, line_no, ordinal, cx)
-            });
+            click(block_ix, line_no, ordinal, cx);
         })
         // 行号 gutter：与 editor 行号同族同号，右对齐
         .child(
@@ -399,5 +420,151 @@ fn styled_piece(
             .into_any_element()
     } else {
         el.into_any_element()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use gpui::{
+        AppContext as _, Context, Entity, IntoElement, ParentElement, Render, Styled,
+        TestAppContext, VisualTestContext, Window, div, point, px, size,
+    };
+
+    use super::{ResultBlock, ResultLine, results_shell};
+
+    fn sample_blocks() -> Vec<ResultBlock> {
+        vec![
+            // 内容命中：两段摘录（行号是文件真值）
+            ResultBlock {
+                rel: "docs/note.md".into(),
+                path_only: false,
+                count: 2,
+                segments: vec![
+                    vec![
+                        ResultLine {
+                            line: 10,
+                            text: "# 标题".into(),
+                            spans: Vec::new(),
+                            hit: false,
+                            ordinal: None,
+                        },
+                        ResultLine {
+                            line: 11,
+                            text: "命中 openai 关键字".into(),
+                            spans: vec![3..9],
+                            hit: true,
+                            ordinal: Some(0),
+                        },
+                    ],
+                    vec![ResultLine {
+                        line: 30,
+                        text: "另一段 openai".into(),
+                        spans: vec![3..9],
+                        hit: true,
+                        ordinal: Some(1),
+                    }],
+                ],
+            },
+            // 文件名命中（无内容行）
+            ResultBlock {
+                rel: "src/openai_client.rs".into(),
+                path_only: true,
+                count: 0,
+                segments: Vec::new(),
+            },
+        ]
+    }
+
+    /// 记下本帧真正构建了哪些块 + 块高（列表有高度才会构建 → 布局探针）。
+    struct TestView {
+        seen: Rc<RefCell<Vec<usize>>>,
+        heights: Rc<RefCell<Vec<f32>>>,
+        list: gpui::ListState,
+        blocks: Rc<Vec<ResultBlock>>,
+    }
+
+    impl Render for TestView {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            let seen = self.seen.clone();
+            let heights = self.heights.clone();
+            let blocks = self.blocks.clone();
+            let on_open: super::OnOpen =
+                Rc::new(|_: usize, _: u32, _: Option<usize>, _: &mut gpui::App| {});
+            // 外层 = 搜索面板内容列（定高，模拟 content 区）
+            div()
+                .w(px(600.))
+                .h(px(240.))
+                .flex()
+                .flex_col()
+                .child(results_shell(
+                    crate::appearance::theme::theme(),
+                    gpui::list(self.list.clone(), move |ix, _window, _cx| {
+                        seen.borrow_mut().push(ix);
+                        match blocks.get(ix) {
+                            Some(block) => {
+                                let el = super::render_block(ix, block, None, &on_open);
+                                // 单块高度：包一层量高（列表本身也会测一次）
+                                div()
+                                    .w_full()
+                                    .on_children_prepainted({
+                                        let heights = heights.clone();
+                                        move |bounds, _, _| {
+                                            if let Some(b) = bounds.first() {
+                                                heights.borrow_mut().push(f32::from(b.size.height));
+                                            }
+                                        }
+                                    })
+                                    .child(el)
+                                    .into_any_element()
+                            }
+                            None => div().into_any_element(),
+                        }
+                    })
+                    .flex_1()
+                    .min_h_0(),
+                ))
+        }
+    }
+
+    fn frame(
+        cx: &mut VisualTestContext,
+        seen: &Rc<RefCell<Vec<usize>>>,
+        heights: &Rc<RefCell<Vec<f32>>>,
+    ) -> Vec<usize> {
+        seen.borrow_mut().clear();
+        heights.borrow_mut().clear();
+        let blocks = Rc::new(sample_blocks());
+        cx.draw::<Entity<TestView>>(point(px(0.), px(0.)), size(px(600.), px(240.)), |_, cx| {
+            cx.new(|_| TestView {
+                seen: seen.clone(),
+                heights: heights.clone(),
+                list: gpui::ListState::new(blocks.len(), gpui::ListAlignment::Top, px(1000.)),
+                blocks,
+            })
+        });
+        let mut rows = seen.borrow().clone();
+        rows.sort_unstable();
+        rows.dedup();
+        rows
+    }
+
+    /// 回归锁（2026-10-21「只显示计数不显示内容」）：结果区容器必须把高度
+    /// 传给列表，且真实块渲染出来必须有像素高度（0 高 = 用户看到的整片空白）。
+    #[gpui::test]
+    fn real_blocks_render_with_height(cx: &mut TestAppContext) {
+        let window = cx.add_empty_window();
+        let seen: Rc<RefCell<Vec<usize>>> = Default::default();
+        let heights: Rc<RefCell<Vec<f32>>> = Default::default();
+        let rows = frame(window, &seen, &heights);
+        assert_eq!(rows, vec![0, 1], "两个结果块都必须被构建");
+        let hs = heights.borrow().clone();
+        assert!(!hs.is_empty(), "块必须完成一次 prepaint（有实际 bounds）");
+        assert!(
+            hs.iter().all(|h| *h > 0.),
+            "块高度必须 > 0，实测 {hs:?}（0 = 结果区空白）"
+        );
     }
 }
