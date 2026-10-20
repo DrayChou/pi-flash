@@ -35,7 +35,7 @@ const BATCH: usize = 8;
 /// 搜索框去抖。
 const DEBOUNCE_MS: u64 = 250;
 /// 卡片固定行高（vlist 等高行；内容按此高度裁切，撑不满也不会把行撑开）。
-const CARD_H: f32 = 140.;
+const CARD_H: f32 = 128.;
 /// 缩略槽宽高。
 const THUMB_W: f32 = 88.;
 const THUMB_H: f32 = 72.;
@@ -785,8 +785,8 @@ fn pkg_card(
         .w_full()
         .mt(gpui::px(space::SP3))
         .flex()
-        .flex_col()
-        .gap(gpui::px(space::SP4))
+        .items_start()
+        .gap(gpui::px(space::SP7))
         .px(gpui::px(space::SP7))
         .py(gpui::px(space::SP6))
         .rounded(gpui::px(radius::MODAL))
@@ -794,88 +794,79 @@ fn pkg_card(
         .border_color(gpui::rgb(t.border))
         .bg(gpui::rgb(t.bg))
         .hover(|s| s.bg(gpui::rgb(t.bg_hover)))
-        // —— 上段 ——
+        .child(
+            // 缩略槽（v1 无网络图：淡底 + 占位图标，位置留给 v2 的 pi.image）
+            gpui::div()
+                .w(gpui::px(THUMB_W))
+                .h(gpui::px(THUMB_H))
+                .flex_shrink_0()
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(gpui::px(radius::CTRL))
+                .border_1()
+                .border_color(gpui::rgb(t.border))
+                .bg(gpui::rgb(t.bg_panel))
+                .child(crate::ui::icon("plug", 20., t.text_faint)),
+        )
         .child(
             gpui::div()
                 .flex_1()
-                .min_h_0()
+                .min_w_0()
                 .flex()
-                .items_start()
-                .gap(gpui::px(space::SP7))
+                .flex_col()
+                .gap(gpui::px(space::SP2))
+                // ① 名称 + 版本 + 类型（右端：已装启停开关）
                 .child(
-                    // 缩略槽（v1 无网络图：淡底 + 占位图标，位置留给 v2 的 pi.image）
                     gpui::div()
-                        .w(gpui::px(THUMB_W))
-                        .h(gpui::px(THUMB_H))
-                        .flex_shrink_0()
                         .flex()
                         .items_center()
-                        .justify_center()
-                        .rounded(gpui::px(radius::CTRL))
-                        .border_1()
-                        .border_color(gpui::rgb(t.border))
-                        .bg(gpui::rgb(t.bg_panel))
-                        .child(crate::ui::icon("plug", 20., t.text_faint)),
+                        .gap(gpui::px(space::SP4))
+                        .min_w_0()
+                        .child(
+                            gpui::div()
+                                .text_size(crate::appearance::ui_size(15.))
+                                .font_weight(gpui::FontWeight::SEMIBOLD)
+                                .text_color(gpui::rgb(if row.enabled {
+                                    t.text
+                                } else {
+                                    t.text_muted
+                                }))
+                                .overflow_hidden()
+                                .whitespace_nowrap()
+                                .text_ellipsis()
+                                .child(SharedString::from(row.name.clone())),
+                        )
+                        .child(badge(&row.version, t))
+                        .children(kind_chips(row, t))
+                        .child(gpui::div().flex_1())
+                        .children(switch(row, weak)),
                 )
+                // ② 描述（两行内）
                 .child(
                     gpui::div()
-                        .flex_1()
-                        .min_w_0()
+                        .text_size(crate::appearance::ui_size(12.))
+                        .line_height(crate::appearance::ui_size(18.))
+                        .text_color(gpui::rgb(t.text_muted))
+                        .max_w(gpui::px(760.))
+                        .h(gpui::px(36.))
+                        .overflow_hidden()
+                        .child(SharedString::from(row.desc.clone())),
+                )
+                // ③ 底行（v17：在「倒数第二行」的位置，即与标题/描述同列缩进）
+                .child(
+                    gpui::div()
+                        .w_full()
                         .flex()
-                        .flex_col()
-                        .gap(gpui::px(space::SP2))
-                        .child(
-                            gpui::div()
-                                .flex()
-                                .items_center()
-                                .gap(gpui::px(space::SP4))
-                                .min_w_0()
-                                .child(
-                                    gpui::div()
-                                        .text_size(crate::appearance::ui_size(15.))
-                                        .font_weight(gpui::FontWeight::SEMIBOLD)
-                                        .text_color(gpui::rgb(if row.enabled {
-                                            t.text
-                                        } else {
-                                            t.text_muted
-                                        }))
-                                        .overflow_hidden()
-                                        .whitespace_nowrap()
-                                        .text_ellipsis()
-                                        .child(SharedString::from(row.name.clone())),
-                                )
-                                .child(badge(&row.version, t))
-                                .children(kind_chips(row, t))
-                                // 已装：启停开关挂在第一行右端（右缘 = 内容右缘）
-                                .child(gpui::div().flex_1())
-                                .children(switch(row, weak)),
-                        )
-                        .child(
-                            gpui::div()
-                                .text_size(crate::appearance::ui_size(12.))
-                                .line_height(crate::appearance::ui_size(18.))
-                                .text_color(gpui::rgb(t.text_muted))
-                                .max_w(gpui::px(760.))
-                                .h(gpui::px(36.))
-                                .overflow_hidden()
-                                .child(SharedString::from(row.desc.clone())),
-                        ),
+                        .items_center()
+                        .gap(gpui::px(space::SP4))
+                        .child(meta_line(row, t))
+                        .child(dot(t))
+                        .child(links(row, t))
+                        .child(gpui::div().flex_1())
+                        .children(cmd_pill(row, t))
+                        .child(actions(row, weak, t, busy_any)),
                 ),
-        )
-        // —— 下段（v16：元信息 + 链接 + 命令胶囊 + 动作 合并成一行）——
-        .child(
-            gpui::div()
-                .flex_shrink_0()
-                .w_full()
-                .flex()
-                .items_center()
-                .gap(gpui::px(space::SP4))
-                .child(meta_line(row, t))
-                .child(dot(t))
-                .child(links(row, t))
-                .child(gpui::div().flex_1())
-                .children(cmd_pill(row, t))
-                .child(actions(row, weak, t, busy_any)),
         );
     card.into_any_element()
 }
