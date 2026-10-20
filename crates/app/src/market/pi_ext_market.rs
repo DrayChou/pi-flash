@@ -432,6 +432,10 @@ struct RowData {
     cmd: String,
     status: RowStatus,
     busy: bool,
+    /// 已装条目在 `cfg.mc_pkgs_global` 里的下标（未装 = None）
+    installed_ix: Option<usize>,
+    /// 已装且启用中（settings 条目四数组未置空）
+    enabled: bool,
 }
 
 /// 页面主体（content.rs `ContentView::PiExtMarket` 分支）。
@@ -464,6 +468,15 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
             } else {
                 RowStatus::Installed
             };
+            let installed_ix = chat
+                .cfg
+                .mc_pkgs_global
+                .iter()
+                .position(|v| pi_link::skills::entry_source(v) == source);
+            let enabled = installed_ix
+                .and_then(|ix| chat.cfg.mc_pkgs_global.get(ix))
+                .map(|v| !pi_link::skills::entry_disabled(v))
+                .unwrap_or(true);
             RowData {
                 name: e.name.clone(),
                 desc: e.description.clone(),
@@ -476,6 +489,8 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
                 cmd: e.install_command(),
                 status,
                 busy: pending_source.as_deref() == Some(source.as_str()),
+                installed_ix,
+                enabled,
             }
         })
         .collect();
@@ -809,14 +824,21 @@ fn pkg_card(
                             gpui::div()
                                 .text_size(crate::appearance::ui_size(15.))
                                 .font_weight(gpui::FontWeight::SEMIBOLD)
-                                .text_color(gpui::rgb(t.text))
+                                .text_color(gpui::rgb(if row.enabled {
+                                    t.text
+                                } else {
+                                    t.text_muted
+                                }))
                                 .overflow_hidden()
                                 .whitespace_nowrap()
                                 .text_ellipsis()
                                 .child(SharedString::from(row.name.clone())),
                         )
                         .child(badge(&row.version, t))
-                        .children(kind_chips(row, t)),
+                        .children(kind_chips(row, t))
+                        // 已装：第一行右侧挂启停开关（停用 = settings 条目四数组置空）
+                        .child(gpui::div().flex_1())
+                        .children(switch(row, weak, t)),
                 )
                 .child(
                     gpui::div()
@@ -854,6 +876,40 @@ fn badge(text: &str, t: &'static Theme) -> AnyElement {
         .text_color(gpui::rgb(t.text_faint))
         .child(SharedString::from(format!("v{text}")))
         .into_any_element()
+}
+
+/// 已装开关（tokens::switch MD 28×16，knob 10）：点击即写 settings（040 语义）。
+fn switch(row: &RowData, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> Option<AnyElement> {
+    let ix = row.installed_ix?;
+    let on = row.enabled;
+    let weak_sw = weak.clone();
+    let track = gpui::div()
+        .id(SharedString::from(format!("pi-ext-sw-{}", row.name)))
+        .w(gpui::px(crate::ui::tokens::switch::MD_W))
+        .h(gpui::px(crate::ui::tokens::switch::MD_H))
+        .flex_shrink_0()
+        .flex()
+        .items_center()
+        .rounded_full()
+        .when(on, |d| d.bg(gpui::rgb(t.accent)))
+        .when(!on, |d| d.bg(gpui::rgb(t.bg_selected)))
+        .cursor_pointer()
+        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+            cx.stop_propagation();
+            let _ = weak_sw.update(cx, |c, cx| c.mc_toggle_package(ix, cx));
+        })
+        .child(
+            gpui::div()
+                .w(gpui::px(crate::ui::tokens::switch::MD_KNOB))
+                .h(gpui::px(crate::ui::tokens::switch::MD_KNOB))
+                .rounded_full()
+                .bg(gpui::rgb(t.bg))
+                .when(on, |d| d.ml(gpui::px(crate::ui::tokens::switch::MD_ON_ML)))
+                .when(!on, |d| {
+                    d.ml(gpui::px(crate::ui::tokens::switch::MD_OFF_ML))
+                }),
+        );
+    Some(track.into_any_element())
 }
 
 /// 类型 chip：扩展 = accent 淡底实心；其余（技能/提示词/主题/子代理）= 描边。

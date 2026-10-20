@@ -254,7 +254,7 @@ html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: 
 <body>
 
 <div class="sheet-head">
-  <b>040-1 Pi扩展市场 · v7</b>
+  <b>040-1 Pi扩展市场 · v8</b>
   <span>单列卡片（对齐 pi.dev 官方信息结构，单列排布）· 1180×760 · mist</span>
   <span class="spacer"></span>
   <button id="themeBtn">切换到 one-dark</button>
@@ -349,6 +349,8 @@ html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: 
             <span class="name">pi-mcp-adapter</span>
             <span class="ver">v5.3.2</span>
             <span class="chip ext">extension</span>
+            <span class="grow"></span>
+            <span class="sw on" title="启用/停用"><i></i></span>
           </div>
           <div class="desc">MCP (Model Context Protocol) adapter extension for Pi coding agent — add MCP servers and their tools to a session.</div>
           <div class="meta"><b>nicopreme</b><span class="sep"></span><span><b>1.5M</b>/mo</span><span class="sep"></span><span>2 天前</span></div>
@@ -374,6 +376,8 @@ html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: 
             <span class="name">pi-web-access</span>
             <span class="ver">v0.42.0</span>
             <span class="chip ext">extension</span>
+            <span class="grow"></span>
+            <span class="sw on" title="启用/停用"><i></i></span>
           </div>
           <div class="desc">Web search, URL fetching, GitHub repo cloning, PDF extraction, YouTube video understanding, and local video analysis for Pi.</div>
           <div class="meta"><b>nicopreme</b><span class="sep"></span><span><b>792.8K</b>/mo</span><span class="sep"></span><span>2 天前</span></div>
@@ -517,6 +521,18 @@ html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: 
         }
       }
       src.classList.toggle('installed', meta[6] === 'installed' || meta[6] === 'update');
+      const head = src.querySelector('.head');
+      head.querySelector('.grow')?.remove();
+      head.querySelector('.sw')?.remove();
+      if (meta[6] !== '') {
+        const g = document.createElement('span'); g.className = 'grow';
+        const sw = document.createElement('span');
+        sw.className = 'sw' + (i % 4 === 3 ? '' : ' on');   // 每 4 个里有 1 个停用态
+        sw.title = '启用/停用';
+        sw.innerHTML = '<i></i>';
+        sw.addEventListener('click', () => sw.classList.toggle('on'));
+        head.append(g, sw);
+      }
       const acts = src.querySelector('.acts');
       acts.innerHTML = '';
       if (meta[6] === '') {
