@@ -335,9 +335,9 @@ fn fn_bar_sep(t: &'static crate::appearance::theme::Theme) -> gpui::AnyElement {
         .into_any_element()
 }
 
-/// 回到最新消息（pi-web chat-scroll-to-bottom parity）：32px 圆钮，由
+/// 回到最新消息（pi-web chat-scroll-to-bottom parity）：36px 圆钮，由
 /// composer 悬浮容器以 gap 20px 叠在输入面板顶部上方（随面板增高上移，
-/// 永不叠进面板）；常显 0.28 透明、hover 全亮；点击滚到末条并置位贴底。
+/// 永不叠进面板）；常态全亮、无投影；点击滚到末条并置位贴底。
 pub(crate) fn scroll_to_bottom_button(
     weak: &gpui::WeakEntity<Chat>,
     t: &'static crate::appearance::theme::Theme,
@@ -346,7 +346,7 @@ pub(crate) fn scroll_to_bottom_button(
     div()
         .id("scroll-to-bottom")
         .flex_shrink_0()
-        .size(px(32.))
+        .size(px(36.))
         // 悬浮在消息列上（composer 悬浮簇成员），必须自挡穿透：不 occlude
         // 时点击会漏进身后的消息文本——TextView 起选监听判定遮挡用 hitbox，
         // 本钮自身无 BlockMouse hitbox 就挡不住（vendor text_view 修同期）
@@ -359,23 +359,13 @@ pub(crate) fn scroll_to_bottom_button(
         .items_center()
         .justify_center()
         .cursor_pointer()
-        // pi-web: 常态 opacity .28，hover/focus 全亮
-        .opacity(0.28)
-        .hover(|s| s.opacity(1.))
-        // pi-web box-shadow: 0 2px 8px text 16%
-        .shadow(vec![gpui::BoxShadow {
-            color: gpui::rgba((t.text << 8) | 0x29).into(),
-            offset: gpui::point(px(0.), px(2.)),
-            blur_radius: px(8.),
-            spread_radius: px(0.),
-        }])
         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
             let _ = weak.update(cx, |c, cx| {
                 c.rt().update(cx, |r, _| r.scroll_to_bottom());
                 cx.notify();
             });
         })
-        .child(crate::ui::icon("arrow-down", 14., t.text_muted))
+        .child(crate::ui::icon("arrow-down", 16., t.text_muted))
         .into_any_element()
 }
 
