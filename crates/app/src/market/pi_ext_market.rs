@@ -447,7 +447,6 @@ struct RowData {
     author: String,
     downloads: String,
     ago: String,
-    kinds: Vec<MarketKind>,
     repo: Option<String>,
     cmd: String,
     status: RowStatus,
@@ -493,20 +492,6 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
             } else {
                 RowStatus::Installed
             };
-            let (n_ext, n_skill, n_prompt, n_theme) = pi_link::skills::entry_resource_counts(v);
-            let mut kinds = Vec::new();
-            if n_ext > 0 {
-                kinds.push(MarketKind::Extension);
-            }
-            if n_skill > 0 {
-                kinds.push(MarketKind::Skill);
-            }
-            if n_prompt > 0 {
-                kinds.push(MarketKind::Prompt);
-            }
-            if n_theme > 0 {
-                kinds.push(MarketKind::Theme);
-            }
             rows.push(RowData {
                 name,
                 desc: cached
@@ -524,7 +509,6 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
                 ago: cached
                     .map(|e| ago_label(&e.updated, now))
                     .unwrap_or_default(),
-                kinds,
                 repo: cached.and_then(|e| e.repo.clone()),
                 cmd: String::new(), // 已装没有「安装命令」可抄
                 status,
@@ -578,7 +562,6 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
                         e.monthly_downloads,
                     ),
                     ago: ago_label(&e.updated, now),
-                    kinds: e.kinds.clone(),
                     repo: e.repo.clone(),
                     cmd: e.install_command(),
                     status,
@@ -609,6 +592,7 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
                 .flex_shrink_0()
                 .flex()
                 .items_center()
+                .justify_end()
                 .gap(gpui::px(space::SP3))
                 .pl(gpui::px(PAGE_LEFT))
                 .pr(gpui::px(PAGE_RIGHT))
@@ -631,6 +615,7 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
                 .flex_shrink_0()
                 .flex()
                 .items_center()
+                .justify_end()
                 .gap(gpui::px(space::SP3))
                 .pl(gpui::px(PAGE_LEFT))
                 .pr(gpui::px(PAGE_RIGHT))
@@ -666,6 +651,7 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
             },
         )
     };
+    // 列表限宽：卡片不随窗口无限拉长（1080 内容上限，左缘仍与工具栏对齐）
     page = page.child(
         gpui::div()
             .flex_1()
@@ -673,6 +659,7 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
             .flex()
             .flex_col()
             .px(gpui::px(space::SP5))
+            .max_w(gpui::px(1080. + PAGE_LEFT + PAGE_RIGHT))
             .child(list_area),
     );
 
@@ -700,9 +687,7 @@ fn toolbar(
         .pl(gpui::px(PAGE_LEFT))
         .pr(gpui::px(PAGE_RIGHT))
         .pt(gpui::px(space::SP6))
-        .pb(gpui::px(space::SP3))
-        .border_b_1()
-        .border_color(gpui::rgb(t.border));
+        .pb(gpui::px(space::SP3));
 
     if let Some(input) = st.input.clone() {
         bar = bar.child(gpui::div().w(gpui::px(340.)).flex_shrink_0().child(input));
@@ -896,7 +881,7 @@ fn toolbar(
         "pi-ext-update-all",
         label,
         BtnSize::Md,
-        BtnVariant::Primary,
+        BtnVariant::Secondary,
         n == 0 || busy_any || chat.aux.plugin_updates.checking,
         move |_, _, cx| {
             let _ = weak_all.update(cx, |c, cx| c.pi_ext_update_all(cx));
@@ -936,7 +921,7 @@ fn banner(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> Opti
                     "pi-ext-retry",
                     tr("market.retry"),
                     BtnSize::Sm,
-                    BtnVariant::Danger,
+                    BtnVariant::Secondary,
                     false,
                     move |_, _, cx| {
                         let _ = weak_retry.update(cx, |c, cx| c.pi_ext_retry(cx));
@@ -1073,19 +1058,24 @@ fn pkg_card(
                                 .child(SharedString::from(row.name.clone())),
                         )
                         .children((!row.version.is_empty()).then(|| badge(&row.version, t)))
-                        .children(kind_chips(row, t))
                         .child(gpui::div().flex_1())
                         .children(switch(row, weak)),
                 )
-                // ② 描述：**恰好两行**的盒（行高×2，随面板字号缩放）——
-                // 写死 36px 在面板字号 >12 时把第二行拦腰截断；宽度吃满
-                // 文本列（760 上限在大窗口里白白压窄行）
+                // ② 描述：**恰好两行**的盒（行高×2，随面板字号缩放）；
+                // 右内距 = 动作簇宽 + 8 —— 说明右缘与命令胶囊右缘同线，
+                // **绝不伸进按钮空间**（用户定稿）
                 .children((!row.desc.is_empty()).then(|| {
+                    let acts_w = match row.status {
+                        RowStatus::NotInstalled => 40.,    // [安装]
+                        RowStatus::UpdateAvailable => 72., // [🗑][更新]
+                        RowStatus::Installed => 24.,       // [🗑]
+                    };
                     gpui::div()
                         .text_size(crate::appearance::ui_size(12.))
                         .line_height(crate::appearance::ui_size(18.))
                         .text_color(gpui::rgb(t.text_muted))
                         .h(crate::appearance::ui_size(18.) * 2.)
+                        .pr(gpui::px(acts_w + 8.))
                         .overflow_hidden()
                         .child(SharedString::from(row.desc.clone()))
                         .into_any_element()
@@ -1184,44 +1174,6 @@ fn switch(row: &RowData, weak: &gpui::WeakEntity<Chat>) -> Option<AnyElement> {
             )
             .into_any_element(),
     )
-}
-
-/// 类型 chip：扩展 = accent 淡底实心；其余（技能/提示词/主题/子代理）= 描边。
-fn kind_chips(row: &RowData, t: &'static Theme) -> Vec<AnyElement> {
-    let mut out = Vec::new();
-    // 扩展恒在首位（本页只列扩展）；其余资源类型跟在后面，说明「附带什么」
-    let mut kinds = row.kinds.clone();
-    if kinds.is_empty() {
-        return out; // 清单未补全：不画类型，避免误导
-    }
-    kinds.sort_by_key(|k| (*k != MarketKind::Extension) as u8);
-    kinds.dedup();
-    for k in kinds {
-        let ext = k == MarketKind::Extension;
-        out.push(
-            gpui::div()
-                .flex_shrink_0()
-                .h(gpui::px(18.))
-                .px(gpui::px(space::SP3))
-                .flex()
-                .items_center()
-                .rounded(gpui::px(radius::XS))
-                .when(ext, |d| {
-                    d.bg(gpui::rgba(crate::appearance::theme::rgba_a(t.accent, 0.12)))
-                        .text_color(gpui::rgb(t.accent))
-                })
-                .when(!ext, |d| {
-                    d.border_1()
-                        .border_color(gpui::rgb(t.border))
-                        .text_color(gpui::rgb(t.text_dim))
-                })
-                .text_size(crate::appearance::ui_size(10.))
-                .when(ext, |d| d.font_weight(gpui::FontWeight::SEMIBOLD))
-                .child(tr(k.i18n_key()).to_string())
-                .into_any_element(),
-        );
-    }
-    out
 }
 
 /// 作者 · 下载量/月 · 发布距今天数。本地已装包可能三项全缺 → None（不占位）。
@@ -1390,7 +1342,7 @@ fn actions(
             format!("pi-ext-install-{name}"),
             tr("market.btn.install"),
             BtnSize::Sm,
-            BtnVariant::Primary,
+            BtnVariant::Secondary,
             busy_any,
             move |_, _, cx| {
                 let n = n.clone();
@@ -1401,8 +1353,8 @@ fn actions(
     }
 
     // 已安装：卸载 icon 恒在**最左**（不再有「已安装」文字键）。
-    // 画法与 040 详情页垃圾桶同源：28×28 / r5 / danger 描边 35% / danger 淡底 6% /
-    // solid 图标 14 / hover 红洗底——别自创一套。
+    // 垃圾桶：24×24 / 普通描边（v20 用户定稿：市场页不要红色按钮），
+    // hover 淡底。确认浮层（mc_ask_remove_package）仍走高危确认。
     let weak_r = weak.clone();
     let n = name.clone();
     group = group.child(
@@ -1415,16 +1367,16 @@ fn actions(
             .justify_center()
             .rounded(gpui::px(radius::CTRL))
             .border_1()
-            .border_color(gpui::rgba(crate::appearance::theme::danger_alpha(t, 0x59)))
-            .bg(gpui::rgba(crate::appearance::theme::danger_alpha(t, 0x0f)))
+            .border_color(gpui::rgb(t.border))
+            .bg(gpui::rgb(t.bg))
             .cursor_pointer()
-            .hover(|s| s.bg(gpui::rgba(crate::appearance::theme::danger_wash(t))))
+            .hover(|s| s.bg(gpui::rgb(t.bg_hover)))
             .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                 cx.stop_propagation();
                 let n = n.clone();
                 let _ = weak_r.update(cx, |c, cx| c.pi_ext_remove(n, cx));
             })
-            .child(crate::ui::icon("icon-trash-solid", 12., t.danger)),
+            .child(crate::ui::icon("icon-trash-solid", 12., t.text_muted)),
     );
 
     // 有新版：更新键；已最新：什么都不加（卸载 icon 已是唯一动作）
@@ -1435,7 +1387,7 @@ fn actions(
             format!("pi-ext-update-{name}"),
             tr("market.btn.update"),
             BtnSize::Sm,
-            BtnVariant::Primary,
+            BtnVariant::Secondary,
             busy_any,
             move |_, _, cx| {
                 let n = n.clone();

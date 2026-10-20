@@ -118,13 +118,13 @@ html[data-theme="dark"] .sheet-head button:hover { background: rgba(255,255,255,
 .btn.del:hover { background: rgba(194,84,96,.13); }
 .btn .n { font-variant-numeric: tabular-nums; opacity: .85; }
 
-.summary { flex: none; display: flex; align-items: baseline; gap: 10px; padding: 0 26px 10px 10px;
-  font-size: 11px; color: var(--text-soft); }
+.summary { flex: none; display: flex; align-items: baseline; justify-content: flex-end; gap: 10px;
+  padding: 0 26px 10px 10px; font-size: 11px; color: var(--text-soft); }
 .summary .count { color: var(--text-dim); font-variant-numeric: tabular-nums; }
 .summary .dot { width: 2px; height: 2px; border-radius: 50%; background: var(--text-faint); }
 
 /* ===================== 单列卡片（两段式） ===================== */
-.list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
+.list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; max-width: 1098px;
   display: flex; flex-direction: column; gap: 10px; padding: 0 10px 6px;
   scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .list::-webkit-scrollbar { width: 10px; }
@@ -237,7 +237,7 @@ html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: 
 <body>
 
 <div class="sheet-head">
-  <b>040-1 Pi扩展市场 · v17（底行并入文本列，卡片 128）</b>
+  <b>040-1 Pi扩展市场 · v20（去横线/摘要右对齐/去chip/说明不进按钮区/列表限宽/无红按钮）</b>
   <span>单列卡片（两段式：上=缩略+文本，下=链接……命令胶囊+动作，间距统一 8）· 1180×760 · mist</span>
   <span class="spacer"></span>
   <button id="themeBtn">切换到 one-dark</button>
@@ -276,7 +276,7 @@ html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: 
       </div>
       <div class="spacer"></div>
       <div class="seg"><button class="act">未安装</button><button>已安装</button></div>
-      <button class="btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"/></svg>全部更新 <span class="n">2</span></button>
+      <button class="btn ghost"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"/></svg>全部更新 <span class="n">2</span></button>
     </div>
 
     <div class="summary">
@@ -354,7 +354,7 @@ const POOL = [
   ['openwiki','v0.7.2','basproul','A CLI that uses a DeepAgents documentation agent to generate and maintain an OpenWiki for a codebase.','185.2K','10 天前',''],
 ];
 
-const TRASH = '<button class="btn del icon" title="卸载"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-3 6h12l-1 12H7L6 9Z"/></svg></button>';
+const TRASH = '<button class="btn ghost icon" title="卸载"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-3 6h12l-1 12H7L6 9Z"/></svg></button>';
 const swHtml = '<span class="sw on" title="启用/停用"><i></i></span>';
 
 function cardHtml(i) {
@@ -363,8 +363,8 @@ function cardHtml(i) {
   const full = name + suffix;
   const installed = state !== '';
   const acts = installed
-    ? TRASH + (state === 'update' ? '<button class="btn primary sm">更新</button>' : '')
-    : '<button class="btn primary sm">安装</button>';
+    ? TRASH + (state === 'update' ? '<button class="btn ghost sm">更新</button>' : '')
+    : '<button class="btn ghost sm">安装</button>';
   const cmd = installed ? '' :
     `<span class="cmd"><span class="prompt">$</span><code>pi install npm:${full}</code></span>`;
   return `<div class="pkg">
@@ -373,7 +373,6 @@ function cardHtml(i) {
       <div class="head">
         <span class="name">${full}</span>
         <span class="ver">${ver}</span>
-        <span class="chip ext">extension</span>
         ${installed && i % 4 !== 3 ? swHtml : (installed ? '<span class="sw" title="启用/停用"><i></i></span>' : '')}
       </div>
       <div class="desc">${desc}</div>
