@@ -177,7 +177,8 @@ html[data-theme="dark"] .chip.ext { color: var(--accent-hover); }
 
 /* 已装启停开关（tokens::switch MD 28×16 / knob 10，v8） */
 .head .grow { flex: 1; }
-.sw { width: 28px; height: 16px; border-radius: 999px; flex: none; display: flex;
+.sw { position: absolute; right: 16px; top: 14px;      /* 右缘 = 动作列右缘，垂直居中于第一行 */
+  width: 28px; height: 16px; border-radius: 999px; flex: none; display: flex;
   align-items: center; background: var(--bg-selected); cursor: pointer;
   transition: background .12s ease; }
 .sw > i { display: block; width: 10px; height: 10px; border-radius: 50%; background: var(--bg);
@@ -265,7 +266,7 @@ html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: 
 <body>
 
 <div class="sheet-head">
-  <b>040-1 Pi扩展市场 · v8</b>
+  <b>040-1 Pi扩展市场 · v9</b>
   <span>单列卡片（对齐 pi.dev 官方信息结构，单列排布）· 1180×760 · mist</span>
   <span class="spacer"></span>
   <button id="themeBtn">切换到 one-dark</button>

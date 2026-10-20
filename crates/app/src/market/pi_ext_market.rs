@@ -786,6 +786,7 @@ fn pkg_card(
         .gap(gpui::px(space::SP7))
         .px(gpui::px(space::SP7))
         .py(gpui::px(space::SP6))
+        .relative()
         .rounded(gpui::px(radius::MODAL))
         .border_1()
         .border_color(gpui::rgb(t.border))
@@ -835,10 +836,7 @@ fn pkg_card(
                                 .child(SharedString::from(row.name.clone())),
                         )
                         .child(badge(&row.version, t))
-                        .children(kind_chips(row, t))
-                        // 已装：第一行右侧挂启停开关（停用 = settings 条目四数组置空）
-                        .child(gpui::div().flex_1())
-                        .children(switch(row, weak, t)),
+                        .children(kind_chips(row, t)),
                 )
                 .child(
                     gpui::div()
@@ -853,7 +851,10 @@ fn pkg_card(
                 .child(meta_line(row, t))
                 .child(links_row(row, t)),
         )
-        .child(actions(row, weak, t, busy_any));
+        .child(actions(row, weak, t, busy_any))
+        // 已装：启停开关绝对定在卡片右上，**右缘与动作按钮同一竖线**、
+        // 垂直与第一行文字居中（开关是「操作控件」，跟操作列对齐才不飘）
+        .children(switch(row, weak, t));
 
     if installed {
         card = card.border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x8c)));
@@ -885,6 +886,9 @@ fn switch(row: &RowData, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> Op
     let weak_sw = weak.clone();
     let track = gpui::div()
         .id(SharedString::from(format!("pi-ext-sw-{}", row.name)))
+        .absolute()
+        .top(gpui::px(space::SP6 + space::SP1))
+        .right(gpui::px(space::SP7))
         .w(gpui::px(crate::ui::tokens::switch::MD_W))
         .h(gpui::px(crate::ui::tokens::switch::MD_H))
         .flex_shrink_0()
