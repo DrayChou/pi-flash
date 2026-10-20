@@ -188,12 +188,13 @@ html[data-theme="dark"] .chip.ext { color: var(--accent-hover); }
 .links a:hover { color: var(--accent); }
 .links svg { width: 12px; height: 12px; opacity: .85; }
 
-/* 安装命令条（官方同款：整条 mono 行，无复制键） */
-.cmd { margin-top: 2px; display: flex; align-items: center; gap: 8px; max-width: 760px;
-  height: 30px; padding: 0 10px; border-radius: 6px; background: var(--bg-panel);
+/* 安装命令条：与 npm/repo 同一行、右对齐、仅未安装时出现（v5） */
+.links .grow { flex: 1; }
+.cmd { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px;
+  max-width: 340px; border-radius: 6px; background: var(--bg-panel);
   border: 1px solid var(--hairline); }
-.cmd .prompt { font-family: var(--mono); font-size: 11px; color: var(--text-faint); }
-.cmd code { font-family: var(--mono); font-size: 11px; color: var(--text-dim);
+.cmd .prompt { font-family: var(--mono); font-size: 10px; color: var(--text-faint); }
+.cmd code { font-family: var(--mono); font-size: 10.5px; color: var(--text-dim);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pkg:hover .cmd code { color: var(--text); }
 
@@ -251,7 +252,7 @@ html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: 
 <body>
 
 <div class="sheet-head">
-  <b>040-1 Pi扩展市场 · v4</b>
+  <b>040-1 Pi扩展市场 · v5</b>
   <span>单列卡片（对齐 pi.dev 官方信息结构，单列排布）· 1180×760 · mist</span>
   <span class="spacer"></span>
   <button id="themeBtn">切换到 one-dark</button>
@@ -331,8 +332,9 @@ html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: 
           <div class="links">
             <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h16v13H4z"/><path d="M4 7V4h16v3"/></svg>npm</a>
             <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="9" r="2.5"/><path d="M6 8.5v7M18 11.5c0 3-3 3.5-6 3.5"/></svg>repo</a>
+            <span class="grow"></span>
+            <div class="cmd"><span class="prompt">$</span><code>pi install npm:billion-context</code></div>
           </div>
-          <div class="cmd"><span class="prompt">$</span><code>pi install npm:billion-context</code></div>
         </div>
         <div class="acts"><button class="btn primary sm">安装</button></div>
       </div>
@@ -351,8 +353,8 @@ html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: 
           <div class="links">
             <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h16v13H4z"/><path d="M4 7V4h16v3"/></svg>npm</a>
             <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="9" r="2.5"/><path d="M6 8.5v7M18 11.5c0 3-3 3.5-6 3.5"/></svg>repo</a>
-          </div>
-          <div class="cmd"><span class="prompt">$</span><code>pi install npm:pi-mcp-adapter</code></div>
+            <span class="grow"></span>
+        </div>
         </div>
         <div class="acts">
           <button class="btn ghost sm icon" title="卸载">
@@ -376,8 +378,8 @@ html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: 
           <div class="links">
             <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h16v13H4z"/><path d="M4 7V4h16v3"/></svg>npm</a>
             <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="9" r="2.5"/><path d="M6 8.5v7M18 11.5c0 3-3 3.5-6 3.5"/></svg>repo</a>
-          </div>
-          <div class="cmd"><span class="prompt">$</span><code>pi install npm:pi-web-access</code></div>
+            <span class="grow"></span>
+        </div>
         </div>
         <div class="acts">
           <button class="btn ghost sm icon" title="卸载">
@@ -402,8 +404,9 @@ html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: 
           <div class="links">
             <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h16v13H4z"/><path d="M4 7V4h16v3"/></svg>npm</a>
             <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="9" r="2.5"/><path d="M6 8.5v7M18 11.5c0 3-3 3.5-6 3.5"/></svg>repo</a>
+            <span class="grow"></span>
+            <div class="cmd"><span class="prompt">$</span><code>pi install npm:pi-subagents</code></div>
           </div>
-          <div class="cmd"><span class="prompt">$</span><code>pi install npm:pi-subagents</code></div>
         </div>
         <div class="acts"><button class="btn primary sm">安装</button></div>
       </div>
@@ -503,7 +506,14 @@ html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: 
       metas[0].textContent = meta[2];
       metas[1].textContent = meta[3];
       src.querySelector('.meta span:last-child').textContent = meta[4];
-      src.querySelector('.cmd code').textContent = 'pi install npm:' + name;
+      const cmdEl = src.querySelector('.cmd');
+      if (cmdEl) {
+        if (meta[6] === '') {
+          cmdEl.querySelector('code').textContent = 'pi install npm:' + name;
+        } else {
+          cmdEl.remove();
+        }
+      }
       src.classList.toggle('installed', meta[6] === 'installed' || meta[6] === 'update');
       const acts = src.querySelector('.acts');
       acts.innerHTML = '';

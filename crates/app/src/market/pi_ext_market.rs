@@ -35,7 +35,7 @@ const BATCH: usize = 8;
 /// 搜索框去抖。
 const DEBOUNCE_MS: u64 = 250;
 /// 卡片固定行高（vlist 等高行；内容按此高度裁切，撑不满也不会把行撑开）。
-const CARD_H: f32 = 148.;
+const CARD_H: f32 = 140.;
 /// 动作列固定宽（v4 定稿：跨行按钮对齐的关键）。
 const ACTS_W: f32 = 104.;
 /// 缩略槽宽高。
@@ -737,7 +737,7 @@ fn pkg_card(
     let installed = row.status != RowStatus::NotInstalled;
     let mut card = gpui::div()
         .id(SharedString::from(format!("pi-ext-card-{}", row.name)))
-        .h(gpui::px(CARD_H - 10.))
+        .h(gpui::px(CARD_H - 8.))
         .w_full()
         .mt(gpui::px(space::SP3))
         .flex()
@@ -803,8 +803,7 @@ fn pkg_card(
                         .child(SharedString::from(row.desc.clone())),
                 )
                 .child(meta_line(row, t))
-                .child(links_line(row, t))
-                .child(cmd_strip(row, t)),
+                .child(links_row(row, t)),
         )
         .child(actions(row, weak, t, busy_any));
 
@@ -910,8 +909,9 @@ fn dot(t: &'static Theme) -> AnyElement {
         .into_any_element()
 }
 
-/// npm / repo 链接（点击开系统浏览器）。
-fn links_line(row: &RowData, t: &'static Theme) -> AnyElement {
+/// 链接行（v5）：左侧 npm / repo；**右侧同一行**放安装命令胶囊，
+/// 且**只在未安装时显示**（已装的包没有「再装一次」的命令可抄）。
+fn links_row(row: &RowData, t: &'static Theme) -> AnyElement {
     let mut links = gpui::div()
         .flex()
         .items_center()
@@ -955,42 +955,46 @@ fn links_line(row: &RowData, t: &'static Theme) -> AnyElement {
                 .child("repo"),
         );
     }
-    links.into_any_element()
-}
 
-/// 安装命令条（`$ pi install npm:x`，**无复制键**）。
-fn cmd_strip(row: &RowData, t: &'static Theme) -> AnyElement {
-    gpui::div()
-        .mt(gpui::px(space::SP1))
-        .h(gpui::px(28.))
-        .max_w(gpui::px(760.))
-        .flex()
-        .items_center()
-        .gap(gpui::px(space::SP3))
-        .px(gpui::px(space::SP4))
-        .rounded(gpui::px(radius::CTRL))
-        .border_1()
-        .border_color(gpui::rgb(t.border))
-        .bg(gpui::rgb(t.bg_panel))
-        .child(
+    links = links.child(gpui::div().flex_1());
+
+    // 命令胶囊：仅未安装；右对齐、行内高度 22，不抢主信息的视线
+    if row.status == RowStatus::NotInstalled {
+        links = links.child(
             gpui::div()
-                .font_family(crate::editor::markdown::MONO_FAMILY)
-                .text_size(crate::appearance::ui_size(11.))
-                .text_color(gpui::rgb(t.text_faint))
-                .child("$"),
-        )
-        .child(
-            gpui::div()
-                .min_w_0()
-                .font_family(crate::editor::markdown::MONO_FAMILY)
-                .text_size(crate::appearance::ui_size(11.))
-                .text_color(gpui::rgb(t.text_dim))
-                .overflow_hidden()
-                .whitespace_nowrap()
-                .text_ellipsis()
-                .child(SharedString::from(row.cmd.clone())),
-        )
-        .into_any_element()
+                .flex_shrink_0()
+                .h(gpui::px(22.))
+                .max_w(gpui::px(340.))
+                .flex()
+                .items_center()
+                .gap(gpui::px(space::SP2))
+                .px(gpui::px(space::SP3))
+                .rounded(gpui::px(radius::CTRL))
+                .border_1()
+                .border_color(gpui::rgb(t.border))
+                .bg(gpui::rgb(t.bg_panel))
+                .child(
+                    gpui::div()
+                        .font_family(crate::editor::markdown::MONO_FAMILY)
+                        .text_size(crate::appearance::ui_size(10.))
+                        .text_color(gpui::rgb(t.text_faint))
+                        .child("$"),
+                )
+                .child(
+                    gpui::div()
+                        .min_w_0()
+                        .font_family(crate::editor::markdown::MONO_FAMILY)
+                        .text_size(crate::appearance::ui_size(10.))
+                        .text_color(gpui::rgb(t.text_dim))
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_ellipsis()
+                        .child(SharedString::from(row.cmd.clone())),
+                ),
+        );
+    }
+
+    links.into_any_element()
 }
 
 /// 动作列（固定宽 104，永远右对齐）：卸载在最左，其次 更新 / 安装。
