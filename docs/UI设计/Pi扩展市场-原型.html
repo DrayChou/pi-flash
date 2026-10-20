@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>pi-flash · Pi扩展市场（040-1 设计稿 v15 · 单列卡片两段式）</title>
+<title>pi-flash · Pi扩展市场（040-1 设计稿 v22 · 单列三段式卡片）</title>
 <style>
 /* ===================== 设计系统（mist / one-dark 双主题） ===================== */
 :root {
@@ -19,7 +19,6 @@
   --shadow-hover: 0 6px 20px rgba(24,50,42,.10);
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
   --ui: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
-  --thumb-grid: rgba(30,101,89,.16);
 }
 html[data-theme="dark"] {
   --bg: #22252b;          --bg-panel: #282c33;   --bg-hover: #343843;
@@ -32,7 +31,6 @@ html[data-theme="dark"] {
   --hairline: rgba(53,58,69,.9);
   --shadow-card: 0 1px 2px rgba(0,0,0,.35);
   --shadow-hover: 0 8px 24px rgba(0,0,0,.42);
-  --thumb-grid: rgba(97,137,235,.22);
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: var(--ui); background: #cfd9d5; color: var(--text);
@@ -76,14 +74,22 @@ html[data-theme="dark"] .sheet-head button:hover { background: rgba(255,255,255,
 .wctrl svg { width: 10px; height: 10px; }
 
 /* ===================== 页面 ===================== */
-.page { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* 对齐三常量（改一处全页跟随）：
+   --pad-l   = 10  左缘：工具栏/摘要/列表/翻页条 ⊥ 卡片外框，同一条竖线
+   --list-p  = 20  列表右内距 = 滚动条 10 + 8 间隙（滚动条不再压住卡片边框）
+   --pad-r   = 34  右缘：工具栏/摘要/翻页条 ⊥ 卡片内容右缘（20 + 卡片右内距 14） */
+.page { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center;
+  --pad-l: 10px; --list-p: 20px; --pad-r: 34px; }
+/* 整页内容栏：限宽 + 居中。超宽窗口不再把卡片拉成横贯全屏的白条 */
+.col { flex: 1; min-height: 0; width: 100%; max-width: 1114px;
+  display: flex; flex-direction: column; }
 
-/* 左缘 = 列表容器 10（对齐卡片外框）；右缘 = 26（对齐卡片内动作按钮） */
-.toolbar { flex: none; display: flex; align-items: center; gap: 8px; padding: 12px 26px 8px 10px; }
+.toolbar { flex: none; display: flex; align-items: center; gap: 8px;
+  padding: 12px var(--pad-r) 8px var(--pad-l); }
 .search { position: relative; width: 340px; flex: none; }
 .search svg.ico { position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
   width: 14px; height: 14px; color: var(--text-soft); pointer-events: none; }
-.search input { width: 100%; height: 30px; border-radius: 7px; border: 1px solid var(--hairline);
+.search input { width: 100%; height: 28px; border-radius: 6px; border: 1px solid var(--hairline);
   background: var(--bg); color: var(--text); font: inherit; font-size: 12px; padding: 0 10px 0 30px; outline: none; }
 .search input::placeholder { color: var(--text-soft); }
 .search input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash); }
@@ -106,8 +112,12 @@ html[data-theme="dark"] .sheet-head button:hover { background: rgba(255,255,255,
   display: inline-flex; align-items: center; gap: 6px; border: 1px solid transparent;
   cursor: pointer; white-space: nowrap; }
 .btn svg { width: 13px; height: 13px; }
-.btn.primary { background: var(--accent); color: var(--accent-contrast); font-weight: 600; }
-.btn.primary:hover { background: var(--accent-hover); }
+.btn.primary { background: var(--accent-wash); color: var(--accent); font-weight: 600;
+  border-color: rgba(30,101,89,.32); }
+.btn.primary:hover { background: rgba(30,101,89,.18); border-color: rgba(30,101,89,.45); }
+html[data-theme="dark"] .btn.primary { border-color: rgba(97,137,235,.38); }
+html[data-theme="dark"] .btn.primary:hover { background: rgba(97,137,235,.22);
+  border-color: rgba(97,137,235,.5); }
 .btn.ghost { border-color: var(--hairline); color: var(--text); background: transparent; }
 .btn.ghost:hover { background: var(--bg-hover); }
 .btn.quiet { color: var(--text-dim); background: transparent; }
@@ -118,34 +128,34 @@ html[data-theme="dark"] .sheet-head button:hover { background: rgba(255,255,255,
 .btn.del:hover { background: rgba(194,84,96,.13); }
 .btn .n { font-variant-numeric: tabular-nums; opacity: .85; }
 
-.summary { flex: none; display: flex; align-items: baseline; justify-content: flex-end; gap: 10px;
-  padding: 0 26px 10px 10px; font-size: 11px; color: var(--text-soft); }
+.summary { flex: none; display: flex; align-items: baseline; justify-content: flex-start; gap: 10px;
+  padding: 0 var(--pad-r) 10px var(--pad-l); font-size: 11px; color: var(--text-soft); }
 .summary .count { color: var(--text-dim); font-variant-numeric: tabular-nums; }
 .summary .dot { width: 2px; height: 2px; border-radius: 50%; background: var(--text-faint); }
 
 /* ===================== 单列卡片（两段式） ===================== */
-.list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; max-width: 1098px;
-  display: flex; flex-direction: column; gap: 10px; padding: 0 10px 6px;
-  scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
+  display: flex; flex-direction: column; gap: 10px; padding: 0 var(--list-p) 6px var(--pad-l);
+  scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+  scrollbar-gutter: stable; }
 .list::-webkit-scrollbar { width: 10px; }
 .list::-webkit-scrollbar-track { background: transparent; }
 .list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px;
   border: 3px solid transparent; background-clip: content-box; }
+.list::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
 
-.pkg { flex: none; display: flex; align-items: flex-start; gap: 16px;
-  padding: 12px 16px; border: 1px solid var(--hairline); border-radius: 10px;
+.pkg { flex: none; display: grid; grid-template-columns: 72px minmax(0,1fr) 96px;
+  align-items: stretch; gap: 16px;
+  padding: 12px 14px 12px 16px; border: 1px solid var(--hairline); border-radius: 10px;
   background: var(--bg); box-shadow: var(--shadow-card);
   transition: border-color .12s ease, box-shadow .12s ease; }
 .pkg:hover { border-color: rgba(30,101,89,.42); box-shadow: var(--shadow-hover); }
 html[data-theme="dark"] .pkg:hover { border-color: rgba(97,137,235,.45); }
-.thumb { width: 88px; height: 72px; border-radius: 7px; border: 1px solid var(--hairline);
-  background:
-    repeating-linear-gradient(0deg, var(--thumb-grid) 0 1px, transparent 1px 12px),
-    repeating-linear-gradient(90deg, var(--thumb-grid) 0 1px, transparent 1px 12px),
-    var(--bg-panel);
-  flex: none; position: relative; overflow: hidden; }
-.thumb::after { content: ""; position: absolute; left: 0; right: 0; bottom: 26%; height: 1px;
-  background: var(--accent); opacity: .5; }
+/* 缩略槽：淡底 + 居中淡图标（无底纹、无绿线） */
+.thumb { width: 72px; height: 72px; border-radius: 8px; border: 1px solid var(--hairline);
+  background: var(--bg-panel); display: grid; place-items: center;
+  color: var(--text-faint); flex: none; }
+.thumb svg { width: 22px; height: 22px; }
 
 .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
 .head { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -153,23 +163,17 @@ html[data-theme="dark"] .pkg:hover { border-color: rgba(97,137,235,.45); }
   text-overflow: ellipsis; white-space: nowrap; }
 .ver { font-family: var(--mono); font-size: 10px; color: var(--text-faint); padding: 1px 5px;
   border: 1px solid var(--hairline); border-radius: 4px; flex: none; }
-.chip { font-size: 10px; height: 18px; line-height: 16px; padding: 0 6px; border-radius: 4px;
-  border: 1px solid var(--hairline); color: var(--text-dim); flex: none; display: inline-flex; align-items: center; }
-.chip.ext { background: var(--accent-wash); border-color: transparent; color: var(--accent); font-weight: 600;
-  text-transform: uppercase; letter-spacing: .04em; }
-html[data-theme="dark"] .chip.ext { color: var(--accent-hover); }
-
 /* 已装启停开关：switch::SM 小档 24×14 / knob 8（配方同 switch_base） */
-.sw { width: 24px; height: 14px; border-radius: 7px; flex: none; margin-left: auto;
-  display: flex; align-items: center; background: var(--bg-selected); border: 1px solid var(--border);
+.sw { width: 24px; height: 14px; border-radius: 7px; flex: none;
+  display: flex; align-items: center; background: var(--bg-panel); border: 1px solid var(--border);
   cursor: pointer; transition: background .12s ease, border-color .12s ease; }
-.sw > i { display: block; width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted);
+.sw > i { display: block; width: 8px; height: 8px; border-radius: 50%; background: var(--text-soft);
   margin-left: 2px; transition: margin-left .12s ease, background .12s ease; }
-.sw.on { background: var(--accent); border-color: var(--accent); }
-.sw.on > i { background: var(--bg); margin-left: 12px; }
+.sw.on { background: var(--accent-wash); border-color: var(--accent); }
+.sw.on > i { background: var(--accent); margin-left: 12px; }
 .sw:hover { filter: brightness(1.08); }
 
-.desc { font-size: 12.5px; line-height: 19px; color: var(--text-muted); max-width: 760px;
+.desc { font-size: 12.5px; line-height: 19px; color: var(--text-muted); max-width: 640px;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .meta { display: flex; align-items: center; gap: 10px; font-size: 11.5px; color: var(--text-soft);
   font-variant-numeric: tabular-nums; }
@@ -192,10 +196,14 @@ html[data-theme="dark"] .chip.ext { color: var(--accent-hover); }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pkg:hover .cmd code { color: var(--text); }
 
-.acts { display: flex; align-items: center; gap: 8px; flex: none; }
+.acts { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex: none; }
+/* 右列 96：开关贴顶、动作贴底，右缘恒同一条竖线（右侧不再有两个漂移锚点） */
+.acts-col { display: flex; flex-direction: column; align-items: flex-end;
+  justify-content: space-between; gap: 8px; }
 
 /* 底栏条：翻页（左缘 10 / 右缘 26） */
-.foot { flex: none; display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 26px 0 10px;
+.foot { flex: none; display: flex; align-items: center; gap: 8px; height: 44px;
+  padding: 0 var(--pad-r) 0 var(--pad-l);
   border-top: 1px solid var(--hairline); font-size: 12px; color: var(--text-muted); }
 .pager { font: inherit; font-size: 12px; height: 28px; padding: 0 12px; border-radius: 6px;
   border: 1px solid var(--hairline); background: transparent; color: var(--text-muted); cursor: pointer; }
@@ -210,7 +218,7 @@ html[data-theme="dark"] .chip.ext { color: var(--accent-hover); }
 html[data-theme="dark"] .pg.act { color: var(--accent-hover); }
 .foot .dots { color: var(--text-faint); padding: 0 2px; }
 
-.banner { display: flex; align-items: center; gap: 8px; margin: 0 26px 10px 10px; padding: 7px 10px;
+.banner { display: flex; align-items: center; gap: 8px; margin: 0 var(--pad-r) 10px var(--pad-l); padding: 7px 10px;
   border-radius: 7px; font-size: 11px; }
 .banner svg { width: 13px; height: 13px; flex: none; }
 .banner.warn { background: rgba(224,169,98,.16); color: #8a5a13; }
@@ -237,8 +245,8 @@ html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: 
 <body>
 
 <div class="sheet-head">
-  <b>040-1 Pi扩展市场 · v20（去横线/摘要右对齐/去chip/说明不进按钮区/列表限宽/无红按钮）</b>
-  <span>单列卡片（两段式：上=缩略+文本，下=链接……命令胶囊+动作，间距统一 8）· 1180×760 · mist</span>
+  <b>040-1 Pi扩展市场 · v22（淡色按钮 / 整页限宽居中 / 去扩展标签 / 搜索按钮置排序后 / 右列一条竖线）</b>
+  <span>单列三段式卡片（左 缩略 72 / 中 文本 / 右 动作列 96：开关在顶、动作在底，同一条右缘）· 1180×760 · mist</span>
   <span class="spacer"></span>
   <button id="themeBtn">切换到 one-dark</button>
 </div>
@@ -265,15 +273,16 @@ html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: 
   </div>
 
   <div class="page">
+   <div class="col">
     <div class="toolbar">
       <div class="search">
         <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
         <input placeholder="搜索扩展名称或说明">
       </div>
-      <button class="btn ghost">搜索</button>
       <div class="select">最多下载
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
       </div>
+      <button class="btn ghost">搜索</button>
       <div class="spacer"></div>
       <div class="seg"><button class="act">未安装</button><button>已安装</button></div>
       <button class="btn ghost"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"/></svg>全部更新 <span class="n">2</span></button>
@@ -295,6 +304,7 @@ html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: 
       </div>
       <button class="pager">下一页 →</button>
     </div>
+   </div>
   </div>
 </div>
 
@@ -302,9 +312,9 @@ html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: 
   <div class="card2">
     <h4>加载中（骨架 + 分批上屏）</h4>
     <div class="bodyc">
-      <div class="skel"><div class="bar" style="width:88px;height:72px;border-radius:7px"></div>
+      <div class="skel"><div class="bar" style="width:72px;height:72px;border-radius:8px"></div>
         <div class="stack"><div class="bar" style="width:42%;height:12px"></div><div class="bar" style="width:88%"></div><div class="bar" style="width:64%"></div><div class="bar" style="width:36%"></div></div></div>
-      <div class="skel"><div class="bar" style="width:88px;height:72px;border-radius:7px"></div>
+      <div class="skel"><div class="bar" style="width:72px;height:72px;border-radius:8px"></div>
         <div class="stack"><div class="bar" style="width:34%;height:12px"></div><div class="bar" style="width:80%"></div><div class="bar" style="width:52%"></div><div class="bar" style="width:40%"></div></div></div>
       <div class="foot" style="border:0;padding:0 4px;margin-top:auto">
         <span>第 <b>1</b> / 248 页 · 12,365 条</span><div class="spacer"></div>
@@ -368,12 +378,11 @@ function cardHtml(i) {
   const cmd = installed ? '' :
     `<span class="cmd"><span class="prompt">$</span><code>pi install npm:${full}</code></span>`;
   return `<div class="pkg">
-    <div class="thumb"></div>
+    <div class="thumb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2.5"/><circle cx="9" cy="9" r="1.6"/><path d="m21 15-3.4-3.4a2 2 0 0 0-2.8 0L6 21"/></svg></div>
     <div class="body">
       <div class="head">
         <span class="name">${full}</span>
         <span class="ver">${ver}</span>
-        ${installed && i % 4 !== 3 ? swHtml : (installed ? '<span class="sw" title="启用/停用"><i></i></span>' : '')}
       </div>
       <div class="desc">${desc}</div>
       <div class="pkg-bot">
@@ -385,8 +394,13 @@ function cardHtml(i) {
         </div>
         <span class="grow"></span>
         ${cmd}
-        <div class="acts">${acts}</div>
       </div>
+    </div>
+    <div class="acts-col">
+      ${installed
+        ? (i % 4 !== 3 ? swHtml : '<span class="sw" title="on"><i></i></span>')
+        : '<span class="sw" style="visibility:hidden"><i></i></span>'}
+      <div class="acts">${acts}</div>
     </div>
   </div>`;
 }
