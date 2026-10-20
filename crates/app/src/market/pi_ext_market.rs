@@ -42,14 +42,18 @@ const THUMB_H: f32 = 72.;
 const MAX_PAGES: usize = 20;
 /// 左缘内缩 = 列表容器内缩 SP5(10)：工具栏 / 摘要 / 翻页条的**左缘与卡片外框同一竖线**。
 const PAGE_LEFT: f32 = space::SP5;
-/// 列表容器右内距 = SP8(20)：已预留滚动条，卡片与滚动条之间留 10px 间隙。
-const LIST_PAD_R: f32 = space::SP8;
-/// 右缘内缩 = 列表右内距（v28）：工具栏按钮 / 摘要 / 翻页条 ⊥ **卡片外框右缘**。
-const PAGE_RIGHT: f32 = LIST_PAD_R;
+/// 行右边距 = SP7(16) = 滚动条 8 + 间隙 8：滚动条压不到卡片。
+///
+/// 为何不用容器 pr：`vlist` 的滚动条是 wrapper 内的
+/// 绝对定位归属，容器 pr 会把 wrapper（连同滚动条）一起左移，
+/// 滚动条仍压在卡片上。只有「行内 mr」能让卡片退让滚动条。
+const ROW_PAD_R: f32 = space::SP7;
+/// 右缘内缩 = 行右边距：工具栏按钮 / 摘要 / 翻页条 ⊥ **卡片外框右缘**。
+const PAGE_RIGHT: f32 = ROW_PAD_R;
 /// 描述行宽上限（设计稿 v28：不让一行拉到十几百 px）。
 const DESC_MAX_W: f32 = 640.;
 /// 整页内容栏上限（工具栏/摘要/列表/翻页同栏，超宽窗口整体居中）
-const PAGE_MAX_W: f32 = 1080. + PAGE_LEFT + LIST_PAD_R;
+const PAGE_MAX_W: f32 = 1080. + PAGE_LEFT + ROW_PAD_R;
 
 /// 「未安装 / 已安装」筛选（040-1 UI 设计）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -661,12 +665,20 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
     }
 
     let list_area = if rows.is_empty() {
-        empty_area(chat, t)
+        if st.loading {
+            skeleton_rows(t)
+        } else {
+            empty_area(chat, t)
+        }
     } else {
         crate::ui::vlist::vlist(
             LIST_ID,
             rows.len(),
-            f32::from(crate::appearance::ui_size(CARD_H)),
+            // 行高 = 卡片高 + 行间空隙，两者都必须各自过一遍 ui_size。
+            // ui_size 是加法缩放（panel + (base-12)）：写 ui_size(CARD_H) 会
+            // 比卡片少算一次偏移，面板字号≠12 时行高 < 卡片高 → 行行相叠。
+            f32::from(crate::appearance::ui_size(CARD_H - 8.))
+                + f32::from(crate::appearance::ui_size(space::SP4)),
             crate::ui::vlist::VListHeight::Fill,
             false,
             true,
@@ -685,7 +697,6 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
             .flex()
             .flex_col()
             .pl(gpui::px(PAGE_LEFT))
-            .pr(gpui::px(LIST_PAD_R))
             .child(list_area),
     );
 
@@ -1031,6 +1042,65 @@ fn banner(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> Opti
     None
 }
 
+/// 加载中骨架（设计稿「加载中（骨架 + 分批上屏）」态）：
+/// 第一批清单还没上屏时，列表**先把位置占住**（行高/卡片尺寸与真卡一致），
+/// 不让页面看起来是空的、也不让首批到达时跳一下。
+fn skeleton_rows(t: &'static Theme) -> AnyElement {
+    let bar = |w: f32, h: f32| {
+        gpui::div()
+            .w(gpui::px(w))
+            .h(gpui::px(h))
+            .rounded(gpui::px(radius::XS))
+            .bg(gpui::rgb(t.bg_panel))
+    };
+    let mut col = gpui::div()
+        .flex_1()
+        .min_h_0()
+        .w_full()
+        .flex()
+        .flex_col()
+        .overflow_hidden();
+    for _ in 0..6 {
+        col = col.child(
+            gpui::div()
+                .w_full()
+                .pr(gpui::px(ROW_PAD_R))
+                .mt(crate::appearance::ui_size(space::SP4))
+                .child(
+                    gpui::div()
+                        .w_full()
+                        .h(crate::appearance::ui_size(CARD_H - 8.))
+                        .flex()
+                        .items_start()
+                        .gap(gpui::px(space::SP7))
+                        .px(gpui::px(space::SP7))
+                        .py(gpui::px(space::SP5))
+                        .rounded(gpui::px(radius::MODAL))
+                        .border_1()
+                        .border_color(gpui::rgb(t.border))
+                        .child(
+                            bar(THUMB_W, THUMB_H)
+                                .rounded(gpui::px(radius::CTRL))
+                                .flex_shrink_0(),
+                        )
+                        .child(
+                            gpui::div()
+                                .flex_1()
+                                .min_w_0()
+                                .flex()
+                                .flex_col()
+                                .gap(gpui::px(space::SP3))
+                                .child(bar(220., 12.))
+                                .child(bar(520., 10.))
+                                .child(bar(380., 10.))
+                                .child(bar(160., 10.)),
+                        ),
+                ),
+        );
+    }
+    col.into_any_element()
+}
+
 /// 空态：加载中 → 转圈；否则空态文案。
 fn empty_area(chat: &Chat, t: &'static Theme) -> AnyElement {
     let st = &chat.aux.market.pi_ext;
@@ -1074,7 +1144,7 @@ fn pkg_card(
         .id(SharedString::from(format!("pi-ext-card-{}", row.name)))
         .h(crate::appearance::ui_size(CARD_H - 8.))
         .w_full()
-        .mt(gpui::px(space::SP4))
+        .mt(crate::appearance::ui_size(space::SP4))
         .flex()
         .items_start()
         .gap(gpui::px(space::SP7))
@@ -1149,7 +1219,12 @@ fn pkg_card(
                         .child(actions(row, weak, t, busy_any)),
                 ),
         );
-    card.into_any_element()
+    // 行右边距：给 `vlist` 常显滚动条让位（滚动条压在卡片上 = 设计稿禁止）
+    gpui::div()
+        .w_full()
+        .pr(gpui::px(ROW_PAD_R))
+        .child(card)
+        .into_any_element()
 }
 
 /// 缩略槽（设计稿 v28）：88×72 格子纸底纹 + 距底 26% 的 accent 细线。
