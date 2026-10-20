@@ -33,6 +33,8 @@ pub(crate) fn content_main(
         ContentView::Changelog => changelog_view(chat).into_any_element(),
         // 040-1 Pi 扩展市场标准页
         ContentView::PiExtMarket => crate::market::pi_ext_market::page(chat, weak, window),
+        // 083 项目搜索（Zed ProjectSearchView 同位：内容区 tab）
+        ContentView::Search => crate::search::view(chat, weak, window, cx),
     };
     div()
         .id("content-main")
@@ -168,6 +170,7 @@ pub(crate) fn term_view(
             crate::PanelTab::File(_) => div().into_any_element(),
             crate::PanelTab::Changelog => div().into_any_element(),
             crate::PanelTab::PiExtMarket => div().into_any_element(),
+            crate::PanelTab::Search => div().into_any_element(),
             crate::PanelTab::Term(id) => {
                 let tix = chat.ws.terminals.iter().position(|t| t.id == id);
                 let Some(tix) = tix else {

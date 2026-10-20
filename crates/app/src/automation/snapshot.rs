@@ -12,8 +12,9 @@ use serde_json::{Value, json};
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
-pub(crate) const SURFACES: [&str; 9] = [
+pub(crate) const SURFACES: [&str; 10] = [
     "app", "sessions", "session", "composer", "files", "git", "settings", "dialogs", "term",
+    "search",
 ];
 
 pub(crate) fn surface(
@@ -60,6 +61,7 @@ fn surface_one(chat: &Chat, window: &gpui::Window, cx: &Context<Chat>, name: &st
         "settings" => settings_surface(chat, cx),
         "dialogs" => dialogs_surface(chat, cx),
         "term" => term_surface(chat, window, cx),
+        "search" => search_surface(chat),
         _ => Value::Null,
     }
 }
@@ -498,6 +500,60 @@ fn composer_surface(chat: &Chat) -> Value {
     })
 }
 
+/// 083 项目搜索面：开关/计数/阶段 + 结果行预览（前 40 行）。
+pub(crate) fn search_surface(chat: &Chat) -> Value {
+    let ui = &chat.ws.search;
+    let rows: Vec<Value> = ui
+        .rows
+        .iter()
+        .take(40)
+        .map(|row| match row {
+            crate::search::Row::Header {
+                rel,
+                count,
+                path_only,
+            } => json!({"kind": "header", "path": rel, "count": count, "path_only": path_only}),
+            crate::search::Row::Line {
+                line,
+                hit,
+                ordinal,
+                text,
+                ..
+            } => json!({
+                "kind": "line",
+                "line": line,
+                "hit": hit,
+                "ordinal": ordinal,
+                // 正文截断到 240 字符（快照只做断言，不搬运整段代码）
+                "text": text.chars().take(240).collect::<String>(),
+            }),
+        })
+        .collect();
+    json!({
+        "shown": chat.layout.content_view == ContentView::Search,
+        "query": ui.query_text,
+        "phase": match ui.phase {
+            crate::search::Phase::Idle => "idle",
+            crate::search::Phase::Running => "running",
+            crate::search::Phase::Done => "done",
+        },
+        "opts": crate::search::opts_labels(ui.opts),
+        "show_replace": ui.show_replace,
+        "show_filters": ui.show_filters,
+        "files": ui.files,
+        "path_files": ui.path_files,
+        "matches": ui.matches,
+        "scanned": ui.scanned,
+        "active": ui.active,
+        "limit": ui.limit,
+        "error": ui.error,
+        "notice": ui.notice.as_ref().map(|(m, bad)| json!({"text": m, "failed": bad})),
+        "row_count": ui.rows.len(),
+        "row_h": crate::search::ROW_H,
+        "rows": rows,
+    })
+}
+
 fn files_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
     // topbar 标签条滚动位（016）：句柄原值 + 激活 tab 的视口坐标
     let tabs_off = chat.layout.tabs_scroll.offset();
@@ -617,6 +673,7 @@ fn files_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
             crate::PanelTab::File(p) => json!({"file": p.display().to_string()}),
             crate::PanelTab::Changelog => json!({"changelog": true}),
             crate::PanelTab::PiExtMarket => json!({"pi_ext_market": true}),
+            crate::PanelTab::Search => json!({"search": true}),
         }).collect::<Vec<_>>(),
         // 文件树标题项目下拉（树根跨项目快切）：开合/键盘高亮/项目清单，
         // files.project_menu + input.keys 的事务断言靠这条
@@ -810,6 +867,7 @@ fn content_view_str(v: crate::ContentView) -> &'static str {
         crate::ContentView::File => "file",
         crate::ContentView::Changelog => "changelog",
         crate::ContentView::PiExtMarket => "pi-ext-market",
+        crate::ContentView::Search => "search",
     }
 }
 

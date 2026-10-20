@@ -45,6 +45,16 @@
 
 （新 → 旧；一行一条，细节看对应提交）
 
+- 2026-10-20 **083 项目搜索（文件 + 内容，无索引）**：取证 Zed 搜索不建索引
+  （全仓无 tantivy/trigram/ripgrep，内容搜实时扫盘、文件名搜只查内存路径树），
+  照其语义复刻单阶段流水线（路径候选 → glob 过滤 → 读盘扫 → 流式回传，二进制
+  早退/CRLF 剥尾/上限 5000 文件·10000 行/相邻命中摘录并块）。Ctrl+Shift+F 开
+  单例 `PanelTab::Search`；Zed `ProjectSearchBar` 版式（查询 + Aa/ab|/.* +
+  计数/‹› + 过滤行 + 替换行）；结果面板 = 等高虚拟化摘录列表（文件头/行号
+  gutter/命中区间洗底/活跃命中竖条）。文件名命中并进同一列表（Zed 是两个面板）
+  ——产品级唯一差异，见 083 §3。新增 `kit::icon_toggle`/`text_toggle`。
+  app 338 测试 + pi-link 181 全绿。
+
 - 2026-10-18 **会话置顶（020）**：psp 会话标签 pin/unpin——hover 状态槽
   临时换 pin（tracked hover 门控、与状态互斥渲染）、右键卡动作栏最左 pin
   钮；Grouped 新增置顶组（副本引用，id 换 ps-pin- 前缀防撞）、Flat 排会话

@@ -111,6 +111,40 @@ pub(super) fn dispatch(
             cx.notify();
             ok()
         }
+        method::SEARCH_OPEN => {
+            chat.open_project_search(cx);
+            Ok(snapshot::search_surface(chat))
+        }
+        method::SEARCH_QUERY => {
+            let text = params
+                .get("text")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            chat.set_search_query(text, cx);
+            Ok(snapshot::search_surface(chat))
+        }
+        method::SEARCH_TOGGLE => {
+            let which = params
+                .get("which")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            chat.search_toggle_by_name(&which, cx);
+            Ok(snapshot::search_surface(chat))
+        }
+        method::SEARCH_STEP => {
+            let forward = params
+                .get("forward")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            chat.search_step(forward, cx);
+            Ok(snapshot::search_surface(chat))
+        }
+        method::SEARCH_REPLACE_ALL => {
+            chat.search_replace_all(cx);
+            Ok(snapshot::search_surface(chat))
+        }
         method::INPUT_KEYS => {
             let keys = params
                 .get("keys")
@@ -287,6 +321,7 @@ pub(super) fn dispatch(
                     ContentView::File => "file",
                     ContentView::Changelog => "changelog",
                     ContentView::PiExtMarket => "pi-ext-market",
+                    ContentView::Search => "search",
                 },
             }))
         }
@@ -401,6 +436,7 @@ pub(super) fn dispatch(
                 "file" => chat.set_content_view(ContentView::File),
                 // 040-1：市场页走真开页路径（建搜索框 + ensure_loaded 拉首页）
                 "pi-ext-market" => chat.open_pi_ext_market(cx),
+                "search" => chat.open_project_search(cx),
                 other => return Err(bad(format!("未知内容视图: {other:?}"))),
             }
             cx.notify();

@@ -39,6 +39,11 @@ pub(crate) fn mc_shortcuts_view(window: &Window) -> gpui::AnyElement {
             action_key(&crate::OpenFileSearch, window),
         ),
         (
+            tr("shortcuts.project_search"),
+            "",
+            action_key(&crate::OpenProjectSearch, window),
+        ),
+        (
             tr("psp.maximize_session_list"),
             "",
             action_key(&crate::MaximizeSessionList, window),

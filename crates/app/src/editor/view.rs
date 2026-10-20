@@ -15,6 +15,7 @@ use crate::Chat;
 use crate::appearance::theme::theme as T;
 use crate::content::empty_hint;
 use crate::i18n::tr;
+use crate::services::workspace::same_path;
 use crate::ui::icon;
 use std::path::Path;
 
@@ -98,6 +99,41 @@ fn ensure_file_editor(
     }
 }
 
+/// 消费搜索结果的「跳到第 N 行」请求（083）：把编辑器光标挪到目标行首。
+/// `set_cursor_offset` 内部 `move_to` → `scroll_to` 会保证光标可见，因此
+/// 不需要额外的滚动 API（与 Zed 点击搜索结果后 reveal 到范围同效）。
+fn consume_pending_jump(chat: &mut Chat, path: &Path, cx: &mut Context<Chat>) {
+    let Some((target, line)) = chat.ws.pending_jump.clone() else {
+        return;
+    };
+    if !same_path(&target, path) {
+        return;
+    }
+    chat.ws.pending_jump = None;
+    let Some(ed) = chat.ws.file_cache.get(path).and_then(|f| f.editor.clone()) else {
+        return;
+    };
+    // 行号 → 字节偏移：内容来自磁盘真值缓存（编辑器未建时 open_file_tab
+    // 已灌入内容；有未保存修改时取编辑器值，与正文一致）
+    let content = chat
+        .ws
+        .file_cache
+        .get(path)
+        .map(|f| match (&f.editor, f.dirty) {
+            (Some(_), true) => ed.read(cx).text().to_string(),
+            _ => f.content.clone(),
+        })
+        .unwrap_or_default();
+    let mut offset = 0usize;
+    for (ix, raw) in content.split_inclusive('\n').enumerate() {
+        if ix + 1 >= line.max(1) as usize {
+            break;
+        }
+        offset += raw.len();
+    }
+    ed.update(cx, |st, cx| st.set_cursor_offset(offset, cx));
+}
+
 /// 消费 reload_pending（自动重载路径）：磁盘新内容灌进编辑器。用
 /// `reload_value` 而非 `set_value`——外部改动要保留阅读位置/光标（Zed 的
 /// 外部 reload 保留 anchor）；set_value 是程序化赋值语义（光标到末尾、
@@ -156,6 +192,7 @@ pub(crate) fn file_view(
     if !binary {
         ensure_file_editor(chat, &path, window, cx);
         consume_file_reload(chat, &path, window, cx);
+        consume_pending_jump(chat, &path, cx);
         // 开文件即聚焦（Zed 行为；编辑器实体就绪后消费）。082 三期：仅
         // 源码态消费——预览态（md_source=false）树里没有编辑器元素，聚焦
         // 实体句柄必悬空（docs/agents/gpui.md 悬空句柄陷阱：旧焦点 blur、

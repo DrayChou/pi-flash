@@ -154,6 +154,11 @@ impl Render for Chat {
             {
                 window.focus(&self.dlg.dialog_focus);
             }
+        } else if self.layout.content_view == crate::ContentView::Search
+            && self.search_input_focused(window, cx)
+        {
+            // 083：搜索条输入框持焦不回收（同 040-1 市场搜索框白名单）——
+            // 否则每帧仲裁把焦点推回中性锚点，搜索框打不进字
         } else if self.file_editor_focus(window, cx).is_some() {
             // 023：文件编辑器持有焦点时不回收——否则点进去下一帧就被抢回
             // composer，打字全失效（编辑器此前不在白名单）
@@ -644,6 +649,11 @@ impl Render for Chat {
             // 「搜索文件」钮同一方法（toggle 语义，再按一次 = 关）
             .on_action(cx.listener(|this, _: &OpenFileSearch, _window, cx| {
                 this.open_file_search(cx);
+            }))
+            // 083 项目搜索（Ctrl+Shift+F）：开/聚焦搜索 tab（Zed
+            // project_search::ToggleFocus 的单例语义）
+            .on_action(cx.listener(|this, _: &OpenProjectSearch, _window, cx| {
+                this.open_project_search(cx);
             }))
             // 082 全局最大化两键（Alt+1 / Alt+2，绑定见 main.rs bind_keys）：
             // 与 psp/文件树头部最大化钮同一语义（点谁谁填满、对面收起到控制栏）

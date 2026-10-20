@@ -418,6 +418,12 @@ pub(crate) struct WsUi {
     pub(crate) file_search_gen: u64,
     pub(crate) file_search_scanning: bool,
     pub(crate) file_cache: std::collections::HashMap<PathBuf, FileTab>,
+    /// 083 项目搜索状态（搜索条输入/开关/结果行模型；tab 单例，切 tab 不丢）
+    pub(crate) search: crate::search::SearchUi,
+    /// 083 搜索结果点击的行跳转请求（文件 tab 渲染帧消费：把编辑器光标
+    /// 挪到目标行——`InputState::set_cursor_position` 要 `&mut Window`，
+    /// 只有渲染帧同时拿得到 window 与 Chat）
+    pub(crate) pending_jump: Option<(PathBuf, u32)>,
     pub(crate) panel_tabs: Vec<PanelTab>,
     pub(crate) active_panel_tab: Option<usize>,
     /// md 预览滚动条状态（MarkdownKind preview 面板的 v63-6 配方）
@@ -504,6 +510,8 @@ impl Chat {
                 file_search_gen: 0,
                 file_search_scanning: false,
                 file_cache: std::collections::HashMap::new(),
+                search: crate::search::SearchUi::default(),
+                pending_jump: None,
                 panel_tabs: Vec::new(),
                 active_panel_tab: None,
                 crumb_menu_dir: None,

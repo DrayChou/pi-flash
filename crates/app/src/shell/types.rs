@@ -106,6 +106,8 @@ pub(crate) enum ContentView {
     Changelog,
     /// 040-1 Pi 扩展市场 tab（PanelTab::PiExtMarket；标准页）
     PiExtMarket,
+    /// 083 项目搜索 tab（PanelTab::Search；搜索面板 + 结果列表）
+    Search,
 }
 
 /// psp 列表方式（⋯ 菜单）。
@@ -257,6 +259,8 @@ pub(crate) enum PanelTab {
     Changelog,
     /// 040-1 Pi 扩展市场（标准页；菜单-三横按钮打开）
     PiExtMarket,
+    /// 083 项目搜索（单例 tab；Ctrl+Shift+F 打开，Zed ProjectSearchView 同位）
+    Search,
 }
 
 /// tab 稳定键（2026-10-14 标签拖拽换位引入）：拖拽发起时记 key，drop 时
@@ -268,6 +272,7 @@ pub(crate) enum TabKey {
     File(PathBuf),
     Changelog,
     PiExtMarket,
+    Search,
 }
 
 impl PanelTab {
@@ -277,6 +282,7 @@ impl PanelTab {
             PanelTab::File(p) => TabKey::File(p.clone()),
             PanelTab::Changelog => TabKey::Changelog,
             PanelTab::PiExtMarket => TabKey::PiExtMarket,
+            PanelTab::Search => TabKey::Search,
         }
     }
 }
@@ -298,6 +304,7 @@ impl PanelTab {
             PanelTab::File(_) => ContentView::File,
             PanelTab::Changelog => ContentView::Changelog,
             PanelTab::PiExtMarket => ContentView::PiExtMarket,
+            PanelTab::Search => ContentView::Search,
         }
     }
 }

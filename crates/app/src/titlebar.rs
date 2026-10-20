@@ -328,6 +328,14 @@ fn tab_strip(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyElement 
                 Some("menu"),
                 ContentView::PiExtMarket,
             ),
+            // 083 项目搜索（Zed 同级 tab：ProjectSearchView 就是 pane item）
+            crate::PanelTab::Search => (
+                tr("search.tab").into(),
+                None,
+                false,
+                Some("search"),
+                ContentView::Search,
+            ),
         };
         // 文件 tab 行尾标记（023）：冲突 ! > 脏点。zed parity（DiskState::
         // Deleted）：文件已从磁盘消失不标 !——删除线是唯一标记，脏点照常

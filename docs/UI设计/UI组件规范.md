@@ -418,6 +418,8 @@ thread_local——paint 期每帧重注册闭包，局部变量活不过一次�
 | 徽标 scope_tag | `px 5 / py 1`、r**3**、ui(10)；项目 = indigo `hsla(.63,.86,.62, .12/.85)`，其他 = 中性 12% 纱 | `scope_tag` |
 | 状态点 | **7** 圆 `rounded_full` | `status_dot` |
 | 行内小图标钮 | **24×24** r5（其他页）、垃圾桶 **28×28** r5（danger 35% 边 + 6% 红底） | misc / plugins |
+| 工具条开关钮 `icon_toggle` | **24×24** r**6**、图标 **14**；按 = accent 16% 洗底 + accent 图标，否则透明 + `text_muted`，hover `bg_hover`，禁用 0.4 | kit/toggle.rs（083 搜索条） |
+| 工具条文字开关 `text_toggle` | 同槽（h**24**、`px 6`、r**6**），文字 mono ui(11) BOLD；按 = accent 16% 洗底 + accent 字 | kit/toggle.rs（083 搜索条 Aa/ab\|/.*） |
 | 键帽 Kbd | 高 **22**、`min-w 22`、`px 7`、r5、mono ui(11)；底 `cap_bg`、1px border、底部 1px 硬阴影（edge = border 混深） | shortcuts |
 | 主题卡 | 高 **36**、r5、1px border（选中 → **2px** accent）、`px 8`、gap 6、底色 = 该主题 `bg`；**每行 5 槽等宽、gap 8、mt 8**；槽位外包无 padding 容器（否则 flex 不等宽） | general 外观页 |
 | 滑块 | 180×18、轨道 4、旋钮 12（同 §5.12） | `width_slider` |

@@ -38,6 +38,7 @@ mod i18n_audit;
 mod market;
 mod models_config;
 mod remote_control;
+mod search;
 mod services;
 mod session;
 mod settings;
@@ -100,6 +101,7 @@ actions!(
         ViewLeft,
         ViewRight,
         OpenFileSearch,
+        OpenProjectSearch,
         PreviewUp,
         PreviewDown,
         PreviewPageUp,
@@ -297,6 +299,9 @@ fn main() {
                 // 全局文件搜索（Ctrl+L，None 上下文任意焦点可用；与文件树
                 // 工具栏「搜索文件」钮同一方法，再按一次 = 关）
                 KeyBinding::new("ctrl-l", OpenFileSearch, None),
+                // 083 项目搜索（Ctrl+Shift+F，Zed project_search::ToggleFocus
+                // 同键；None 上下文任意焦点可用，再按一次回到查询框）
+                KeyBinding::new("ctrl-shift-f", OpenProjectSearch, None),
                 // 082 子面板最大化两键（无上下文 = 任意焦点可用，与上面三键
                 // 同款；tooltip 键位 chip 反查这里）
                 KeyBinding::new("alt-1", MaximizeSessionList, None),

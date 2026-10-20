@@ -114,6 +114,18 @@ pub mod method {
     pub const PROJECT_NEW_SESSION_IN: &str = "project.new_session_in";
     /// 004 打开项目菜单（psp icon / 012 操作栏同源入口；UI 测试用）
     pub const PROJECT_PICKER_OPEN: &str = "project.picker_open";
+    /// 083 项目搜索：打开面板 / 设查询并开搜 / 切开关 / prev-next /
+    /// 全部替换（UI 测试用；状态与结果行读 search 面）
+    pub const SEARCH_OPEN: &str = "search.open";
+    /// params: `text`；只设查询词并立即开搜（同步起跑，结果流式回填后
+    /// 用 wait 轮询 search.matches）
+    pub const SEARCH_QUERY: &str = "search.query";
+    /// params: `which` = case_sensitive|whole_word|regex|include_ignored|
+    /// filters|replace
+    pub const SEARCH_TOGGLE: &str = "search.toggle";
+    /// params: `forward`（缺省 true）
+    pub const SEARCH_STEP: &str = "search.step";
+    pub const SEARCH_REPLACE_ALL: &str = "search.replace_all";
     pub const INPUT_KEYS: &str = "input.keys";
     pub const INPUT_FOCUS: &str = "input.focus";
     /// 注入鼠标事件（走真实 gpui hit_test 事件链，穿透/命中类 bug 的自动化

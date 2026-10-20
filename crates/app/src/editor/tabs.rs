@@ -113,6 +113,9 @@ impl Chat {
             }
         }
         if ft.binary {
+            // 二进制（图片/无法打开）没有行可跳：搜索结果里点到它时清掉
+            // 待跳请求，免得滞留在同路径的下一次文本打开上
+            self.ws.pending_jump = None;
             self.ws.file_cache.insert(path.clone(), ft);
         } else {
             ft.disk_sig = file_sig(&path);
@@ -169,7 +172,10 @@ impl Chat {
         // 关掉当前 tab 后内容区回退：终端→浏览区遗留→chat；
         // 更新日志（081）→ 剩余 tab 激活最近的，没有则回会话
         if was_active && self.layout.content_view == view {
-            if matches!(view, ContentView::Changelog | ContentView::PiExtMarket) {
+            if matches!(
+                view,
+                ContentView::Changelog | ContentView::PiExtMarket | ContentView::Search
+            ) {
                 match self.ws.active_panel_tab {
                     Some(nix) => {
                         let v = self
@@ -254,7 +260,7 @@ impl Chat {
     /// 关了一批 tab 后没人可激活（Close All / focus 也被关）时的内容区
     /// 回退，与单关回退同源：优先最近的文件 tab；没有文件但还有 tab 回
     /// 浏览区遗留（终端则激活最后一个）；全空回会话。
-    fn fallback_after_closes(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn fallback_after_closes(&mut self, cx: &mut Context<Self>) {
         if let Some(fix) = self
             .ws
             .panel_tabs
@@ -576,6 +582,7 @@ impl Chat {
             Some(PanelTab::Term(_)) => ContentView::Term,
             Some(PanelTab::Changelog) => ContentView::Changelog,
             Some(PanelTab::PiExtMarket) => ContentView::PiExtMarket,
+            Some(PanelTab::Search) => ContentView::Search,
             Some(PanelTab::File(_)) => ContentView::File,
             None => return,
         };
