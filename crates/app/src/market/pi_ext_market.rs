@@ -290,6 +290,8 @@ impl Chat {
                 }
             };
             let total = page.total;
+            // total 一到就上屏：摘要行与翻页条不必等 50 条清单补完（原来要等 7s+）
+            let _ = this.update(cx, |c, cx| c.pi_ext_set_total(gen_ix, total, cx));
             let mut raw = page.entries;
             if raw.is_empty() {
                 let _ = this.update(cx, |c, cx| c.pi_ext_finish(gen_ix, total, cx));
@@ -320,6 +322,15 @@ impl Chat {
     }
 
     /// 一批清单结果上屏：合并 kinds → 过滤（只按「扩展」）→ append。
+    /// 搜索回包一到就写 total（不等分批补清单）——摘要行/翻页条的显示前提。
+    fn pi_ext_set_total(&mut self, gen_ix: u64, total: usize, cx: &mut gpui::Context<Self>) {
+        if gen_ix != self.aux.market.pi_ext.gen_ix {
+            return;
+        }
+        self.aux.market.pi_ext.total = total;
+        cx.notify();
+    }
+
     fn pi_ext_append(
         &mut self,
         gen_ix: u64,
@@ -616,7 +627,12 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
                     &[("n", String::new())],
                 )),
         );
-    } else if st.total > 0 {
+    } else {
+        let count = if st.total > 0 {
+            st.total
+        } else {
+            st.entries.len()
+        };
         col = col.child(
             gpui::div()
                 .flex_shrink_0()
@@ -632,7 +648,11 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
                 .child(
                     gpui::div()
                         .text_color(gpui::rgb(t.text_dim))
-                        .child(SharedString::from(thousands(st.total))),
+                        .child(SharedString::from(if count == 0 {
+                            "—".to_string()
+                        } else {
+                            thousands(count)
+                        })),
                 )
                 .child(tr("market.results").to_string())
                 .child(dot(t))
@@ -669,9 +689,9 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
             .child(list_area),
     );
 
-    // 翻页条只在「未安装」页签 + total 已知 + 确有多页时渲染（本地已装
-    // 列表无分页；total 未回包前不渲染——条形忽有忽无的抖动根源）
-    if st.filter == ExtFilter::NotInstalled && st.total > 0 && st.total_pages() > 1 {
+    // 翻页条：未安装页签**恒常渲染**。底部永远占 44px，列表不会被撑到底边、
+    // 末条不被削；total 未知时只有第 1 页（翻页按钮禁用）。
+    if st.filter == ExtFilter::NotInstalled {
         col = col.child(pager(weak, st.page, st.total_pages(), st.loading, t));
     }
     gpui::div()
