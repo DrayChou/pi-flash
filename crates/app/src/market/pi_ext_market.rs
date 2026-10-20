@@ -879,26 +879,66 @@ fn badge(text: &str, t: &'static Theme) -> AnyElement {
         .into_any_element()
 }
 
-/// 已装启停开关：**直接用设置页的规范组件** `switch_base`
-/// （`settings/widgets.rs` 里的唯一开关入口：28×16 / knob 10 / 1px 轨道描边 /
-/// 关态 knob 用 text_muted —— 手搓会漏掉描边与关态配色，看着就"不精致"）。
+/// 已装启停开关（卡片行内档 = `switch::SM`：**24×14 / knob 8**）。
+///
+/// 视觉配方与 `settings::widgets::switch_base`（MD 28×16）逐条对齐——1px 轨道描边、
+/// 开态 accent、关态 `bg_selected`、关态 knob `text_muted`、开态 knob `bg`；
+/// 唯一差别是尺寸走 SM 档（用户定稿：卡片里的开关要小，别用 28×16）。
+///
+/// 为什么不直接调 `switch_base`：它把 MD 尺寸写死，而 Settings 模块受保护
+/// （未经授权不改）。等授权后给 `switch_base` 加 `size: SwitchSize` 参数，
+/// 这里改成传入 SM 即可删掉本地绘制。
 fn switch(row: &RowData, weak: &gpui::WeakEntity<Chat>) -> Option<AnyElement> {
+    use crate::ui::tokens::switch as sw;
     let ix = row.installed_ix?;
+    let on = row.enabled;
+    let t = T();
     let weak_sw = weak.clone();
+    let track: gpui::Hsla = if on {
+        gpui::rgb(t.accent).into()
+    } else {
+        gpui::rgb(t.bg_selected).into()
+    };
+    let border: gpui::Hsla = if on {
+        gpui::rgb(t.accent).into()
+    } else {
+        gpui::rgb(t.border).into()
+    };
     Some(
         gpui::div()
-            // 右缘与动作按钮同一条竖线、垂直居中于第一行（见卡片主布局注释）
+            // 右缘与动作按钮同一条竖线、垂直居中于第一行
             .absolute()
             .top(gpui::px(space::SP6 + space::SP1))
             .right(gpui::px(space::SP7))
-            .child(crate::settings::widgets::switch_base(
-                SharedString::from(format!("pi-ext-sw-{}", row.name)),
-                row.enabled,
-                false,
-                move |_next, cx| {
-                    let _ = weak_sw.update(cx, |c, cx| c.mc_toggle_package(ix, cx));
-                },
-            ))
+            .child(
+                gpui::div()
+                    .id(SharedString::from(format!("pi-ext-sw-{}", row.name)))
+                    .w(gpui::px(sw::SM_W))
+                    .h(gpui::px(sw::SM_H))
+                    .flex_shrink_0()
+                    .rounded(gpui::px(sw::SM_H / 2.))
+                    .border_1()
+                    .border_color(border)
+                    .bg(track)
+                    .flex()
+                    .items_center()
+                    .cursor_pointer()
+                    .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                        cx.stop_propagation();
+                        let _ = weak_sw.update(cx, |c, cx| c.mc_toggle_package(ix, cx));
+                    })
+                    .child(
+                        gpui::div()
+                            .ml(gpui::px(if on { sw::SM_ON_ML } else { sw::SM_OFF_ML }))
+                            .size(gpui::px(sw::SM_KNOB))
+                            .rounded_full()
+                            .bg(if on {
+                                gpui::rgb(t.bg)
+                            } else {
+                                gpui::rgb(t.text_muted)
+                            }),
+                    ),
+            )
             .into_any_element(),
     )
 }
