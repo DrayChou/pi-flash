@@ -172,3 +172,30 @@
 git config core.hooksPath .githooks                      # 自动格式化 + 批量拦截
 git config blame.ignoreRevsFile .git-blame-ignore-revs   # blame 跳过基线提交
 ```
+
+### 磁盘回收（`scripts/clean-cache.py`，2026-10-20 立）
+
+D 盘告警（86%）时人工 du + 逐个判断了一次，把结论固化成脚本，别再每次问 agent。
+
+```bash
+python scripts/clean-cache.py                  # 体检（默认 dry-run）
+python scripts/clean-cache.py --apply          # 安全档真清
+python scripts/clean-cache.py --apply --aggressive   # 连过期 rlib/rmeta 一起清
+```
+
+- **为什么不用 `cargo clean`**：它把 12G 一次归零，下次 debug 全量重编十几分钟。
+  脚本只删「同一 crate 的过期哈希版本」，活产物留着（本次实测 14.4G→9.3G，
+  其中 2.6G 是过期哈希，0 元重编代价的部分占 1.2G）。
+- **两档的边界**：安全档只动 `exe`/`pdb`——最终产物，一个 bin 同时只跑一份哈希，
+  旧的必是废弃探针/测试 bin，删了下次构建自动重建，零代价。`rlib`/`rmeta`/
+  `lib`/`dll`/`exp` 是 **crate 级、多 bin 共用**的中间产物（同一个
+  `libgpui_component-<hash>.dll` 同时服务 pi-flash 和 pif-ui），mtime 分不出
+  活死，所以只在 `--aggressive` 下清，代价是下次构建重编几个 crate（实测
+  gpui 家族约 2~3 分钟）。
+- **教训**：第一版把 `lib`/`dll` 也放进安全档按「留最新 1 份」删，直接误杀
+  gpui-component 的活 DLL，`cargo build` 白等 2.5 分钟——**同一 crate 的多份
+  哈希不能假定只有一份在用**。
+- **tmp 白名单**：`屏幕截图/`（AGENTS 约定）、`sound/`（sound.rs 注释引用的
+  试听稿）、`*.md`（release-notes 之类）。其余早于 `--tmp-age-days`（默认 3 天）
+  的条目整棵删；`--trash` 可改走回收站（同盘仍占空间，要清空才返还）。
+- 每次删除清单落 `target/clean-cache.log`（dry-run 落 `clean-cache.dry.log`）。

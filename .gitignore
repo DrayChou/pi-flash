@@ -33,6 +33,9 @@ dist/
 # crash dumps
 *.stackdump
 
+# bash 误把 `> nul` 当重定向目标时在仓库根留下的空文件
+nul
+
 # Beads issue tracker 整目录——元数据 / hooks / 被动导出都不入库。
 # 理由：issues.jsonl 的 owner 字段含个人邮箱、interactions.jsonl 的 actor 含昵称，
 # 公开仓库不留；事实来源是本地 Dolt 库（上面的 .dolt/），bd init 会重新生成这些文件。
