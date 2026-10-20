@@ -43,6 +43,8 @@ const MAX_PAGES: usize = 20;
 const PAGE_LEFT: f32 = space::SP5;
 /// 右缘内缩 = SP5(10) + 卡片内 padding SP7(16)：**右缘与卡片里的动作按钮同一竖线**。
 const PAGE_RIGHT: f32 = space::SP5 + space::SP7;
+/// 整页内容栏上限（v21：工具栏/摘要/列表/翻页同栏，超宽窗口整体居中）
+const PAGE_MAX_W: f32 = 1080. + space::SP5 + (space::SP5 + space::SP7);
 
 /// 「未安装 / 已安装」筛选（040-1 UI 设计）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -573,21 +575,21 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
             .collect()
     };
 
-    let mut page = gpui::div()
+    // 内容列：工具栏 / 摘要 / 列表 / 翻页全部住这里，外层 items_center
+    // 让它在超宽窗口下**整体居中**（v20 只限列表不居中，用户驳回）
+    let mut col = gpui::div()
+        .flex_1()
+        .min_h_0()
         .flex()
         .flex_col()
-        .w_full()
-        .h_full()
-        .min_h_0()
-        .bg(gpui::rgb(t.bg))
         .child(toolbar(chat, weak, busy_any, t));
 
     if let Some(banner) = banner(chat, weak, t) {
-        page = page.child(banner);
+        col = col.child(banner);
     }
     // 摘要行：已装页签 = 本地条数；未安装页签 = npm 结果数（total 未知不占位）
     if st.filter == ExtFilter::Installed {
-        page = page.child(
+        col = col.child(
             gpui::div()
                 .flex_shrink_0()
                 .flex()
@@ -610,7 +612,7 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
                 )),
         );
     } else if st.total > 0 {
-        page = page.child(
+        col = col.child(
             gpui::div()
                 .flex_shrink_0()
                 .flex()
@@ -651,24 +653,48 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
             },
         )
     };
-    // 列表限宽：卡片不随窗口无限拉长（1080 内容上限，左缘仍与工具栏对齐）
-    page = page.child(
+    col = col.child(
         gpui::div()
             .flex_1()
             .min_h_0()
             .flex()
             .flex_col()
             .px(gpui::px(space::SP5))
-            .max_w(gpui::px(1080. + PAGE_LEFT + PAGE_RIGHT))
             .child(list_area),
     );
 
     // 翻页条只在「未安装」页签 + total 已知 + 确有多页时渲染（本地已装
     // 列表无分页；total 未回包前不渲染——条形忽有忽无的抖动根源）
     if st.filter == ExtFilter::NotInstalled && st.total > 0 && st.total_pages() > 1 {
-        page = page.child(pager(weak, st.page, st.total_pages(), st.loading, t));
+        col = col.child(pager(weak, st.page, st.total_pages(), st.loading, t));
     }
-    page.into_any_element()
+    gpui::div()
+        .flex()
+        .flex_col()
+        .w_full()
+        .h_full()
+        .min_h_0()
+        .bg(gpui::rgb(t.bg))
+        .child(
+            gpui::div()
+                .flex_1()
+                .min_h_0()
+                .w_full()
+                .flex()
+                .flex_col()
+                .items_center()
+                .child(
+                    gpui::div()
+                        .flex_1()
+                        .min_h_0()
+                        .w_full()
+                        .max_w(gpui::px(PAGE_MAX_W))
+                        .flex()
+                        .flex_col()
+                        .child(col),
+                ),
+        )
+        .into_any_element()
 }
 
 /// 工具栏：搜索 + 排序（固定最多下载）+ 未安装/已安装 + 全部更新(n)。
