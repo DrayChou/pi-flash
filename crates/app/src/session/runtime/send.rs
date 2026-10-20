@@ -15,7 +15,7 @@ impl SessionRuntime {
     /// `with_active_editor` 每次收发还要整体 clone 两份（per-send O(历史)）。
     /// 100 条足够 ↑ 回溯；完整记录在会话文件里，这里只是输入历史。
     /// 去重/空文本判定由调用方负责（各发送路径口径不同）。
-    fn remember_input(&mut self, text: String) {
+    pub(super) fn remember_input(&mut self, text: String) {
         const INPUT_HISTORY_CAP: usize = 100;
         self.history.push(text);
         if self.history.len() > INPUT_HISTORY_CAP {
@@ -34,9 +34,10 @@ impl SessionRuntime {
         }
     }
 
-    /// steer（中断当前运行并立即注入）——**仅 pif-ui 自动化调用**（2026-10-16
-    /// 用户定批：UI 发送一律排队，composer 不再走这条路）。乐观上屏与翻页和
-    /// prompt/排队发送一致——发送帧气泡钉视口顶，不等回显。
+    /// steer（中断当前运行并立即注入）。090 起两个入口：设置「插话」模式下
+    /// composer 的 Enter，与 queue 模式下卡片「立即」/Ctrl+Enter 的显式插话
+    /// （pif-ui `session.steer` 自动化也走这里）。乐观上屏与翻页和 prompt/
+    /// 排队发送一致——发送帧气泡钉视口顶，不等回显。
     /// 走 prompt + streamingBehavior:"steer"（pi-web onPromptWithStreamingBehavior
     /// parity）：排队与否由 pi 原子判定；裸 steer 落在空闲 agent 的 steering
     /// 队列里同样会滞留到下一轮中途才插话。
@@ -78,7 +79,7 @@ impl SessionRuntime {
     /// 乐观上屏 + 发送帧翻页（prompt/排队共用，pi-web optimistic user
     /// message parity）：气泡立即显示并钉视口顶，RPC 回显经 pending_echo
     /// 去重就地升级。
-    fn optimistic_send(&mut self, text: String, cx: &mut Context<Self>) {
+    pub(super) fn optimistic_send(&mut self, text: String, cx: &mut Context<Self>) {
         // 伪标签：还没绑定会话文件的 draft，乐观发送的同一帧就在侧栏挂标
         // 签（真标签要等 pi 落盘 + 磁盘扫描，进程冷启 1-3s）。prompt/排队/
         // 微信远程三个入口共用本漏斗；已绑定会话被 file 守卫挡掉。
@@ -193,6 +194,14 @@ impl SessionRuntime {
             // 它们撤下，response 回传原文（{steering,followUp}），由
             // clear_queue response 臂删乐观气泡 + 回填输入框。
             let _ = session.send(&Command::ClearQueue);
+        }
+        // 090 定批：**本地队列全部退回编辑器**（文本不丢，改完可再发）——
+        // 与 pi 侧 clear_queue 撤回同一「回填编辑器」口径。queue 模式下
+        // composer 消息不再进 pi 队列，这里撤的是本地扣住的条目；两条撤回
+        // 通路（clear_queue response 异步 / 本地同步）互不重叠。
+        let (recalled, images) = self.restore_queue_to_editor();
+        if !recalled.is_empty() || !images.is_empty() {
+            cx.emit(SessionEvent::RecallInput { text: recalled, images });
         }
         self.stream_started = None;
         // 中止：等待行立即收起（不等 agent_settled）
@@ -382,6 +391,34 @@ impl SessionRuntime {
         cx.notify();
     }
 
+    /// 040/043：picker/MCP 运行中确认的清单，空闲发送（或 090 flush）开始前
+    /// 生效——换包集必须重绑进程（RPC 无运行时切换），`--session` 复接不丢
+    /// 消息。返回 false = 重绑 spawn 失败，调用方放弃本次发送。
+    pub(super) fn rebind_pending(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.agent_running {
+            return true; // 运行中不重绑（下一轮空闲时再生效）
+        }
+        let pending_ext = self.pending_ext_sources.take();
+        if pending_ext.is_none() && !self.pending_mcp_reload {
+            return true;
+        }
+        self.pending_mcp_reload = false;
+        if let Some(list) = pending_ext {
+            self.ext_sources = list;
+            if let Some(p) = pi_link::session_ext::store_path() {
+                let _ = pi_link::session_ext::write_for(&p, &self.key, &self.ext_sources);
+            }
+        }
+        if !self.spawn_attached(cx) {
+            return false;
+        }
+        if let Some(s) = &self.agent.session {
+            let _ = s.send(&Command::GetMessages);
+        }
+        self.refresh_state();
+        true
+    }
+
     pub(crate) fn send_input(&mut self, cx: &mut Context<Self>) {
         // 压缩锁：UI 已锁死，这里是绕过 UI 调用的兜底
         if self.compacting {
@@ -392,27 +429,9 @@ impl SessionRuntime {
         if text.is_empty() && self.pending_images.is_empty() {
             return;
         }
-        // 040：picker 运行中确认的清单，下一轮（空闲发送）开始前生效——
-        // 换包集必须重绑进程（RPC 无运行时切换），`--session` 复接不丢消息。
-        // 043：MCP 运行中改过 mcp.json 同走这条重绑通路（新进程重读清单）。
-        if !self.agent_running {
-            let pending_ext = self.pending_ext_sources.take();
-            if pending_ext.is_some() || self.pending_mcp_reload {
-                self.pending_mcp_reload = false;
-                if let Some(list) = pending_ext {
-                    self.ext_sources = list;
-                    if let Some(p) = pi_link::session_ext::store_path() {
-                        let _ = pi_link::session_ext::write_for(&p, &self.key, &self.ext_sources);
-                    }
-                }
-                if !self.spawn_attached(cx) {
-                    return;
-                }
-                if let Some(s) = &self.agent.session {
-                    let _ = s.send(&Command::GetMessages);
-                }
-                self.refresh_state();
-            }
+        // 040/043：空闲发送前生效的扩展/MCP 重绑（抽取件，flush 也走）
+        if !self.rebind_pending(cx) {
+            return;
         }
         if !self.ensure_spawned(cx) {
             return;
@@ -437,12 +456,20 @@ impl SessionRuntime {
             cx.notify();
             return;
         }
-        // pi-web parity（rpc-manager.ts:800）：统一 prompt + streamingBehavior，
-        // 排队与否由 pi 以自身 isStreaming 原子判定——PF 本地猜的 agent_running
-        // 与 pi 真实状态之间有竞态（裸 follow_up 在 pi 侧入队前还要 await 扩展
-        // handler），猜「在跑」而 pi 已收尾时消息滞留在空闲队列里、下一轮跑完
-        // 才被冲出来 = 「排队内容重复发送」bug。behavior 的失败方向是安全的：
-        // pi 空闲就直接开跑。本地猜测只用于状态行文案。
+        // 090 排队护栏（2026-10-20 定批，修订 2026-10-16「统一走 pi 排队」）：
+        // queue 模式（默认）一律扣 **PF 本地队列**——pi 的 followUp 在
+        // would-stop 点（run 内）就 drain，是「排队插队」的根源；空闲场景也
+        // 走入队+flush（发 Prompt{None}），pi 实际在跑（AgentEnd..Settled
+        // 续跑窗）时会响亮拒绝而非静默入队，猜测误差不再变成插队。
+        if self.queue_mode() {
+            self.enqueue_from_composer(text, cx);
+            self.flush_local_queue(cx);
+            cx.notify();
+            return;
+        }
+        // steer 模式（显式插话）：空闲 = prompt 立即开跑，运行中 = steer 插进
+        // 当前轮。仍走统一 prompt + streamingBehavior 通路（pi 原子判定，
+        // 理由见 protocol.rs Prompt 注释），只是把队列档换成显式插话档。
         let streaming = self.agent_running || self.state.as_ref().is_some_and(|s| s.is_streaming);
         let images: Vec<serde_json::Value> = self
             .pending_images
@@ -458,7 +485,7 @@ impl SessionRuntime {
         let cmd = Command::Prompt {
             message: text.clone(),
             images,
-            streaming_behavior: Some("followUp".into()),
+            streaming_behavior: Some(if streaming { "steer" } else { "followUp" }.into()),
         };
         match session.send(&cmd) {
             Ok(_) => {
@@ -471,13 +498,13 @@ impl SessionRuntime {
                 self.input.clear();
                 self.pending_images.clear();
                 self.status = if streaming {
-                    tr("status.queued").into()
+                    tr("status.steered").into()
                 } else {
                     "running".into()
                 };
                 // 技能命令不做乐观回显（pi-web parity）：RPC 回显的是展开
                 // 信封文本（渲染层折叠成紧凑命令），乐观插入裸 "/skill:xxx"
-                // 会多出一条重复气泡。prompt 与排队一致——发送帧即上屏
+                // 会多出一条重复气泡。prompt 与插话一致——发送帧即上屏
                 // 翻页，不等回显
                 if !text.is_empty() && !text.starts_with("/skill:") {
                     self.optimistic_send(text, cx);
@@ -508,13 +535,20 @@ impl SessionRuntime {
             cx.notify();
             return false;
         };
-        // 运行中 = 排队，否则 prompt（与 composer 完全一致；同走 prompt +
-        // streamingBehavior，由 pi 原子判定，理由见 send_input）
+        // 090：queue 模式（默认）与 composer 同一漏斗——扣本地队列等
+        // AgentSettled 逐条发；steer 模式运行中 = steer 插话。空闲都由
+        // pi 原子判定直接开跑。
         let streaming = self.agent_running || self.state.as_ref().is_some_and(|s| s.is_streaming);
+        if self.queue_mode() {
+            self.enqueue_remote(text.clone(), cx);
+            self.flush_local_queue(cx);
+            cx.notify();
+            return true;
+        }
         let cmd = Command::Prompt {
             message: text.clone(),
             images: Vec::new(),
-            streaming_behavior: Some("followUp".into()),
+            streaming_behavior: Some(if streaming { "steer" } else { "followUp" }.into()),
         };
         let sent = session.send(&cmd).is_ok();
         if sent {
@@ -523,7 +557,7 @@ impl SessionRuntime {
             }
             self.history_ix = None;
             self.status = if streaming {
-                tr("status.queued").into()
+                tr("status.steered").into()
             } else {
                 "running".into()
             };

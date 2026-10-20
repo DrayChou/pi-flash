@@ -311,6 +311,10 @@ pub(crate) struct ComposerUi {
     /// 列表里的索引（用户行 = msg_ix，agent 轮 = 轮首 msg_ix；角色不同故
     /// 永不撞车）。唯一写入点 = messages::bar_hover_wired。
     pub bar_hover: Option<usize>,
+    /// 090 排队卡拖拽进行中 + 落点（queue_cards.rs 三件套；ComposerUi 持
+    /// 是因为拖拽是 composer 的 UI 态，队列数据本体在 SessionRuntime）
+    pub(crate) queue_drag: Option<QueueDragState>,
+    pub(crate) queue_drop_ix: Option<usize>,
     /// 消息气泡滚动句柄（key 同 expanded_skills；跨帧保持滚动位置并供
     /// gpui-component Scrollbar 读取）
     pub(crate) bubble_scrolls:
@@ -571,6 +575,8 @@ impl Chat {
                 at_filter_cache: std::cell::RefCell::new(None),
                 expanded_skills: std::collections::HashSet::new(),
                 bar_hover: None,
+                queue_drag: None,
+                queue_drop_ix: None,
                 composer_h: std::rc::Rc::new(std::cell::Cell::new(0.)),
                 bubble_scrolls: std::rc::Rc::new(std::cell::RefCell::new(
                     std::collections::HashMap::new(),

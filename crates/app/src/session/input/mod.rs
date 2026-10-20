@@ -24,10 +24,12 @@ use crate::*;
 mod area;
 mod bar;
 mod ctx_tip;
+mod queue_cards;
 
 pub(crate) use area::*;
 use bar::*;
 use ctx_tip::*;
+pub(crate) use queue_cards::*;
 
 // ---------------------------------------------------------------------------
 // composer 方法：输入写入/@ 索引/发送与中止（P3 自 main.rs impl Chat 拆入）
@@ -177,6 +179,25 @@ impl Chat {
 
     pub(crate) fn steer_input(&mut self, cx: &mut Context<Self>) {
         self.with_active_editor(cx, |r, cx| r.steer_input(cx));
+    }
+
+    /// 090：steer 模式下 Ctrl+Enter 显式入队（与 send_input 排队分支同一
+    /// 漏斗：入本地队列 + 空闲即 flush）。
+    pub(crate) fn queue_enqueue_direct(&mut self, cx: &mut Context<Self>) {
+        if self.ws.cwd.is_none() {
+            return;
+        }
+        self.with_active_editor(cx, |r, cx| {
+            let text = r.input.trim().to_string();
+            if text.is_empty() && r.pending_images.is_empty() {
+                return;
+            }
+            if !r.ensure_spawned(cx) {
+                return;
+            }
+            r.enqueue_from_composer(text, cx);
+            r.flush_local_queue(cx);
+        });
     }
 
     pub(crate) fn follow_up_input(&mut self, cx: &mut Context<Self>) {

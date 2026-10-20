@@ -161,27 +161,38 @@ impl Chat {
                         }
                     }
                 }
-                SessionEvent::RecallInput(text) => {
+                SessionEvent::RecallInput { text, images } => {
                     // abort 撤回的排队消息回填输入框（pi-web restoring-to-editor
                     // parity）：文本置于已有草稿之前（撤回的比正在写的旧）。
                     // 活跃会话以 composer 为真值源回填可见输入框；后台会话
                     // 没有 composer 镜像，吞进 runtime 草稿，切回时随
-                    // switch_to 带回。
+                    // switch_to 带回。images = 090 本地队列撤回的附件（pi 侧
+                    // 撤回恒空）——runtime 已吞，活跃会话把 composer 附件条
+                    // 也拼上（前置，不清用户已有）。
                     rt.update(cx, |r, _| {
-                        r.input = if r.input.is_empty() {
-                            text.clone()
-                        } else {
-                            format!("{text}\n\n{}", r.input)
-                        };
+                        if !text.is_empty() {
+                            r.input = if r.input.is_empty() {
+                                text.clone()
+                            } else {
+                                format!("{text}\n\n{}", r.input)
+                            };
+                        }
                     });
                     if is_active {
-                        let draft = chat.composer.input.clone();
-                        let merged = if draft.is_empty() {
-                            text.clone()
-                        } else {
-                            format!("{text}\n\n{draft}")
-                        };
-                        chat.set_input(merged, cx);
+                        if !text.is_empty() {
+                            let draft = chat.composer.input.clone();
+                            let merged = if draft.is_empty() {
+                                text.clone()
+                            } else {
+                                format!("{text}\n\n{draft}")
+                            };
+                            chat.set_input(merged, cx);
+                        }
+                        if !images.is_empty() {
+                            let mut imgs = images.clone();
+                            imgs.extend(chat.composer.pending_images.drain(..));
+                            chat.composer.pending_images = imgs;
+                        }
                     }
                 }
             }

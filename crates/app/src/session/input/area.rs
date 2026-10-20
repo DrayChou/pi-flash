@@ -91,7 +91,12 @@ pub(crate) fn input_area(
         // placeholder 文案告知用户系统在做什么
         tr("composer.compacting_wait2").into()
     } else if streaming {
-        tr("composer.hint_esc").into()
+        // 090：按发送方式分档（排队=继续输入以排队 / 插话=Enter 即插话）
+        if chat.rt().read(cx).queue_mode() {
+            tr("composer.hint_queue").into()
+        } else {
+            tr("composer.hint_steer").into()
+        }
     } else {
         tr("composer.hint_shortcuts").into()
     };
@@ -154,6 +159,11 @@ pub(crate) fn input_area(
         .pb(px(12.)); // 操作栏到下边框的距离
     // 附加图片缩略图条（v58 图片粘贴；布局与删除/预览交互见 pending_images_strip）
     if let Some(strip) = pending_images_strip(chat, weak, t) {
+        capsule = capsule.child(strip);
+    }
+    // 090 排队卡条（queue_cards.rs）：queue 模式运行中的发送以卡片呈现，
+    // 不进气泡流；立即/撤回编辑/删除/拖拽重排
+    if let Some(strip) = queue_cards_strip(chat, weak, t, cx) {
         capsule = capsule.child(strip);
     }
     // 编辑区：真输入组件（多行 AutoGrow，超出 max 出纵向滚动条）；右键
@@ -530,6 +540,7 @@ fn ensure_composer(
     }
     let weak_change = weak.clone();
     let weak_submit = weak.clone();
+    let weak_submit2 = weak.clone();
     let weak_chip = weak.clone();
     let c = cx.new(|icx| {
         let mut f = ComposerInput::new(icx);
@@ -618,14 +629,33 @@ fn ensure_composer(
                 }
                 let can_queue =
                     !chat.composer.input.is_empty() || !chat.composer.pending_images.is_empty();
-                // 运行中也是“排队”，不再 steer 插话（2026-10-16 用户定批：
-                // 所有发送统一排队）。send_input 自身也按 agent_running
-                // 分流，故直接走它即可（两处同口径，一处分叉不可）
+                // 090：发送方式收在 send_input 内部分流（queue 模式=本地队列，
+                // steer 模式=插话），两处同口径，一处分叉不可
                 if can_queue {
                     chat.send_input(cx);
                 } else {
                     // 空输入回车：不发送，顺手清掉组件自插的换行
                     chat.set_input(String::new(), cx);
+                }
+            });
+        }));
+        // Ctrl+Enter（090 反向快捷键）：queue 模式 = 本条立即 steer 插话；
+        // steer 模式 = 显式入队（排队护栏：入本地队列，不直接发出去）
+        f.set_on_submit_secondary(Rc::new(move |v, cx| {
+            let _ = weak_submit2.update(cx, |chat, cx| {
+                if chat.rt().read(cx).compacting {
+                    return;
+                }
+                chat.composer.input = v.to_string();
+                let can_queue =
+                    !chat.composer.input.is_empty() || !chat.composer.pending_images.is_empty();
+                if !can_queue {
+                    return;
+                }
+                if chat.rt().read(cx).queue_mode() {
+                    chat.steer_input(cx);
+                } else {
+                    chat.queue_enqueue_direct(cx);
                 }
             });
         }));

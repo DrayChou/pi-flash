@@ -57,6 +57,18 @@ pub(crate) fn mc_misc_view(_chat: &mut Chat, weak: &gpui::WeakEntity<Chat>) -> g
         t,
     ));
 
+    // 090 排队护栏：运行中发送方式（排队=本地队列等彻底跑完 / 插话=steer）
+    let send_mode = crate::services::workspace::send_mode_pref();
+    col = col.child(set_row(
+        tr("settings.send_mode"),
+        tr("settings.send_mode_hint"),
+        {
+            let weak = weak.clone();
+            send_mode_row(send_mode, &weak, t)
+        },
+        t,
+    ));
+
     // 会话显示数（3-10）：各项目默认显示的会话数量（psp 初始页大小）
     let sess_n = crate::services::workspace::session_display_count() as u64;
     col = col.child(set_row(
@@ -221,6 +233,63 @@ fn window_row(
                         let mut s = crate::services::workspace::app_settings();
                         s.load_window_days = Some(value);
                         crate::services::workspace::save_app_settings(&s);
+                        cx.notify();
+                    });
+                })
+                .child(SharedString::from(label.to_string()))
+                .into_any_element()
+        }))
+        .into_any_element()
+}
+
+/// 090 排队护栏：运行中发送方式两档（排队=本地队列等彻底跑完（默认）/
+/// 插话=steer 立即插进当前轮）。仿 window_row 档位按钮，active 描边。
+fn send_mode_row(
+    mode: &str,
+    weak: &gpui::WeakEntity<Chat>,
+    t: &'static crate::appearance::theme::Theme,
+) -> gpui::AnyElement {
+    const CHOICES: [(&str, &str); 2] = [
+        ("queue", "settings.send_queue"),
+        ("steer", "settings.send_steer"),
+    ];
+    div()
+        .flex()
+        .gap(px(8.))
+        .children(CHOICES.iter().map(|(v, key)| {
+            let active = mode == *v;
+            let label = tr(*key);
+            let weak_item = weak.clone();
+            let value = *v;
+            div()
+                .id(SharedString::from(format!("misc-send-{v}")))
+                .w(px(72.))
+                .h(px(30.))
+                .px(px(10.))
+                .rounded(px(5.))
+                .border_1()
+                .border_color(if active { rgb(t.accent) } else { rgb(t.border) })
+                .bg(if active {
+                    rgb(t.bg_selected)
+                } else {
+                    rgb(t.bg_panel)
+                })
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_size(crate::appearance::ui_size(12.))
+                .font_weight(if active {
+                    gpui::FontWeight::SEMIBOLD
+                } else {
+                    gpui::FontWeight::NORMAL
+                })
+                // §5.4：选项文字统一 text_muted，选中只加粗不变色
+                .text_color(rgb(t.text_muted))
+                .cursor_pointer()
+                .hover(|s| s.bg(rgb(t.bg_hover)))
+                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                    let _ = weak_item.update(cx, |_c, cx| {
+                        crate::services::workspace::save_send_mode(value);
                         cx.notify();
                     });
                 })

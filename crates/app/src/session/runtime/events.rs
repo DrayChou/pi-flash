@@ -82,13 +82,30 @@ impl SessionRuntime {
         let mut user_arrived = false;
         match event {
             Event::Response {
+                id,
                 command,
                 success,
                 error,
                 data,
                 ..
             } => {
-                if command == "get_state" && success {
+                if command == "prompt" && self.flush_in_flight.as_deref() == Some(id.as_str()) {
+                    // 090 flush 关联（queue.rs flush_local_queue）：队首消息以
+                    // Prompt{None} 发出后的回执。success = pi 接受并开跑，摘掉
+                    // 队首（回显经 message_start 正常入流，本地队列不做乐观
+                    // 气泡，无去重负担）；failure = pi 实际在忙（AgentEnd..
+                    // Settled 续跑窗的猜测误差）**响亮拒绝**——放回队首等下一
+                    // 次 settled 重试，不静默丢、更不会插进当前轮。
+                    self.flush_in_flight = None;
+                    if success {
+                        if !self.queued_inputs.is_empty() {
+                            self.queued_inputs.remove(0);
+                        }
+                    } else {
+                        self.status = tr("queue.pushed_back").into();
+                    }
+                    cx.notify();
+                } else if command == "get_state" && success {
                     if let Some(data) = &data {
                         let st = SessionState::parse(data);
                         // pi 换了绑定的会话文件（draft 首条 prompt 落盘 /
@@ -236,6 +253,9 @@ impl SessionRuntime {
                         if let Some(s) = self.agent.session.as_ref() {
                             let _ = s.send(&Command::GetMessages);
                         }
+                        // 090：压缩期间扣住的本地队列（flush 复核 compacting
+                        // 会跳过），压缩收尾这里补发队首
+                        self.flush_local_queue(cx);
                     } else {
                         self.status = format!("compact failed: {}", error.unwrap_or_default());
                     }
@@ -292,7 +312,12 @@ impl SessionRuntime {
                             "status.recalled_queued",
                             &[("count", recalled.len().to_string())],
                         );
-                        cx.emit(SessionEvent::RecallInput(recalled.join("\n\n")));
+                        // pi 侧撤回的条目不带附件（附件随消息入队即消费），
+                        // images 恒空；本地队列的撤回（090 abort）才有附件
+                        cx.emit(SessionEvent::RecallInput {
+                            text: recalled.join("\n\n"),
+                            images: Vec::new(),
+                        });
                     }
                 } else if success {
                     self.status = format!("{command} ok");
@@ -739,6 +764,10 @@ impl SessionRuntime {
                 self.status = status_line(true, "idle");
                 self.settle_turn();
                 self.refresh_state();
+                // 090：本轮**彻底**结束（settled 是唯一可靠信号——AgentEnd
+                // 之后 pi 还可能 post-run continue/boundary 续跑），本地队列
+                // 在这里发队首；有队列时状态行随即由 flush 拨回 running
+                self.flush_local_queue(cx);
                 // 轮末对账：文件落盘了就绑定换真身（首条消息处通常已绑，这里
                 // 幂等）；确定没落盘（prompt 被扩展接管等，pi 没写过任何
                 // user/assistant 消息）就撤伪标签——标签不能挂一个永远不会
@@ -880,9 +909,12 @@ impl SessionRuntime {
             } => {
                 self.queued_steering = steering;
                 self.queued_followups = follow_up;
-                let n = self.queued_steering.len() + self.queued_followups.len();
-                if self.agent_running && n > 0 {
-                    self.status = crate::i18n::tf("status.queued_n", &[("count", n.to_string())]);
+                // 090：计数并入 PF 本地队列（状态行口径 = queue_total）
+                if self.agent_running && self.queue_total() > 0 {
+                    self.status = crate::i18n::tf(
+                        "status.queued_n",
+                        &[("count", self.queue_total().to_string())],
+                    );
                 }
             }
             Event::ExtensionUi(req) => cx.emit(SessionEvent::ExtUi(req)),

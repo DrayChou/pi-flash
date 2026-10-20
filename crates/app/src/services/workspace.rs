@@ -736,6 +736,10 @@ pub struct AppSettings {
     /// ask 问卷卡共用的单一内容列宽，pi-web `--chat-content-max-width`
     /// parity；缺键 = [`CHAT_WIDTH_DEFAULT`]）
     pub chat_content_width: Option<u64>,
+    /// 090 排队护栏: 运行中发送方式——"queue"（默认）= 扣 PF 本地队列、
+    /// AgentSettled 才逐条发出；"steer" = prompt+steer 立即插进当前轮。
+    /// 非法值/缺键都落 queue。
+    pub send_mode: Option<String>,
 }
 
 fn app_settings_path() -> Option<PathBuf> {
@@ -824,6 +828,10 @@ pub fn app_settings() -> AppSettings {
                     md_live_preview: map.get("md_live_preview").and_then(|v| v.as_bool()),
                     autohide_icons: map.get("autohide_icons").and_then(|v| v.as_bool()),
                     chat_content_width: map.get("chat_content_width").and_then(|v| v.as_u64()),
+                    send_mode: map
+                        .get("send_mode")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string),
                 }
             }
             None => AppSettings::default(),
@@ -915,6 +923,9 @@ pub fn save_app_settings(s: &AppSettings) {
     if let Some(v) = s.chat_content_width {
         obj.insert("chat_content_width".into(), Value::Number(v.into()));
     }
+    if let Some(v) = &s.send_mode {
+        obj.insert("send_mode".into(), Value::String(v.clone()));
+    }
     save_map_to(&path, &obj);
 }
 
@@ -922,6 +933,22 @@ pub fn save_app_settings(s: &AppSettings) {
 pub fn default_model_pref() -> Option<(String, String)> {
     let s = app_settings();
     Some((s.default_provider?, s.default_model?))
+}
+
+/// 090 排队护栏：运行中发送方式（设置-其他）。返回 "queue"（默认，含缺键
+/// /非法值）或 "steer"。
+pub fn send_mode_pref() -> &'static str {
+    match app_settings().send_mode.as_deref() {
+        Some("steer") => "steer",
+        _ => "queue",
+    }
+}
+
+/// 090：发送方式写入（设置页两档分段按钮）。
+pub fn save_send_mode(mode: &str) {
+    let mut s = app_settings();
+    s.send_mode = Some(mode.to_string());
+    save_app_settings(&s);
 }
 
 /// 042：默认模型写入（设置页五角星 / inputpanel 星标共用；None = 取消）。

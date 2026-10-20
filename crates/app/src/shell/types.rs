@@ -162,6 +162,14 @@ pub(crate) struct AttachedImage {
     pub(crate) thumb: Option<std::sync::Arc<gpui::Image>>,
 }
 
+/// 090 排队卡拖拽进行中（psp 项目行拖拽同款三件套）：`at` = 最近一次
+/// drag_move 时刻——gpui 对「窗口外松手」不派发任何事件，看门狗按
+/// staleness 兜底清态（queue_cards.rs）。
+#[derive(Debug, Clone)]
+pub(crate) struct QueueDragState {
+    pub(crate) at: std::time::Instant,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum MenuKind {
     Slash,

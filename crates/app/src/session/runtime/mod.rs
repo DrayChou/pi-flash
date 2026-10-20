@@ -64,7 +64,24 @@ pub(crate) enum SessionEvent {
     /// abort 撤回的排队消息原文（clear_queue response 携带）：Chat 据此回填
     /// composer 输入框（pi-web "restoring to editor when user aborts" parity）。
     /// 仅活跃会话回填可见输入框；后台会话由 runtime 自吞进 input 草稿。
-    RecallInput(String),
+    /// `images` = 本地队列（090）撤回的附件：活跃会话拼回附件条，后台会话
+    /// 已由 runtime 直吞 pending_images（pi 侧撤回的条目无附件，恒空）。
+    RecallInput {
+        text: String,
+        images: Vec<crate::AttachedImage>,
+    },
+}
+
+/// 090 排队护栏：PF 本地排队条目。运行中（queue 模式）的发送扣在这里，
+/// **不进 pi 队列**——pi 的 followUp 在「模型第一次停下不调工具」的
+/// would-stop 点就 drain（run 内、agent_settled 之前），abort/出错还不清
+/// 队，正是「排队插队」的根源。flush 时机钉死 AgentSettled（queue.rs）。
+#[derive(Debug, Clone)]
+pub(crate) struct QueuedInput {
+    pub text: String,
+    pub images: Vec<crate::AttachedImage>,
+    /// 微信远程来的条目（与 composer 同一漏斗；卡片渲染不区分，仅排障用）
+    pub remote: bool,
 }
 
 /// 033 会话导航面板的一轮摘要（runtime 缓存条目）：用户消息索引 + 前
@@ -130,9 +147,17 @@ pub(crate) struct SessionRuntime {
     pub pending_echoes: Vec<String>,
     /// pi 侧 steering/followUp 队列镜像（`queue_update` 全量快照）：「已排
     /// 队 N 条」状态行不再本地猜。仅显示用——abort 撤回的对账真值来自
-    /// `clear_queue` response（pi 权威回传），不读这里。
+    /// `clear_queue` response（pi 权威回传），不读这里。090 后 composer 消息
+    /// 不再进 pi 队列，这里只剩 pif-ui 自动化 steer/follow_up 动作的条目。
     pub queued_steering: Vec<String>,
     pub queued_followups: Vec<String>,
+    /// 090：PF 本地排队（queue 模式运行中的发送 + Ctrl+Enter 显式入队 +
+    /// 微信远程）。AgentSettled 逐条 flush，见 queue.rs。
+    pub queued_inputs: Vec<QueuedInput>,
+    /// 在途 flush 的命令 id（Prompt{None} 发出后等 response）：success =
+    /// 摘掉队首；failure = pi 忙拒绝，放回队首等下一次 settled 重试。
+    /// Some 期间卡片按钮禁用（条目正被取出派发，ZCode dispatch 态 parity）。
+    pub flush_in_flight: Option<String>,
     pub stream_started: Option<std::time::Instant>,
     pub agent_running: bool,
     /// 本轮结局（三色通知的红档）：**最后一条 assistant 消息**
@@ -271,6 +296,8 @@ impl SessionRuntime {
             pending_echoes: Vec::new(),
             queued_steering: Vec::new(),
             queued_followups: Vec::new(),
+            queued_inputs: Vec::new(),
+            flush_in_flight: None,
             stream_started: None,
             agent_running: false,
             turn_error: false,
@@ -574,6 +601,7 @@ async fn consume_runtime_events(
 mod events;
 mod ingest;
 mod nav;
+mod queue;
 mod send;
 
 #[cfg(test)]

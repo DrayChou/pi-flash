@@ -90,6 +90,10 @@ pub struct ComposerInput {
     on_chip_backspace: Option<std::rc::Rc<dyn Fn(&mut gpui::App)>>,
     on_change: Option<Changed>,
     on_submit: Option<Submitted>,
+    /// Ctrl+Enter（secondary-enter 绑定）：090 反向快捷键——queue 模式下
+    /// 「本条立即 steer 插话」，steer 模式下「显式入队」。参数与 on_submit
+    /// 同口径（已剥组件自插的换行）。未设置时保持旧行为（只插换行）。
+    on_submit_secondary: Option<Submitted>,
     /// 锁态（如上下文压缩中）：编辑器组件**不挂载**——无焦点、无 IME、
     /// 无粘贴、无点击定位，整块输入区替换为 placeholder 样式提示。
     /// 草稿仍留在 self.value / chat.composer.input，解锁即恢复。
@@ -113,6 +117,7 @@ impl ComposerInput {
             on_chip_backspace: None,
             on_change: None,
             on_submit: None,
+            on_submit_secondary: None,
             read_only: false,
         }
     }
@@ -123,6 +128,11 @@ impl ComposerInput {
 
     pub fn set_on_submit(&mut self, cb: Submitted) {
         self.on_submit = Some(cb);
+    }
+
+    /// Ctrl+Enter（secondary）提交回调（090 反向快捷键，见字段注释）。
+    pub fn set_on_submit_secondary(&mut self, cb: Submitted) {
+        self.on_submit_secondary = Some(cb);
     }
 
     /// 占位文案仅门面自绘（text_faint，设计规范 placeholder 专属色）——
@@ -280,8 +290,31 @@ impl ComposerInput {
                     cx.defer(move |cx| cb(&sent, cx));
                 }
             }
-            // Ctrl+Enter（secondary）：composer 未使用
-            InputEvent::PressEnter { secondary: true } => {}
+            // Ctrl+Enter（secondary，090 反向快捷键）：与 primary 同款剥换行
+            // （多行模式组件对 secondary-enter 也先自插 "\n"），交上层按
+            // 「反向发送方式」处理
+            InputEvent::PressEnter { secondary: true } => {
+                let stripped = {
+                    let state = entity.read(cx);
+                    let v = state.value().to_string();
+                    let c = state.cursor();
+                    if c >= 1 && v.as_bytes().get(c - 1) == Some(&b'\n') {
+                        format!("{}{}", &v[..c - 1], &v[c..])
+                    } else {
+                        v
+                    }
+                };
+                let sent = match &self.token {
+                    Some((n, _)) if stripped.is_empty() => format!("/{}", n),
+                    Some((n, _)) => format!("/{} {}", n, stripped),
+                    None => stripped,
+                };
+                if let Some(cb) = self.on_submit_secondary.clone() {
+                    // defer 同 on_submit：派发期实体租用中，回调内同步
+                    // composer.update() 会双重租约（0xc0000409，已实测）
+                    cx.defer(move |cx| cb(&sent, cx));
+                }
+            }
             InputEvent::Focus | InputEvent::Blur => {}
         }
     }
