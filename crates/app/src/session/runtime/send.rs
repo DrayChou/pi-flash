@@ -459,13 +459,50 @@ impl SessionRuntime {
             cx.notify();
             return;
         }
-        // 规则 1（2026-10-20 用户定稿）：queue 模式（默认）一律扣 **PF 本地
-        // 队列**，轮次结束（AgentSettled）自动发出；缓冲非空时 enqueue 内部
-        // 拒绝（规则 2）。空闲场景也走入队+flush（发 Prompt{None}），pi 实际
-        // 在跑（AgentEnd..Settled 续跑窗）时会响亮拒绝而非静默入队。
+        // 规则 1+2（2026-10-20 终稿）：仅**运行中**才进缓冲（轮次结束自动
+        // 发出；缓冲非空时 enqueue 内部拒绝）。空闲 = 直接发送，不经过缓冲
+        // ——「前面没话」时缓冲毫无意义。
         if self.queue_mode() {
-            self.enqueue_from_composer(text, cx);
-            self.flush_local_queue(cx);
+            if self.agent_running {
+                self.enqueue_from_composer(text, cx);
+                cx.notify();
+                return;
+            }
+            let images: Vec<serde_json::Value> = self
+                .pending_images
+                .iter()
+                .map(|img| {
+                    serde_json::json!({
+                        "type": "image",
+                        "data": img.data_b64,
+                        "mimeType": img.mime
+                    })
+                })
+                .collect();
+            let cmd = Command::Prompt {
+                message: text.clone(),
+                images,
+                // pi 原子判定：恰有 run 溜进（AgentEnd..Settled 续跑窗）时
+                // pi 侧 followUp 接住，与本任务同源
+                streaming_behavior: Some("followUp".into()),
+            };
+            match self.agent.session.as_ref().map(|s| s.send(&cmd)) {
+                Some(Ok(_)) => {
+                    if !text.is_empty() && self.history.last().map(|h| h != &text).unwrap_or(true) {
+                        self.remember_input(text.clone());
+                    }
+                    self.history_ix = None;
+                    self.input.clear();
+                    self.pending_images.clear();
+                    self.status = "running".into();
+                    // 技能命令不做乐观回显（pi-web parity）
+                    if !text.is_empty() && !text.starts_with("/skill:") {
+                        self.optimistic_send(text, cx);
+                    }
+                }
+                Some(Err(e)) => self.status = e,
+                None => {}
+            }
             cx.notify();
             return;
         }
@@ -495,29 +532,51 @@ impl SessionRuntime {
             cx.notify();
             return false;
         }
-        // 规则 1：queue 模式（默认）与 composer 同一漏斗——扣本地队列等
-        // AgentSettled 自动发出（缓冲非空被 enqueue_remote 拒绝，返回 false）。
-        if self.queue_mode() {
+        // 规则 1+2：仅**运行中**才入缓冲（空闲直接发送，不经过缓冲）。
+        if self.queue_mode() && self.agent_running {
             let queued = !self.queued_inputs.is_empty();
             self.enqueue_remote(text.clone(), cx);
-            self.flush_local_queue(cx);
             cx.notify();
             return !queued;
         }
-        // steer 模式（规则 3）：打断投递——运行中中止当前轮，本条作为新一轮。
-        if self.history.last().map(|h| h != &text).unwrap_or(true) {
-            self.remember_input(text.clone());
+        // steer 模式运行中（规则 3）：打断投递——中止当前轮，本条作为新一轮。
+        if !self.queue_mode() && self.agent_running {
+            if self.history.last().map(|h| h != &text).unwrap_or(true) {
+                self.remember_input(text.clone());
+            }
+            self.history_ix = None;
+            self.interrupt_deliver(
+                QueuedInput {
+                    text,
+                    images: Vec::new(),
+                    remote: true,
+                },
+                cx,
+            );
+            return true;
         }
-        self.history_ix = None;
-        self.interrupt_deliver(
-            QueuedInput {
-                text,
-                images: Vec::new(),
-                remote: true,
-            },
-            cx,
-        );
-        true
+        // 空闲（两模式同条）：直接发送，pi 原子判定。
+        let cmd = Command::Prompt {
+            message: text.clone(),
+            images: Vec::new(),
+            streaming_behavior: Some("followUp".into()),
+        };
+        let sent = self.rpc(&cmd);
+        if sent {
+            if self.history.last().map(|h| h != &text).unwrap_or(true) {
+                self.remember_input(text.clone());
+            }
+            self.history_ix = None;
+            self.status = "running".into();
+            // 让桌面端也看到这条消息（微信发的同样属于这轮对话）
+            if !text.starts_with("/skill:") {
+                self.optimistic_send(text, cx);
+            }
+        } else {
+            self.status = tr("status.send_failed").into();
+        }
+        cx.notify();
+        sent
     }
 
     /// 远程来的非文本命令（`/停止`、ExtUi 回填）：**不 spawn** ——
