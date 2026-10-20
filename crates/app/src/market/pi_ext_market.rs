@@ -13,7 +13,6 @@
 //! - 不再有安全提示条（用户定稿：别唠叨）。
 
 use std::collections::{HashMap, HashSet};
-use std::time::Duration;
 
 use gpui::prelude::*;
 use gpui::{AnyElement, IntoElement, MouseButton, SharedString, Styled};
@@ -33,7 +32,6 @@ use crate::ui::{BtnSize, BtnVariant, TextInput};
 /// 每批补清单的条数：= 补全并发数，一批正好一轮请求（实测 8 条 ≈1.0-1.6s）。
 const BATCH: usize = 8;
 /// 搜索框去抖。
-const DEBOUNCE_MS: u64 = 250;
 /// 卡片固定行高（vlist 等高行；内容按此高度裁切，撑不满也不会把行撑开）。
 const CARD_H: f32 = 132.;
 /// 缩略槽宽高。
@@ -54,9 +52,25 @@ pub(crate) enum ExtFilter {
     Installed,
 }
 
+/// 排序（Downloads = npm 服务端序；Updated / Name = **当前页内**客户端排序，
+/// npm registry search 无排序参数，跨页全局排序 v1 做不到，不装懂）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum ExtSort {
+    #[default]
+    Downloads,
+    Updated,
+    Name,
+}
+
 /// Pi 扩展市场页状态（挂 `aux.market.pi_ext`）。
 #[derive(Default)]
 pub(crate) struct PiExtState {
+    /// 排序（下拉选择，纯渲染期重排，0 网络）
+    pub(crate) sort: ExtSort,
+    /// 排序下拉展开态
+    pub(crate) sort_open: bool,
+    /// 排序下拉的收起防抖守卫（ensure_input 时建）
+    pub(crate) sort_guard: Option<gpui::Entity<crate::ui::DropdownState>>,
     /// 搜索框（页面首次打开时创建；on_change 去抖后触发刷新）
     pub(crate) input: Option<gpui::Entity<TextInput>>,
     pub(crate) query: String,
@@ -124,21 +138,19 @@ impl Chat {
 
     /// 搜索框懒创建：页面首次打开时建（TextInput 需要 `&mut Context`）。
     fn pi_ext_ensure_input(&mut self, cx: &mut gpui::Context<Self>) {
+        if self.aux.market.pi_ext.sort_guard.is_none() {
+            self.aux.market.pi_ext.sort_guard = Some(cx.new(|_| crate::ui::DropdownState::new()));
+        }
         if self.aux.market.pi_ext.input.is_some() {
             return;
         }
         let weak = cx.entity().downgrade();
-        let weak_sub = weak.clone();
         let input = cx.new(|cx| {
             let mut ti = TextInput::new(cx).placeholder(tr("market.search_placeholder"));
-            // 打字 = 250ms 去抖自动搜
-            ti.set_on_change(Box::new(move |v, cx| {
-                let v = v.to_string();
-                let _ = weak.update(cx, |c, cx| c.pi_ext_on_query(v, cx));
-            }));
-            // 回车 / 「搜索」按钮 = 不等去抖，立即搜
+            // **打字不触发搜索**（npm 是海量远端数据，逐键打过去是灾难）；
+            // 回车 / 「搜索」按钮 = 显式提交才搜
             ti.set_on_submit(Box::new(move |_, cx| {
-                let _ = weak_sub.update(cx, |c, cx| c.pi_ext_reload(cx));
+                let _ = weak.update(cx, |c, cx| c.pi_ext_search_now(cx));
             }));
             ti
         });
@@ -173,12 +185,14 @@ impl Chat {
 
     /// 重新拉第一页（换词 / 手动刷新 / 重试共用）。
     pub(crate) fn pi_ext_reload(&mut self, cx: &mut gpui::Context<Self>) {
+        crate::ui::vlist::reset_scroll(LIST_ID);
         self.aux.market.pi_ext.page = 1;
         self.pi_ext_fetch_page(1, cx);
     }
 
     /// 翻到指定页（页码条 / 上一页 / 下一页共用）。同页 = 无操作。
     pub(crate) fn pi_ext_goto(&mut self, page: usize, cx: &mut gpui::Context<Self>) {
+        crate::ui::vlist::reset_scroll(LIST_ID);
         let page = page.max(1);
         if page == self.aux.market.pi_ext.page {
             return;
@@ -196,27 +210,28 @@ impl Chat {
             // 翻页不留旧页内容（内存只留当前页）；快照只是首页，翻页时一并清掉
             self.aux.market.pi_ext.entries.clear();
             self.aux.market.pi_ext.stale = false;
+        } else if !self.aux.market.pi_ext.entries.is_empty() {
+            // 第 1 页重搜/刷新：现有内容按 stale 处理，首批到达时整体替换。
+            // **不标 stale 的话 append 的「满 50 跳过」会把新结果全部丢掉**
+            // ——「第二次起搜索永远不变」的根因（v18 真机反馈）
+            self.aux.market.pi_ext.stale = true;
         }
         self.pi_ext_fetch(cx);
     }
 
-    /// 搜索框变化：去抖 250ms 后回第一页（`gen` 不匹配则放弃）。
-    fn pi_ext_on_query(&mut self, v: String, cx: &mut gpui::Context<Self>) {
+    /// 显式搜索（「搜索」按钮 / 回车）：读输入框文本 → query → 回第一页。
+    /// 打字**不**触发搜索（用户定稿：海量远端内容禁止逐键自动搜）。
+    pub(crate) fn pi_ext_search_now(&mut self, cx: &mut gpui::Context<Self>) {
+        let v = self
+            .aux
+            .market
+            .pi_ext
+            .input
+            .as_ref()
+            .map(|i| i.read(cx).value().to_string())
+            .unwrap_or_default();
         self.aux.market.pi_ext.query = v;
-        self.aux.market.pi_ext.gen_ix += 1;
-        let gen_ix = self.aux.market.pi_ext.gen_ix;
-        cx.spawn(async move |this, cx| {
-            cx.background_executor()
-                .timer(Duration::from_millis(DEBOUNCE_MS))
-                .await;
-            let _ = this.update(cx, |c, cx| {
-                if c.aux.market.pi_ext.gen_ix == gen_ix {
-                    c.pi_ext_reload(cx);
-                }
-            });
-        })
-        .detach();
-        cx.notify();
+        self.pi_ext_reload(cx);
     }
 
     /// 筛选切换：纯客户端重算，**0 网络**。
@@ -225,6 +240,7 @@ impl Chat {
             return;
         }
         self.aux.market.pi_ext.filter = f;
+        crate::ui::vlist::reset_scroll(LIST_ID);
         cx.notify();
     }
 
@@ -442,6 +458,9 @@ struct RowData {
     enabled: bool,
 }
 
+/// 列表 id（vlist 滚动句柄表按 id 常驻；换内容回顶也用它寻址）
+const LIST_ID: &str = "pi-ext-market-list";
+
 /// 页面主体（content.rs `ContentView::PiExtMarket` 分支）。
 pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
     let t: &'static Theme = T();
@@ -516,12 +535,20 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
         }
         rows
     } else {
-        st.entries
+        let mut list: Vec<&pi_link::market::pi_ext_market::MarketEntry> = st
+            .entries
             .iter()
             .filter(|e| match st.filter {
                 ExtFilter::Installed => installed.contains(&e.source()),
                 ExtFilter::NotInstalled => !installed.contains(&e.source()),
             })
+            .collect();
+        match st.sort {
+            ExtSort::Downloads => {} // npm 服务端序（权重 ≈ 下载量）
+            ExtSort::Updated => list.sort_by(|a, b| b.updated.cmp(&a.updated)),
+            ExtSort::Name => list.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase())),
+        }
+        list.into_iter()
             .map(|e| {
                 let source = e.source();
                 let status = if !installed.contains(&source) {
@@ -625,7 +652,7 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
         empty_area(chat, t)
     } else {
         crate::ui::vlist::vlist(
-            "pi-ext-market-list",
+            LIST_ID,
             rows.len(),
             f32::from(crate::appearance::ui_size(CARD_H)),
             crate::ui::vlist::VListHeight::Fill,
@@ -689,13 +716,23 @@ fn toolbar(
         BtnVariant::Secondary,
         false,
         move |_, _, cx| {
-            let _ = weak_search.update(cx, |c, cx| c.pi_ext_reload(cx));
+            let _ = weak_search.update(cx, |c, cx| c.pi_ext_search_now(cx));
         },
     ));
 
-    // 排序：v1 只有「最多下载」（服务端 popularity 权重），做成只读下拉观感
-    bar = bar.child(
-        gpui::div()
+    // 排序下拉：最多下载（服务端序）/ 最近更新 / 名称（本页客户端排序）
+    if let Some(guard) = st.sort_guard.clone() {
+        let sort = st.sort;
+        let open = st.sort_open;
+        let label = match sort {
+            ExtSort::Downloads => tr("market.sort_downloads").to_string(),
+            ExtSort::Updated => tr("market.sort_updated").to_string(),
+            ExtSort::Name => tr("market.sort_name").to_string(),
+        };
+        let weak_t = weak.clone();
+        let weak_d = weak.clone();
+        let trigger = gpui::div()
+            .id("pi-ext-sort-trigger")
             .flex()
             .items_center()
             .gap(gpui::px(space::SP2))
@@ -706,9 +743,93 @@ fn toolbar(
             .border_color(gpui::rgb(t.border))
             .text_size(crate::appearance::ui_size(12.))
             .text_color(gpui::rgb(t.text_muted))
-            .child(tr("market.sort_downloads").to_string())
-            .child(crate::ui::icon("chevron-down", 12., t.text_soft)),
-    );
+            .hover(|s| s.text_color(gpui::rgb(t.text)))
+            .child(label)
+            .child(crate::ui::icon("chevron-down", 12., t.text_soft))
+            .into_any_element();
+        bar = bar.child(crate::ui::dropdown(
+            "pi-ext-sort-dd",
+            &guard,
+            open,
+            move |_, cx| {
+                let _ = weak_t.update(cx, |c, cx| {
+                    let st = &mut c.aux.market.pi_ext;
+                    st.sort_open = !st.sort_open;
+                    cx.notify();
+                });
+            },
+            move |_, cx| {
+                let _ = weak_d.update(cx, |c, cx| {
+                    let st = &mut c.aux.market.pi_ext;
+                    if st.sort_open {
+                        st.sort_open = false;
+                        cx.notify();
+                    }
+                });
+            },
+            trigger,
+            move || {
+                let mut menu = gpui::div()
+                    .w(gpui::px(160.))
+                    .py(gpui::px(space::SP2))
+                    .bg(gpui::rgb(t.bg))
+                    .border_1()
+                    .border_color(gpui::rgb(t.border))
+                    .rounded(gpui::px(radius::CARD))
+                    .shadow_lg()
+                    .overflow_hidden();
+                for (sopt, sid, slabel) in [
+                    (
+                        ExtSort::Downloads,
+                        "pi-ext-sort-dl",
+                        tr("market.sort_downloads").to_string(),
+                    ),
+                    (
+                        ExtSort::Updated,
+                        "pi-ext-sort-up",
+                        tr("market.sort_updated").to_string(),
+                    ),
+                    (
+                        ExtSort::Name,
+                        "pi-ext-sort-nm",
+                        tr("market.sort_name").to_string(),
+                    ),
+                ] {
+                    let active = sopt == sort;
+                    let weak_i = weak.clone();
+                    menu = menu.child(
+                        gpui::div()
+                            .id(sid)
+                            .h(gpui::px(28.))
+                            .px(gpui::px(space::SP4))
+                            .flex()
+                            .items_center()
+                            .gap(gpui::px(space::SP3))
+                            .text_size(crate::appearance::ui_size(12.))
+                            .cursor_pointer()
+                            .when(active, |d| {
+                                d.text_color(gpui::rgb(t.accent))
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                            })
+                            .when(!active, |d| d.text_color(gpui::rgb(t.text_dim)))
+                            .hover(|s| s.bg(gpui::rgb(t.bg_hover)))
+                            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                                cx.stop_propagation();
+                                let _ = weak_i.update(cx, |c, cx| {
+                                    let st = &mut c.aux.market.pi_ext;
+                                    st.sort = sopt;
+                                    st.sort_open = false;
+                                    crate::ui::vlist::reset_scroll(LIST_ID);
+                                    cx.notify();
+                                });
+                            })
+                            .child(slabel),
+                    );
+                }
+                menu.into_any_element()
+            },
+        ));
+    }
 
     bar = bar.child(gpui::div().flex_1());
 
@@ -1472,6 +1593,8 @@ fn pager_nav(
     t: &'static Theme,
     on_click: impl Fn(&mut gpui::App) + 'static,
 ) -> AnyElement {
+    // 标签**永远绘制**（不能按 = 置灰，不消失）：v19 曾把 child(label) 只挂
+    // 在 enabled 分支，禁用时渲染成空盒（用户截图的「幽灵按钮」）
     let mut el = gpui::div()
         .id(id)
         .h(gpui::px(crate::ui::tokens::btn::MD_H))
@@ -1482,7 +1605,8 @@ fn pager_nav(
         .border_1()
         .border_color(gpui::rgb(t.border))
         .text_size(crate::appearance::ui_size(12.))
-        .text_color(gpui::rgb(t.text_muted));
+        .text_color(gpui::rgb(t.text_muted))
+        .child(label);
     if !enabled {
         return el.opacity(0.38).into_any_element();
     }
@@ -1492,8 +1616,7 @@ fn pager_nav(
         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
             cx.stop_propagation();
             on_click(cx);
-        })
-        .child(label);
+        });
     el.into_any_element()
 }
 
