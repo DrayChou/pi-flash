@@ -266,7 +266,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("settings.auto_collapse_time", "自动折叠时间", "自動摺疊時間", "Auto-collapse time"),
     ("settings.auto_collapse_hint", "启动时，超时未活动的项目默认折叠", "啟動時，超時未活動的專案預設摺疊", "Collapse projects with no recent activity at startup"),
     ("settings.send_mode", "运行中发送方式", "執行中發送方式", "Send behavior while running"),
-    ("settings.send_mode_hint", "Agent 运行中按 Enter：排队=先挂起、本轮彻底结束后自动发出（默认，防插队）；插话=中止当前回复、这条立刻作为新一轮指令发出", "Agent 執行中按 Enter：排隊=先掛起、本輪徹底結束後自動發出（預設，防插隊）；插話=中止當前回覆、這條立刻作為新一輪指令發出", "While the agent is running, Enter queues the message until the turn fully ends (default) or aborts the current reply and sends it as a new turn"),
+    ("settings.send_mode_hint", "设置Agent运行时用户发言为排队发送或立刻插话", "设置Agent运行时用户发言为排队发送或立刻插话", "Queue or Steer"),
     ("settings.send_queue", "排队", "排隊", "Queue"),
     ("settings.send_steer", "插话", "插話", "Steer"),
     ("settings.session_count_hint", "各项目默认显示的会话数量", "各項目預設顯示的會話數量", "Sessions shown per project by default"),
