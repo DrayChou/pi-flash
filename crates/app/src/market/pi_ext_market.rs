@@ -1040,9 +1040,9 @@ fn pkg_card(
         .bg(gpui::rgb(t.bg))
         .hover(|s| s.bg(gpui::rgb(t.bg_hover)))
         .child(
-            // 缩略槽（v1 无网络图）：底色用 bg_selected——bg_panel 与卡片
-            // 底几乎同色（用户圈注）；占位图标 = image（相框+山，no-image
-            // 同款，图标库现成），位置留给 v2 的 pi.image
+            // 缩略槽（v1 无网络图）：**无底无框**，只留一枚淡色占位图标，
+            // 与卡片融为一体（v22 的 bg_selected 被用户否掉——「和周围一样」）。
+            // 尺寸保留 = 版式占位，位置留给 v2 的 pi.image
             gpui::div()
                 .w(gpui::px(THUMB_W))
                 .h(gpui::px(THUMB_H))
@@ -1050,11 +1050,7 @@ fn pkg_card(
                 .flex()
                 .items_center()
                 .justify_center()
-                .rounded(gpui::px(radius::CTRL))
-                .border_1()
-                .border_color(gpui::rgb(t.border))
-                .bg(gpui::rgb(t.bg_selected))
-                .child(crate::ui::icon("image", 24., t.text_faint)),
+                .child(crate::ui::icon("image", 26., t.text_faint)),
         )
         .child(
             gpui::div()
