@@ -52,6 +52,8 @@ python scripts/clean-cache.py --apply --aggressive      # 连过期 rlib/rmeta �
 python scripts/clean-cache.py --apply --min-age-days 7 --tmp-age-days 7
 ```
 
+双击入口：仓库根的 `clean_cache.bat`（= `--apply` 安全档，末尾 pause 留屏）。
+
 删完如果下次构建明显变慢，说明删到了活产物（cargo 会自己重编，不会坏），
 把 `--min-age-days` / `--keep` 调大即可。
 """
@@ -268,6 +270,8 @@ def main() -> int:
         epilog=__doc__.split("## 用法")[-1],
     )
     ap.add_argument("--apply", action="store_true", help="真删（不加则只体检）")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="强制只体检（覆盖 --apply，给 .bat 双击入口用）")
     ap.add_argument("--min-age-days", type=float, default=3.0,
                     help="target 产物的最小年龄（天），默认 3")
     ap.add_argument("--tmp-age-days", type=float, default=3.0,
@@ -286,6 +290,8 @@ def main() -> int:
 
     if args.target_only and args.tmp_only:
         ap.error("--target-only 与 --tmp-only 不能同时给")
+    if args.dry_run:
+        args.apply = False
     do_target = not args.tmp_only
     do_tmp = not args.target_only
 

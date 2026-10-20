@@ -199,3 +199,14 @@ python scripts/clean-cache.py --apply --aggressive   # 连过期 rlib/rmeta 一�
   试听稿）、`*.md`（release-notes 之类）。其余早于 `--tmp-age-days`（默认 3 天）
   的条目整棵删；`--trash` 可改走回收站（同盘仍占空间，要清空才返还）。
 - 每次删除清单落 `target/clean-cache.log`（dry-run 落 `clean-cache.dry.log`）。
+
+**双击入口 `clean_cache.bat`**（仓库根，安全档）——里面两个坑写死在这儿：
+
+- **.bat 必须纯 ASCII**：脚本里 `chcp 65001` 之后 cmd 的行解析游标会按新代码页
+  重算，文件里只要有多字节中文，后面就会执行出 `'ib' is not recognized` 之类的
+  鬼命令（本次实录）。正确姿势 = 批处理正文全 ASCII，中文输出交给 Python；
+  需要 UTF-8 控制台时用 `cmd /c chcp 65001 >nul` 在**子进程**里切（改的是共享
+  控制台 CP，不影响本文件的解析），且这行本身也算 ASCII。
+- **.bat 必须 CRLF**：LF-only 的批处理 cmd 会把首行吃掉、后续每行都变成
+  `'xxx' is not recognized`。`.gitattributes` 已有 `*.bat text eol=crlf`，
+  手写文件时别用纯 LF 直接落盘。
