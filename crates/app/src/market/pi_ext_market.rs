@@ -54,8 +54,9 @@ const PAGE_RIGHT: f32 = ROW_PAD_R;
 const TOOLBAR_PT: f32 = 25.;
 /// 工具栏（input 行）下 padding。
 const TOOLBAR_PB: f32 = 15.;
-/// 摘要行与列表的间距：总高 15（卡片自带 mt SP4(8)，这里只补差额）。
-const SUMMARY_PB: f32 = 15. - space::SP4;
+/// 摘要行下 padding：摘要行（含「全部更新」按钮）下缘 → 列表 = 10
+/// （卡片自带 mt SP4(8)，这里只补差额）。
+const SUMMARY_PB: f32 = 10. - space::SP4;
 /// 描述行高（行高 18 × 行数）。用 `line_clamp` 硬截行（gpui 按行数 shape），
 /// 不用固定高度盖裁（会出现半行）。
 const DESC_LINE_H: f32 = 18.;
@@ -675,12 +676,14 @@ pub(crate) fn page(
         col = col.child(banner);
     }
     // 摘要行：已装页签 = 本地条数；未安装页签 = npm 结果数（total 未知不占位）
+    // 行内一律 items_end：文字底缘与「全部更新」按钮底缘同一条线（用户定稿：下对齐）
+    let searching = st.loading;
     if st.filter == ExtFilter::Installed {
         col = col.child(
             gpui::div()
                 .flex_shrink_0()
                 .flex()
-                .items_center()
+                .items_end()
                 .justify_start()
                 .gap(gpui::px(space::SP3))
                 .pl(gpui::px(PAGE_LEFT))
@@ -689,6 +692,8 @@ pub(crate) fn page(
                 .pb(gpui::px(SUMMARY_PB))
                 .text_size(crate::appearance::ui_size(11.))
                 .text_color(gpui::rgb(t.text_soft))
+                // 请求未回包时的等待动画（常驻最左，不跳位）
+                .children(searching.then(|| crate::ui::spinner(12., t.accent)))
                 .child(
                     gpui::div()
                         .text_color(gpui::rgb(t.text_dim))
@@ -712,7 +717,7 @@ pub(crate) fn page(
             gpui::div()
                 .flex_shrink_0()
                 .flex()
-                .items_center()
+                .items_end()
                 .justify_start()
                 .gap(gpui::px(space::SP3))
                 .pl(gpui::px(PAGE_LEFT))
@@ -721,6 +726,7 @@ pub(crate) fn page(
                 .pb(gpui::px(SUMMARY_PB))
                 .text_size(crate::appearance::ui_size(11.))
                 .text_color(gpui::rgb(t.text_soft))
+                .children(searching.then(|| crate::ui::spinner(12., t.accent)))
                 .child(
                     gpui::div()
                         .text_color(gpui::rgb(t.text_dim))
@@ -1006,14 +1012,22 @@ fn toolbar(
                 .justify_center()
                 .rounded(gpui::px(radius::CTRL))
                 .text_size(crate::appearance::ui_size(11.))
+                // 选中段 = 白底「浮动拇指」（白底 + 1px 细边 + 微阴影，光主题
+                // 里纯阴影几乎看不见）；未选中段 hover 淤底。两边都要有可见
+                // 的反差，否则整条就是个静态标签条。
                 .when(active, |d| {
                     d.bg(gpui::rgb(t.bg))
+                        .shadow_sm()
+                        .border_1()
+                        .border_color(gpui::rgba(crate::appearance::theme::rgba_a(t.border, 0.6)))
                         .text_color(gpui::rgb(t.text))
                         .font_weight(gpui::FontWeight::SEMIBOLD)
                 })
-                .when(!active, |d| d.text_color(gpui::rgb(t.text_muted)))
+                .when(!active, |d| {
+                    d.text_color(gpui::rgb(t.text_muted))
+                        .hover(|s| s.bg(gpui::rgb(t.bg_hover)).text_color(gpui::rgb(t.text)))
+                })
                 .cursor_pointer()
-                .hover(|s| s.text_color(gpui::rgb(t.text)))
                 .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                     cx.stop_propagation();
                     let _ = weak_f.update(cx, |c, cx| c.pi_ext_set_filter(filter, cx));
