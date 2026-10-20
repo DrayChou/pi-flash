@@ -35,9 +35,7 @@ const BATCH: usize = 8;
 /// 搜索框去抖。
 const DEBOUNCE_MS: u64 = 250;
 /// 卡片固定行高（vlist 等高行；内容按此高度裁切，撑不满也不会把行撑开）。
-const CARD_H: f32 = 140.;
-/// 动作列固定宽（v4 定稿：跨行按钮对齐的关键）。
-const ACTS_W: f32 = 104.;
+const CARD_H: f32 = 148.;
 /// 缩略槽宽高。
 const THUMB_W: f32 = 88.;
 const THUMB_H: f32 = 72.;
@@ -771,97 +769,113 @@ fn empty_area(chat: &Chat, t: &'static Theme) -> AnyElement {
     col.into_any_element()
 }
 
-/// 单张包卡（v4）：缩略槽 + 正文（名/描述/元信息/链接/命令条）+ 固定宽动作列。
+/// 单张包卡（v15）：**两段式**
+/// 上段 = 缩略槽 + 名称/描述/元信息；下段 = 链接 …… 命令胶囊 + 动作。
+/// 命令胶囊与动作按钮在下段**同一行、只隔 SP4(8)**（原先隔着一整个动作列，
+/// 视觉上空一大块）。动作右缘恒贴卡片内容右缘 → 跨行仍然对齐。
 fn pkg_card(
     row: &RowData,
     weak: &gpui::WeakEntity<Chat>,
     t: &'static Theme,
     busy_any: bool,
 ) -> AnyElement {
-    let installed = row.status != RowStatus::NotInstalled;
-    let mut card = gpui::div()
+    let card = gpui::div()
         .id(SharedString::from(format!("pi-ext-card-{}", row.name)))
         .h(gpui::px(CARD_H - 8.))
         .w_full()
         .mt(gpui::px(space::SP3))
         .flex()
-        .items_start()
-        .gap(gpui::px(space::SP7))
+        .flex_col()
+        .gap(gpui::px(space::SP4))
         .px(gpui::px(space::SP7))
         .py(gpui::px(space::SP6))
-        .relative()
         .rounded(gpui::px(radius::MODAL))
         .border_1()
         .border_color(gpui::rgb(t.border))
         .bg(gpui::rgb(t.bg))
         .hover(|s| s.bg(gpui::rgb(t.bg_hover)))
-        .child(
-            // 缩略槽（v1 无网络图：淡底 + 占位图标，位置留给 v2 的 pi.image）
-            gpui::div()
-                .w(gpui::px(THUMB_W))
-                .h(gpui::px(THUMB_H))
-                .flex_shrink_0()
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(gpui::px(radius::CTRL))
-                .border_1()
-                .border_color(gpui::rgb(t.border))
-                .bg(gpui::rgb(t.bg_panel))
-                .child(crate::ui::icon("plug", 20., t.text_faint)),
-        )
+        // —— 上段 ——
         .child(
             gpui::div()
                 .flex_1()
-                .min_w_0()
+                .min_h_0()
                 .flex()
-                .flex_col()
-                .gap(gpui::px(space::SP2))
-                // 名称 + 版本 + 类型
+                .items_start()
+                .gap(gpui::px(space::SP7))
                 .child(
+                    // 缩略槽（v1 无网络图：淡底 + 占位图标，位置留给 v2 的 pi.image）
                     gpui::div()
+                        .w(gpui::px(THUMB_W))
+                        .h(gpui::px(THUMB_H))
+                        .flex_shrink_0()
                         .flex()
                         .items_center()
-                        .gap(gpui::px(space::SP4))
-                        .min_w_0()
-                        .child(
-                            gpui::div()
-                                .text_size(crate::appearance::ui_size(15.))
-                                .font_weight(gpui::FontWeight::SEMIBOLD)
-                                .text_color(gpui::rgb(if row.enabled {
-                                    t.text
-                                } else {
-                                    t.text_muted
-                                }))
-                                .overflow_hidden()
-                                .whitespace_nowrap()
-                                .text_ellipsis()
-                                .child(SharedString::from(row.name.clone())),
-                        )
-                        .child(badge(&row.version, t))
-                        .children(kind_chips(row, t)),
+                        .justify_center()
+                        .rounded(gpui::px(radius::CTRL))
+                        .border_1()
+                        .border_color(gpui::rgb(t.border))
+                        .bg(gpui::rgb(t.bg_panel))
+                        .child(crate::ui::icon("plug", 20., t.text_faint)),
                 )
                 .child(
                     gpui::div()
-                        .text_size(crate::appearance::ui_size(12.))
-                        .line_height(crate::appearance::ui_size(18.))
-                        .text_color(gpui::rgb(t.text_muted))
-                        .max_w(gpui::px(760.))
-                        .h(gpui::px(36.))
-                        .overflow_hidden()
-                        .child(SharedString::from(row.desc.clone())),
-                )
-                .child(meta_line(row, t))
-                .child(links_row(row, t)),
+                        .flex_1()
+                        .min_w_0()
+                        .flex()
+                        .flex_col()
+                        .gap(gpui::px(space::SP2))
+                        .child(
+                            gpui::div()
+                                .flex()
+                                .items_center()
+                                .gap(gpui::px(space::SP4))
+                                .min_w_0()
+                                .child(
+                                    gpui::div()
+                                        .text_size(crate::appearance::ui_size(15.))
+                                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                                        .text_color(gpui::rgb(if row.enabled {
+                                            t.text
+                                        } else {
+                                            t.text_muted
+                                        }))
+                                        .overflow_hidden()
+                                        .whitespace_nowrap()
+                                        .text_ellipsis()
+                                        .child(SharedString::from(row.name.clone())),
+                                )
+                                .child(badge(&row.version, t))
+                                .children(kind_chips(row, t))
+                                // 已装：启停开关挂在第一行右端（右缘 = 内容右缘）
+                                .child(gpui::div().flex_1())
+                                .children(switch(row, weak)),
+                        )
+                        .child(
+                            gpui::div()
+                                .text_size(crate::appearance::ui_size(12.))
+                                .line_height(crate::appearance::ui_size(18.))
+                                .text_color(gpui::rgb(t.text_muted))
+                                .max_w(gpui::px(760.))
+                                .h(gpui::px(36.))
+                                .overflow_hidden()
+                                .child(SharedString::from(row.desc.clone())),
+                        )
+                        .child(meta_line(row, t)),
+                ),
         )
-        .child(actions(row, weak, t, busy_any))
-        // 已装：启停开关绝对定在卡片右上，**右缘与动作按钮同一竖线**、
-        // 垂直与第一行文字居中（开关是「操作控件」，跟操作列对齐才不飘）
-        .children(switch(row, weak));
-
-    if installed {
-        card = card.border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x8c)));
-    }
+        // —— 下段：链接 …… 命令胶囊 + 动作 ——
+        .child(
+            gpui::div()
+                .flex_shrink_0()
+                .w_full()
+                .flex()
+                .items_center()
+                .gap(gpui::px(space::SP4))
+                .child(links(row, t))
+                .child(gpui::div().flex_1())
+                .children(cmd_pill(row, t))
+                .child(actions(row, weak, t, busy_any)),
+        );
     card.into_any_element()
 }
 
@@ -909,10 +923,7 @@ fn switch(row: &RowData, weak: &gpui::WeakEntity<Chat>) -> Option<AnyElement> {
     };
     Some(
         gpui::div()
-            // 右缘与动作按钮同一条竖线、垂直居中于第一行
-            .absolute()
-            .top(gpui::px(space::SP6 + space::SP1))
-            .right(gpui::px(space::SP7))
+            // 第一行右端（flex 撑开后由弹黄盒推到最右，右缘 = 内容右缘）
             .child(
                 gpui::div()
                     .id(SharedString::from(format!("pi-ext-sw-{}", row.name)))
@@ -1025,17 +1036,16 @@ fn dot(t: &'static Theme) -> AnyElement {
         .into_any_element()
 }
 
-/// 链接行（v5）：左侧 npm / repo；**右侧同一行**放安装命令胶囊，
-/// 且**只在未安装时显示**（已装的包没有「再装一次」的命令可抄）。
-fn links_row(row: &RowData, t: &'static Theme) -> AnyElement {
+/// 链接（npm / repo）：下段最左，点击开系统浏览器。
+fn links(row: &RowData, t: &'static Theme) -> AnyElement {
     let mut links = gpui::div()
         .flex()
+        .flex_shrink_0()
         .items_center()
         .gap(gpui::px(space::SP6))
         .text_size(crate::appearance::ui_size(11.))
         .text_color(gpui::rgb(t.text_soft));
 
-    // npm 包页
     let npm_url = format!("https://www.npmjs.com/package/{}", row.name);
     links = links.child(
         gpui::div()
@@ -1071,46 +1081,47 @@ fn links_row(row: &RowData, t: &'static Theme) -> AnyElement {
                 .child("repo"),
         );
     }
-
-    links = links.child(gpui::div().flex_1());
-
-    // 命令胶囊：仅未安装；右对齐、行内高度 22，不抢主信息的视线
-    if row.status == RowStatus::NotInstalled {
-        links = links.child(
-            gpui::div()
-                .flex_shrink_0()
-                .h(gpui::px(22.))
-                .max_w(gpui::px(340.))
-                .flex()
-                .items_center()
-                .gap(gpui::px(space::SP2))
-                .px(gpui::px(space::SP3))
-                .rounded(gpui::px(radius::CTRL))
-                .border_1()
-                .border_color(gpui::rgb(t.border))
-                .bg(gpui::rgb(t.bg_panel))
-                .child(
-                    gpui::div()
-                        .font_family(crate::editor::markdown::MONO_FAMILY)
-                        .text_size(crate::appearance::ui_size(10.))
-                        .text_color(gpui::rgb(t.text_faint))
-                        .child("$"),
-                )
-                .child(
-                    gpui::div()
-                        .min_w_0()
-                        .font_family(crate::editor::markdown::MONO_FAMILY)
-                        .text_size(crate::appearance::ui_size(10.))
-                        .text_color(gpui::rgb(t.text_dim))
-                        .overflow_hidden()
-                        .whitespace_nowrap()
-                        .text_ellipsis()
-                        .child(SharedString::from(row.cmd.clone())),
-                ),
-        );
-    }
-
     links.into_any_element()
+}
+
+/// 安装命令胶囊：下段右端、**紧贴动作按钮（间隔 SP4=8）**，仅未安装时显示。
+fn cmd_pill(row: &RowData, t: &'static Theme) -> Option<AnyElement> {
+    if row.status != RowStatus::NotInstalled {
+        return None;
+    }
+    Some(
+        gpui::div()
+            .flex_shrink_0()
+            .h(gpui::px(22.))
+            .max_w(gpui::px(360.))
+            .flex()
+            .items_center()
+            .gap(gpui::px(space::SP2))
+            .px(gpui::px(space::SP3))
+            .rounded(gpui::px(radius::CTRL))
+            .border_1()
+            .border_color(gpui::rgb(t.border))
+            .bg(gpui::rgb(t.bg_panel))
+            .child(
+                gpui::div()
+                    .font_family(crate::editor::markdown::MONO_FAMILY)
+                    .text_size(crate::appearance::ui_size(10.))
+                    .text_color(gpui::rgb(t.text_faint))
+                    .child("$"),
+            )
+            .child(
+                gpui::div()
+                    .min_w_0()
+                    .font_family(crate::editor::markdown::MONO_FAMILY)
+                    .text_size(crate::appearance::ui_size(10.))
+                    .text_color(gpui::rgb(t.text_dim))
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .text_ellipsis()
+                    .child(SharedString::from(row.cmd.clone())),
+            )
+            .into_any_element(),
+    )
 }
 
 /// 动作列（固定宽 104，永远右对齐）：卸载在最左，其次 更新 / 安装。
@@ -1122,15 +1133,10 @@ fn actions(
 ) -> AnyElement {
     let name = row.name.clone();
     let mut group = gpui::div()
-        .w(gpui::px(ACTS_W))
         .flex_shrink_0()
-        .h_full()
         .flex()
-        // 底部对齐：按钮与最后一行（npm/repo + 安装命令胶囊）同基线，
-        // 视觉上「操作贴着你正在看的那行说明」，而不是浮在卡片垂直中段
-        .items_end()
+        .items_center()
         .justify_end()
-        // 按钮间统一间距 = SP4（图标↔文字/控件↔控件 标准档，见 UI 组件规范 §1）
         .gap(gpui::px(space::SP4));
 
     if row.busy {
