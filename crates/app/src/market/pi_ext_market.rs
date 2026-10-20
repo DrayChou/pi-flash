@@ -152,6 +152,18 @@ impl PiExtState {
         let pages = self.total.div_ceil(PAGE_SIZE).max(1);
         pages.min(MAX_PAGES)
     }
+
+    /// 翻页口径的唯一来源（渲染与点击处理共用）：返回 (当前页, 总页数)。
+    ///
+    /// 已安装页签 = 本地全量、不分页 → 固定 (1, 1)；若还用全局 total 折算，
+    /// 点「下一页」会跳到一个不存在的第 2 页。
+    pub(crate) fn pager(&self) -> (usize, usize) {
+        if self.filter == ExtFilter::Installed {
+            (1, 1)
+        } else {
+            (self.page, self.total_pages())
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -321,9 +333,8 @@ impl Chat {
 
 impl Chat {
     fn pi_ext_fetch(&mut self, cx: &mut gpui::Context<Self>) {
-        if self.aux.market.pi_ext.loading {
-            return;
-        }
+        // 不再因「loading 就 return」静默吞请求：那会让当前轮的 loading 永远不置位
+        // （按钮全灰、下一页不可点）。轮次由 `gen_ix` 分步，旧回包自归废弃。
         self.aux.market.pi_ext.loading = true;
         self.aux.market.pi_ext.error = None;
         let gen_ix = self.aux.market.pi_ext.gen_ix;
@@ -756,12 +767,8 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
     // 页数口径：未安装 = npm 搜索全局 total 折算；已安装 = **本地条数**
     // （已装列表是本地全量、不分页 → 只有第 1 页，不能用全局 total
     // 算出「第 1 / 248 页」这种说走的计数）。
-    let (pager_page, pager_pages) = if st.filter == ExtFilter::Installed {
-        (1usize, 1usize)
-    } else {
-        (st.page, st.total_pages())
-    };
-    col = col.child(pager(weak, pager_page, pager_pages, st.loading, t));
+    let (pager_page, pager_pages) = st.pager();
+    col = col.child(pager(weak, pager_page, pager_pages, t));
     gpui::div()
         .flex()
         .flex_col()
@@ -1697,7 +1704,6 @@ fn pager(
     weak: &gpui::WeakEntity<Chat>,
     page: usize,
     total_pages: usize,
-    loading: bool,
     t: &'static Theme,
 ) -> AnyElement {
     let mut bar = gpui::div()
@@ -1712,7 +1718,11 @@ fn pager(
         .border_color(gpui::rgb(t.border));
 
     // ← 上一页
-    let prev_ok = page > 1 && !loading;
+    //
+    // 不因 loading 禁用：一页要拉 50 个包的清单（约 7 秒），若禁用就是
+    // “翻到第 2 页后按钮全灰、等不到”。上一轮的回包由 `gen_ix` 作废，
+    // 不需要用禁用按钮来防重入。
+    let prev_ok = page > 1;
     let weak_prev = weak.clone();
     bar = bar.child(pager_nav(
         "pi-ext-prev",
@@ -1721,8 +1731,10 @@ fn pager(
         t,
         move |cx| {
             let _ = weak_prev.update(cx, |c, cx| {
-                let p = c.aux.market.pi_ext.page;
-                c.pi_ext_goto(p.saturating_sub(1), cx);
+                let (p, _) = c.aux.market.pi_ext.pager();
+                if p > 1 {
+                    c.pi_ext_goto(p - 1, cx);
+                }
             });
         },
     ));
@@ -1783,7 +1795,7 @@ fn pager(
     bar = bar.child(pages);
 
     // 下一页 →
-    let next_ok = page < total_pages && !loading;
+    let next_ok = page < total_pages;
     let weak_next = weak.clone();
     bar = bar.child(pager_nav(
         "pi-ext-next",
@@ -1792,7 +1804,7 @@ fn pager(
         t,
         move |cx| {
             let _ = weak_next.update(cx, |c, cx| {
-                let (p, tp) = (c.aux.market.pi_ext.page, c.aux.market.pi_ext.total_pages());
+                let (p, tp) = c.aux.market.pi_ext.pager();
                 if p < tp {
                     c.pi_ext_goto(p + 1, cx);
                 }
@@ -1947,6 +1959,18 @@ mod tests {
         assert_eq!(thousands(999), "999");
         assert_eq!(thousands(12365), "12,365");
         assert_eq!(thousands(1234567), "1,234,567");
+    }
+
+    #[test]
+    fn pager_uses_local_count_on_installed_tab() {
+        let mut st = PiExtState::default();
+        // 未安装：全局 total 折算，并截在 MAX_PAGES
+        st.total = 12_365;
+        st.page = 2;
+        assert_eq!(st.pager(), (2, MAX_PAGES));
+        // 已安装：本地全量、不分页 → 恒定 (1, 1)
+        st.filter = ExtFilter::Installed;
+        assert_eq!(st.pager(), (1, 1));
     }
 
     #[test]
