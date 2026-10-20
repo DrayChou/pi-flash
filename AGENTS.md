@@ -130,6 +130,7 @@ crates/app/src/         GPUI 界面（Chat = 全应用状态实体：直属字�
 - [pi-rpc.md](docs/agents/pi-rpc.md)：pi RPC wire 陷阱 + vendor 升级复核点。覆盖 `crates/pi-link/**` 与 app 侧消费方（agent_session、session/runtime、messages、ext_ui）。
 - [gpui.md](docs/agents/gpui.md)：gpui 0.2.2（vendored）/ gpui-component 渲染与交互陷阱。覆盖 `crates/app/src/**`。
 - [engineering.md](docs/agents/engineering.md)：Rust/工具链工程杂项（补丁方式、CRLF、Windows 路径、测试栈、真实按键链）。
+- [market.md](docs/agents/market.md)：040-1 Pi 扩展市场（入口开关、页状态机、磁盘快照、布局踩点、与设计稿/规范的三方漂移）。覆盖 `crates/app/src/market/**` + `crates/pi-link/src/market/**`。
 
 
 
