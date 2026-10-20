@@ -50,6 +50,12 @@ const PAGER_H: f32 = 44.;
 const ROW_PAD_R: f32 = space::SP7;
 /// 右缘内缩 = 行右边距：工具栏按钮 / 摘要 / 翻页条 ⊥ **卡片外框右缘**。
 const PAGE_RIGHT: f32 = ROW_PAD_R;
+/// 工具栏（input 行）上 padding。
+const TOOLBAR_PT: f32 = 20.;
+/// 工具栏（input 行）下 padding。
+const TOOLBAR_PB: f32 = 15.;
+/// 注释（摘要）行下 padding。
+const SUMMARY_PB: f32 = 15.;
 /// 描述行高（行高 18 × 行数）。用 `line_clamp` 硬截行（gpui 按行数 shape），
 /// 不用固定高度盖裁（会出现半行）。
 const DESC_LINE_H: f32 = 18.;
@@ -680,7 +686,8 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
                 .gap(gpui::px(space::SP3))
                 .pl(gpui::px(PAGE_LEFT))
                 .pr(gpui::px(PAGE_RIGHT))
-                .pb(gpui::px(space::SP5))
+                .pt(gpui::px(0.))
+                .pb(gpui::px(SUMMARY_PB))
                 .text_size(crate::appearance::ui_size(11.))
                 .text_color(gpui::rgb(t.text_soft))
                 .child(
@@ -711,7 +718,8 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
                 .gap(gpui::px(space::SP3))
                 .pl(gpui::px(PAGE_LEFT))
                 .pr(gpui::px(PAGE_RIGHT))
-                .pb(gpui::px(space::SP5))
+                .pt(gpui::px(0.))
+                .pb(gpui::px(SUMMARY_PB))
                 .text_size(crate::appearance::ui_size(11.))
                 .text_color(gpui::rgb(t.text_soft))
                 .child(
@@ -814,8 +822,8 @@ fn toolbar(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> Any
         .gap(gpui::px(space::SP4))
         .pl(gpui::px(PAGE_LEFT))
         .pr(gpui::px(PAGE_RIGHT))
-        .pt(gpui::px(space::SP6))
-        .pb(gpui::px(space::SP3));
+        .pt(gpui::px(TOOLBAR_PT))
+        .pb(gpui::px(TOOLBAR_PB));
 
     if let Some(input) = st.input.clone() {
         bar = bar.child(gpui::div().w(gpui::px(340.)).flex_shrink_0().child(input));

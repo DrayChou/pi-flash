@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>pi-flash · Pi扩展市场（040-1 设计稿 v28 · 单列卡片 · 50 条一屏滚屏 · 工具栏贴卡片外框）</title>
+<title>pi-flash · Pi扩展市场（040-1 设计稿 v29 · 摘要行左对齐 · 全部更新在摘要行 · 工具栏上20下15 · 注释下15）</title>
 <style>
 /* ===================== 设计系统（mist / one-dark 双主题） ===================== */
 :root {
@@ -88,7 +88,7 @@ html[data-theme="dark"] .sheet-head button:hover { background: rgba(255,255,255,
   display: flex; flex-direction: column; }
 
 .toolbar { flex: none; display: flex; align-items: center; gap: 8px;
-  padding: 12px var(--pad-r) 8px var(--pad-l); }
+  padding: 20px var(--pad-r) 15px var(--pad-l); }
 .search { position: relative; width: 340px; flex: none; }
 .search svg.ico { position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
   width: 14px; height: 14px; color: var(--text-soft); pointer-events: none; }
@@ -146,8 +146,9 @@ html[data-theme="dark"] .btn.primary:hover { background: rgba(97,137,235,.22);
 .btn.del:hover { background: rgba(194,84,96,.13); }
 .btn .n { font-variant-numeric: tabular-nums; opacity: .85; }
 
-.summary { flex: none; display: flex; align-items: baseline; justify-content: flex-end; gap: 10px;
-  padding: 0 var(--pad-r) 10px var(--pad-l); font-size: 11px; color: var(--text-soft); }
+.summary { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 0 var(--pad-r) 15px var(--pad-l); font-size: 11px; color: var(--text-soft); }
+.summary .s-left { display: flex; align-items: baseline; gap: 10px; }
 .summary .count { color: var(--text-dim); font-variant-numeric: tabular-nums; }
 .summary .dot { width: 2px; height: 2px; border-radius: 50%; background: var(--text-faint); }
 
@@ -266,7 +267,7 @@ html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: 
 <body>
 
 <div class="sheet-head">
-  <b>040-1 Pi扩展市场 · v28（工具栏按钮/摘要/翻页条贴卡片外框右缘 · 安装命令贴卡片内容右缘 · 每页 50 条一屏滚屏）</b>
+  <b>040-1 Pi扩展市场 · v29（摘要行左对齐 · 「全部更新」在摘要行右端 · 工具栏上20下15 · 注释下15）</b>
   <span>单列卡片（88 缩略 + 文本两列：标题行右端开关 / 底行右端命令胶囊+动作，全部贴同一条右缘）· 1180×760 · mist</span>
   <span class="spacer"></span>
   <button id="themeBtn">切换到 one-dark</button>
@@ -312,12 +313,14 @@ html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: 
       <button class="btn ghost">搜索</button>
       <div class="spacer"></div>
       <div class="seg"><button class="act">未安装</button><button>已安装</button></div>
-      <button class="btn ghost"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"/></svg>全部更新 <span class="n">2</span></button>
     </div>
 
     <div class="summary">
-      <span class="count">12,365</span><span>个结果</span>
-      <span class="dot"></span><span>只展示扩展（技能/提示词/主题不列出）</span>
+      <span class="s-left">
+        <span class="count">12,365</span><span>个结果</span>
+        <span class="dot"></span><span>只展示扩展（技能/提示词/主题不列出）</span>
+      </span>
+      <button class="btn ghost"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"/></svg>全部更新 <span class="n">2</span></button>
     </div>
 
     <div class="list" id="list"></div>
