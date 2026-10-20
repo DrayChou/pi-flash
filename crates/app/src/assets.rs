@@ -65,6 +65,7 @@ assets! {
     "icons/panel-left.svg",
     "icons/history.svg",
     "icons/pencil.svg",
+    "icons/play.svg",
     "icons/copy.svg",
     "icons/file-text.svg",
     "icons/wrench.svg",

@@ -919,6 +919,24 @@ fn tree_menu_layer(
                     },
                 ));
             }
+            // 021 右键【执行】（bat/cmd/ps1/js/py/sh）：解析成功 → 新终端 tab
+            // 跑 `cmd /k`；失败置灰带原因。不查系统关联（js→wscript 陷阱），
+            // 配方表与探测链在 services::script_exec
+            if crate::services::script_exec::exec_kind(&path).is_some() {
+                match crate::services::script_exec::resolve(&path, chat.ws.cwd.as_deref()) {
+                    Some(plan) => {
+                        card = card.child(tree_exec_item(&weak, "ftm-file-exec", &path, plan));
+                    }
+                    None => {
+                        let label = format!(
+                            "{}（{}）",
+                            tr("file_tree.execute"),
+                            tr("file_tree.execute_no_interpreter")
+                        );
+                        card = card.child(menu_item_greyed("ftm-file-exec", "play", &label));
+                    }
+                }
+            }
             card = card
                 .child(menu_sep())
                 .child(tree_item(
@@ -1241,6 +1259,59 @@ fn tree_item(
             cx.notify();
         });
     })
+}
+
+/// 右键【执行】同样要走 window（open_script_terminal 建 tab），单独接线；
+/// plan 移入闭包，菜单文案在移入前先取好。
+fn tree_exec_item(
+    weak: &gpui::WeakEntity<Chat>,
+    id: &str,
+    file: &std::path::PathBuf,
+    plan: crate::services::script_exec::ExecPlan,
+) -> gpui::Stateful<gpui::Div> {
+    let weak = weak.clone();
+    let file = file.clone();
+    let label = if plan.label.is_empty() {
+        tr("file_tree.execute").to_string()
+    } else {
+        format!("{} · {}", tr("file_tree.execute"), plan.label)
+    };
+    menu_item(
+        SharedString::from(id.to_string()),
+        "play",
+        &label,
+        false,
+        false,
+    )
+    .on_mouse_down(MouseButton::Left, move |_, window, cx| {
+        cx.stop_propagation();
+        let _ = weak.update(cx, |c, cx| {
+            c.open_script_terminal(file.clone(), plan.clone(), window, cx);
+            c.dlg.tree_menu = None;
+            cx.notify();
+        });
+    })
+}
+
+/// 置灰菜单项（【执行】解析失败）：无 hover 不可点，文案带原因
+fn menu_item_greyed<S: Into<SharedString>>(
+    id: S,
+    icon_name: &'static str,
+    label: &str,
+) -> gpui::Stateful<gpui::Div> {
+    let t = T();
+    div()
+        .id(id.into())
+        .flex()
+        .items_center()
+        .gap(px(8.))
+        .px(px(10.))
+        .py(px(7.))
+        .rounded(px(6.))
+        .text_size(crate::appearance::ui_size(12.))
+        .text_color(rgb(t.text_muted))
+        .child(icon(icon_name, 14., t.text_muted))
+        .child(div().flex_1().child(SharedString::from(label.to_string())))
 }
 
 /// 「在终端中打开」要走 window（open_terminal_in 建终端 tab），单独接线。

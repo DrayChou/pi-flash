@@ -386,6 +386,8 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("file_tree.reveal_in_explorer", "在资源管理器中打开", "在檔案資源管理器中開啟", "Open in Explorer"),
     ("file_tree.open_in_terminal", "在终端中打开", "在終端機中開啟", "Open in terminal"),
     ("file_tree.open_in_browser", "在浏览器中打开", "在瀏覽器中開啟", "Open in browser"),
+    ("file_tree.execute", "执行", "執行", "Execute"),
+    ("file_tree.execute_no_interpreter", "未找到解释器", "找不到解譯器", "no interpreter found"),
     ("file_tree.copy_path", "复制路径", "複製路徑", "Copy path"),
     ("action.copy", "复制", "複製", "Copy"),
     ("action.paste", "粘贴", "貼上", "Paste"),

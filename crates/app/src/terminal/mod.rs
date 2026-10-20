@@ -162,6 +162,8 @@ pub struct SelPt {
 /// Spawn the PTY + alacritty event loop for one tab.
 /// `cell_w`/`line_h` come from measuring the mono font in the opening window;
 /// `font_size` 是它们所按的字号戳（restart 沿用旧 tab 时一并继承）。
+/// `shell_override` = 021 右键【执行】（`cmd /k <脚本命令>` 进 tab）；
+/// None = 默认 shell（ComSpec ?? cmd.exe，terminal-manager.ts 同款）。
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_terminal(
     id: usize,
@@ -171,6 +173,7 @@ pub fn spawn_terminal(
     font_size: f32,
     focus: gpui::FocusHandle,
     proxy: Proxy,
+    shell_override: Option<Shell>,
 ) -> Result<TerminalTab, String> {
     let dims = CellDims {
         cols: DEFAULT_COLS,
@@ -184,8 +187,13 @@ pub fn spawn_terminal(
 
     let mut options = tty::Options::default();
     // terminal-manager.ts: win32 -> ComSpec ?? cmd.exe with no args
-    let shell = std::env::var("ComSpec").unwrap_or_else(|_| "cmd.exe".to_string());
-    options.shell = Some(Shell::new(shell, Vec::new()));
+    let shell = shell_override.unwrap_or_else(|| {
+        Shell::new(
+            std::env::var("ComSpec").unwrap_or_else(|_| "cmd.exe".to_string()),
+            Vec::new(),
+        )
+    });
+    options.shell = Some(shell);
     options.working_directory = Some(cwd.clone());
     options.env = shell_env();
     options.drain_on_exit = true;
@@ -1347,6 +1355,61 @@ impl Chat {
             font_size,
             focus,
             proxy,
+            None,
+        ) {
+            Ok(tab) => {
+                self.ws.terminals.push(tab);
+                self.ws.active_terminal = Some(self.ws.terminals.len() - 1);
+                self.ws.panel_tabs.push(PanelTab::Term(id));
+                let tix = self.ws.panel_tabs.len() - 1;
+                self.activate_panel_tab(tix, cx);
+                self.set_content_view(ContentView::Term);
+                let focus = self.ws.terminals[self.ws.terminals.len() - 1].focus.clone();
+                window.focus(&focus);
+                cx.notify();
+            }
+            Err(e) => {
+                self.set_status(format!("terminal spawn failed: {e}"), cx);
+                cx.notify();
+            }
+        }
+    }
+
+    /// 021 文件树右键【执行】：脚本进新终端 tab——`cmd /k cd /d <目录> &&
+    /// <命令>`，脚本退出留提示符，交互/续敲都行。PTY working_directory 落
+    /// 文件目录；命令里的 cd 另一半是 cmd 引号规则护盾（script_exec 模块头）。
+    pub(crate) fn open_script_terminal(
+        &mut self,
+        file: PathBuf,
+        plan: crate::services::script_exec::ExecPlan,
+        window: &mut gpui::Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(dir) = file.parent().map(|p| p.to_path_buf()) else {
+            return;
+        };
+        let Some(tx) = self.ws.term_events.clone() else {
+            return;
+        };
+        let (cell_w, line_h) = terminal::measure_cell(window);
+        let font_size = terminal::font_size();
+        self.ws.term_seq += 1;
+        let id = self.ws.term_seq;
+        let focus = cx.focus_handle();
+        let proxy = terminal::Proxy { tab: id, tx };
+        let shell = Shell::new(
+            std::env::var("ComSpec").unwrap_or_else(|_| "cmd.exe".to_string()),
+            vec!["/k".into(), plan.command],
+        );
+        match terminal::spawn_terminal(
+            id,
+            dir,
+            cell_w,
+            line_h,
+            font_size,
+            focus,
+            proxy,
+            Some(shell),
         ) {
             Ok(tab) => {
                 self.ws.terminals.push(tab);

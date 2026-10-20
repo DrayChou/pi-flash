@@ -164,6 +164,7 @@ dependencies = [
  "syntect",
  "trash",
  "ureq 2.12.1",
+ "windows-sys 0.52.0",
  "winresource",
  "wry",
  "wxprobe",

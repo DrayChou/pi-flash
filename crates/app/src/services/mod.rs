@@ -10,6 +10,7 @@ pub mod format;
 pub mod git;
 pub mod paths_sort;
 pub mod plugin_updates;
+pub(crate) mod script_exec;
 pub(crate) mod session_clean;
 pub(crate) mod shell_open;
 pub mod sound;

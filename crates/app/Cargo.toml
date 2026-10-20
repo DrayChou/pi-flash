@@ -75,6 +75,11 @@ encoding_rs = "0.8"
 chardetng = "0.1"
 anyhow = "1"
 
+# 021 右键【执行】：PATH 扫描按驱动器类型过滤（GetDriveTypeW）——UNC/网络/
+# 可移动盘整目录跳过，焊死死网络路径 SMB 超时这一唯一慢源
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52", features = ["Win32_Storage_FileSystem", "Win32_System_WindowsProgramming"] }
+
 [dev-dependencies]
 # gpui 测试夹具（TestAppContext + 真布局）——只有 app 的 test target 会带上
 # test-support 特性，正常构建不受影响。
