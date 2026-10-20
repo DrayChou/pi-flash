@@ -4,11 +4,19 @@
 //! 与 ↑/↓/Enter 键盘导航保留，行 = 左✓（当前会话模型）+ 显示名 + 右侧
 //! 五角星（app-settings 默认，与设置页下列表同一份、双向同步）。
 //!
+//! 菜单版式（2026-10-19 定稿）：
+//! - 卡片宽 380px（+40：模型名 + 右缘星标不再贴边）。
+//! - **标星默认模型置顶**：默认模型所在 Provider 组置顶、组内置首
+//!   （`order_model_indices` 纯函数，单测看护）；菜单行序 = 键盘选择序 =
+//!   Enter 落点序（同一 vec 下标，三者不漂移）。
+//! - 内容超高时列表滚动 + 右缘常显滚动条（`menu_scrollbar`）；列表高同时
+//!   受 10 行上限与视口可用高约束（卡片不顶出窗口上沿）。
+//!
 //! 组件面（`group_entries` / `group_header_row` / `group_model_row` /
 //! `MODEL_FILTER_MIN`）为菜单与设置·模型页下列表共用：分组结构、组头样式、
 //! 行缩进、五角星、过滤阈值都在这一份实现，两处不许再各自漂移。
 
-use gpui::{AnyElement, MouseButton, SharedString, div, prelude::*, px, rgb};
+use gpui::{AnyElement, MouseButton, SharedString, div, point, prelude::*, px, rgb};
 
 use super::Chat;
 use crate::TextInput;
@@ -82,6 +90,88 @@ pub(crate) enum ModelGroupEntry {
     Model(usize),
 }
 
+/// 选中模型行在滚动内容里的 y 偏移（组头 0.8×行高 + 模型行 1×行高 累加）。
+/// 纯函数（不碰 cx），供键盘选中行滚进可视区用。
+fn sel_row_y(entries: &[ModelGroupEntry], sel: usize) -> f32 {
+    let mut y = 0.;
+    let mut seen = 0usize;
+    for e in entries {
+        match e {
+            ModelGroupEntry::Header(_) => y += ROW_H * 0.8,
+            ModelGroupEntry::Model(_) => {
+                if seen == sel {
+                    return y;
+                }
+                seen += 1;
+                y += ROW_H;
+            }
+        }
+    }
+    y
+}
+
+/// 菜单行序（**标星默认模型置顶**）：默认模型所在 Provider 组置顶、组内
+/// 默认模型置首；其余 Provider 按显示名字典序、组内保持目录原序。
+///
+/// 输入 = 候选模型下标（已过白名单/文本过滤），输出 = 显示序下标。纯函数
+/// （不碰 cx），单测看护。默认模型 = app-settings 的五角星默认（全局唯一）。
+pub(crate) fn order_model_indices(
+    models: &[pi_link::protocol::ModelInfo],
+    cand: &[usize],
+    default_ref: Option<&str>,
+) -> Vec<usize> {
+    if cand.len() < 2 {
+        return cand.to_vec();
+    }
+    // 默认模型键 = provider/id（切分一次，避免逐模型拼串）
+    let default_key = default_ref
+        .and_then(|r| r.split_once('/'))
+        .map(|(p, id)| (p.to_string(), id.to_string()));
+    let default_prov = default_key.as_ref().map(|(p, _)| p.as_str());
+
+    // Provider 出现序（去重）
+    let mut providers: Vec<&str> = Vec::new();
+    for &ix in cand {
+        let p = models[ix].provider.as_str();
+        if !providers.contains(&p) {
+            providers.push(p);
+        }
+    }
+    // 默认商置顶（不在候选里就不置顶）；其余按显示名字典序
+    let mut rest: Vec<&str> = providers
+        .iter()
+        .copied()
+        .filter(|p| Some(*p) != default_prov)
+        .collect();
+    rest.sort_by_key(|p| crate::ui::provider_display_name(p).to_lowercase());
+    let mut ordered: Vec<&str> = Vec::with_capacity(providers.len());
+    if let Some(dp) = default_prov
+        && providers.contains(&dp)
+    {
+        ordered.push(dp);
+    }
+    ordered.extend(rest);
+
+    // 组内：默认模型置首，其余保持候选序
+    let mut out = Vec::with_capacity(cand.len());
+    for p in ordered {
+        let mut group: Vec<usize> = cand
+            .iter()
+            .copied()
+            .filter(|ix| models[*ix].provider == p)
+            .collect();
+        if let Some((dp, did)) = default_key.as_ref()
+            && p == dp.as_str()
+            && let Some(pos) = group.iter().position(|ix| models[*ix].id == *did)
+        {
+            let dm = group.remove(pos);
+            group.insert(0, dm);
+        }
+        out.extend(group);
+    }
+    out
+}
+
 impl Chat {
     /// 自动化入口（无点击坐标）：锚点缺省走面板右下兜底定位（open_mcp_picker 同款）。
     pub(crate) fn open_model_picker(&mut self, cx: &mut gpui::Context<Self>) {
@@ -147,6 +237,10 @@ impl Chat {
     /// 菜单可见模型：当前项目目录（`catalog_for`）经 enabledModels 白名单
     /// 收窄；过滤文本仅在总数 ≥ [`MODEL_FILTER_MIN`] 时生效（阈值以下不渲染
     /// 过滤框，文本也不参与过滤——两处列表同规则）。返回 (可见, 总数)。
+    ///
+    /// 返回的 vec 已按**菜单显示序**排好（默认模型置顶，见
+    /// [`order_model_indices`]）：键盘选择的行号 = 该 vec 下标 = 屏幕行序，
+    /// 三者同源（否则 ↑/↓ 高亮行与 Enter 落到的模型会错位）。
     pub(crate) fn picker_models(
         &self,
         cx: &gpui::App,
@@ -164,21 +258,36 @@ impl Chat {
             .cloned()
             .collect();
         let total = scoped.len();
-        if total < MODEL_FILTER_MIN {
-            return (scoped, total);
-        }
-        let flt = match &self.dlg.model_picker {
-            Some(p) => p.input.read(cx).value().trim().to_lowercase(),
-            None => String::new(),
+        // 过滤文本仅在总数 ≥ MODEL_FILTER_MIN 时生效（阈值以下不渲染过滤框，
+        // 文本也不参与过滤——两处列表同规则）
+        let flt = if total < MODEL_FILTER_MIN {
+            String::new()
+        } else {
+            match &self.dlg.model_picker {
+                Some(p) => p.input.read(cx).value().trim().to_lowercase(),
+                None => String::new(),
+            }
         };
-        let visible = scoped
-            .into_iter()
-            .filter(|m| {
+        // 候选下标（过文本过滤）→ 显示序下标（默认模型置顶）
+        let cand: Vec<usize> = scoped
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| {
                 flt.is_empty()
                     || m.id.to_lowercase().contains(&flt)
                     || m.name.to_lowercase().contains(&flt)
                     || m.provider.to_lowercase().contains(&flt)
             })
+            .map(|(ix, _)| ix)
+            .collect();
+        let default_ref = self
+            .cfg
+            .mc_default_model
+            .as_ref()
+            .map(|(p, id)| format!("{p}/{id}"));
+        let visible = order_model_indices(&scoped, &cand, default_ref.as_deref())
+            .into_iter()
+            .map(|ix| scoped[ix].clone())
             .collect();
         (visible, total)
     }
@@ -188,15 +297,16 @@ impl Chat {
         self.picker_models(cx).1 >= MODEL_FILTER_MIN
     }
 
-    /// 分组行展开（组头 + 模型行交错；provider 按显示名序，组内保持入参序）。
+    /// 分组行展开（组头 + 模型行交错）：Provider 按**入参出现序**分组
+    /// （入参已由 [`Chat::picker_models`] 排成显示序——默认模型所在商在前），
+    /// 组内保持入参序。组序不再二次排序，避免把置顶的默认商打回原位。
     pub(crate) fn group_entries(models: &[pi_link::protocol::ModelInfo]) -> Vec<ModelGroupEntry> {
-        let mut providers: Vec<String> = Vec::new();
+        let mut providers: Vec<&str> = Vec::new();
         for m in models {
-            if !providers.contains(&m.provider) {
-                providers.push(m.provider.clone());
+            if !providers.contains(&m.provider.as_str()) {
+                providers.push(m.provider.as_str());
             }
         }
-        providers.sort_by_key(|p| crate::ui::provider_display_name(p).to_lowercase());
         let mut out = Vec::new();
         for p in providers {
             out.push(ModelGroupEntry::Header(p.to_uppercase()));
@@ -216,9 +326,39 @@ impl Chat {
         if n == 0 {
             return;
         }
-        if let Some(p) = self.dlg.model_picker.as_mut() {
-            p.sel = ((p.sel as i32) + delta).clamp(0, n as i32 - 1) as usize;
-            cx.notify();
+        let sel = match self.dlg.model_picker.as_mut() {
+            Some(p) => {
+                p.sel = ((p.sel as i32) + delta).clamp(0, n as i32 - 1) as usize;
+                p.sel
+            }
+            None => return,
+        };
+        self.reveal_model_sel(sel, cx);
+        cx.notify();
+    }
+
+    /// 选中行滚进可视区（列表可滚动后必需：↓ 走出可视区时高亮会消失）。
+    /// 只在出界时动偏移（已可见则不碰视口），gpui 布局阶段会夹住越界偏移。
+    fn reveal_model_sel(&self, sel: usize, cx: &mut Context<Self>) {
+        let Some(p) = self.dlg.model_picker.as_ref() else {
+            return;
+        };
+        let view_h = p.scroll.bounds().size.height.to_f64() as f32;
+        if view_h <= 0. {
+            return; // 还没布局（首帧）→ 无视口尺寸可算
+        }
+        let entries = Chat::group_entries(&self.picker_models(cx).0);
+        let y = sel_row_y(&entries, sel);
+        let cur = (-p.scroll.offset().y).to_f64() as f32; // 当前已滚下的距离（向下为正）
+        let new_off = if y < cur {
+            y
+        } else if y + ROW_H > cur + view_h {
+            y + ROW_H - view_h
+        } else {
+            cur
+        };
+        if (new_off - cur).abs() > 0.5 {
+            p.scroll.set_offset(point(px(0.), px(-new_off)));
         }
     }
 
@@ -461,13 +601,24 @@ pub(crate) fn view(
                 ))),
         );
     }
-    let n_rows = entries.len().max(1);
-    let list_h = (n_rows as f32 * ROW_H).min(ROW_H * 10.);
+    // 列表内容高：组头 0.8×行高 + 模型行 1×行高（精确值，不用行数估）；
+    // 空列表 = 空态提示行（上下 12px 留白 + 一行文字）
+    let content_h: f32 = if entries.is_empty() {
+        46.
+    } else {
+        entries
+            .iter()
+            .map(|e| match e {
+                ModelGroupEntry::Header(_) => ROW_H * 0.8,
+                ModelGroupEntry::Model(_) => ROW_H,
+            })
+            .sum()
+    };
 
     // 锚点算法与 MCP 菜单一致（统一定位：按钮居中 + 5px）
     let vp = window.viewport_size();
     let gap = px(5.);
-    let panel_w = px(340.);
+    let panel_w = px(380.);
     let (bottom, left) = match chat.dlg.pill_anchor {
         Some(a) => {
             let bottom = (vp.height - a.top + gap).max(px(8.));
@@ -479,6 +630,16 @@ pub(crate) fn view(
         }
         None => (px(64.), vp.width - panel_w - px(24.)),
     };
+
+    // 列表高 = min(内容高, 10 行上限, 视口内可用高)：内容超高时列表滚动
+    // （滚动条常显），卡片也不会顶出窗口上沿。
+    // 可用高 = 视口高 - 底距 - 过滤块(10+30+6) - 列表底部留白(6)
+    let filter_h = if show_filter { 46. } else { 0. };
+    let avail_h = (vp.height - bottom - px(filter_h + 6.)).max(px(80.));
+    let list_h = content_h.min(ROW_H * 10.).min(avail_h.to_f64() as f32);
+    // 内容超出可视区 = 可滚动：右缘多留 4px 给滚动条命中带（star 不被抢点击）
+    let scrollable = content_h > list_h - 6. + 0.5;
+    let row_pr = if scrollable { 14. } else { 10. };
 
     let dismiss_weak = weak.clone();
     let layer = crate::ui::overlay::layer(false, None, move |_w, cx| {
@@ -529,16 +690,103 @@ pub(crate) fn view(
                     .children(show_filter.then(|| picker.input.clone())),
             )
             .child(
+                // 列表 + 滚动条：relative 壳让滚动条贴列表右缘（不随内容滚走），
+                // 可滚动即常显（menu_scrollbar 变体：可滚动才画）
                 div()
-                    .id("model-picker-list")
-                    .pb(px(6.))
-                    .h(px(list_h))
-                    .overflow_y_scroll()
-                    .track_scroll(&picker.scroll)
+                    .relative()
                     .flex()
                     .flex_col()
-                    .child(body),
+                    .child(
+                        div()
+                            .id("model-picker-list")
+                            .pb(px(6.))
+                            .h(px(list_h))
+                            .overflow_y_scroll()
+                            .track_scroll(&picker.scroll)
+                            .flex()
+                            .flex_col()
+                            // 右侧让出滚动条位（可滚动时多留 4px：滚动条命中带
+                            // 不压住模型名/星标）
+                            .pr(px(row_pr))
+                            .child(body),
+                    )
+                    .child(
+                        div()
+                            .absolute()
+                            .top(px(2.))
+                            .bottom(px(2.))
+                            .right(px(0.))
+                            .w(px(10.))
+                            .child(crate::ui::psp_scrollbar::menu_scrollbar(&picker.scroll)),
+                    ),
             ),
     );
     Some(layer.child(card).into_any_element())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn m(provider: &str, id: &str) -> pi_link::protocol::ModelInfo {
+        pi_link::protocol::ModelInfo {
+            id: id.to_string(),
+            name: id.to_string(),
+            provider: provider.to_string(),
+            context_window: None,
+        }
+    }
+
+    /// 候选下标 → 显示序下标（0 起全序）。
+    fn order(models: &[pi_link::protocol::ModelInfo], default_ref: Option<&str>) -> Vec<usize> {
+        let cand: Vec<usize> = (0..models.len()).collect();
+        order_model_indices(models, &cand, default_ref)
+    }
+
+    #[test]
+    fn default_model_group_goes_first() {
+        let models = vec![
+            m("openai", "gpt-5"),
+            m("deepseek", "ds-v4"),
+            m("openai", "o3"),
+        ];
+        // 默认 = deepseek/ds-v4 → 该商组置顶、组内置首
+        let ord = order(&models, Some("deepseek/ds-v4"));
+        assert_eq!(ord, vec![1, 0, 2]);
+    }
+
+    #[test]
+    fn default_model_first_inside_group() {
+        let models = vec![m("openai", "a"), m("openai", "b"), m("openai", "c")];
+        let ord = order(&models, Some("openai/b"));
+        assert_eq!(ord, vec![1, 0, 2]);
+    }
+
+    #[test]
+    fn other_providers_sorted_by_display_name() {
+        let models = vec![
+            m("zai-coding-cn", "glm"),
+            m("deepseek", "ds"),
+            m("openai", "gpt"),
+        ];
+        // 无默认模型 → 按 Provider 显示名：DeepSeek / OpenAI / Z.AI Coding CN
+        let ord = order(&models, None);
+        assert_eq!(ord, vec![1, 2, 0]);
+    }
+
+    #[test]
+    fn default_not_in_candidates_is_ignored() {
+        let models = vec![m("openai", "gpt"), m("deepseek", "ds")];
+        // 默认模型已被过滤掉 → 退回纯显示名序
+        let ord = order(&models, Some("anthropic/claude"));
+        assert_eq!(ord, vec![1, 0]);
+    }
+
+    #[test]
+    fn empty_and_single_are_untouched() {
+        let models: Vec<pi_link::protocol::ModelInfo> = vec![];
+        assert!(order(&models, Some("openai/gpt")).is_empty());
+        let models = vec![m("openai", "gpt")];
+        assert_eq!(order(&models, Some("openai/gpt")), vec![0]);
+    }
 }
