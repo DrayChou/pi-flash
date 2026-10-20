@@ -84,6 +84,15 @@ pub(crate) struct QueuedInput {
     pub remote: bool,
 }
 
+/// 「立即/插话」的打断投递在途关联（2026-10-20 二次验收：立即必须打断）：
+/// id = 在途 prompt 命令 id；`interrupt` = 打断槽被取走的条目，被 pi 拒时
+/// 放回槽位。`interrupt: None` = 普通队列 flush（队首仍留在队列里）。
+#[derive(Debug, Clone)]
+pub(crate) struct FlushInFlight {
+    pub id: String,
+    pub interrupt: Option<QueuedInput>,
+}
+
 /// 033 会话导航面板的一轮摘要（runtime 缓存条目）：用户消息索引 + 前
 /// 50 字，agent 首条有正文回复的 (消息索引, 首行前 50 字)。
 pub(crate) struct TurnSummary {
@@ -157,7 +166,12 @@ pub(crate) struct SessionRuntime {
     /// 在途 flush 的命令 id（Prompt{None} 发出后等 response）：success =
     /// 摘掉队首；failure = pi 忙拒绝，放回队首等下一次 settled 重试。
     /// Some 期间卡片按钮禁用（条目正被取出派发，ZCode dispatch 态 parity）。
-    pub flush_in_flight: Option<String>,
+    pub flush_in_flight: Option<FlushInFlight>,
+    /// 「立即/插话」打断槽（2026-10-20 二次验收）：显式插入 = abort 当前
+    /// 回复 + 条目进槽，本轮 aborted 的 AgentSettled 一到就由 flush 以新
+    /// prompt 发出——模型立刻看到（此前走 pi steer 通道等注入点，纯文本
+    /// 长回复没有边界，54s 故事讲完才被回应）。不渲染卡片：气泡即呈现。
+    pub interrupt_pending: Option<QueuedInput>,
     pub stream_started: Option<std::time::Instant>,
     pub agent_running: bool,
     /// 本轮结局（三色通知的红档）：**最后一条 assistant 消息**
@@ -298,6 +312,7 @@ impl SessionRuntime {
             queued_followups: Vec::new(),
             queued_inputs: Vec::new(),
             flush_in_flight: None,
+            interrupt_pending: None,
             stream_started: None,
             agent_running: false,
             turn_error: false,

@@ -89,19 +89,25 @@ impl SessionRuntime {
                 data,
                 ..
             } => {
-                if command == "prompt" && self.flush_in_flight.as_deref() == Some(id.as_str()) {
-                    // 090 flush 关联（queue.rs flush_local_queue）：队首消息以
-                    // Prompt{None} 发出后的回执。success = pi 接受并开跑，摘掉
-                    // 队首（回显经 message_start 正常入流，本地队列不做乐观
-                    // 气泡，无去重负担）；failure = pi 实际在忙（AgentEnd..
-                    // Settled 续跑窗的猜测误差）**响亮拒绝**——放回队首等下一
-                    // 次 settled 重试，不静默丢、更不会插进当前轮。
-                    self.flush_in_flight = None;
+                if command == "prompt" && self.flush_in_flight.as_ref().is_some_and(|f| f.id == id)
+                {
+                    // 090 flush 关联（queue.rs flush_local_queue）：队首/打断槽
+                    // 消息以 Prompt{None} 发出后的回执。success = pi 接受并开跑
+                    // （普通队列 flush 摘掉队首——回显经 message_start 正常入
+                    // 流；打断槽条目已出槽，无动作）；failure = pi 实际在忙
+                    // （AgentEnd..Settled 续跑窗的猜测误差）**响亮拒绝**——
+                    // 队首仍在队列、打断条目放回槽，等下一次 settled 重试，
+                    // 不静默丢、更不会插进当前轮。
+                    let in_flight = self.flush_in_flight.take();
                     if success {
-                        if !self.queued_inputs.is_empty() {
+                        let from_interrupt = in_flight.is_some_and(|f| f.interrupt.is_some());
+                        if !from_interrupt && !self.queued_inputs.is_empty() {
                             self.queued_inputs.remove(0);
                         }
                     } else {
+                        if let Some(entry) = in_flight.and_then(|f| f.interrupt) {
+                            self.interrupt_pending = Some(entry);
+                        }
                         self.status = tr("queue.pushed_back").into();
                     }
                     cx.notify();

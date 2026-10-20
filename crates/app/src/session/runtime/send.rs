@@ -201,7 +201,10 @@ impl SessionRuntime {
         // 通路（clear_queue response 异步 / 本地同步）互不重叠。
         let (recalled, images) = self.restore_queue_to_editor();
         if !recalled.is_empty() || !images.is_empty() {
-            cx.emit(SessionEvent::RecallInput { text: recalled, images });
+            cx.emit(SessionEvent::RecallInput {
+                text: recalled,
+                images,
+            });
         }
         self.stream_started = None;
         // 中止：等待行立即收起（不等 agent_settled）
@@ -436,12 +439,12 @@ impl SessionRuntime {
         if !self.ensure_spawned(cx) {
             return;
         }
-        let Some(session) = &self.agent.session else {
+        if self.agent.session.is_none() {
             self.status = tr("status.disconnected").into();
             cx.notify();
             return;
-        };
-        // `!` / `!!` shell 命令（031）：不经 prompt/steer，走 rpc bash。
+        }
+        // `!` / `!!` shell 命令（031）：不经 prompt/插话，走 rpc bash。
         // 带图片时 ! 只当普通文本（pi-web bashMode 需无附件）。
         if self.pending_images.is_empty() && text.starts_with('!') {
             self.send_bash(&text, cx);
@@ -456,62 +459,19 @@ impl SessionRuntime {
             cx.notify();
             return;
         }
-        // 090 排队护栏（2026-10-20 定批，修订 2026-10-16「统一走 pi 排队」）：
-        // queue 模式（默认）一律扣 **PF 本地队列**——pi 的 followUp 在
-        // would-stop 点（run 内）就 drain，是「排队插队」的根源；空闲场景也
-        // 走入队+flush（发 Prompt{None}），pi 实际在跑（AgentEnd..Settled
-        // 续跑窗）时会响亮拒绝而非静默入队，猜测误差不再变成插队。
+        // 规则 1（2026-10-20 用户定稿）：queue 模式（默认）一律扣 **PF 本地
+        // 队列**，轮次结束（AgentSettled）自动发出；缓冲非空时 enqueue 内部
+        // 拒绝（规则 2）。空闲场景也走入队+flush（发 Prompt{None}），pi 实际
+        // 在跑（AgentEnd..Settled 续跑窗）时会响亮拒绝而非静默入队。
         if self.queue_mode() {
             self.enqueue_from_composer(text, cx);
             self.flush_local_queue(cx);
             cx.notify();
             return;
         }
-        // steer 模式（显式插话）：空闲 = prompt 立即开跑，运行中 = steer 插进
-        // 当前轮。仍走统一 prompt + streamingBehavior 通路（pi 原子判定，
-        // 理由见 protocol.rs Prompt 注释），只是把队列档换成显式插话档。
-        let streaming = self.agent_running || self.state.as_ref().is_some_and(|s| s.is_streaming);
-        let images: Vec<serde_json::Value> = self
-            .pending_images
-            .iter()
-            .map(|img| {
-                serde_json::json!({
-                    "type": "image",
-                    "data": img.data_b64,
-                    "mimeType": img.mime
-                })
-            })
-            .collect();
-        let cmd = Command::Prompt {
-            message: text.clone(),
-            images,
-            streaming_behavior: Some(if streaming { "steer" } else { "followUp" }.into()),
-        };
-        match session.send(&cmd) {
-            Ok(_) => {
-                // 纯图片发送不进历史、不做乐观回显（空文本气泡无内容可显，
-                // 等 RPC 回显带图的完整用户消息）
-                if !text.is_empty() && self.history.last().map(|h| h != &text).unwrap_or(true) {
-                    self.remember_input(text.clone());
-                }
-                self.history_ix = None;
-                self.input.clear();
-                self.pending_images.clear();
-                self.status = if streaming {
-                    tr("status.steered").into()
-                } else {
-                    "running".into()
-                };
-                // 技能命令不做乐观回显（pi-web parity）：RPC 回显的是展开
-                // 信封文本（渲染层折叠成紧凑命令），乐观插入裸 "/skill:xxx"
-                // 会多出一条重复气泡。prompt 与插话一致——发送帧即上屏
-                // 翻页，不等回显
-                if !text.is_empty() && !text.starts_with("/skill:") {
-                    self.optimistic_send(text, cx);
-                }
-            }
-            Err(e) => self.status = e,
-        }
+        // steer 模式（规则 3）：显式插入 = **打断**——中止当前轮次，草稿立刻
+        // 作为新一轮指令发出（空闲同样直接开跑），不再走 pi steer 注入通道。
+        self.interrupt_from_composer(cx);
         cx.notify();
     }
 
@@ -530,46 +490,34 @@ impl SessionRuntime {
         if !self.ensure_spawned(cx) {
             return false;
         }
-        let Some(session) = &self.agent.session else {
+        if self.agent.session.is_none() {
             self.status = tr("status.disconnected").into();
             cx.notify();
             return false;
-        };
-        // 090：queue 模式（默认）与 composer 同一漏斗——扣本地队列等
-        // AgentSettled 逐条发；steer 模式运行中 = steer 插话。空闲都由
-        // pi 原子判定直接开跑。
-        let streaming = self.agent_running || self.state.as_ref().is_some_and(|s| s.is_streaming);
+        }
+        // 规则 1：queue 模式（默认）与 composer 同一漏斗——扣本地队列等
+        // AgentSettled 自动发出（缓冲非空被 enqueue_remote 拒绝，返回 false）。
         if self.queue_mode() {
+            let queued = !self.queued_inputs.is_empty();
             self.enqueue_remote(text.clone(), cx);
             self.flush_local_queue(cx);
             cx.notify();
-            return true;
+            return !queued;
         }
-        let cmd = Command::Prompt {
-            message: text.clone(),
-            images: Vec::new(),
-            streaming_behavior: Some(if streaming { "steer" } else { "followUp" }.into()),
-        };
-        let sent = session.send(&cmd).is_ok();
-        if sent {
-            if self.history.last().map(|h| h != &text).unwrap_or(true) {
-                self.remember_input(text.clone());
-            }
-            self.history_ix = None;
-            self.status = if streaming {
-                tr("status.steered").into()
-            } else {
-                "running".into()
-            };
-            // 让桌面端也看到这条消息（微信发的同样属于这轮对话）
-            if !text.starts_with("/skill:") {
-                self.optimistic_send(text, cx);
-            }
-        } else {
-            self.status = tr("status.send_failed").into();
+        // steer 模式（规则 3）：打断投递——运行中中止当前轮，本条作为新一轮。
+        if self.history.last().map(|h| h != &text).unwrap_or(true) {
+            self.remember_input(text.clone());
         }
-        cx.notify();
-        sent
+        self.history_ix = None;
+        self.interrupt_deliver(
+            QueuedInput {
+                text,
+                images: Vec::new(),
+                remote: true,
+            },
+            cx,
+        );
+        true
     }
 
     /// 远程来的非文本命令（`/停止`、ExtUi 回填）：**不 spawn** ——
