@@ -77,6 +77,24 @@ impl SessionRuntime {
         }
     }
 
+    /// 思考档对账：pi 的 `thinkingLevel` 是唯一真值（请求档会被模型能力
+    /// 截断——deepseek-flash 只有 off/low/high/max，请求 `minimal` 实际是
+    /// `low`）。override 只在不是 auto（None）时归一过来：它要跟 pi 同档，
+    /// 否则菜单打勾与胶囊各说各话，respawn 的 `--thinking` 还会带着一个 pi
+    /// 根本不支持的档。
+    fn reconcile_thinking_override(&mut self) {
+        let Some(real) = self.state.as_ref().and_then(|s| s.thinking_level.clone()) else {
+            return;
+        };
+        if self
+            .thinking_override
+            .as_deref()
+            .is_some_and(|ov| ov != real)
+        {
+            self.thinking_override = Some(real);
+        }
+    }
+
     pub(super) fn on_event(&mut self, event: Event, cx: &mut Context<Self>) {
         // MessageStart(user) 置位翻页锚点（见函数尾 page_turn）
         let mut user_arrived = false;
@@ -111,6 +129,13 @@ impl SessionRuntime {
                         self.status = tr("queue.pushed_back").into();
                     }
                     cx.notify();
+                } else if command == "set_thinking_level" && success {
+                    // 请求档可能被 pi 按模型能力**截断**，而 pi 只在真变了才
+                    // 广播 thinking_level_changed（请求 minimal 落在当前档时
+                    // 一声不响）——回执补一次 get_state 把 override 归一到
+                    // 真值，菜单打勾才与 pi 同档（否则 override 会留着一个
+                    // pi 根本不支持的档，respawn 的 --thinking 也带着它）。
+                    self.rpc(&Command::GetState);
                 } else if command == "get_state" && success {
                     if let Some(data) = &data {
                         let st = SessionState::parse(data);
@@ -118,6 +143,9 @@ impl SessionRuntime {
                         // fork / clone 换分支）→ shell 身份必须跟着换
                         let rebound = st.session_file.clone().map(PathBuf::from);
                         self.state = Some(st);
+                        // 换模型/轮末/思考档回执都会走到这里：状态槽是
+                        // 标签真值源，override 相形之下只是草稿意图
+                        self.reconcile_thinking_override();
                         if let Some(f) = rebound {
                             self.follow_session_file(f, cx);
                         }
@@ -929,6 +957,16 @@ impl SessionRuntime {
                 self.exit_code = code;
             }
             Event::WireEvent { .. } => {}
+            // 思考档真值（pi 按模型能力截断后广播）：状态槽是胶囊标签的
+            // 首选来源，不跟着它走就永远停在 get_state 那一刻的旧值——真机
+            // 症状「怎么换都是 high」（pi 早已是 low/minimal，标签不动）。
+            Event::ThinkingLevelChanged { level } => {
+                if let Some(st) = self.state.as_mut() {
+                    st.thinking_level = Some(level.clone());
+                }
+                self.reconcile_thinking_override();
+                cx.notify();
+            }
             // pi 队列全量快照（入队/投递/清空都发）：镜像供「已排队 N 条」
             // 状态行；投递回显时 pi 已同步摘除队列项，镜像自动跟真
             Event::QueueUpdate {

@@ -598,23 +598,41 @@ impl SessionRuntime {
         ok
     }
 
-    /// LLM session title (pi-web lib/session-title.ts parity via a one-off
-    /// `pi --no-session --print` run; the in-process SDK call pi-web uses is
-    /// not reachable over RPC).
+    /// 思考档换挡（胶囊菜单 / 微信菜单同源）。
+    ///
+    /// `level` 是 pi 的档位键。pi 会按模型能力**截断**（deepseek-flash 只有
+    /// off/low/high/max），真值随 `thinking_level_changed` 事件回来，本地这
+    /// 里先乐观回填状态槽（不然胶囊要等下一次 `get_state` 才动，看起来像
+    /// 「没换过去」）。
     pub(crate) fn set_thinking_level(&mut self, level: &str, cx: &mut Context<Self>) {
-        if level == "auto" {
-            self.thinking_override = None;
-            cx.notify();
-            return;
-        }
         self.thinking_override = Some(level.to_string());
+        self.push_thinking_level(level);
+        cx.notify();
+    }
+
+    /// 「使用 pi 默认设置」（菜单 auto）：override 清空（打勾留在 auto），但
+    /// pi 端**没有** auto 档——只清本地标志等于点了没反应（真机：换到 low
+    /// 再选 auto，pi 仍停在 low、胶囊也不动）。所以由调用方按 pi 设置解出
+    /// 默认档（[`pi_link::config::PI_DEFAULT_THINKING_LEVEL`] 兜底）显式下发。
+    pub(crate) fn set_thinking_auto(&mut self, default: &str, cx: &mut Context<Self>) {
+        self.thinking_override = None;
+        self.push_thinking_level(default);
+        cx.notify();
+    }
+
+    /// 乐观回填状态槽 + 下发 rpc。没有进程（空闲回收/草稿）时就只落本地：
+    /// 下次 spawn 用 `--thinking <override>` 带上。
+    fn push_thinking_level(&mut self, level: &str) {
+        if let Some(st) = self.state.as_mut() {
+            st.thinking_level = Some(level.to_string());
+        }
         if let Some(session) = &self.agent.session {
             let _ = session.send(&Command::SetThinkingLevel {
                 level: level.to_string(),
             });
         }
-        cx.notify();
     }
+
 
     pub(crate) fn select_model(&mut self, provider: String, id: String, cx: &mut Context<Self>) {
         if let Some(session) = &self.agent.session {
