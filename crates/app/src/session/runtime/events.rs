@@ -277,9 +277,14 @@ impl SessionRuntime {
                 } else if command == "clear_queue" && success {
                     // abort 的配对撤回（根因见 abort_stream 注释）：response
                     // data 携带被撤下的未投递原文 {steering:[..], followUp:[..]}。
-                    // 逐条：摘 pending_echoes（不会再回显）→ 删乐观气泡（同文
-                    // 匹配口径与回显臂一致；/skill: 等未乐观上屏的自然无泡可删）
-                    // → 文本回填输入框（pi-web restoring-to-editor parity）。
+                    // 分流（2026-10-20 验收修订）：
+                    // - **已乐观上屏的**（pending_echoes 命中）= 用户视角
+                    //   「已发送」——气泡**保留**、文本不回编辑器（回输入框
+                    //   会把发出去的话原样弹回，真机验收否掉；转排队卡同理）。
+                    //   它确实没进模型上下文，快照重读后气泡自然消失；↑ 历史
+                    //   里仍有原文可捞回。
+                    // - 从未上屏的（090 后只剩 pif-ui 自动化残留）：删乐观
+                    //   气泡兜底 + 文本回填输入框（14e6059 语义）。
                     let d = data.unwrap_or(serde_json::Value::Null);
                     let mut recalled: Vec<String> = Vec::new();
                     for key in ["followUp", "steering"] {
@@ -294,30 +299,47 @@ impl SessionRuntime {
                         }
                     }
                     if !recalled.is_empty() {
+                        let mut dropped = 0usize;
+                        let mut editor_recalled: Vec<String> = Vec::new();
                         for text in &recalled {
                             if let Some(ix) = self.pending_echoes.iter().position(|p| p == text) {
+                                // 已上屏：摘 pending_echoes（不会再回显），气泡留
                                 self.pending_echoes.remove(ix);
-                            }
-                            if let Some(ix) = self.messages.iter().rposition(|m| {
-                                m.role == Role::User
-                                    && m.text_len() == text.len()
-                                    && m.plain_text().as_ref() == text
-                            }) {
-                                self.messages.remove(ix);
+                                dropped += 1;
+                            } else {
+                                // 未上屏：删乐观气泡兜底（同文匹配口径与回显臂
+                                // 一致）+ 回编辑器
+                                if let Some(ix) = self.messages.iter().rposition(|m| {
+                                    m.role == Role::User
+                                        && m.text_len() == text.len()
+                                        && m.plain_text().as_ref() == text
+                                }) {
+                                    self.messages.remove(ix);
+                                }
+                                editor_recalled.push(text.clone());
                             }
                         }
-                        // 锚点可能指着被删的气泡：按「重读后」口径重锚
-                        self.restore_anchor_after_reload();
-                        self.status = crate::i18n::tf(
-                            "status.recalled_queued",
-                            &[("count", recalled.len().to_string())],
-                        );
-                        // pi 侧撤回的条目不带附件（附件随消息入队即消费），
-                        // images 恒空；本地队列的撤回（090 abort）才有附件
-                        cx.emit(SessionEvent::RecallInput {
-                            text: recalled.join("\n\n"),
-                            images: Vec::new(),
-                        });
+                        if !editor_recalled.is_empty() {
+                            // 锚点可能指着被删的气泡：按「重读后」口径重锚
+                            self.restore_anchor_after_reload();
+                            self.status = crate::i18n::tf(
+                                "status.recalled_queued",
+                                &[("count", editor_recalled.len().to_string())],
+                            );
+                            // pi 侧撤回的条目不带附件（附件随消息入队即消费），
+                            // images 恒空；本地队列的撤回（090 abort）才有附件
+                            cx.emit(SessionEvent::RecallInput {
+                                text: editor_recalled.join("\n\n"),
+                                images: Vec::new(),
+                            });
+                        }
+                        if dropped > 0 {
+                            self.status = crate::i18n::tf(
+                                "status.steer_dropped",
+                                &[("count", dropped.to_string())],
+                            );
+                            cx.notify();
+                        }
                     }
                 } else if success {
                     self.status = format!("{command} ok");
