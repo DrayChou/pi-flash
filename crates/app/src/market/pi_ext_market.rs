@@ -35,7 +35,7 @@ const BATCH: usize = 8;
 /// 搜索框去抖。
 const DEBOUNCE_MS: u64 = 250;
 /// 卡片固定行高（vlist 等高行；内容按此高度裁切，撑不满也不会把行撑开）。
-const CARD_H: f32 = 148.;
+const CARD_H: f32 = 140.;
 /// 缩略槽宽高。
 const THUMB_W: f32 = 88.;
 const THUMB_H: f32 = 72.;
@@ -859,11 +859,10 @@ fn pkg_card(
                                 .h(gpui::px(36.))
                                 .overflow_hidden()
                                 .child(SharedString::from(row.desc.clone())),
-                        )
-                        .child(meta_line(row, t)),
+                        ),
                 ),
         )
-        // —— 下段：链接 …… 命令胶囊 + 动作 ——
+        // —— 下段（v16：元信息 + 链接 + 命令胶囊 + 动作 合并成一行）——
         .child(
             gpui::div()
                 .flex_shrink_0()
@@ -871,6 +870,8 @@ fn pkg_card(
                 .flex()
                 .items_center()
                 .gap(gpui::px(space::SP4))
+                .child(meta_line(row, t))
+                .child(dot(t))
                 .child(links(row, t))
                 .child(gpui::div().flex_1())
                 .children(cmd_pill(row, t))

@@ -239,7 +239,7 @@ html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: 
 <body>
 
 <div class="sheet-head">
-  <b>040-1 Pi扩展市场 · v15</b>
+  <b>040-1 Pi扩展市场 · v16（元信息并入底行）</b>
   <span>单列卡片（两段式：上=缩略+文本，下=链接……命令胶囊+动作，间距统一 8）· 1180×760 · mist</span>
   <span class="spacer"></span>
   <button id="themeBtn">切换到 one-dark</button>
@@ -379,10 +379,11 @@ function cardHtml(i) {
           ${installed && i % 4 !== 3 ? swHtml : (installed ? '<span class="sw" title="启用/停用"><i></i></span>' : '')}
         </div>
         <div class="desc">${desc}</div>
-        <div class="meta"><b>${author}</b><span class="sep"></span><span><b>${dl}</b>/mo</span><span class="sep"></span><span>${ago}</span></div>
       </div>
     </div>
     <div class="pkg-bot">
+      <div class="meta"><b>${author}</b><span class="sep"></span><span><b>${dl}</b>/mo</span><span class="sep"></span><span>${ago}</span></div>
+      <span class="sep" style="margin:0 2px"></span>
       <div class="links">
         <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h16v13H4z"/><path d="M4 7V4h16v3"/></svg>npm</a>
         <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="9" r="2.5"/><path d="M6 8.5v7M18 11.5c0 3-3 3.5-6 3.5"/></svg>repo</a>
