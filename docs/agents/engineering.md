@@ -148,14 +148,6 @@
 **机械动作**，可以放心交给钩子——这也正是「排版问题用脚本解决、别变成 agent
 的记忆负担」这条原则的落地方式。
 
-### 发版前不做统一格式化（2026-10-20 定案，仍然有效）
-
-1. **发出去的必须是测过的那份**：release 阶段只做校验 / 构建 / 打包，不该改源码。
-2. **洪泛只是换日子**：`git blame` 失真、`git bisect` 与热修 cherry-pick 全废。
-3. 每版都要重付一次代价（只洗「上版以来」的提交）。
-4. 版本间 diff 全是折行，审计与用户看不见真变更。
-
-`scripts/release.sh` 头部已写死「绝不在此处插格式化步骤」。
 
 ### 事故处置
 
@@ -166,47 +158,3 @@
 | 基线本身要撤掉 | `git revert b36f9b2`，并把该行从 `.git-blame-ignore-revs` 删掉，然后 `git config --unset blame.ignoreRevsFile` |
 | 想确认基线是否完好 | `scripts/fmt.sh --check --all`（期望：`0 个不符合`） |
 
-### 新克隆 checklist
-
-```bash
-git config core.hooksPath .githooks                      # 自动格式化 + 批量拦截
-git config blame.ignoreRevsFile .git-blame-ignore-revs   # blame 跳过基线提交
-```
-
-### 磁盘回收（`scripts/clean-cache.py`，2026-10-20 立）
-
-D 盘告警（86%）时人工 du + 逐个判断了一次，把结论固化成脚本，别再每次问 agent。
-
-```bash
-python scripts/clean-cache.py                  # 体检（默认 dry-run）
-python scripts/clean-cache.py --apply          # 安全档真清
-python scripts/clean-cache.py --apply --aggressive   # 连过期 rlib/rmeta 一起清
-```
-
-- **为什么不用 `cargo clean`**：它把 12G 一次归零，下次 debug 全量重编十几分钟。
-  脚本只删「同一 crate 的过期哈希版本」，活产物留着（本次实测 14.4G→9.3G，
-  其中 2.6G 是过期哈希，0 元重编代价的部分占 1.2G）。
-- **两档的边界**：安全档只动 `exe`/`pdb`——最终产物，一个 bin 同时只跑一份哈希，
-  旧的必是废弃探针/测试 bin，删了下次构建自动重建，零代价。`rlib`/`rmeta`/
-  `lib`/`dll`/`exp` 是 **crate 级、多 bin 共用**的中间产物（同一个
-  `libgpui_component-<hash>.dll` 同时服务 pi-flash 和 pif-ui），mtime 分不出
-  活死，所以只在 `--aggressive` 下清，代价是下次构建重编几个 crate（实测
-  gpui 家族约 2~3 分钟）。
-- **教训**：第一版把 `lib`/`dll` 也放进安全档按「留最新 1 份」删，直接误杀
-  gpui-component 的活 DLL，`cargo build` 白等 2.5 分钟——**同一 crate 的多份
-  哈希不能假定只有一份在用**。
-- **tmp 白名单**：`屏幕截图/`（AGENTS 约定）、`sound/`（sound.rs 注释引用的
-  试听稿）、`*.md`（release-notes 之类）。其余早于 `--tmp-age-days`（默认 3 天）
-  的条目整棵删；`--trash` 可改走回收站（同盘仍占空间，要清空才返还）。
-- 每次删除清单落 `target/clean-cache.log`（dry-run 落 `clean-cache.dry.log`）。
-
-**双击入口 `clean_cache.bat`**（仓库根，安全档）——里面两个坑写死在这儿：
-
-- **.bat 必须纯 ASCII**：脚本里 `chcp 65001` 之后 cmd 的行解析游标会按新代码页
-  重算，文件里只要有多字节中文，后面就会执行出 `'ib' is not recognized` 之类的
-  鬼命令（本次实录）。正确姿势 = 批处理正文全 ASCII，中文输出交给 Python；
-  需要 UTF-8 控制台时用 `cmd /c chcp 65001 >nul` 在**子进程**里切（改的是共享
-  控制台 CP，不影响本文件的解析），且这行本身也算 ASCII。
-- **.bat 必须 CRLF**：LF-only 的批处理 cmd 会把首行吃掉、后续每行都变成
-  `'xxx' is not recognized`。`.gitattributes` 已有 `*.bat text eol=crlf`，
-  手写文件时别用纯 LF 直接落盘。
