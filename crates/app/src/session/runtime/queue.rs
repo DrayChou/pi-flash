@@ -143,11 +143,9 @@ impl SessionRuntime {
     ///
     /// 槽不渲染卡片：乐观气泡即呈现。
     pub(crate) fn interrupt_deliver(&mut self, entry: QueuedInput, cx: &mut Context<Self>) {
-        // 乐观上屏（发送帧即见，不等 flush 回显）；技能命令不做乐观回显
-        // （pi-web parity，RPC 回显的是展开信封文本）
-        if !entry.text.is_empty() && !entry.text.starts_with("/skill:") {
-            self.optimistic_send(entry.text.clone(), cx);
-        }
+        // 打断先行：先 abort 当前回复（半截截断）再上屏钉顶——旧输出流的
+        // delta 立刻断流，钉顶不会跟还在写的旧内容打架（2026-10-20 验收：
+        // 立即发送的内容被刷出屏）。
         if self.agent_running {
             if let Some(session) = &self.agent.session {
                 let _ = session.send(&Command::Abort);
@@ -156,6 +154,16 @@ impl SessionRuntime {
                 let _ = session.send(&Command::ClearQueue);
             }
             self.stream_started = None;
+        }
+        // 乐观上屏（发送帧即见，不等 flush 回显）；技能命令不做乐观回显
+        // （pi-web parity，RPC 回显的是展开信封文本）
+        if !entry.text.is_empty() && !entry.text.starts_with("/skill:") {
+            self.optimistic_send(entry.text.clone(), cx);
+            // 「agent 正在输出不应该刷屏」：钉住视口不翻转跟尾，新回复在
+            // 视口下方生长，滚轮才解除（chat_list follow_lock）
+            self.pager.set_follow_lock(true);
+        }
+        if self.agent_running {
             // 等待行保持（optimistic_send 已置位）：abort 收尾后新轮无缝衔接
             if self.interrupt_pending.is_some() {
                 // 上一次打断还在途（settled 未到）：不覆盖槽，排到队首紧随其后
