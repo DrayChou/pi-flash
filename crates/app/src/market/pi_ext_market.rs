@@ -180,6 +180,11 @@ impl PiExtState {
 impl Chat {
     /// 打开「Pi扩展市场」标准页（菜单项、后续快捷键都走这里）。
     pub(crate) fn open_pi_ext_market(&mut self, cx: &mut gpui::Context<Self>) {
+        // 入口总闸（dev-flags `pi_ext_market`，默认关）：关态下菜单钮不渲染，
+        // 自动化动作也只是空转，页面永远打不开。
+        if !crate::services::workspace::pi_ext_market_enabled() {
+            return;
+        }
         self.dlg.market_menu = None;
         match self
             .ws
