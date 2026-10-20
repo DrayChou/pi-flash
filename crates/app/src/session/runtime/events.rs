@@ -96,8 +96,9 @@ impl SessionRuntime {
     }
 
     pub(super) fn on_event(&mut self, event: Event, cx: &mut Context<Self>) {
-        // MessageStart(user) 置位翻页锚点（见函数尾 page_turn）
-        let mut user_arrived = false;
+        // 用户消息到达携带发送帧的钉顶决定（None = 未到；Some(pin) = 到了，
+        // 见函数尾 page_turn）
+        let mut user_arrived: Option<bool> = None;
         match event {
             Event::Response {
                 id,
@@ -336,7 +337,9 @@ impl SessionRuntime {
                         let mut dropped = 0usize;
                         let mut editor_recalled: Vec<String> = Vec::new();
                         for text in &recalled {
-                            if let Some(ix) = self.pending_echoes.iter().position(|p| p == text) {
+                            if let Some(ix) =
+                                self.pending_echoes.iter().position(|p| p.text == *text)
+                            {
                                 // 已上屏：摘 pending_echoes（不会再回显），气泡留
                                 self.pending_echoes.remove(ix);
                                 dropped += 1;
@@ -454,8 +457,14 @@ impl SessionRuntime {
                         // 不命中则照常 push（pi 侧自行产生的 user 消息）。
                         // 回显到达 ≠ agent 已开始应答，等待行（spark + 正在思考…
                         // + shimmer）必须活到第一个 assistant 事件
-                        if let Some(ix) = self.pending_echoes.iter().position(|p| *p == echo_text) {
-                            self.pending_echoes.remove(ix);
+                        if let Some(ix) =
+                            self.pending_echoes.iter().position(|p| p.text == echo_text)
+                        {
+                            // 发送帧的钉顶决定随条目走（PendingEcho.pin）：打断
+                            // 投递（立即/Ctrl+Enter）上屏时不钉顶，回显升级同样
+                            // 不许翻页——回显再补一次 page_turn 就是「立即刷屏」
+                            // 的根因（2026-10-20 三次验收）
+                            let echo_pin = self.pending_echoes.remove(ix).pin;
                             // 保障幅度：死信条目（拒绝误判 / 会话切换等）永不回显时只会占位，
                             // 不能无限堆。轮终不清（见上），这里补上限。
                             while self.pending_echoes.len() > 64 {
@@ -471,6 +480,7 @@ impl SessionRuntime {
                                 let m = &mut self.messages[ix];
                                 m.blocks = blocks;
                             }
+                            user_arrived = Some(echo_pin);
                         } else {
                             self.messages.push(Msg {
                                 role: Role::User,
@@ -487,11 +497,16 @@ impl SessionRuntime {
                                 details: None,
                                 model: None,
                             });
+                            // pi 侧自行产生的 user 消息（分支/压缩重放等）：无
+                            // 发送帧可言，沿用原行为钉顶
+                            user_arrived = Some(true);
                         }
-                        user_arrived = true;
                     }
                     "assistant" => {
                         self.phase_waiting = false;
+                        // 新轮 assistant 消息 = 合法新流开始：此后的 delta 属于
+                        // 它本身，切断标记使命结束（残包窗口只覆盖 abort..settle）
+                        self.stream_cut = false;
                         // 不清 pending_echoes：排队发送的回显在**下一轮 turn 边界**
                         // 才到，中间会先流过本轮的一堆 assistant 事件；这里
                         // 清了就是“排队气泡回显时又被当成新消息推了一条”
@@ -812,6 +827,9 @@ impl SessionRuntime {
                 self.agent_running = false;
                 self.phase_waiting = false;
                 self.streaming_content = false;
+                // 轮次彻底结束：残包窗口（abort..settle）关闭的兜底清除——
+                // 之后到达的流事件都属新轮，不得再并入旧 assistant
+                self.stream_cut = false;
                 // 一轮结束**不**退役锚点：pi-web 只是 promptAnchorActive=false
                 // 让垫片收敛，容器 scrollTop 保持——短回复留在屏顶、长回复由
                 // 胶水跟随尾部。锚点在此退役会把内容拽回屏底（消息从屏顶跳走，
@@ -1005,9 +1023,12 @@ impl SessionRuntime {
                 }
             }
         }
-        // 用户消息到达（发送回显升级 / steer 推入）→ 翻页：该消息钉视口
-        // 顶，历史滚出屏（回显升级同锚点重入不重钉，见 page_turn）
-        if user_arrived {
+        // 用户消息到达 → 按**发送帧**的钉顶决定翻页：空闲普通发送钉视口
+        // 顶，历史滚出屏（回显升级同锚点重入不重钉，见 page_turn）；打断
+        // 投递（立即/Ctrl+Enter）发送帧不钉（queue.rs interrupt_deliver），
+        // 回显到达同样不钉——否则乐观上屏的「不刷屏」在这里被补一刀，立
+        // 即消息照旧把整屏顶出去（2026-10-20 三次验收）
+        if user_arrived == Some(true) {
             let ix = self.messages.len() - 1;
             self.pager
                 .page_turn(ix, self.messages.len(), self.phase_row_visible());
@@ -1093,6 +1114,8 @@ impl SessionRuntime {
     ) {
         self.messages.clear();
         self.pending_echoes.clear();
+        // 整表已按权威快照归一：切断窗口随之作废（残包即使再到也不能并入）
+        self.stream_cut = false;
         for msg in &rpc_msgs {
             let blocks = content_blocks(&msg["content"]);
             let usage = Usage::parse(&msg["usage"]);

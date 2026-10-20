@@ -141,11 +141,17 @@ impl SessionRuntime {
     ///   生成没有调用边界——真机 54s 故事讲完才被回应，用户否掉。）
     /// - 空闲：条目进打断槽，flush 直接开跑。
     ///
+    /// 钉顶只看「有没有真的在打断」：agent 没在说话就无所谓插话——空闲
+    /// 投递 = **普通发送**，照常发言钉顶（steer 档 Enter / 空闲点立即都算），
+    /// 否则 steer 档的正常说话永远没有置顶（2026-10-20 验收回归，用户点名
+    /// 「agent 不在说话我怎么算是插话」）。运行中才不钉顶：消息跟在流后面
+    /// 不刷屏（用户定稿），`pin=false` 记进 pending_echo，回显按同一决定
+    /// 不翻页——只改上屏半边、回显又钉回去，「立即刷屏」照样发生（三次
+    /// 验收根因，events.rs 尾部同款注释）。
+    ///
     /// 槽不渲染卡片：乐观气泡即呈现。
     pub(crate) fn interrupt_deliver(&mut self, entry: QueuedInput, cx: &mut Context<Self>) {
-        // 打断先行：先 abort 当前回复（半截截断）再上屏钉顶——旧输出流的
-        // delta 立刻断流，钉顶不会跟还在写的旧内容打架（2026-10-20 验收：
-        // 立即发送的内容被刷出屏）。
+        // 打断先行：先 abort 当前回复（半截截断）——旧输出流的 delta 立刻断流
         if self.agent_running {
             if let Some(session) = &self.agent.session {
                 let _ = session.send(&Command::Abort);
@@ -154,14 +160,19 @@ impl SessionRuntime {
                 let _ = session.send(&Command::ClearQueue);
             }
             self.stream_started = None;
+            // 管道里还有 abort 前的旧流残包：标记切断，让它们并入旧 assistant
+            // 而不是在下面的乐观气泡之后再长出一条 assistant（气泡跳到旧输
+            // 出上方的根因，见 stream_cut 字段注释）
+            self.stream_cut = true;
         }
-        // 乐观上屏（发送帧即见，不等 flush 回显）；技能命令不做乐观回显
-        // （pi-web parity，RPC 回显的是展开信封文本）
+        let pin = !self.agent_running;
+        if !pin {
+            // 打断在跑的轮次：退出锚点/垫片切回普通贴底跟随，消息追加在流
+            // 尾部、视图跟着流走，新回复在其下继续长
+            self.pager.release();
+        }
         if !entry.text.is_empty() && !entry.text.starts_with("/skill:") {
-            self.optimistic_send(entry.text.clone(), cx);
-            // 「agent 正在输出不应该刷屏」：钉住视口不翻转跟尾，新回复在
-            // 视口下方生长，滚轮才解除（chat_list follow_lock）
-            self.pager.set_follow_lock(true);
+            self.optimistic_send(entry.text.clone(), pin, cx);
         }
         if self.agent_running {
             // 等待行保持（optimistic_send 已置位）：abort 收尾后新轮无缝衔接
