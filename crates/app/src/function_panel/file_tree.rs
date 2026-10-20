@@ -841,7 +841,8 @@ fn action_bar(
                     t,
                     false,
                     true,
-                    None,
+                    // tooltip 附键位 chip（OpenFileSearch = ctrl-l，082 同款）
+                    Some(&crate::OpenFileSearch),
                     move |_, _, cx| {
                         let _ = w_search.update(cx, |c, cx| c.open_file_search(cx));
                     },
