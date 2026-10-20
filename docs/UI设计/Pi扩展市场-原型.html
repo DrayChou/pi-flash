@@ -95,21 +95,21 @@ html[data-theme="dark"] .sheet-head button:hover { background: rgba(255,255,255,
 .search input::placeholder { color: var(--text-soft); }
 .search input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash); }
 
-.select { position: relative; height: 32px; display: flex; align-items: center; gap: 8px;
-  padding: 0 26px 0 10px; border: 1px solid var(--hairline); border-radius: 7px;
+.select { position: relative; height: 28px; display: flex; align-items: center; gap: 8px;
+  padding: 0 24px 0 10px; border: 1px solid var(--hairline); border-radius: 6px;
   font-size: 12px; color: var(--text-muted); background: var(--bg); cursor: pointer; }
 .select:hover { color: var(--text); border-color: var(--text-faint); }
 .select svg { position: absolute; right: 8px; width: 12px; height: 12px; opacity: .7; }
 
 .spacer { flex: 1; }
 .seg { display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--bg-panel);
-  border: 1px solid var(--hairline); height: 30px; align-items: center; }
-.seg button { font: inherit; font-size: 12px; height: 26px; padding: 0 12px; border: 0; border-radius: 6px;
+  border: 1px solid var(--hairline); height: 28px; align-items: center; }
+.seg button { font: inherit; font-size: 11px; height: 24px; padding: 0 8px; border: 0; border-radius: 6px;
   background: transparent; color: var(--text-muted); cursor: pointer; }
 .seg button:hover { color: var(--text); }
 .seg button.act { background: var(--bg); color: var(--text); font-weight: 600; box-shadow: var(--shadow-card); }
 
-.btn { font: inherit; font-size: 12px; height: 30px; padding: 0 13px; border-radius: 7px;
+.btn { font: inherit; font-size: 12px; height: 28px; padding: 0 12px; border-radius: 6px;
   display: inline-flex; align-items: center; gap: 6px; border: 1px solid transparent;
   cursor: pointer; white-space: nowrap; }
 .btn svg { width: 13px; height: 13px; }
@@ -120,8 +120,8 @@ html[data-theme="dark"] .sheet-head button:hover { background: rgba(255,255,255,
 .btn.quiet { color: var(--text-dim); background: transparent; }
 .btn.quiet:hover { background: var(--bg-hover); color: var(--text); }
 .btn[disabled] { opacity: .45; cursor: default; }
-.btn.sm { height: 28px; padding: 0 12px; border-radius: 6px; }
-.btn.icon { width: 28px; padding: 0; justify-content: center; }
+.btn.sm { height: 24px; padding: 0 8px; border-radius: 6px; font-size: 11px; }
+.btn.icon { width: 24px; height: 24px; padding: 0; justify-content: center; }
 .btn .n { font-variant-numeric: tabular-nums; opacity: .85; }
 
 /* 摘要行 */
@@ -222,14 +222,14 @@ html[data-theme="dark"] .chip.ext { color: var(--accent-hover); }
   border-radius: 2px; background: var(--accent); opacity: .45; }
 
 /* 底栏 */
-.foot { flex: none; display: flex; align-items: center; gap: 8px; height: 52px; padding: 0 26px;
+.foot { flex: none; display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 26px;
   border-top: 1px solid var(--hairline); font-size: 12px; color: var(--text-muted); }
-.pager { font: inherit; font-size: 12px; height: 30px; padding: 0 12px; border-radius: 6px;
+.pager { font: inherit; font-size: 12px; height: 28px; padding: 0 12px; border-radius: 6px;
   border: 1px solid var(--hairline); background: transparent; color: var(--text-muted); cursor: pointer; }
 .pager:hover { background: var(--bg-hover); color: var(--text); }
 .pager[disabled] { opacity: .38; cursor: default; }
 .foot .pages { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px; }
-.pg { font: inherit; font-size: 12px; width: 32px; height: 30px; border-radius: 6px;
+.pg { font: inherit; font-size: 12px; width: 28px; height: 28px; border-radius: 6px;
   border: 1px solid var(--hairline); background: transparent; color: var(--text-muted);
   cursor: pointer; font-variant-numeric: tabular-nums; }
 .pg:hover { background: var(--bg-hover); color: var(--text); }
@@ -266,7 +266,7 @@ html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: 
 <body>
 
 <div class="sheet-head">
-  <b>040-1 Pi扩展市场 · v9</b>
+  <b>040-1 Pi扩展市场 · v10（按钮全量对规范）</b>
   <span>单列卡片（对齐 pi.dev 官方信息结构，单列排布）· 1180×760 · mist</span>
   <span class="spacer"></span>
   <button id="themeBtn">切换到 one-dark</button>

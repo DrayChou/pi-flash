@@ -56,6 +56,10 @@
 
 `AgentSessionEvent`（`dist/core/agent-session.d.ts`）全量对齐：除轮终三件套（`agent_end`/`agent_settled`/`auto_retry_*`）外，`compaction_start/end`（end 带 `errorMessage`/`willRetry`）、`summarization_retry_scheduled/attempt_start/finished`（与 auto_retry 同构的退避窗口，轮未结束）、`extension_error`（rpc-mode 对扩展错误的输出）、`tool_execution_*`/`queue_update`/`entry_appended`/`session_info_changed`/`thinking_level_changed`（归 `Event::WireEvent`，app 暂不消费）均已 typed。真正未知 type 落 `Event::Unparsed`：按 type 去重 eprintln 留痕，不再完全静默。升级 pi 时 grep 新版 agent-session.d.ts 的 `AgentSessionEvent` 核对增量。
 
+## 图片坐标标注（formatDimensionNote，升级复核点）
+
+图片超限缩放展示时，pi 把 `[Image: original WxH, displayed at WxH. Multiply coordinates by N to map to original image.]` **无开关**拼进消息 text 块尾（生成于 `dist/utils/image-resize.js formatDimensionNote`；user 附件拼 `\n\n` + 标注、read 工具图结果拼 `Read image file [mime]\n` + 标注，多图多条连排）。会话 jsonl 存的就是带标注的最终文本，RPC 回显同文。这是给模型的元数据、非消息原文：PF 在 wire 解码出口统一剥除（`protocol.rs content_blocks → strip_image_dimension_note`，尾部连续标注、形状严格校验）。升级 pi 若改了该格式，剥除静默失效（不误剥），以新版 image-resize.js 为准复核。
+
 ## 调试
 
 - `PI_FLASH_RPC_LOG` 开线缆日志。

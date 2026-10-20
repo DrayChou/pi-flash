@@ -290,13 +290,79 @@ impl Block {
     }
 }
 
+/// 剥除 pi 拼进消息文本尾部的图片坐标标注（pi dist/utils/image-resize.js
+/// `formatDimensionNote`：图片超限缩放展示时，user 附件与 read 工具图结果
+/// 的 text 块尾都会无开关追加
+/// `[Image: original WxH, displayed at WxH. Multiply coordinates by N to map
+/// to original image.]`）。那是给模型的元数据、非消息原文：PF 展示与回显
+/// 同文去重（pending_echoes）都按「实际文本」口径，在 wire 解码出口统一剥。
+/// 只剥尾部连续标注（多图多条连排）；形状不符（如用户手打同前缀文本）不剥
+/// ——pi 升级若改了格式，这里静默退化为不剥，复核点记在 docs/agents/pi-rpc.md。
+fn strip_image_dimension_note(text: &str) -> std::borrow::Cow<'_, str> {
+    if !text.contains("[Image: original ") {
+        return std::borrow::Cow::Borrowed(text);
+    }
+    let mut s = text.trim_end();
+    let mut stripped = false;
+    while let Some(start) = s.rfind("[Image: original ") {
+        if !is_image_dimension_note(&s[start..]) {
+            break;
+        }
+        s = s[..start].trim_end();
+        stripped = true;
+    }
+    if stripped {
+        std::borrow::Cow::Owned(s.to_string())
+    } else {
+        std::borrow::Cow::Borrowed(text)
+    }
+}
+
+/// 形状校验，严格对齐 formatDimensionNote 输出格式。
+fn is_image_dimension_note(seg: &str) -> bool {
+    fn digits(s: &str) -> bool {
+        !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit())
+    }
+    let Some(rest) = seg.strip_prefix("[Image: original ") else {
+        return false;
+    };
+    let Some((w, rest)) = rest.split_once('x') else {
+        return false;
+    };
+    if !digits(w) {
+        return false;
+    }
+    let Some((h, rest)) = rest.split_once(", displayed at ") else {
+        return false;
+    };
+    if !digits(h) {
+        return false;
+    }
+    let Some((dw, rest)) = rest.split_once('x') else {
+        return false;
+    };
+    if !digits(dw) {
+        return false;
+    }
+    let Some((dh, rest)) = rest.split_once(". Multiply coordinates by ") else {
+        return false;
+    };
+    if !digits(dh) {
+        return false;
+    }
+    let Some(scale) = rest.strip_suffix(" to map to original image.]") else {
+        return false;
+    };
+    !scale.is_empty() && scale.bytes().all(|b| b.is_ascii_digit() || b == b'.')
+}
+
 /// Extract ordered content blocks from a `message.content` value
 /// (string form is treated as a single text block).
 pub fn content_blocks(content: &Value) -> Vec<Block> {
     match content {
         Value::String(s) => vec![Block::Text {
             content_index: 0,
-            text: s.clone(),
+            text: strip_image_dimension_note(s).into_owned(),
         }],
         Value::Array(items) => items
             .iter()
@@ -345,7 +411,8 @@ pub fn content_blocks(content: &Value) -> Vec<Block> {
                     }
                     _ => Block::Text {
                         content_index: idx,
-                        text: b["text"].as_str().unwrap_or("").to_string(),
+                        text: strip_image_dimension_note(b["text"].as_str().unwrap_or(""))
+                            .into_owned(),
                     },
                 }
             })
@@ -1541,6 +1608,74 @@ mod tests {
         assert_eq!(
             c.to_record("b"),
             json!({"id":"b","type":"prompt","message":"hi","images":[img]})
+        );
+    }
+
+    #[test]
+    fn image_dimension_note_stripped_from_text_blocks() {
+        // pi formatDimensionNote 实录（会话 jsonl 摘例）：user 附件尾拼 \n\n + 标注
+        let content = json!([
+            {"type":"text","text":"这是截图，为什么有2个replysession？\n\n[Image: original 2295x561, displayed at 2000x489. Multiply coordinates by 1.15 to map to original image.]"},
+            {"type":"image","data":"QUJD","mimeType":"image/png"}
+        ]);
+        let blocks = content_blocks(&content);
+        assert_eq!(
+            blocks[0],
+            Block::Text {
+                content_index: 0,
+                text: "这是截图，为什么有2个replysession？".into(),
+            }
+        );
+
+        // read 工具图结果：前缀行 + 标注，同样剥
+        let content = json!([{"type":"text","text":"Read image file [image/png]\n[Image: original 2560x1368, displayed at 2000x1069. Multiply coordinates by 1.28 to map to original image.]"}]);
+        let blocks = content_blocks(&content);
+        assert_eq!(
+            blocks[0],
+            Block::Text {
+                content_index: 0,
+                text: "Read image file [image/png]".into(),
+            }
+        );
+
+        // 无标注文本原样保留
+        let content = json!("普通文本");
+        assert_eq!(
+            content_blocks(&content)[0],
+            Block::Text {
+                content_index: 0,
+                text: "普通文本".into(),
+            }
+        );
+
+        // 正文中间出现的同形文本不动（只剥尾部）
+        let content = json!([{"type":"text","text":"看 [Image: original 10x10, displayed at 5x5. Multiply coordinates by 2.00 to map to original image.] 这个"}]);
+        assert_eq!(
+            content_blocks(&content)[0],
+            Block::Text {
+                content_index: 0,
+                text: "看 [Image: original 10x10, displayed at 5x5. Multiply coordinates by 2.00 to map to original image.] 这个".into(),
+            }
+        );
+
+        // 形状不符（手打同前缀、缺数字/缺尾句）不剥
+        let content = json!([{"type":"text","text":"[Image: original 尺寸没写对]"}]);
+        assert_eq!(
+            content_blocks(&content)[0],
+            Block::Text {
+                content_index: 0,
+                text: "[Image: original 尺寸没写对]".into(),
+            }
+        );
+
+        // 多图多条连排全剥
+        let content = json!([{"type":"text","text":"两张图\n\n[Image: original 2370x162, displayed at 2000x137. Multiply coordinates by 1.19 to map to original image.]\n\n[Image: original 1000x800, displayed at 1000x800. Multiply coordinates by 1.00 to map to original image.]"}]);
+        assert_eq!(
+            content_blocks(&content)[0],
+            Block::Text {
+                content_index: 0,
+                text: "两张图".into(),
+            }
         );
     }
 
