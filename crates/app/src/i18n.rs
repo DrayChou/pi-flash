@@ -82,6 +82,8 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("market.type.subagent", "子代理", "子代理", "Subagent"),
     ("market.type.unknown", "—", "—", "—"),
     ("market.empty", "没有匹配的扩展，换个关键词试试", "沒有符合的擴展，換個關鍵字試試", "No matching extensions — try another keyword"),
+    ("market.installed_summary", "个已安装", "個已安裝", "installed"),
+    ("market.empty_installed", "尚未安装任何扩展，去「未安装」页签逛逛", "尚未安裝任何擴展，去「未安裝」頁籤逛逛", "No extensions installed yet — browse the Not installed tab"),
     ("market.offline", "网络不可用，显示本地缓存的 {n} 条", "網路無法使用，顯示本機快取的 {n} 筆", "Network unavailable — showing {n} cached entries"),
     ("market.loading", "加载中…", "載入中…", "Loading…"),
     ("market.per_month", "/月", "/月", "/mo"),

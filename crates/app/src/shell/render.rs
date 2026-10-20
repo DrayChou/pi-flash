@@ -157,6 +157,17 @@ impl Render for Chat {
         } else if self.file_editor_focus(window, cx).is_some() {
             // 023：文件编辑器持有焦点时不回收——否则点进去下一帧就被抢回
             // composer，打字全失效（编辑器此前不在白名单）
+        } else if self.layout.content_view == crate::ContentView::PiExtMarket
+            && self
+                .aux
+                .market
+                .pi_ext
+                .input
+                .as_ref()
+                .is_some_and(|i| i.read(cx).focus_handle_in(cx).is_focused(window))
+        {
+            // 040-1：市场搜索框持焦不回收（同文件编辑器白名单）——render
+            // 每帧仲裁会把焦点抢回 composer，市场页搜索框点进去打不进字
         } else if !(self.layout.content_view == crate::ContentView::Term
             && self
                 .shown_terminal_focus()

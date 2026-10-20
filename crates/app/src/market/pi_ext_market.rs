@@ -35,7 +35,7 @@ const BATCH: usize = 8;
 /// 搜索框去抖。
 const DEBOUNCE_MS: u64 = 250;
 /// 卡片固定行高（vlist 等高行；内容按此高度裁切，撑不满也不会把行撑开）。
-const CARD_H: f32 = 128.;
+const CARD_H: f32 = 132.;
 /// 缩略槽宽高。
 const THUMB_W: f32 = 88.;
 const THUMB_H: f32 = 72.;
@@ -448,50 +448,114 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
 
-    let rows: Vec<RowData> = st
-        .entries
-        .iter()
-        .filter(|e| match st.filter {
-            ExtFilter::Installed => installed.contains(&e.source()),
-            ExtFilter::NotInstalled => !installed.contains(&e.source()),
-        })
-        .map(|e| {
-            let source = e.source();
-            let status = if !installed.contains(&source) {
-                RowStatus::NotInstalled
-            } else if chat.aux.plugin_updates.state_of(&source)
+    let rows: Vec<RowData> = if st.filter == ExtFilter::Installed {
+        // 已装页签 = **本地全量**：npm 搜索只回当前页 ≤50 条，装过的包未必
+        // 都在里面（离线更是 0 条）。直接列 `mc_pkgs_global`；npm 缓存里有
+        // 的字段借用，缺的（版本/描述）读本地 package.json 补齐。每次渲染
+        // 每包 2 个小文件读，仅本页签生效，量级 = 已装包数，可接受。
+        let mut rows = Vec::new();
+        for (ix, v) in chat.cfg.mc_pkgs_global.iter().enumerate() {
+            let source = pi_link::skills::entry_source(v);
+            if source.is_empty() {
+                continue;
+            }
+            let name = pi_link::skills::display_source(&source).to_string();
+            let cached = st.entries.iter().find(|e| e.name == name);
+            let status = if chat.aux.plugin_updates.state_of(&source)
                 == Some(crate::services::plugin_updates::PkgUpdateState::UpdateAvailable)
             {
                 RowStatus::UpdateAvailable
             } else {
                 RowStatus::Installed
             };
-            let installed_ix = chat
-                .cfg
-                .mc_pkgs_global
-                .iter()
-                .position(|v| pi_link::skills::entry_source(v) == source);
-            let enabled = installed_ix
-                .and_then(|ix| chat.cfg.mc_pkgs_global.get(ix))
-                .map(|v| !pi_link::skills::entry_disabled(v))
-                .unwrap_or(true);
-            RowData {
-                name: e.name.clone(),
-                desc: e.description.clone(),
-                version: e.version.clone(),
-                author: e.author.clone().unwrap_or_default(),
-                downloads: pi_link::market::pi_ext_market::format_downloads(e.monthly_downloads),
-                ago: ago_label(&e.updated, now),
-                kinds: e.kinds.clone(),
-                repo: e.repo.clone(),
-                cmd: e.install_command(),
+            let (n_ext, n_skill, n_prompt, n_theme) = pi_link::skills::entry_resource_counts(v);
+            let mut kinds = Vec::new();
+            if n_ext > 0 {
+                kinds.push(MarketKind::Extension);
+            }
+            if n_skill > 0 {
+                kinds.push(MarketKind::Skill);
+            }
+            if n_prompt > 0 {
+                kinds.push(MarketKind::Prompt);
+            }
+            if n_theme > 0 {
+                kinds.push(MarketKind::Theme);
+            }
+            rows.push(RowData {
+                name,
+                desc: cached
+                    .map(|e| e.description.clone())
+                    .filter(|d| !d.is_empty())
+                    .or_else(|| pi_link::skills::package_description(&source))
+                    .unwrap_or_default(),
+                version: pi_link::skills::package_installed_version(&source)
+                    .or_else(|| cached.map(|e| e.version.clone()))
+                    .unwrap_or_default(),
+                author: cached.and_then(|e| e.author.clone()).unwrap_or_default(),
+                downloads: cached
+                    .map(|e| pi_link::market::pi_ext_market::format_downloads(e.monthly_downloads))
+                    .unwrap_or_default(),
+                ago: cached
+                    .map(|e| ago_label(&e.updated, now))
+                    .unwrap_or_default(),
+                kinds,
+                repo: cached.and_then(|e| e.repo.clone()),
+                cmd: String::new(), // 已装没有「安装命令」可抄
                 status,
                 busy: pending_source.as_deref() == Some(source.as_str()),
-                installed_ix,
-                enabled,
-            }
-        })
-        .collect();
+                installed_ix: Some(ix),
+                enabled: !pi_link::skills::entry_disabled(v),
+            });
+        }
+        rows
+    } else {
+        st.entries
+            .iter()
+            .filter(|e| match st.filter {
+                ExtFilter::Installed => installed.contains(&e.source()),
+                ExtFilter::NotInstalled => !installed.contains(&e.source()),
+            })
+            .map(|e| {
+                let source = e.source();
+                let status = if !installed.contains(&source) {
+                    RowStatus::NotInstalled
+                } else if chat.aux.plugin_updates.state_of(&source)
+                    == Some(crate::services::plugin_updates::PkgUpdateState::UpdateAvailable)
+                {
+                    RowStatus::UpdateAvailable
+                } else {
+                    RowStatus::Installed
+                };
+                let installed_ix = chat
+                    .cfg
+                    .mc_pkgs_global
+                    .iter()
+                    .position(|v| pi_link::skills::entry_source(v) == source);
+                let enabled = installed_ix
+                    .and_then(|ix| chat.cfg.mc_pkgs_global.get(ix))
+                    .map(|v| !pi_link::skills::entry_disabled(v))
+                    .unwrap_or(true);
+                RowData {
+                    name: e.name.clone(),
+                    desc: e.description.clone(),
+                    version: e.version.clone(),
+                    author: e.author.clone().unwrap_or_default(),
+                    downloads: pi_link::market::pi_ext_market::format_downloads(
+                        e.monthly_downloads,
+                    ),
+                    ago: ago_label(&e.updated, now),
+                    kinds: e.kinds.clone(),
+                    repo: e.repo.clone(),
+                    cmd: e.install_command(),
+                    status,
+                    busy: pending_source.as_deref() == Some(source.as_str()),
+                    installed_ix,
+                    enabled,
+                }
+            })
+            .collect()
+    };
 
     let mut page = gpui::div()
         .flex()
@@ -505,8 +569,30 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
     if let Some(banner) = banner(chat, weak, t) {
         page = page.child(banner);
     }
-    // 摘要行：结果数 + 只展示扩展（对齐设计稿；total 未知时不占位）
-    if st.total > 0 {
+    // 摘要行：已装页签 = 本地条数；未安装页签 = npm 结果数（total 未知不占位）
+    if st.filter == ExtFilter::Installed {
+        page = page.child(
+            gpui::div()
+                .flex_shrink_0()
+                .flex()
+                .items_center()
+                .gap(gpui::px(space::SP3))
+                .pl(gpui::px(PAGE_LEFT))
+                .pr(gpui::px(PAGE_RIGHT))
+                .pb(gpui::px(space::SP5))
+                .text_size(crate::appearance::ui_size(11.))
+                .text_color(gpui::rgb(t.text_soft))
+                .child(
+                    gpui::div()
+                        .text_color(gpui::rgb(t.text_dim))
+                        .child(SharedString::from(thousands(rows.len()))),
+                )
+                .child(crate::i18n::tf(
+                    "market.installed_summary",
+                    &[("n", String::new())],
+                )),
+        );
+    } else if st.total > 0 {
         page = page.child(
             gpui::div()
                 .flex_shrink_0()
@@ -535,7 +621,7 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
         crate::ui::vlist::vlist(
             "pi-ext-market-list",
             rows.len(),
-            CARD_H,
+            f32::from(crate::appearance::ui_size(CARD_H)),
             crate::ui::vlist::VListHeight::Fill,
             false,
             true,
@@ -557,7 +643,11 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
             .child(list_area),
     );
 
-    page = page.child(pager(weak, st.page, st.total_pages(), st.loading, t));
+    // 翻页条只在「未安装」页签 + total 已知 + 确有多页时渲染（本地已装
+    // 列表无分页；total 未回包前不渲染——条形忽有忽无的抖动根源）
+    if st.filter == ExtFilter::NotInstalled && st.total > 0 && st.total_pages() > 1 {
+        page = page.child(pager(weak, st.page, st.total_pages(), st.loading, t));
+    }
     page.into_any_element()
 }
 
@@ -761,6 +851,10 @@ fn empty_area(chat: &Chat, t: &'static Theme) -> AnyElement {
         col = col
             .child(crate::ui::spinner(16., t.text_dim))
             .child(tr("market.loading").to_string());
+    } else if st.filter == ExtFilter::Installed {
+        col = col
+            .child(crate::ui::icon("plug", 22., t.text_faint))
+            .child(tr("market.empty_installed").to_string());
     } else {
         col = col
             .child(crate::ui::icon("search", 22., t.text_faint))
@@ -779,9 +873,10 @@ fn pkg_card(
     t: &'static Theme,
     busy_any: bool,
 ) -> AnyElement {
+    let has_meta = !row.author.is_empty() || !row.downloads.is_empty() || !row.ago.is_empty();
     let card = gpui::div()
         .id(SharedString::from(format!("pi-ext-card-{}", row.name)))
-        .h(gpui::px(CARD_H - 8.))
+        .h(crate::appearance::ui_size(CARD_H - 8.))
         .w_full()
         .mt(gpui::px(space::SP3))
         .flex()
@@ -826,6 +921,7 @@ fn pkg_card(
                         .child(
                             gpui::div()
                                 .text_size(crate::appearance::ui_size(15.))
+                                .line_height(crate::appearance::ui_size(20.))
                                 .font_weight(gpui::FontWeight::SEMIBOLD)
                                 .text_color(gpui::rgb(if row.enabled {
                                     t.text
@@ -837,22 +933,24 @@ fn pkg_card(
                                 .text_ellipsis()
                                 .child(SharedString::from(row.name.clone())),
                         )
-                        .child(badge(&row.version, t))
+                        .children((!row.version.is_empty()).then(|| badge(&row.version, t)))
                         .children(kind_chips(row, t))
                         .child(gpui::div().flex_1())
                         .children(switch(row, weak)),
                 )
-                // ② 描述（两行内）
-                .child(
+                // ② 描述：**恰好两行**的盒（行高×2，随面板字号缩放）——
+                // 写死 36px 在面板字号 >12 时把第二行拦腰截断；宽度吃满
+                // 文本列（760 上限在大窗口里白白压窄行）
+                .children((!row.desc.is_empty()).then(|| {
                     gpui::div()
                         .text_size(crate::appearance::ui_size(12.))
                         .line_height(crate::appearance::ui_size(18.))
                         .text_color(gpui::rgb(t.text_muted))
-                        .max_w(gpui::px(760.))
-                        .h(gpui::px(36.))
+                        .h(crate::appearance::ui_size(18.) * 2.)
                         .overflow_hidden()
-                        .child(SharedString::from(row.desc.clone())),
-                )
+                        .child(SharedString::from(row.desc.clone()))
+                        .into_any_element()
+                }))
                 // ③ 底行（v17：在「倒数第二行」的位置，即与标题/描述同列缩进）
                 .child(
                     gpui::div()
@@ -860,8 +958,8 @@ fn pkg_card(
                         .flex()
                         .items_center()
                         .gap(gpui::px(space::SP4))
-                        .child(meta_line(row, t))
-                        .child(dot(t))
+                        .children(meta_line(row, t))
+                        .when(has_meta, |d| d.child(dot(t)))
                         .child(links(row, t))
                         .child(gpui::div().flex_1())
                         .children(cmd_pill(row, t))
@@ -987,8 +1085,8 @@ fn kind_chips(row: &RowData, t: &'static Theme) -> Vec<AnyElement> {
     out
 }
 
-/// 作者 · 下载量/月 · 发布距今天数。
-fn meta_line(row: &RowData, t: &'static Theme) -> AnyElement {
+/// 作者 · 下载量/月 · 发布距今天数。本地已装包可能三项全缺 → None（不占位）。
+fn meta_line(row: &RowData, t: &'static Theme) -> Option<AnyElement> {
     let mut meta = gpui::div()
         .flex()
         .items_center()
@@ -1005,18 +1103,27 @@ fn meta_line(row: &RowData, t: &'static Theme) -> AnyElement {
             )
             .child(dot(t));
     }
-    meta = meta
-        .child(
-            gpui::div()
-                .flex()
-                .items_center()
-                .gap(gpui::px(space::SP1))
-                .child(crate::ui::icon("download", 11., t.text_soft))
-                .child(SharedString::from(format!("{}/mo", row.downloads))),
-        )
-        .child(dot(t))
-        .child(SharedString::from(row.ago.clone()));
-    meta.into_any_element()
+    if !row.downloads.is_empty() {
+        meta = meta
+            .child(
+                gpui::div()
+                    .flex()
+                    .items_center()
+                    .gap(gpui::px(space::SP1))
+                    .child(crate::ui::icon("download", 11., t.text_soft))
+                    .child(SharedString::from(format!("{}/mo", row.downloads))),
+            )
+            .child(dot(t));
+    }
+    if !row.ago.is_empty() {
+        meta = meta.child(SharedString::from(row.ago.clone()));
+    }
+    let empty = row.author.is_empty() && row.downloads.is_empty() && row.ago.is_empty();
+    if empty {
+        None
+    } else {
+        Some(meta.into_any_element())
+    }
 }
 
 fn dot(t: &'static Theme) -> AnyElement {
