@@ -60,6 +60,7 @@
 ## 布局
 
 - gpui div 默认 **block**（Style::default 显式 Display::Block，taffy block 流）：子级 `flex_1` 失效、**absolute 定位子元素不撑高父级**——包一层「flex_1 子元素 + absolute 列表」的容器若忘了显式 `.flex().flex_col()`，内层高度塌 0、整块内容不可见（数据/状态都正常，纯渲染消失；文件树滚动条改造 c565c61 翻过车，标题行横排 1fc0fe3 同源）。排查口：`pif-ui snapshot` 数据完好但 `shot` 空白，先查新包的 wrapper 有没有显式 flex。
+- **自定义 Element 的 prepaint/paint 是同一实例同帧接力**：prepaint 里测出新的布局尺寸后若只写回数据源（`weak.update` 摸 tab/chat），元素自己的字段副本不同步，同帧 paint 用的还是构建时的旧值。终端区变矮的那一帧（shell 退出出横幅/拖窗缩小/字号调大）paint 按旧 rows 读已 resize 的网格 → alacritty `storage.rs` 越界断言崩（crash-1792490920）。规矩：**prepaint 算出的新值必须同帧写回 self.**，paint 只读元素副本；外部数据源作为下一帧的输入。
 
 ## overlay 与 hitbox
 
