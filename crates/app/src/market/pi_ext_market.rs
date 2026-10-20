@@ -51,11 +51,11 @@ const ROW_PAD_R: f32 = space::SP7;
 /// 右缘内缩 = 行右边距：工具栏按钮 / 摘要 / 翻页条 ⊥ **卡片外框右缘**。
 const PAGE_RIGHT: f32 = ROW_PAD_R;
 /// 工具栏（input 行）上 padding。
-const TOOLBAR_PT: f32 = 20.;
+const TOOLBAR_PT: f32 = 25.;
 /// 工具栏（input 行）下 padding。
 const TOOLBAR_PB: f32 = 15.;
-/// 注释（摘要）行下 padding。
-const SUMMARY_PB: f32 = 15.;
+/// 摘要行与列表的间距：总高 15（卡片自带 mt SP4(8)，这里只补差额）。
+const SUMMARY_PB: f32 = 15. - space::SP4;
 /// 描述行高（行高 18 × 行数）。用 `line_clamp` 硬截行（gpui 按行数 shape），
 /// 不用固定高度盖裁（会出现半行）。
 const DESC_LINE_H: f32 = 18.;
@@ -195,6 +195,11 @@ impl Chat {
         }
         self.set_content_view(ContentView::PiExtMarket);
         self.pi_ext_ensure_input(cx);
+        // 搜索词不存留：每次打开页面输入框都是干净的（用户定稿）
+        self.aux.market.pi_ext.query.clear();
+        if let Some(ix) = self.aux.market.pi_ext.input.as_ref() {
+            ix.update(cx, |ti, cx| ti.set_value(String::new(), cx));
+        }
         self.pi_ext_ensure_loaded(cx);
         // 已装条目的「有新版」依赖 082 的检测结果：还没跑过就顺手补一次
         if self.aux.plugin_updates.results.is_empty() && !self.aux.plugin_updates.checking {
@@ -215,7 +220,7 @@ impl Chat {
         let input = cx.new(|cx| {
             let mut ti = TextInput::new(cx).placeholder(tr("market.search_placeholder"));
             // **打字不触发搜索**（npm 是海量远端数据，逐键打过去是灾难）；
-            // 回车 / 「搜索」按钮 = 显式提交才搜。
+            // 只有回车（= 输入框提交）才搜——页面上不再有「搜索」按钮。
             //
             // ⚠ 回调里**不能**回头 `input.read(cx)`：本回调就是 TextInput 自己
             // 在 update 中发出的，重复租会直接 panic「cannot read … while it
@@ -239,18 +244,17 @@ impl Chat {
             return;
         }
         self.aux.market.pi_ext.loaded_once = true;
+        // 快照只当「默认首页」用：带搜索词的快照既不上屏也不回填输入框
+        // （否则重开应用还能看到上次的词——用户定稿：禁止留存）。
         if let Some(snap) = HomeSnapshot::load() {
-            self.aux.market.pi_ext.query = snap.query.clone();
-            self.aux.market.pi_ext.entries = snap
-                .entries
-                .into_iter()
-                .filter(|e| e.is_extension())
-                .take(SNAPSHOT_MAX)
-                .collect();
-            self.aux.market.pi_ext.stale = true;
-            if let Some(ix) = self.aux.market.pi_ext.input.as_ref() {
-                let q = self.aux.market.pi_ext.query.clone();
-                ix.update(cx, |ti, cx| ti.set_value(q, cx));
+            if snap.query.is_empty() {
+                self.aux.market.pi_ext.entries = snap
+                    .entries
+                    .into_iter()
+                    .filter(|e| e.is_extension())
+                    .take(SNAPSHOT_MAX)
+                    .collect();
+                self.aux.market.pi_ext.stale = true;
             }
         }
         self.pi_ext_reload(cx);
@@ -292,26 +296,12 @@ impl Chat {
         self.pi_ext_fetch(cx);
     }
 
-    /// 显式搜索（「搜索」按钮 / 回车）：读输入框文本 → query → 回第一页。
+    /// 显式搜索（回车）：值 → query → 回第一页。
     /// 打字**不**触发搜索（用户定稿：海量远端内容禁止逐键自动搜）。
     /// 用**已知词**搜（回车回调路径：值由 TextInput 传入，不碰实体）。
     pub(crate) fn pi_ext_search_with(&mut self, query: String, cx: &mut gpui::Context<Self>) {
         self.aux.market.pi_ext.query = query;
         self.pi_ext_reload(cx);
-    }
-
-    /// 读输入框再搜（「搜索」按钮路径：按钮事件不在 TextInput 的
-    /// update 里，这里 `read` 是合法的）。
-    pub(crate) fn pi_ext_search_now(&mut self, cx: &mut gpui::Context<Self>) {
-        let v = self
-            .aux
-            .market
-            .pi_ext
-            .input
-            .as_ref()
-            .map(|i| i.read(cx).value().to_string())
-            .unwrap_or_default();
-        self.pi_ext_search_with(v, cx);
     }
 
     /// 筛选切换：纯客户端重算，**0 网络**。
@@ -439,8 +429,10 @@ impl Chat {
         self.aux.market.pi_ext.loading = false;
         self.aux.market.pi_ext.stale = false;
         self.aux.market.pi_ext.total = total;
-        // 首页快照：第一页拉完覆盖写（唯一的磁盘缓存）
-        if self.aux.market.pi_ext.page == 1 {
+        // 首页快照：第一页拉完覆盖写（唯一的磁盘缓存）。
+        // **只存默认首页**（query 为空）：带词的结果不落盘，重开才不会
+        // 把上次搜索的内容/词捞回来。
+        if self.aux.market.pi_ext.page == 1 && self.aux.market.pi_ext.query.is_empty() {
             let snap = HomeSnapshot::new_now(
                 &self.aux.market.pi_ext.query,
                 self.aux
@@ -819,7 +811,7 @@ pub(crate) fn page(
         .into_any_element()
 }
 
-/// 工具栏：搜索 + 排序（固定最多下载）+ 未安装/已安装 + 全部更新(n)。
+/// 工具栏：排序（最多下载/最近更新/名称）+ 搜索框 + 未安装/已安装 + 全部更新(n)。
 fn toolbar(
     chat: &Chat,
     weak: &gpui::WeakEntity<Chat>,
@@ -837,11 +829,7 @@ fn toolbar(
         .pt(gpui::px(TOOLBAR_PT))
         .pb(gpui::px(TOOLBAR_PB));
 
-    if let Some(input) = st.input.clone() {
-        bar = bar.child(gpui::div().w(gpui::px(340.)).flex_shrink_0().child(input));
-    }
-
-    // 排序下拉：最多下载（服务端序）/ 最近更新 / 名称（本页客户端排序）
+    // 排序下拉（最左）：最多下载（服务端序）/ 最近更新 / 名称（本页客户端排序）
     if let Some(guard) = st.sort_guard.clone() {
         let sort = st.sort;
         let open = st.sort_open;
@@ -971,18 +959,10 @@ fn toolbar(
         ));
     }
 
-    // 搜索按钮（回车同效）：打字去抖自动搜之外，给一个显式入口
-    let weak_search = weak.clone();
-    bar = bar.child(crate::ui::button(
-        "pi-ext-search",
-        tr("market.search"),
-        BtnSize::Md,
-        BtnVariant::Secondary,
-        false,
-        move |_, _, cx| {
-            let _ = weak_search.update(cx, |c, cx| c.pi_ext_search_now(cx));
-        },
-    ));
+    // 搜索框在排序之后（原「搜索」按钮已删：回车即搜，用户定稿）
+    if let Some(input) = st.input.clone() {
+        bar = bar.child(gpui::div().w(gpui::px(340.)).flex_shrink_0().child(input));
+    }
 
     bar = bar.child(gpui::div().flex_1());
 
