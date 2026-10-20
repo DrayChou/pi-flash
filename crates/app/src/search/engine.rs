@@ -373,6 +373,73 @@ mod tests {
         assert_eq!(hit.segments[0].last().map(|(n, _)| *n), Some(8));
     }
 
+    /// 端到端流水线（读盘 → 过滤 → 扫描 → 流式回传）：用临时目录造一个
+    /// 迷你项目，验证「文件名命中 + 内容命中 + 上限消息」都真的走得通——
+    /// 这是不能在 UI 上点的时候唯一的链路证据。
+    #[test]
+    fn run_search_end_to_end_on_temp_project() {
+        let dir = std::env::temp_dir().join(format!("pif-search-e2e-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        std::fs::write(
+            dir.join("src/main.rs"),
+            "fn main() {
+    let needle = 1;
+}
+",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("src/other.rs"),
+            "no match here
+",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("README.md"),
+            "needle in docs
+",
+        )
+        .unwrap();
+        // 二进制（含 NUL 头）必须被跳过
+        std::fs::write(dir.join("blob.bin"), [0u8, 1, 2, 3, 0, 0]).unwrap();
+
+        let (tx, mut rx) = futures::channel::mpsc::unbounded::<SearchMsg>();
+        let q = query("needle", SearchOpts::default());
+        run_search(
+            dir.clone(),
+            q,
+            SearchOpts::default(),
+            Arc::new(AtomicBool::new(false)),
+            tx,
+        );
+        let mut path_hits = Vec::new();
+        let mut hits = Vec::new();
+        let mut done = None;
+        while let Ok(msg) = rx.try_recv() {
+            match msg {
+                SearchMsg::PathHits(p) => path_hits = p,
+                SearchMsg::Hit(h) => hits.push(h),
+                SearchMsg::Limit => {}
+                SearchMsg::Done { scanned } => done = Some(scanned),
+            }
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert!(done.is_some(), "必须收到 Done");
+        // 文件名命中：README.md 的路径里没有 needle，故为空
+        assert!(path_hits.is_empty(), "path hits = {path_hits:?}");
+        // 内容命中：src/main.rs 与 README.md（顺序按路径序）
+        let rels: Vec<&str> = hits.iter().map(|h| h.rel.as_str()).collect();
+        assert_eq!(
+            rels,
+            vec!["README.md", "src/main.rs"],
+            "路径序 + 二进制跳过"
+        );
+        assert_eq!(hits[1].hits[0].line, 2, "命中行号");
+        assert_eq!(hits[0].segments.len(), 1, "单段摘录");
+    }
+
     #[test]
     fn regex_mode() {
         let c = query(
