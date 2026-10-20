@@ -1010,7 +1010,9 @@ fn actions(
         .flex_shrink_0()
         .h_full()
         .flex()
-        .items_center()
+        // 底部对齐：按钮与最后一行（npm/repo + 安装命令胶囊）同基线，
+        // 视觉上「操作贴着你正在看的那行说明」，而不是浮在卡片垂直中段
+        .items_end()
         .justify_end()
         // 按钮间统一间距 = SP4（图标↔文字/控件↔控件 标准档，见 UI 组件规范 §1）
         .gap(gpui::px(space::SP4));

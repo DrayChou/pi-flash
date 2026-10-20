@@ -199,7 +199,9 @@ html[data-theme="dark"] .chip.ext { color: var(--accent-hover); }
 .pkg:hover .cmd code { color: var(--text); }
 
 /* 右侧动作 */
-.acts { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+/* 动作列：底部对齐 = 与最后一行（npm/repo + 命令胶囊）同基线，交互落点贴在一起 */
+.acts { display: flex; align-items: flex-end; justify-content: flex-end; gap: 8px;
+  align-self: stretch; padding-bottom: 1px; }
 .reveal { opacity: 0; transition: opacity .12s ease; }
 .pkg:hover .reveal, .pkg:focus-within .reveal { opacity: 1; }
 
@@ -252,7 +254,7 @@ html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: 
 <body>
 
 <div class="sheet-head">
-  <b>040-1 Pi扩展市场 · v5</b>
+  <b>040-1 Pi扩展市场 · v6</b>
   <span>单列卡片（对齐 pi.dev 官方信息结构，单列排布）· 1180×760 · mist</span>
   <span class="spacer"></span>
   <button id="themeBtn">切换到 one-dark</button>
