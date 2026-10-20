@@ -32,8 +32,9 @@ use crate::ui::{BtnSize, BtnVariant, TextInput};
 /// 每批补清单的条数：= 补全并发数，一批正好一轮请求（实测 8 条 ≈1.0-1.6s）。
 const BATCH: usize = 8;
 /// 搜索框去抖。
-/// 卡片固定行高（vlist 等高行；内容按此高度裁切，撑不满也不会把行撑开）。
-const CARD_H: f32 = 132.;
+/// 卡片固定行高（vlist 等高行）。设计稿 v28：卡 110 = head 20 + 描述 36 + 底行 24
+/// + 内距 10×2 + 边框 2；行高 = 110 + 行间 SP4(8) = 118。
+const CARD_H: f32 = 118.;
 /// 缩略槽宽高。
 const THUMB_W: f32 = 88.;
 const THUMB_H: f32 = 72.;
@@ -41,10 +42,14 @@ const THUMB_H: f32 = 72.;
 const MAX_PAGES: usize = 20;
 /// 左缘内缩 = 列表容器内缩 SP5(10)：工具栏 / 摘要 / 翻页条的**左缘与卡片外框同一竖线**。
 const PAGE_LEFT: f32 = space::SP5;
-/// 右缘内缩 = SP5(10) + 卡片内 padding SP7(16)：**右缘与卡片里的动作按钮同一竖线**。
-const PAGE_RIGHT: f32 = space::SP5 + space::SP7;
-/// 整页内容栏上限（v21：工具栏/摘要/列表/翻页同栏，超宽窗口整体居中）
-const PAGE_MAX_W: f32 = 1080. + space::SP5 + (space::SP5 + space::SP7);
+/// 列表容器右内距 = SP8(20)：已预留滚动条，卡片与滚动条之间留 10px 间隙。
+const LIST_PAD_R: f32 = space::SP8;
+/// 右缘内缩 = 列表右内距（v28）：工具栏按钮 / 摘要 / 翻页条 ⊥ **卡片外框右缘**。
+const PAGE_RIGHT: f32 = LIST_PAD_R;
+/// 描述行宽上限（设计稿 v28：不让一行拉到十几百 px）。
+const DESC_MAX_W: f32 = 640.;
+/// 整页内容栏上限（工具栏/摘要/列表/翻页同栏，超宽窗口整体居中）
+const PAGE_MAX_W: f32 = 1080. + PAGE_LEFT + LIST_PAD_R;
 
 /// 「未安装 / 已安装」筛选（040-1 UI 设计）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -659,7 +664,8 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
             .min_h_0()
             .flex()
             .flex_col()
-            .px(gpui::px(space::SP5))
+            .pl(gpui::px(PAGE_LEFT))
+            .pr(gpui::px(LIST_PAD_R))
             .child(list_area),
     );
 
@@ -718,18 +724,6 @@ fn toolbar(
     if let Some(input) = st.input.clone() {
         bar = bar.child(gpui::div().w(gpui::px(340.)).flex_shrink_0().child(input));
     }
-    // 搜索按钮（回车同效）：打字去抖自动搜之外，给一个显式入口
-    let weak_search = weak.clone();
-    bar = bar.child(crate::ui::button(
-        "pi-ext-search",
-        tr("market.search"),
-        BtnSize::Md,
-        BtnVariant::Secondary,
-        false,
-        move |_, _, cx| {
-            let _ = weak_search.update(cx, |c, cx| c.pi_ext_search_now(cx));
-        },
-    ));
 
     // 排序下拉：最多下载（服务端序）/ 最近更新 / 名称（本页客户端排序）
     if let Some(guard) = st.sort_guard.clone() {
@@ -756,7 +750,11 @@ fn toolbar(
             .text_color(gpui::rgb(t.text_muted))
             .hover(|s| s.text_color(gpui::rgb(t.text)))
             .child(label)
-            .child(crate::ui::icon("chevron-down", 12., t.text_soft))
+            .child(crate::ui::icon(
+                if open { "chevron-up" } else { "chevron-down" },
+                12.,
+                t.text_soft,
+            ))
             .into_any_element();
         bar = bar.child(crate::ui::dropdown(
             "pi-ext-sort-dd",
@@ -789,6 +787,9 @@ fn toolbar(
                     .rounded(gpui::px(radius::CARD))
                     .shadow_lg()
                     .overflow_hidden();
+                /// 勾位宽度：选中打勾 / 未选中留白，文字不左右跳。
+                const ICON_GUTTER: f32 = 12.;
+                let icon_gutter = ICON_GUTTER;
                 for (sopt, sid, slabel) in [
                     (
                         ExtSort::Downloads,
@@ -818,8 +819,10 @@ fn toolbar(
                             .gap(gpui::px(space::SP3))
                             .text_size(crate::appearance::ui_size(12.))
                             .cursor_pointer()
+                            .rounded(gpui::px(radius::CTRL))
                             .when(active, |d| {
-                                d.text_color(gpui::rgb(t.accent))
+                                d.bg(gpui::rgba(crate::appearance::theme::rgba_a(t.accent, 0.10)))
+                                    .text_color(gpui::rgb(t.accent))
                                     .font_weight(gpui::FontWeight::SEMIBOLD)
                             })
                             .when(!active, |d| d.text_color(gpui::rgb(t.text_dim)))
@@ -834,6 +837,16 @@ fn toolbar(
                                     cx.notify();
                                 });
                             })
+                            .child(
+                                gpui::div()
+                                    .w(gpui::px(icon_gutter))
+                                    .flex_shrink_0()
+                                    .flex()
+                                    .items_center()
+                                    .children(
+                                        active.then(|| crate::ui::icon("check", 12., t.accent)),
+                                    ),
+                            )
                             .child(slabel),
                     );
                 }
@@ -841,6 +854,19 @@ fn toolbar(
             },
         ));
     }
+
+    // 搜索按钮（回车同效）：打字去抖自动搜之外，给一个显式入口
+    let weak_search = weak.clone();
+    bar = bar.child(crate::ui::button(
+        "pi-ext-search",
+        tr("market.search"),
+        BtnSize::Md,
+        BtnVariant::Secondary,
+        false,
+        move |_, _, cx| {
+            let _ = weak_search.update(cx, |c, cx| c.pi_ext_search_now(cx));
+        },
+    ));
 
     bar = bar.child(gpui::div().flex_1());
 
@@ -1028,32 +1054,18 @@ fn pkg_card(
         .id(SharedString::from(format!("pi-ext-card-{}", row.name)))
         .h(crate::appearance::ui_size(CARD_H - 8.))
         .w_full()
-        .mt(gpui::px(space::SP3))
+        .mt(gpui::px(space::SP4))
         .flex()
         .items_start()
         .gap(gpui::px(space::SP7))
         .px(gpui::px(space::SP7))
-        .py(gpui::px(space::SP6))
+        .py(gpui::px(space::SP5))
         .rounded(gpui::px(radius::MODAL))
         .border_1()
         .border_color(gpui::rgb(t.border))
         .bg(gpui::rgb(t.bg))
-        .hover(|s| s.bg(gpui::rgb(t.bg_hover)))
-        .child(
-            // 缩略槽（v1 无网络图：淡底 + 占位图标，位置留给 v2 的 pi.image）
-            gpui::div()
-                .w(gpui::px(THUMB_W))
-                .h(gpui::px(THUMB_H))
-                .flex_shrink_0()
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(gpui::px(radius::CTRL))
-                .border_1()
-                .border_color(gpui::rgb(t.border))
-                .bg(gpui::rgb(t.bg_panel))
-                .child(crate::ui::icon("plug", 20., t.text_faint)),
-        )
+        .hover(|s| s.border_color(gpui::rgba(crate::appearance::theme::rgba_a(t.accent, 0.42))))
+        .child(thumb_grid(t))
         .child(
             gpui::div()
                 .flex_1()
@@ -1091,17 +1103,13 @@ fn pkg_card(
                 // 右内距 = 动作簇宽 + 8 —— 说明右缘与命令胶囊右缘同线，
                 // **绝不伸进按钮空间**（用户定稿）
                 .children((!row.desc.is_empty()).then(|| {
-                    let acts_w = match row.status {
-                        RowStatus::NotInstalled => 40.,    // [安装]
-                        RowStatus::UpdateAvailable => 72., // [🗑][更新]
-                        RowStatus::Installed => 24.,       // [🗑]
-                    };
                     gpui::div()
+                        .w_full()
+                        .max_w(gpui::px(DESC_MAX_W))
                         .text_size(crate::appearance::ui_size(12.))
                         .line_height(crate::appearance::ui_size(18.))
                         .text_color(gpui::rgb(t.text_muted))
                         .h(crate::appearance::ui_size(18.) * 2.)
-                        .pr(gpui::px(acts_w + 8.))
                         .overflow_hidden()
                         .child(SharedString::from(row.desc.clone()))
                         .into_any_element()
@@ -1122,6 +1130,50 @@ fn pkg_card(
                 ),
         );
     card.into_any_element()
+}
+
+/// 缩略槽（设计稿 v28）：88×72 格子纸底纹 + 距底 26% 的 accent 细线。
+///
+/// 为什么不是图片：npm 搜索不回图；v1 是版式占位，
+/// v2 换 `pi.image` 时只需替换本函数内容（尺寸/圆角/裁切不变）。
+fn thumb_grid(t: &'static Theme) -> AnyElement {
+    const STEP: f32 = 12.;
+    let line = || {
+        gpui::div()
+            .absolute()
+            .bg(gpui::rgba(crate::appearance::theme::rgba_a(t.accent, 0.16)))
+    };
+    let mut b = gpui::div()
+        .relative()
+        .w(gpui::px(THUMB_W))
+        .h(gpui::px(THUMB_H))
+        .flex_shrink_0()
+        .rounded(gpui::px(radius::CTRL))
+        .border_1()
+        .border_color(gpui::rgb(t.border))
+        .bg(gpui::rgb(t.bg_panel))
+        .overflow_hidden();
+    let mut x = STEP;
+    while x < THUMB_W {
+        b = b.child(line().left(gpui::px(x)).top_0().bottom_0().w(gpui::px(1.)));
+        x += STEP;
+    }
+    let mut y = STEP;
+    while y < THUMB_H {
+        b = b.child(line().top(gpui::px(y)).left_0().right_0().h(gpui::px(1.)));
+        y += STEP;
+    }
+    let accent_y = (THUMB_H * 0.74).round();
+    b.child(
+        gpui::div()
+            .absolute()
+            .left_0()
+            .right_0()
+            .top(gpui::px(accent_y))
+            .h(gpui::px(1.))
+            .bg(gpui::rgba(crate::appearance::theme::rgba_a(t.accent, 0.5))),
+    )
+    .into_any_element()
 }
 
 fn badge(text: &str, t: &'static Theme) -> AnyElement {
@@ -1157,9 +1209,9 @@ fn switch(row: &RowData, weak: &gpui::WeakEntity<Chat>) -> Option<AnyElement> {
     let t = T();
     let weak_sw = weak.clone();
     let track: gpui::Hsla = if on {
-        gpui::rgb(t.accent).into()
+        gpui::rgba(crate::appearance::theme::rgba_a(t.accent, 0.10)).into()
     } else {
-        gpui::rgb(t.bg_selected).into()
+        gpui::rgb(t.bg_panel).into()
     };
     let border: gpui::Hsla = if on {
         gpui::rgb(t.accent).into()
@@ -1192,9 +1244,9 @@ fn switch(row: &RowData, weak: &gpui::WeakEntity<Chat>) -> Option<AnyElement> {
                             .size(gpui::px(sw::SM_KNOB))
                             .rounded_full()
                             .bg(if on {
-                                gpui::rgb(t.bg)
+                                gpui::rgb(t.accent)
                             } else {
-                                gpui::rgb(t.text_muted)
+                                gpui::rgb(t.text_soft)
                             }),
                     ),
             )
