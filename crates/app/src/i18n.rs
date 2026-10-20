@@ -69,6 +69,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("market.tab", "Pi扩展市场", "Pi擴展市場", "Pi Extension Market"),
     ("titlebar.menu", "菜单", "選單", "Menu"),
     ("market.search_placeholder", "搜索扩展名称或说明", "搜尋擴展名稱或說明", "Search extensions by name or description"),
+    ("market.search", "搜索", "搜尋", "Search"),
     ("market.filter.not_installed", "未安装", "未安裝", "Not installed"),
     ("market.filter.installed", "已安装", "已安裝", "Installed"),
     ("market.update_all", "全部更新", "全部更新", "Update all"),

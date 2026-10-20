@@ -128,11 +128,17 @@ impl Chat {
             return;
         }
         let weak = cx.entity().downgrade();
+        let weak_sub = weak.clone();
         let input = cx.new(|cx| {
             let mut ti = TextInput::new(cx).placeholder(tr("market.search_placeholder"));
+            // 打字 = 250ms 去抖自动搜
             ti.set_on_change(Box::new(move |v, cx| {
                 let v = v.to_string();
                 let _ = weak.update(cx, |c, cx| c.pi_ext_on_query(v, cx));
+            }));
+            // 回车 / 「搜索」按钮 = 不等去抖，立即搜
+            ti.set_on_submit(Box::new(move |_, cx| {
+                let _ = weak_sub.update(cx, |c, cx| c.pi_ext_reload(cx));
             }));
             ti
         });
@@ -674,6 +680,18 @@ fn toolbar(
     if let Some(input) = st.input.clone() {
         bar = bar.child(gpui::div().w(gpui::px(340.)).flex_shrink_0().child(input));
     }
+    // 搜索按钮（回车同效）：打字去抖自动搜之外，给一个显式入口
+    let weak_search = weak.clone();
+    bar = bar.child(crate::ui::button(
+        "pi-ext-search",
+        tr("market.search"),
+        BtnSize::Md,
+        BtnVariant::Secondary,
+        false,
+        move |_, _, cx| {
+            let _ = weak_search.update(cx, |c, cx| c.pi_ext_reload(cx));
+        },
+    ));
 
     // 排序：v1 只有「最多下载」（服务端 popularity 权重），做成只读下拉观感
     bar = bar.child(
