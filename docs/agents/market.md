@@ -92,6 +92,8 @@
 - **内存只留当前页**（翻页先清空）；`kinds` 表（name → 资源类型）只活会话内，翻回旧页
   命中即 0 网络。
 - 单测：pi-link 侧在 `market/pi_ext_market.rs` 的 `#[cfg(test)]`（搜索 fixture）；
-  app 侧 `page_window` / `thousands` / `pager` 在 `pi_ext_market.rs` 文件内，跑
+  app 侧已拆目录模块 `market/pi_ext_market/`（mod.rs 状态机 + page 骨架 +
+  `thousands`；card.rs 卡片及子件；pager.rs `page_window` / `pager` / `pager_nav`
+  及翻页单测），跑
   `cargo test -p app --bin pi-flash market`（本机 vendored gpui-component 的 dev 配置会
   先报无关错误，见 engineering.md）。
