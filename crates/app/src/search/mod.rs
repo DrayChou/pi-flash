@@ -425,6 +425,17 @@ impl Chat {
     fn search_push_hit(&mut self, hit: FileHit) {
         let ui = &mut self.ws.search;
         ui.files += 1;
+        // 显示规则（2026-10-21 用户定案）：**标题命中且内容也命中 → 只显示
+        // 内容组；只有标题命中才单独显示文件栏**。路径命中在扫描前就发过来了
+        // （顶部文件栏），这里把同名的 path-only 块摘掉，避免同一个文件出现
+        // 两次（Zed 也是这样：它知道两者都命中就不重复展示）。
+        if ui.blocks.iter().any(|b| b.path_only && b.rel == hit.rel) {
+            let blocks = Arc::make_mut(&mut ui.blocks);
+            drop_path_only_for(blocks, &hit.rel);
+            ui.path_files = ui.path_files.saturating_sub(1);
+            self.sync_search_list();
+        }
+        let ui = &mut self.ws.search;
         let mut block = ResultBlock {
             rel: hit.rel.clone(),
             path_only: false,
@@ -788,6 +799,16 @@ impl Chat {
     }
 }
 
+/// 显示规则（纯函数便于单测）：内容命中到达时，摘掉同名的「仅文件名命中」
+/// 文件栏——**内容与标题都命中的文件只展示内容组**（2026-10-21 用户定案：
+/// 「只有标题命中肯定显示文件栏，内容和标题都命中了就不重复展示」）。
+/// 返回是否真的摘掉了东西。
+pub(crate) fn drop_path_only_for(blocks: &mut Vec<ResultBlock>, rel: &str) -> bool {
+    let before = blocks.len();
+    blocks.retain(|b| !(b.path_only && b.rel == rel));
+    blocks.len() != before
+}
+
 /// include/exclude 输入框 → glob 列表（Zed 用逗号分隔；PF 额外支持换行）。
 pub(crate) fn split_globs(text: String) -> Vec<String> {
     text.split([',', '\n'])
@@ -926,6 +947,31 @@ mod tests {
         let (out, n) = replace_in_text(&query, "foo\nfoo\n", true);
         assert_eq!(out, "bar\nfoo\n");
         assert_eq!(n, 1);
+    }
+
+    #[test]
+    fn path_only_row_is_dropped_once_content_hits() {
+        let mut blocks = vec![
+            ResultBlock {
+                rel: "a/dup.md".into(),
+                path_only: true,
+                count: 0,
+                segments: Vec::new(),
+            },
+            ResultBlock {
+                rel: "b/only_name.md".into(),
+                path_only: true,
+                count: 0,
+                segments: Vec::new(),
+            },
+        ];
+        // 内容命中到达 a/dup.md → 摘掉它的文件栏，只留内容组
+        assert!(drop_path_only_for(&mut blocks, "a/dup.md"));
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].rel, "b/only_name.md", "仅文件名命中的文件栏保留");
+        // 再摘一次：没有可摘的，计数与内容不变
+        assert!(!drop_path_only_for(&mut blocks, "a/dup.md"));
+        assert_eq!(blocks.len(), 1);
     }
 
     #[test]
