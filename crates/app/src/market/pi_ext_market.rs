@@ -854,7 +854,7 @@ fn pkg_card(
         .child(actions(row, weak, t, busy_any))
         // 已装：启停开关绝对定在卡片右上，**右缘与动作按钮同一竖线**、
         // 垂直与第一行文字居中（开关是「操作控件」，跟操作列对齐才不飘）
-        .children(switch(row, weak, t));
+        .children(switch(row, weak));
 
     if installed {
         card = card.border_color(gpui::rgba(crate::appearance::theme::border_alpha(t, 0x8c)));
@@ -879,41 +879,28 @@ fn badge(text: &str, t: &'static Theme) -> AnyElement {
         .into_any_element()
 }
 
-/// 已装开关（tokens::switch MD 28×16，knob 10）：点击即写 settings（040 语义）。
-fn switch(row: &RowData, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> Option<AnyElement> {
+/// 已装启停开关：**直接用设置页的规范组件** `switch_base`
+/// （`settings/widgets.rs` 里的唯一开关入口：28×16 / knob 10 / 1px 轨道描边 /
+/// 关态 knob 用 text_muted —— 手搓会漏掉描边与关态配色，看着就"不精致"）。
+fn switch(row: &RowData, weak: &gpui::WeakEntity<Chat>) -> Option<AnyElement> {
     let ix = row.installed_ix?;
-    let on = row.enabled;
     let weak_sw = weak.clone();
-    let track = gpui::div()
-        .id(SharedString::from(format!("pi-ext-sw-{}", row.name)))
-        .absolute()
-        .top(gpui::px(space::SP6 + space::SP1))
-        .right(gpui::px(space::SP7))
-        .w(gpui::px(crate::ui::tokens::switch::MD_W))
-        .h(gpui::px(crate::ui::tokens::switch::MD_H))
-        .flex_shrink_0()
-        .flex()
-        .items_center()
-        .rounded_full()
-        .when(on, |d| d.bg(gpui::rgb(t.accent)))
-        .when(!on, |d| d.bg(gpui::rgb(t.bg_selected)))
-        .cursor_pointer()
-        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-            cx.stop_propagation();
-            let _ = weak_sw.update(cx, |c, cx| c.mc_toggle_package(ix, cx));
-        })
-        .child(
-            gpui::div()
-                .w(gpui::px(crate::ui::tokens::switch::MD_KNOB))
-                .h(gpui::px(crate::ui::tokens::switch::MD_KNOB))
-                .rounded_full()
-                .bg(gpui::rgb(t.bg))
-                .when(on, |d| d.ml(gpui::px(crate::ui::tokens::switch::MD_ON_ML)))
-                .when(!on, |d| {
-                    d.ml(gpui::px(crate::ui::tokens::switch::MD_OFF_ML))
-                }),
-        );
-    Some(track.into_any_element())
+    Some(
+        gpui::div()
+            // 右缘与动作按钮同一条竖线、垂直居中于第一行（见卡片主布局注释）
+            .absolute()
+            .top(gpui::px(space::SP6 + space::SP1))
+            .right(gpui::px(space::SP7))
+            .child(crate::settings::widgets::switch_base(
+                SharedString::from(format!("pi-ext-sw-{}", row.name)),
+                row.enabled,
+                false,
+                move |_next, cx| {
+                    let _ = weak_sw.update(cx, |c, cx| c.mc_toggle_package(ix, cx));
+                },
+            ))
+            .into_any_element(),
+    )
 }
 
 /// 类型 chip：扩展 = accent 淡底实心；其余（技能/提示词/主题/子代理）= 描边。
@@ -1126,21 +1113,23 @@ fn actions(
         return group.into_any_element();
     }
 
-    // 已安装：卸载 icon 恒在**最左**（不再有「已安装」文字键）
+    // 已安装：卸载 icon 恒在**最左**（不再有「已安装」文字键）。
+    // 画法与 040 详情页垃圾桶同源：28×28 / r5 / danger 描边 35% / danger 淡底 6% /
+    // solid 图标 14 / hover 红洗底——别自创一套。
     let weak_r = weak.clone();
     let n = name.clone();
     group = group.child(
         gpui::div()
             .id(SharedString::from(format!("pi-ext-remove-{name}")))
-            .w(gpui::px(crate::ui::tokens::btn::SM_H))
-            .h(gpui::px(crate::ui::tokens::btn::SM_H))
+            .size(gpui::px(crate::ui::tokens::btn::SM_H))
             .flex_shrink_0()
             .flex()
             .items_center()
             .justify_center()
             .rounded(gpui::px(radius::CTRL))
             .border_1()
-            .border_color(gpui::rgb(t.border))
+            .border_color(gpui::rgba(crate::appearance::theme::danger_alpha(t, 0x59)))
+            .bg(gpui::rgba(crate::appearance::theme::danger_alpha(t, 0x0f)))
             .cursor_pointer()
             .hover(|s| s.bg(gpui::rgba(crate::appearance::theme::danger_wash(t))))
             .on_mouse_down(MouseButton::Left, move |_, _, cx| {
@@ -1148,7 +1137,7 @@ fn actions(
                 let n = n.clone();
                 let _ = weak_r.update(cx, |c, cx| c.pi_ext_remove(n, cx));
             })
-            .child(crate::ui::icon("trash", 12., t.danger)),
+            .child(crate::ui::icon("icon-trash-solid", 12., t.danger)),
     );
 
     // 有新版：更新键；已最新：什么都不加（卸载 icon 已是唯一动作）
