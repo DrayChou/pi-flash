@@ -118,9 +118,14 @@ crates/app/src/         GPUI 界面（Chat = 全应用状态实体：直属字�
                           chat_list 滚屏、menu 补全菜单 + attachments 附件、
                           fork、diff、model/plugin/mcp picker、new_session（012）、
                           tools_recipe 档位配方（034）
-  settings/               设置面板六页（界面/模型/技能/扩展/MCP/其他）+ widgets 公共件
+  settings/               设置面板六页（界面/模型/技能/扩展/MCP/其他）；widgets 只剩
+                          select_section，公共件全部转发 ui/kit（存量调用点零改动）
   ui/                     通用件：tokens（UI组件规范唯一代码落点）、button、text_input、
                           composer_input、dropdown、overlay、popup、vlist、psp_scrollbar
+  ui/kit/                 页面级组件库（**新页面只从这里取控件，禁就地手搓**）：
+                          button（Btn+config_button）/ switch（三态开关）/ row（set_row、
+                          field、文本块）/ layout（两栅骨架、LIST_W）/ badge（黊标·
+                          状态点）/ slider（width_slider）；尺寸见 UI组件规范 §10
 ```
 
 # 领域笔记（docs/agents/）

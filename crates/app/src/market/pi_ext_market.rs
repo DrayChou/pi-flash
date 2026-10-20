@@ -1467,7 +1467,7 @@ fn badge(text: &str, t: &'static Theme) -> AnyElement {
 
 /// 已装启停开关（卡片行内档 = `switch::SM`：**24×14 / knob 8**）。
 ///
-/// 视觉配方与 `settings::widgets::switch_base`（MD 28×16）逐条对齐——1px 轨道描边、
+/// 视觉配方与 `ui::kit::switch_base`（MD 28×16）逐条对齐——1px 轨道描边、
 /// 开态 accent、关态 `bg_selected`、关态 knob `text_muted`、开态 knob `bg`；
 /// 唯一差别是尺寸走 SM 档（用户定稿：卡片里的开关要小，别用 28×16）。
 ///
