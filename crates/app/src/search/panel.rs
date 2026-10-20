@@ -104,15 +104,12 @@ fn search_bar(
                 .flex()
                 .items_center()
                 .gap(px(space::SP2))
-                // 输入框容器：与 Zed input_base_styles 同位（1px 边框、圆角、
-                // 左侧内距，右侧留给内联开关）
-                .pl(px(space::SP3))
+                // 2026-10-21 用户定案：搜索框**不加 border**（也不加底色/
+                // 圆角）——输入框走 flat 档，文字直接坐在面板底上，右侧留
+                // 内联开关位。焦点态由光标闪烁表达（Zed 的搜索框同理）。
+                .pl(px(space::SP4))
                 .pr(px(space::SP1))
-                .border_1()
-                .border_color(rgb(t.border))
-                .rounded(px(crate::ui::tokens::radius::CTRL))
-                .bg(rgb(t.bg_panel))
-                .child(div().flex_1().min_w_0().py(px(2.)).child(q.clone()))
+                .child(div().flex_1().min_w_0().py(px(4.)).child(q.clone()))
                 .child(text_toggle(
                     "psq-aa",
                     "Aa",

@@ -34,7 +34,7 @@ mod real_file_tests;
 mod tests;
 
 mod doc;
-mod highlight;
+pub(crate) mod highlight;
 mod links;
 mod parse;
 

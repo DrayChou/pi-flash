@@ -152,7 +152,7 @@ const HL_CACHE_CAP: usize = 128;
 const HL_CACHE_BUDGET_BYTES: usize = 32 * 1024 * 1024;
 
 /// [`highlight_segments`] 的 LRU 包装（渲染热路径一律走这里）。
-pub(super) fn cached_highlight_segments(
+pub(crate) fn cached_highlight_segments(
     code: &str,
     lang: &str,
     dark: bool,

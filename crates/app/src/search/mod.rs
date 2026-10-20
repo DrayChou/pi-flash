@@ -211,6 +211,7 @@ impl Chat {
         let weak_esc = cx.weak_entity();
         let query = cx.new(|cx| {
             let mut ti = TextInput::new(cx)
+                .flat()
                 .placeholder(tr("search.placeholder"))
                 .on_change(Box::new(move |q: &str, cx: &mut App| {
                     let q = q.to_string();
@@ -236,6 +237,7 @@ impl Chat {
         let weak_r = cx.weak_entity();
         let replace = cx.new(|cx| {
             TextInput::new(cx)
+                .flat()
                 .placeholder(tr("search.replace_placeholder"))
                 .on_change(Box::new(move |q: &str, cx: &mut App| {
                     // 替换词只影响「替换」动作，不触发重搜（Zed 同）
@@ -250,6 +252,7 @@ impl Chat {
         let weak_i = cx.weak_entity();
         let include = cx.new(|cx| {
             TextInput::new(cx)
+                .flat()
                 .placeholder(tr("search.include_placeholder"))
                 .on_change(Box::new(move |_q: &str, cx: &mut App| {
                     let _ = weak_i.update(cx, |c, cx| c.search_debounced(cx));
@@ -258,6 +261,7 @@ impl Chat {
         let weak_e = cx.weak_entity();
         let exclude = cx.new(|cx| {
             TextInput::new(cx)
+                .flat()
                 .placeholder(tr("search.exclude_placeholder"))
                 .on_change(Box::new(move |_q: &str, cx: &mut App| {
                     let _ = weak_e.update(cx, |c, cx| c.search_debounced(cx));
