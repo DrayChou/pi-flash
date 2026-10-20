@@ -32,9 +32,6 @@ use crate::ui::{BtnSize, BtnVariant, TextInput};
 /// 每批补清单的条数：= 补全并发数，一批正好一轮请求（实测 8 条 ≈1.0-1.6s）。
 const BATCH: usize = 8;
 /// 搜索框去抖。
-/// 卡片固定行高（vlist 等高行）。设计稿 v28：卡 110 = head 20 + 描述 36 + 底行 24
-/// + 内距 10×2 + 边框 2；行高 = 110 + 行间 SP4(8) = 118。
-const CARD_H: f32 = 136.;
 /// 缩略槽宽高。
 const THUMB_W: f32 = 88.;
 const THUMB_H: f32 = 72.;
@@ -60,6 +57,41 @@ const DESC_LINE_H: f32 = 18.;
 const DESC_LINES: usize = 3;
 /// 整页内容栏上限（工具栏/摘要/列表/翻页同栏，超宽窗口整体居中）
 const PAGE_MAX_W: f32 = 1080. + PAGE_LEFT + ROW_PAD_R;
+
+/// 卡片高度一套量（均跟面板字号缩放）。
+///
+/// 卡高**由内部部件算出来**，不写死字面量：写死一旦面板字号
+/// 变就会被 flex 挤掉描述的第三行（半行问题）。
+mod card_metrics {
+    use super::*;
+    /// 名称行行高（字号 15 / 行高 20）。
+    pub(super) fn head_h() -> f32 {
+        f32::from(crate::appearance::ui_size(20.))
+    }
+    /// 描述行高（18 × 行数）。
+    pub(super) fn desc_h() -> f32 {
+        f32::from(crate::appearance::ui_size(super::DESC_LINE_H)) * super::DESC_LINES as f32
+    }
+    /// 底行高（SM 按钮档 24）。
+    pub(super) fn bottom_h() -> f32 {
+        crate::ui::tokens::btn::SM_H
+    }
+    /// 文本列的子元素：标题 / 描述 / 弹性占位 / 底行 —— 共 4 个。
+    /// flex 列的 gap 在**6 个相邻对之间**各生效 1 次，共 3 个间隙。
+    const TEXT_COL_ITEMS: usize = 4;
+    /// 卡片内容高（不含内距与边框）。
+    pub(super) fn body_h() -> f32 {
+        head_h() + space::SP2 * (TEXT_COL_ITEMS - 1) as f32 + desc_h() + bottom_h()
+    }
+    /// 卡片总高（含内距与边框）。
+    pub(super) fn card_h() -> f32 {
+        body_h() + space::SP5 * 2. + 2.
+    }
+    /// 列表行高（卡片 + 行间空隙）。
+    pub(super) fn row_h() -> f32 {
+        card_h() + space::SP4
+    }
+}
 
 /// 「未安装 / 已安装」筛选（040-1 UI 设计）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -693,11 +725,8 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
         crate::ui::vlist::vlist(
             LIST_ID,
             rows.len(),
-            // 行高 = 卡片高 + 行间空隙，两者都必须各自过一遍 ui_size。
-            // ui_size 是加法缩放（panel + (base-12)）：写 ui_size(CARD_H) 会
-            // 比卡片少算一次偏移，面板字号≠12 时行高 < 卡片高 → 行行相叠。
-            f32::from(crate::appearance::ui_size(CARD_H - 8.))
-                + f32::from(crate::appearance::ui_size(space::SP4)),
+            // 行高 = 卡片高 + 行间空隙（由 card_metrics 统一算，与卡片实际高度一致）
+            card_metrics::row_h(),
             crate::ui::vlist::VListHeight::Fill,
             false,
             true,
@@ -1097,7 +1126,7 @@ fn skeleton_rows(t: &'static Theme) -> AnyElement {
                 .child(
                     gpui::div()
                         .w_full()
-                        .h(crate::appearance::ui_size(CARD_H - 8.))
+                        .h(gpui::px(card_metrics::card_h()))
                         .flex()
                         .items_start()
                         .gap(gpui::px(space::SP7))
@@ -1170,9 +1199,9 @@ fn pkg_card(
     let has_meta = !row.author.is_empty() || !row.downloads.is_empty() || !row.ago.is_empty();
     let card = gpui::div()
         .id(SharedString::from(format!("pi-ext-card-{}", row.name)))
-        .h(crate::appearance::ui_size(CARD_H - 8.))
+        .h(gpui::px(card_metrics::card_h()))
         .w_full()
-        .mt(crate::appearance::ui_size(space::SP4))
+        .mt(gpui::px(space::SP4))
         .flex()
         .items_start()
         .gap(gpui::px(space::SP7))
@@ -1196,6 +1225,7 @@ fn pkg_card(
                 .child(
                     gpui::div()
                         .flex()
+                        .flex_shrink_0()
                         // 顶部对齐：开关/版本徽标贴行顶，使「上边距 = 下边距」
                         // （底行按钮贴卡片底内边距，两者都等于卡片 py）。
                         .items_start()
@@ -1227,7 +1257,10 @@ fn pkg_card(
                         // 硬截行而不是固高盖裁：line_clamp 按行数 shape，
                         // 行高恰好整数行 → 不会出现半行。
                         .line_clamp(DESC_LINES)
-                        .h(crate::appearance::ui_size(DESC_LINE_H) * DESC_LINES as f32)
+                        // 不参与 flex 收缩：卡片高度由内容算（card_metrics），
+                        // 若这个盒允许被挤，第三行会被压成半行。
+                        .flex_shrink_0()
+                        .h(gpui::px(card_metrics::desc_h()))
                         .child(SharedString::from(row.desc.clone()))
                         .into_any_element()
                 }))
@@ -1239,6 +1272,7 @@ fn pkg_card(
                     gpui::div()
                         .w_full()
                         .flex()
+                        .flex_shrink_0()
                         .items_center()
                         .gap(gpui::px(space::SP4))
                         .children(meta_line(row, t))
@@ -1301,10 +1335,13 @@ fn thumb_grid(t: &'static Theme) -> AnyElement {
     .into_any_element()
 }
 
-/// 扩展名称：可点，点开浏览器原始说明页（`npmjs.com/package/<name>`，
-/// README 就在那里）。hover 转 accent，与卡片里其他链接同一反馈。
+/// 扩展名称：可点，点开 **pi.dev 详情页**（`pi.dev/packages/<name>`）。
+///
+/// 为什么是 pi.dev 而不是 npm：市场页的说明页在 pi.dev（模型适用的扩展中心，
+/// 有安装指引与适配说明）；npm 页面只有 README。底行的「npm」链接仍指 npm（名字清晰不混）。
+/// hover 转 accent，与卡片里其他链接同一反馈。
 fn name_link(row: &RowData, t: &'static Theme) -> AnyElement {
-    let url = format!("https://www.npmjs.com/package/{}", row.name);
+    let url = format!("https://pi.dev/packages/{}", row.name);
     gpui::div()
         .id(SharedString::from(format!("pi-ext-name-{}", row.name)))
         .min_w_0()
