@@ -442,7 +442,11 @@ thread_local——paint 期每帧重注册闭包，局部变量活不过一次�
 2. **行**：`sidebar_item` / `set_row` / `group_header` 三选一，禁止自拼行高与 padding。
 3. **控件**：`config_button` / `config_switch` / `TextInput` / `width_slider` 四个入口，禁止自绘按钮与开关（市场页手搓分段控件就是反面教材：同页出现 gap 4/6/8 三种图标间距）。
 4. **数字**：新尺寸先在 §10 找；找不到才新增，且**先落 `ui/tokens.rs` 常量 + 本章表格**，再写代码。
-5. **对齐**：右缘对齐同一列时，宽度由同一个函数算（参见市场页 `side_col_w` 用 `text_system().layout_line` 实测标签宽，禁写死——英文标签比中文长一倍）。
+5. **抄骨架**：`docs/模板/新页面骨架.md`（一页可复制骨架，整页零字面量；含两栏/单列两种）。
+6. **守卫**：`python scripts/check_ui_raw.py`——交互链（`on_mouse_down` / `cursor_pointer` /
+   `on_click`）里出现裸几何字面量 = 红；存量冻结在 `scripts/ui-raw-baseline.txt`，只拦新增。
+   确属特殊控件在该链写 `// ui-raw: ok <理由>` 并回来登记尺寸。
+7. **对齐**：右缘对齐同一列时，宽度由同一个函数算（参见市场页 `side_col_w` 用 `text_system().layout_line` 实测标签宽，禁写死——英文标签比中文长一倍）。
 
 ### 10.7 本章收编时的两项判定（防再次反复）
 
