@@ -664,7 +664,7 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
         .min_h_0()
         .flex()
         .flex_col()
-        .child(toolbar(chat, weak, busy_any, t));
+        .child(toolbar(chat, weak, t));
 
     if let Some(banner) = banner(chat, weak, t) {
         col = col.child(banner);
@@ -676,7 +676,7 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
                 .flex_shrink_0()
                 .flex()
                 .items_center()
-                .justify_end()
+                .justify_start()
                 .gap(gpui::px(space::SP3))
                 .pl(gpui::px(PAGE_LEFT))
                 .pr(gpui::px(PAGE_RIGHT))
@@ -691,7 +691,10 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
                 .child(crate::i18n::tf(
                     "market.installed_summary",
                     &[("n", String::new())],
-                )),
+                ))
+                // 「全部更新」在摘要行右端
+                .child(gpui::div().flex_1())
+                .child(update_all_button(chat, weak, busy_any)),
         );
     } else {
         let count = if st.total > 0 {
@@ -704,7 +707,7 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
                 .flex_shrink_0()
                 .flex()
                 .items_center()
-                .justify_end()
+                .justify_start()
                 .gap(gpui::px(space::SP3))
                 .pl(gpui::px(PAGE_LEFT))
                 .pr(gpui::px(PAGE_RIGHT))
@@ -722,7 +725,10 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
                 )
                 .child(tr("market.results").to_string())
                 .child(dot(t))
-                .child(tr("market.only_ext").to_string()),
+                .child(tr("market.only_ext").to_string())
+                // 「全部更新」在摘要行右端
+                .child(gpui::div().flex_1())
+                .child(update_all_button(chat, weak, busy_any)),
         );
     }
 
@@ -799,12 +805,7 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
 }
 
 /// 工具栏：搜索 + 排序（固定最多下载）+ 未安装/已安装 + 全部更新(n)。
-fn toolbar(
-    chat: &Chat,
-    weak: &gpui::WeakEntity<Chat>,
-    busy_any: bool,
-    t: &'static Theme,
-) -> AnyElement {
+fn toolbar(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> AnyElement {
     let st = &chat.aux.market.pi_ext;
     let mut bar = gpui::div()
         .flex_shrink_0()
@@ -1014,9 +1015,14 @@ fn toolbar(
                 .child(label),
         );
     }
+    // 未安装/已安装 切换「安装 switch」靠右（其后无其他元素）。
+    // 「全部更新」已移到**摘要行右端**（用户定稿）。
     bar = bar.child(seg);
+    bar.into_any_element()
+}
 
-    // 全部更新(n)
+/// 「全部更新 (n)」按钮：放在摘要行右端（与结果数同行，右对齐）。
+fn update_all_button(chat: &Chat, weak: &gpui::WeakEntity<Chat>, busy_any: bool) -> AnyElement {
     let n = chat.aux.plugin_updates.available();
     let label = if n > 0 {
         format!("{} {n}", tr("market.update_all"))
@@ -1024,17 +1030,16 @@ fn toolbar(
         tr("market.update_all").to_string()
     };
     let weak_all = weak.clone();
-    bar = bar.child(crate::ui::button(
+    crate::ui::button(
         "pi-ext-update-all",
         label,
-        BtnSize::Md,
+        BtnSize::Sm,
         BtnVariant::Secondary,
         n == 0 || busy_any || chat.aux.plugin_updates.checking,
         move |_, _, cx| {
             let _ = weak_all.update(cx, |c, cx| c.pi_ext_update_all(cx));
         },
-    ));
-    bar.into_any_element()
+    )
 }
 
 /// 离线黄条 / 错误红条（有则渲染）。
