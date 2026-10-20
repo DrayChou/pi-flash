@@ -161,6 +161,29 @@ impl Chat {
                         }
                     }
                 }
+                SessionEvent::RecallInput(text) => {
+                    // abort 撤回的排队消息回填输入框（pi-web restoring-to-editor
+                    // parity）：文本置于已有草稿之前（撤回的比正在写的旧）。
+                    // 活跃会话以 composer 为真值源回填可见输入框；后台会话
+                    // 没有 composer 镜像，吞进 runtime 草稿，切回时随
+                    // switch_to 带回。
+                    rt.update(cx, |r, _| {
+                        r.input = if r.input.is_empty() {
+                            text.clone()
+                        } else {
+                            format!("{text}\n\n{}", r.input)
+                        };
+                    });
+                    if is_active {
+                        let draft = chat.composer.input.clone();
+                        let merged = if draft.is_empty() {
+                            text.clone()
+                        } else {
+                            format!("{text}\n\n{draft}")
+                        };
+                        chat.set_input(merged, cx);
+                    }
+                }
             }
         })
         .detach();

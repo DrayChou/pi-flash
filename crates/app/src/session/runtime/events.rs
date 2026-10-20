@@ -254,6 +254,46 @@ impl SessionRuntime {
                         }
                     };
                     self.finalize_bash(result, cx);
+                } else if command == "clear_queue" && success {
+                    // abort 的配对撤回（根因见 abort_stream 注释）：response
+                    // data 携带被撤下的未投递原文 {steering:[..], followUp:[..]}。
+                    // 逐条：摘 pending_echoes（不会再回显）→ 删乐观气泡（同文
+                    // 匹配口径与回显臂一致；/skill: 等未乐观上屏的自然无泡可删）
+                    // → 文本回填输入框（pi-web restoring-to-editor parity）。
+                    let d = data.unwrap_or(serde_json::Value::Null);
+                    let mut recalled: Vec<String> = Vec::new();
+                    for key in ["followUp", "steering"] {
+                        if let Some(arr) = d.get(key).and_then(|v| v.as_array()) {
+                            for t in arr {
+                                if let Some(s) = t.as_str() {
+                                    if !s.is_empty() {
+                                        recalled.push(s.to_string());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if !recalled.is_empty() {
+                        for text in &recalled {
+                            if let Some(ix) = self.pending_echoes.iter().position(|p| p == text) {
+                                self.pending_echoes.remove(ix);
+                            }
+                            if let Some(ix) = self.messages.iter().rposition(|m| {
+                                m.role == Role::User
+                                    && m.text_len() == text.len()
+                                    && m.plain_text().as_ref() == text
+                            }) {
+                                self.messages.remove(ix);
+                            }
+                        }
+                        // 锚点可能指着被删的气泡：按「重读后」口径重锚
+                        self.restore_anchor_after_reload();
+                        self.status = crate::i18n::tf(
+                            "status.recalled_queued",
+                            &[("count", recalled.len().to_string())],
+                        );
+                        cx.emit(SessionEvent::RecallInput(recalled.join("\n\n")));
+                    }
                 } else if success {
                     self.status = format!("{command} ok");
                 } else if command == "prompt" {
@@ -832,6 +872,19 @@ impl SessionRuntime {
                 self.exit_code = code;
             }
             Event::WireEvent { .. } => {}
+            // pi 队列全量快照（入队/投递/清空都发）：镜像供「已排队 N 条」
+            // 状态行；投递回显时 pi 已同步摘除队列项，镜像自动跟真
+            Event::QueueUpdate {
+                steering,
+                follow_up,
+            } => {
+                self.queued_steering = steering;
+                self.queued_followups = follow_up;
+                let n = self.queued_steering.len() + self.queued_followups.len();
+                if self.agent_running && n > 0 {
+                    self.status = crate::i18n::tf("status.queued_n", &[("count", n.to_string())]);
+                }
+            }
             Event::ExtensionUi(req) => cx.emit(SessionEvent::ExtUi(req)),
             // `!` 执行的流式输出增量：就地追加进乐观卡片（pi-web 不消费这个
             // 事件、靠会话重载——这里直接流式渲染，严格更好）

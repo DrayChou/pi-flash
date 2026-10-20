@@ -704,7 +704,12 @@ impl crate::Chat {
                 },
                 cx,
             ),
-            Action::Abort => self.send_wx(&Command::Abort, cx),
+            // /停止与桌面停止按钮同口径：abort 必须配对 clear_queue 撤回滞留
+            // 队列（pi 的 abort 只掐 run 不清队列，否则排队消息下轮照常冲出）
+            Action::Abort => {
+                self.send_wx(&Command::Abort, cx);
+                self.send_wx(&Command::ClearQueue, cx);
+            }
             Action::Status => {
                 let lang = Lang::from_ix(crate::i18n::lang_ix());
                 if let Some(text) = self.status_reply(cx, lang) {

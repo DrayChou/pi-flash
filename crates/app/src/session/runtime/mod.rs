@@ -61,6 +61,10 @@ pub(crate) enum SessionEvent {
     /// 真标签要等 pi 落盘 + 磁盘扫描（进程冷启 1-3s），伪标签让「发送瞬间」
     /// 就有标签；FileBound 落地时由 on_file_bound 摘除换真身。
     PendingTab(Option<String>),
+    /// abort 撤回的排队消息原文（clear_queue response 携带）：Chat 据此回填
+    /// composer 输入框（pi-web "restoring to editor when user aborts" parity）。
+    /// 仅活跃会话回填可见输入框；后台会话由 runtime 自吞进 input 草稿。
+    RecallInput(String),
 }
 
 /// 033 会话导航面板的一轮摘要（runtime 缓存条目）：用户消息索引 + 前
@@ -124,6 +128,11 @@ pub(crate) struct SessionRuntime {
     /// 必然重复成两条气泡）。
     /// 与 phase_waiting 解耦 —— 回显到达 ≠ agent 已应答，等待行不能被它掐掉。
     pub pending_echoes: Vec<String>,
+    /// pi 侧 steering/followUp 队列镜像（`queue_update` 全量快照）：「已排
+    /// 队 N 条」状态行不再本地猜。仅显示用——abort 撤回的对账真值来自
+    /// `clear_queue` response（pi 权威回传），不读这里。
+    pub queued_steering: Vec<String>,
+    pub queued_followups: Vec<String>,
     pub stream_started: Option<std::time::Instant>,
     pub agent_running: bool,
     /// 本轮结局（三色通知的红档）：**最后一条 assistant 消息**
@@ -260,6 +269,8 @@ impl SessionRuntime {
             phase_waiting: false,
             streaming_content: false,
             pending_echoes: Vec::new(),
+            queued_steering: Vec::new(),
+            queued_followups: Vec::new(),
             stream_started: None,
             agent_running: false,
             turn_error: false,
@@ -434,6 +445,10 @@ impl SessionRuntime {
         let this = cx.entity();
         match self.spawn() {
             Some(rx) => {
+                // 新进程队列必为空：换绑/重 spawn 后镜像不得残留旧进程的
+                // 队列快照（queue_update 只在变动时发，残留会一直错下去）
+                self.queued_steering.clear();
+                self.queued_followups.clear();
                 let epoch = self.agent.epoch;
                 Self::attach_pump(&this, rx, epoch, cx);
                 true

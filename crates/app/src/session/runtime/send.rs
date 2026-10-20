@@ -182,18 +182,23 @@ impl SessionRuntime {
         cx.notify();
     }
 
-    /// 停止（rpc abort）。
+    /// 停止（rpc abort + clear_queue 配对）。
     pub(crate) fn abort_stream(&mut self, cx: &mut Context<Self>) {
         if let Some(session) = &self.agent.session {
             let _ = session.send(&Command::Abort);
+            // **abort 必须配对 clear_queue**：pi 的 abort 只掐当前 run，不清
+            // followUp/steering 队列——已排队未投递的消息留在队列里，下一轮
+            // 跑完时被 would-stop drain 冲出来当新轮执行（「停止后消息又自己
+            // 执行了一遍」，2026-10-19 会话 01a1564b 实证）。clear_queue 把
+            // 它们撤下，response 回传原文（{steering,followUp}），由
+            // clear_queue response 臂删乐观气泡 + 回填输入框。
+            let _ = session.send(&Command::ClearQueue);
         }
         self.stream_started = None;
         // 中止：等待行立即收起（不等 agent_settled）
         self.phase_waiting = false;
-        // **不清 pending_echoes**：pi 的 abort 只掐当前 run，不清 followUp/
-        // steering 队列——已排队未回显的消息在下一轮跑完时照常冲出来，回
-        // 显到时还要靠 pending_echoes 去重；这里清了就会多出一条重复气泡。
-        // 死信兜底由回显臂的 64 上限承担。
+        // pending_echoes **不在此清**：撤回的条目由 clear_queue response 臂
+        // 随气泡一起摘（response 异步回来）；已被投递的条目回显时正常消费。
         // 中止即「不在跑」：状态槽转圈 / composer 停止按钮都读 agent_running，
         // 若 pi 的终止事件迟到或压根不来（进程被掐），不就地复位就会永久显示
         // 运行中——同一条「立即收起」语义

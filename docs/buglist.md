@@ -67,7 +67,31 @@ pid 指纹（9848/10420）。
   被冲掉的 pins 无备份（原子写 tmp+rename），救不回；运行中的 PF 内存缓存
   完好，正常退出会把布局键写回大半。
 
-## 待验证（本轮修复）——agent 工作时排队发送的内容隔几分钟后「重复发送」
+## 已修复（第二轮，2026-10-20）——「重复发送」复发：停止按钮不撤回已排队消息
+
+第一轮修复（37919a1，见下）解决了「入队时机竞态」，但用户复现：agent 工作
+中发消息，执行完后又重新执行一遍，好像收到两次（会话 01a1564b，2026-10-19
+22:32-01:04，用户口供：中间按过停止、正在修改设计）。
+
+- ✅ 真根因：pi 的 `Abort` 只掐当前 run **不清 followUp/steering 队列**
+  （`_handlePostAgentRun` 因 `_agentRunAbortRequested` 直接 return false，
+  绝不消费队列）。运行中发的消息经 `prompt+followUp` 入队后按停止 → 消息
+  留在队列里；下一条消息跑完时 agent-loop 在「would stop」处 drain 队列，
+  **陈旧消息被冲出来当新轮执行** = 「收到两次消息」。pi 自带 `clear_queue`
+  RPC（`AgentSession.clearQueue()` 注释即 "restoring to editor when user
+  aborts"），PF 从未调用；`queue_update` 事件也被忽略，队列零可见。
+- ✅ 修法：① pi-link 新增 `Command::ClearQueue`（wire `{"type":"clear_queue"}`，
+  response data 携带被撤回原文 `{steering,followUp}`）；② `abort_stream`
+  abort 后配对发 `clear_queue`，response 臂删对应乐观气泡 + 摘
+  `pending_echoes` + 文本回填输入框（新 `SessionEvent::RecallInput`，
+  pi-web restoring-to-editor parity；后台会话吞进 runtime 草稿）；
+  ③ 微信远程 `/停止` 同口径补配对；④ `queue_update` 拆出 typed
+  `Event::QueueUpdate`，runtime 持队列镜像，状态行显示真实「已排队 N 条」。
+- ✅ 验证：pi-link 181 测试全绿（新增 clear_queue/queue_update wire 测试）；
+  全 workspace cargo check 通过。验收交用户（复现路径：运行中发消息 →
+  停止 → 确认文本回输入框、气泡移除；再发新消息确认旧消息不再自动执行）。
+
+## 已修复（第一轮，2026-10-17）——agent 工作时排队发送的内容隔几分钟后「重复发送」
 
 用户口径：agent 在跑时排队发了「新theme叫薰衣草」，接着又发了带补充的
 第二条；第一条直到下一轮回复结束才被重新发出去（会话尾部多出一条同文

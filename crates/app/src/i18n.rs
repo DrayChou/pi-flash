@@ -621,6 +621,8 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("status.running_tool", "正在运行 {name}...", "正在運行 {name}...", "Running {name}..."),
     ("status.running_tools", "正在运行 {names}...", "正在運行 {names}...", "Running {names}..."),
     ("status.queued", "已排队（本轮结束后发送）", "已排隊（本輪結束後發送）", "Queued (sends after the current turn)"),
+    ("status.queued_n", "已排队 {count} 条（本轮结束后发送）", "已排隊 {count} 條（本輪結束後發送）", "Queued: {count} (sends after the current turn)"),
+    ("status.recalled_queued", "已撤回 {count} 条排队消息（文本回到输入框）", "已撤回 {count} 條排隊訊息（文字回到輸入框）", "Recalled {count} queued message(s) back to the composer"),
     ("status.send_failed", "发送失败", "發送失敗", "Send failed"),
     ("status.waiting_model", "正在等待模型...", "正在等待模型...", "Waiting for model..."),
     ("terminal.none", "暂无终端会话", "暫無終端會話", "No terminal sessions"),

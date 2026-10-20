@@ -36,6 +36,15 @@ pub enum Command {
         images: Vec<Value>,
     },
     Abort,
+    /// Clear pi's pending steering/followUp queues (rpc `clear_queue`)。
+    /// pi 的 `Abort` 只掐当前 run **不清队列**——已排队未投递的消息会滞留到
+    /// 下一轮跑完时被 would-stop drain 冲出来当新轮执行（真机表现「停止后
+    /// 消息又自己执行了一遍」，2026-10-19 会话 01a1564b 实证）。abort 时必须
+    /// 配对发本命令撤回队列；response data 携带被撤回的原文
+    /// `{steering:[text..], followUp:[text..]}`，供 app 回填输入框
+    /// （AgentSession.clearQueue 的设计语义就是 "restoring to editor when
+    /// user aborts"，pi-web parity）。
+    ClearQueue,
     /// Summarize/compact the session context (rpc compact)
     Compact,
     GetState,
@@ -106,6 +115,7 @@ impl Command {
             Command::Steer { .. } => "steer",
             Command::FollowUp { .. } => "follow_up",
             Command::Abort => "abort",
+            Command::ClearQueue => "clear_queue",
             Command::Compact => "compact",
             Command::GetState => "get_state",
             Command::GetMessages => "get_messages",
@@ -181,6 +191,7 @@ impl Command {
             }
             Command::Compact
             | Command::Abort
+            | Command::ClearQueue
             | Command::GetState
             | Command::GetMessages
             | Command::GetSessionStats
@@ -354,6 +365,17 @@ fn is_image_dimension_note(seg: &str) -> bool {
         return false;
     };
     !scale.is_empty() && scale.bytes().all(|b| b.is_ascii_digit() || b == b'.')
+}
+
+/// Extract an array of plain strings (`queue_update` steering/followUp 快照)
+fn string_list(v: &Value) -> Vec<String> {
+    v.as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|s| s.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Extract ordered content blocks from a `message.content` value
@@ -782,7 +804,14 @@ pub enum Event {
         event_name: Option<String>,
         error: Option<String>,
     },
-    /// pi 会话事件中 app 暂不消费的杂项（tool_execution_* / queue_update /
+    /// `queue_update`：pi 侧 steering/followUp 队列变动后的全量快照（文本
+    /// 数组，未投递的原文）。此前归 WireEvent 忽略——PF 对 pi 队列零可见，
+    /// 「已排队」状态行只能本地猜；abort 撤回（clear_queue）也要靠它对账。
+    QueueUpdate {
+        steering: Vec<String>,
+        follow_up: Vec<String>,
+    },
+    /// pi 会话事件中 app 暂不消费的杂项（tool_execution_* /
     /// entry_appended / session_info_changed / thinking_level_changed）：
     /// 解析出 type 免落 [`Event::Unparsed`] 噪声，字段留原 Value。
     WireEvent {
@@ -1188,12 +1217,15 @@ pub fn parse_record(v: &Value) -> Event {
             event_name: v["event"].as_str().map(str::to_string),
             error: v["error"].as_str().map(str::to_string),
         },
+        Some("queue_update") => Event::QueueUpdate {
+            steering: string_list(&v["steering"]),
+            follow_up: string_list(&v["followUp"]),
+        },
         // app 暂不消费的会话事件：按 type 归类为 WireEvent，别落 Unparsed
         Some(
             "tool_execution_start"
             | "tool_execution_update"
             | "tool_execution_end"
-            | "queue_update"
             | "entry_appended"
             | "session_info_changed"
             | "thinking_level_changed",
@@ -2026,7 +2058,6 @@ mod tests {
         for kind in [
             "tool_execution_update",
             "tool_execution_end",
-            "queue_update",
             "entry_appended",
             "session_info_changed",
             "thinking_level_changed",
@@ -2227,6 +2258,57 @@ mod tests {
         assert_eq!(
             Command::AbortBash.to_record("b3"),
             json!({"id":"b3","type":"abort_bash"})
+        );
+    }
+
+    // clear_queue：abort 配对命令（撤回滞留队列）；response data 携带被撤回
+    // 原文 {steering, followUp}（rpc-mode success(id,"clear_queue",clearQueue())）
+    #[test]
+    fn clear_queue_record_shape_and_response() {
+        assert_eq!(
+            Command::ClearQueue.to_record("q1"),
+            json!({"id":"q1","type":"clear_queue"})
+        );
+        let e = parse_line(
+            r#"{"id":"q1","type":"response","command":"clear_queue","success":true,"data":{"steering":[],"followUp":["改设计：单列布局"]}}"#,
+        )
+        .unwrap();
+        match e {
+            Event::Response { command, data, .. } => {
+                assert_eq!(command, "clear_queue");
+                let d = data.expect("data");
+                assert_eq!(string_list(&d["steering"]), Vec::<String>::new());
+                assert_eq!(string_list(&d["followUp"]), vec!["改设计：单列布局"]);
+            }
+            other => panic!("expected Response, got {other:?}"),
+        }
+    }
+
+    // queue_update：pi 队列全量快照（_emitQueueUpdate：steering/followUp 文本数组）
+    #[test]
+    fn queue_update_parses_text_arrays() {
+        let e = parse_line(
+            r#"{"type":"queue_update","steering":["插一句"],"followUp":["排队甲","排队乙"]}"#,
+        )
+        .unwrap();
+        match e {
+            Event::QueueUpdate {
+                steering,
+                follow_up,
+            } => {
+                assert_eq!(steering, vec!["插一句"]);
+                assert_eq!(follow_up, vec!["排队甲", "排队乙"]);
+            }
+            other => panic!("expected QueueUpdate, got {other:?}"),
+        }
+        // 空队列/缺字段 → 空数组，不 panic
+        let e = parse_line(r#"{"type":"queue_update","steering":[],"followUp":[]}"#).unwrap();
+        assert_eq!(
+            e,
+            Event::QueueUpdate {
+                steering: vec![],
+                follow_up: vec![]
+            }
         );
     }
 
