@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>pi-flash · Pi扩展市场（040-1 设计稿 v22 · 单列三段式卡片）</title>
+<title>pi-flash · Pi扩展市场（040-1 设计稿 v23 · 单列三段式卡片 · 一屏一页）</title>
 <style>
 /* ===================== 设计系统（mist / one-dark 双主题） ===================== */
 :root {
@@ -136,19 +136,13 @@ html[data-theme="dark"] .btn.primary:hover { background: rgba(97,137,235,.22);
 .summary .dot { width: 2px; height: 2px; border-radius: 50%; background: var(--text-faint); }
 
 /* ===================== 单列卡片（两段式） ===================== */
-.list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
-  display: flex; flex-direction: column; gap: 10px; padding: 0 var(--list-p) 6px var(--pad-l);
-  scrollbar-width: thin; scrollbar-color: var(--border) transparent;
-  scrollbar-gutter: stable; }
-.list::-webkit-scrollbar { width: 10px; }
-.list::-webkit-scrollbar-track { background: transparent; }
-.list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px;
-  border: 3px solid transparent; background-clip: content-box; }
-.list::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+/* 列表：**一屏放下**——不内滚、不出滚动条；一页 = 一屏装得下的条数（本稿 5 条） */
+.list { flex: 1; min-height: 0; overflow: hidden;
+  display: flex; flex-direction: column; gap: 8px; padding: 0 var(--list-p) 6px var(--pad-l); }
 
 .pkg { flex: none; display: grid; grid-template-columns: 88px minmax(0,1fr) 96px;
   align-items: stretch; gap: 16px;
-  padding: 12px 14px 12px 16px; border: 1px solid var(--hairline); border-radius: 10px;
+  padding: 10px 14px 10px 16px; border: 1px solid var(--hairline); border-radius: 10px;
   background: var(--bg); box-shadow: var(--shadow-card);
   transition: border-color .12s ease, box-shadow .12s ease; }
 .pkg:hover { border-color: rgba(30,101,89,.42); box-shadow: var(--shadow-hover); }
@@ -251,7 +245,7 @@ html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: 
 <body>
 
 <div class="sheet-head">
-  <b>040-1 Pi扩展市场 · v22（淡色按钮 / 整页限宽居中 / 去扩展标签 / 搜索按钮置排序后 / 右列一条竖线 / 缩略槽保留格子纸）</b>
+  <b>040-1 Pi扩展市场 · v23（一屏放下：列表不内滚，每页 5 条 / 淡色按钮 / 限宽居中 / 无扩展标签 / 搜索按钮置排序后）</b>
   <span>单列三段式卡片（左 缩略 72 / 中 文本 / 右 动作列 96：开关在顶、动作在底，同一条右缘）· 1180×760 · mist</span>
   <span class="spacer"></span>
   <button id="themeBtn">切换到 one-dark</button>
@@ -306,7 +300,7 @@ html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: 
       <div class="pages">
         <button class="pg act">1</button><button class="pg">2</button><button class="pg">3</button>
         <button class="pg">4</button><button class="pg">5</button><button class="pg">6</button>
-        <span class="dots">…</span><button class="pg">248</button>
+        <span class="dots">…</span><button class="pg">2,473</button>
       </div>
       <button class="pager">下一页 →</button>
     </div>
@@ -323,7 +317,7 @@ html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: 
       <div class="skel"><div class="bar" style="width:88px;height:72px;border-radius:7px"></div>
         <div class="stack"><div class="bar" style="width:34%;height:12px"></div><div class="bar" style="width:80%"></div><div class="bar" style="width:52%"></div><div class="bar" style="width:40%"></div></div></div>
       <div class="foot" style="border:0;padding:0 4px;margin-top:auto">
-        <span>第 <b>1</b> / 248 页 · 12,365 条</span><div class="spacer"></div>
+        <span>第 <b>1</b> / 2,473 页 · 12,365 条</span><div class="spacer"></div>
         <span style="display:flex;align-items:center;gap:6px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="width:12px;height:12px"><path d="M12 3a9 9 0 1 0 9 9" stroke-linecap="round"/></svg>载入中…</span>
       </div>
     </div>
@@ -412,7 +406,7 @@ function cardHtml(i) {
 }
 
 const list = document.getElementById('list');
-list.innerHTML = Array.from({ length: 50 }, (_, i) => cardHtml(i)).join('');
+list.innerHTML = Array.from({ length: 5 }, (_, i) => cardHtml(i)).join('');
 list.querySelectorAll('.sw').forEach(sw => sw.addEventListener('click', () => sw.classList.toggle('on')));
 
 const btn = document.getElementById('themeBtn');
