@@ -86,6 +86,8 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("market.loading", "加载中…", "載入中…", "Loading…"),
     ("market.per_month", "/月", "/月", "/mo"),
     ("market.sort_downloads", "最多下载", "最多下載", "Most downloads"),
+    ("market.results", "个结果", "個結果", "results"),
+    ("market.only_ext", "只展示扩展（技能/提示词/主题不列出）", "只顯示擴展（技能/提示詞/主題不列出）", "Extensions only (skills, prompts and themes are not listed)"),
     ("market.prev", "← 上一页", "← 上一頁", "← Previous"),
     ("market.next", "下一页 →", "下一頁 →", "Next →"),
     ("market.today", "今天", "今天", "today"),

@@ -43,6 +43,10 @@ const THUMB_W: f32 = 88.;
 const THUMB_H: f32 = 72.;
 /// 最多可翻到第几页（npm 搜索分页深度保守上限；也是本次会话的内存天花板）。
 const MAX_PAGES: usize = 20;
+/// 页面内容列左右内缩 = 列表容器 SP5(10) + 卡片内 padding SP7(16)。
+/// 工具栏 / 摘要 / 翻页条都用它，**右缘与卡片里的动作按钮严格同一竖线**
+/// （2026-10-20 用户要求：上方按钮要和列表中的按钮对齐）。
+const PAGE_INSET: f32 = space::SP5 + space::SP7;
 
 /// 「未安装 / 已安装」筛选（040-1 UI 设计）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -488,6 +492,28 @@ pub(crate) fn page(chat: &Chat, weak: &gpui::WeakEntity<Chat>) -> AnyElement {
     if let Some(banner) = banner(chat, weak, t) {
         page = page.child(banner);
     }
+    // 摘要行：结果数 + 只展示扩展（对齐设计稿；total 未知时不占位）
+    if st.total > 0 {
+        page = page.child(
+            gpui::div()
+                .flex_shrink_0()
+                .flex()
+                .items_center()
+                .gap(gpui::px(space::SP3))
+                .px(gpui::px(PAGE_INSET))
+                .pb(gpui::px(space::SP5))
+                .text_size(crate::appearance::ui_size(11.))
+                .text_color(gpui::rgb(t.text_soft))
+                .child(
+                    gpui::div()
+                        .text_color(gpui::rgb(t.text_dim))
+                        .child(SharedString::from(thousands(st.total))),
+                )
+                .child(tr("market.results").to_string())
+                .child(dot(t))
+                .child(tr("market.only_ext").to_string()),
+        );
+    }
 
     let list_area = if rows.is_empty() {
         empty_area(chat, t)
@@ -534,7 +560,7 @@ fn toolbar(
         .flex()
         .items_center()
         .gap(gpui::px(space::SP4))
-        .px(gpui::px(space::SP5))
+        .px(gpui::px(PAGE_INSET))
         .pt(gpui::px(space::SP6))
         .pb(gpui::px(space::SP3))
         .border_b_1()
@@ -644,7 +670,7 @@ fn banner(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> Opti
             .flex()
             .items_center()
             .gap(gpui::px(space::SP3))
-            .mx(gpui::px(space::SP5))
+            .mx(gpui::px(PAGE_INSET))
             .mt(gpui::px(space::SP2))
             .px(gpui::px(space::SP4))
             .py(gpui::px(space::SP2))
@@ -1128,7 +1154,7 @@ fn pager(
         .flex()
         .items_center()
         .gap(gpui::px(space::SP6))
-        .px(gpui::px(space::SP5))
+        .px(gpui::px(PAGE_INSET))
         .border_t_1()
         .border_color(gpui::rgb(t.border));
 
@@ -1255,6 +1281,19 @@ fn pager_nav(
     el.into_any_element()
 }
 
+/// 千分位（12,365）。
+fn thousands(n: usize) -> String {
+    let s = n.to_string();
+    let mut out = String::with_capacity(s.len() + s.len() / 3);
+    for (i, ch) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(ch);
+    }
+    out
+}
+
 /// 「2 天前 / 今天」文案（`days_since` 纯函数出天数）。
 fn ago_label(iso: &str, now_unix: i64) -> String {
     match days_since(iso, now_unix) {
@@ -1345,6 +1384,14 @@ mod tests {
                 PageBtn::Num(20)
             ]
         );
+    }
+
+    #[test]
+    fn thousands_groups() {
+        assert_eq!(thousands(0), "0");
+        assert_eq!(thousands(999), "999");
+        assert_eq!(thousands(12365), "12,365");
+        assert_eq!(thousands(1234567), "1,234,567");
     }
 
     #[test]
