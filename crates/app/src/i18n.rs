@@ -251,7 +251,6 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("shortcuts.project_search", "搜索文件内容（项目搜索）", "搜尋檔案內容（專案搜尋）", "Search in project files"),
     ("search.tab", "搜索", "搜尋", "Search"),
     ("search.close", "收起搜索", "收起搜尋", "Close search"),
-    ("search.open_file", "打开文件", "開啟檔案", "Open File"),
     ("search.match_count", "{n} 处", "{n} 處", "{n} matches"),
     ("search.placeholder", "搜索全部文件…", "搜尋全部檔案…", "Search all files…"),
     ("search.replace_placeholder", "替换为…", "取代為…", "Replace with…"),

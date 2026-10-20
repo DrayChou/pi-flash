@@ -45,9 +45,9 @@ fn gutter_w() -> f32 {
     (crate::appearance::file_font().size * 3.4).round().max(44.)
 }
 
-/// 组头高：≈1.35 行（Zed excerpt header 的量级），字号用正文字号
+/// 组头高：≈1.75 行（Zed 的 excerpt 头明显高于代码行），字号用正文字号
 fn header_h() -> f32 {
-    (line_h() * 1.35).round().max(line_h() + 8.)
+    (line_h() * 1.75).round().max(line_h() + 14.)
 }
 
 /// 结果区：空态提示 或 块列表。
@@ -108,6 +108,8 @@ fn results_shell(t: &'static Theme, list: impl gpui::IntoElement) -> gpui::State
         .flex()
         .flex_col()
         .bg(rgb(t.bg))
+        // 第一条文件头与搜索框留 5px 间隙（2026-10-21 用户定案）
+        .pt(px(5.))
         .child(list)
 }
 
@@ -199,8 +201,10 @@ fn header_row(block_ix: usize, block: &ResultBlock, on_open: &OnOpen) -> AnyElem
         // 组头底：bg_panel（`bg_subtle` 是 RRGGBBAA，rgb() 读会变近黑——2026-10-21
         // 用户报的「黑色是配色错误」根因）
         .bg(rgb(t.bg_panel))
-        .border_t_1()
-        .border_color(rgb(t.border))
+        // 对齐 Zed 的文件头：**明显圆角 + 下层投影 + 无描边**
+        // （此前是整宽平色带 + 1px 上边框，用户评「难看」）
+        .rounded(px(8.))
+        .shadow_sm()
         .cursor_pointer()
         .hover(move |s| s.bg(rgb(t.bg_hover)))
         .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
@@ -221,7 +225,7 @@ fn header_row(block_ix: usize, block: &ResultBlock, on_open: &OnOpen) -> AnyElem
                 .flex_shrink_0()
                 .font_family(font.family.clone())
                 .text_size(px(font.size))
-                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .font_weight(gpui::FontWeight::MEDIUM)
                 .text_color(rgb(t.text))
                 .child(name),
         )
@@ -244,19 +248,6 @@ fn header_row(block_ix: usize, block: &ResultBlock, on_open: &OnOpen) -> AnyElem
                 .text_size(crate::appearance::ui_size(11.))
                 .text_color(rgb(t.text_dim))
                 .child(hint),
-        )
-        .child(
-            div()
-                .flex_shrink_0()
-                .flex()
-                .items_center()
-                .gap(px(6.))
-                .pl(px(12.))
-                .font_family(crate::appearance::panel_font().family)
-                .text_size(crate::appearance::ui_size(11.))
-                .text_color(rgb(t.text_faint))
-                .child(tr("search.open_file").to_string())
-                .child(crate::ui::kit::keycap("alt-enter")),
         )
         .into_any_element()
 }

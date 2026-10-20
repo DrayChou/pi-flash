@@ -41,26 +41,3 @@ pub(crate) fn scope_tag(label: &str, project: bool) -> AnyElement {
         .child(SharedString::from(label.to_string()))
         .into_any_element()
 }
-
-/// 键帽（行内静态文案，如结果组头的「Alt+Enter」）：高 18、`px 5`、r3、
-/// mono ui(10)、`bg_panel` + 1px border + 底部 1px 硬阴影（键帽观感）。
-/// 尺寸见 `docs/UI设计/UI组件规范.md` §10.4。
-pub(crate) fn keycap(label: &'static str) -> AnyElement {
-    let t = T();
-    div()
-        .h(px(18.))
-        .px(px(5.))
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(3.))
-        .border_1()
-        .border_b_2()
-        .border_color(rgb(t.border))
-        .bg(rgb(t.bg_panel))
-        .font_family(crate::editor::markdown::MONO_FAMILY)
-        .text_size(crate::appearance::ui_size(10.))
-        .text_color(rgb(t.text_dim))
-        .child(SharedString::from(label))
-        .into_any_element()
-}
