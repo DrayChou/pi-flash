@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>pi-flash · Pi扩展市场（040-1 设计稿 v25 · 单列三段式卡片 · 列表一屏高可滚）</title>
+<title>pi-flash · Pi扩展市场（040-1 设计稿 v26 · 单列三段式卡片 · 每页 50 条 · 一屏高滚屏）</title>
 <style>
 /* ===================== 设计系统（mist / one-dark 双主题） ===================== */
 :root {
@@ -151,7 +151,7 @@ html[data-theme="dark"] .btn.primary:hover { background: rgba(97,137,235,.22);
 .summary .dot { width: 2px; height: 2px; border-radius: 50%; background: var(--text-faint); }
 
 /* ===================== 单列卡片（两段式） ===================== */
-/* 列表：高度只吃一屏（不把整页撑长），内容超一屏则内部滚动，
+/* 列表：一屏高度（不把整页撑长），一页 50 条在这一屏里滚，
    滚动条细且淡、自带 10px 间隙不压卡片边框 */
 .list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
   display: flex; flex-direction: column; gap: 8px; padding: 0 var(--list-p) 6px var(--pad-l);
@@ -267,7 +267,7 @@ html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: 
 <body>
 
 <div class="sheet-head">
-  <b>040-1 Pi扩展市场 · v25（列表一屏高 + 内部可滚 / 每页 20 条 / 排序下拉带值 / 淡色按钮 / 限宽居中 / 无扩展标签）</b>
+  <b>040-1 Pi扩展市场 · v26（每页 50 条 · 列表一屏高、内部滚屏 / 排序下拉带值 / 淡色按钮 / 限宽居中 / 无扩展标签）</b>
   <span>单列三段式卡片（左 缩略 72 / 中 文本 / 右 动作列 96：开关在顶、动作在底，同一条右缘）· 1180×760 · mist</span>
   <span class="spacer"></span>
   <button id="themeBtn">切换到 one-dark</button>
@@ -328,7 +328,7 @@ html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: 
       <div class="pages">
         <button class="pg act">1</button><button class="pg">2</button><button class="pg">3</button>
         <button class="pg">4</button><button class="pg">5</button><button class="pg">6</button>
-        <span class="dots">…</span><button class="pg">619</button>
+        <span class="dots">…</span><button class="pg">248</button>
       </div>
       <button class="pager">下一页 →</button>
     </div>
@@ -345,7 +345,7 @@ html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: 
       <div class="skel"><div class="bar" style="width:88px;height:72px;border-radius:7px"></div>
         <div class="stack"><div class="bar" style="width:34%;height:12px"></div><div class="bar" style="width:80%"></div><div class="bar" style="width:52%"></div><div class="bar" style="width:40%"></div></div></div>
       <div class="foot" style="border:0;padding:0 4px;margin-top:auto">
-        <span>第 <b>1</b> / 619 页 · 12,365 条</span><div class="spacer"></div>
+        <span>第 <b>1</b> / 248 页 · 12,365 条</span><div class="spacer"></div>
         <span style="display:flex;align-items:center;gap:6px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="width:12px;height:12px"><path d="M12 3a9 9 0 1 0 9 9" stroke-linecap="round"/></svg>载入中…</span>
       </div>
     </div>
@@ -434,7 +434,7 @@ function cardHtml(i) {
 }
 
 const list = document.getElementById('list');
-list.innerHTML = Array.from({ length: 20 }, (_, i) => cardHtml(i)).join('');
+list.innerHTML = Array.from({ length: 50 }, (_, i) => cardHtml(i)).join('');
 list.querySelectorAll('.sw').forEach(sw => sw.addEventListener('click', () => sw.classList.toggle('on')));
 
 // 排序下拉：点触发器展开/收起，选项写回标签，点外面 / ESC 收起
