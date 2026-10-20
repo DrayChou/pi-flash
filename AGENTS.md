@@ -72,7 +72,12 @@ crates/pi-link/src/     钉版 pi RPC 协议层（typed bridge，测试在此）
   skills.rs               技能发现 + SKILL.md frontmatter 编辑
   extensions.rs           扩展发现口径（复刻 pi core/extensions）
   session_ext.rs          会话级插件清单（031/034）
+  agents.rs               Agent profile 目录读写（Settings-子代理页数据源，044-1）
+  subagents.rs            内置子代理扩展定位（-e 挂载，同 pf_providers 模式）
+  subagent_catalog.rs     子代理 catalog 流式读取（父会话 JSONL custom entry，044-1）
+  dev_flags.rs            dev-flags.json 开发旗标（重型模块发版排除）
   paths.rs                PF 自有文件路径（不污染 pi，010）
+  market/                 040-1 扩展市场 pi-link 侧（目录抓取/磁盘快照）
   automation.rs           pif-ui 自动化协议（NDJSON over TCP 127.0.0.1）
   bin/                    附属可执行（pif-ui CLI 等）
 
@@ -90,9 +95,11 @@ crates/app/src/         GPUI 界面（Chat = 全应用状态实体：直属字�
   content.rs              内容区状态机 chat / term / md（v54）
   dialogs.rs              弹窗域：模态渲染（ModelSelect/GitDiff/SessionSearch/…）+ 打开器
   ext_ui.rs               扩展 UI 面 + 协议动作 on_ext_ui/ext_respond（040）
+  ask_card.rs             ask_user_question 整卷问卷卡（tab 分题+串行应答）
   terminal/               内置终端（alacritty+ConPTY）：mod 渲染/impl Chat +
                           palette + snapshot + input_encode（键盘/IME→PTY）
   i18n.rs                 三语（zh-CN 为源）
+  i18n_audit.rs           i18n 审计（语义键源码级静态检查）
   models_config.rs        enabledModels 白名单编辑（pi-web port）
   assets.rs               图标编入二进制；status_bar.rs 状态栏；titlebar.rs topbar；
                           top_panels.rs 系统提示词/工具定义面板
@@ -106,9 +113,12 @@ crates/app/src/         GPUI 界面（Chat = 全应用状态实体：直属字�
   function_panel/         左 dock 域：psp 一体列表（015）+ psp_actions 项目动作 +
                           file_tree（021）+ file_actions 树文件动作 + git 面板（022）+ 悬浮层
   remote_control/         微信 ⇄ 会话桥（060）
+  market/                 040-1 扩展市场页面（卡片/分页/预取）
   services/               无 UI 助手（pi-web lib/ parity）：file_icons / at_file /
                           file_index / file_tree / format / git / paths_sort / sound /
-                          token_probe / updater / watcher / workspace / shell_open
+                          token_probe / updater / watcher / workspace / shell_open /
+                          asset_evict（gpui 位图驱逐）/ plugin_updates（082）/
+                          session_clean（052）
   session/                会话域：runtime/ 会话池实体（030；mod 生命周期+泵、
                           events 事件臂、send 发送+rpc 门面、nav 定位对账、
                           ingest 摄入）+ messages/（032；mod、model 类型与尾窗
@@ -117,11 +127,13 @@ crates/app/src/         GPUI 界面（Chat = 全应用状态实体：直属字�
                           区、bar 控件行、ctx_tip 用量面板）+ pool 池 Chat 方法、
                           chat_list 滚屏、menu 补全菜单 + attachments 附件、
                           fork、diff、model/plugin/mcp picker、new_session（012）、
-                          tools_recipe 档位配方（034）
+                          tools_recipe 档位配方（034）、subagent_panel 子代理
+                          面板（044-1）、actions_bar 消息操作栏
   settings/               设置面板六页（界面/模型/技能/扩展/MCP/其他）；widgets 只剩
                           select_section，公共件全部转发 ui/kit（存量调用点零改动）
   ui/                     通用件：tokens（UI组件规范唯一代码落点）、button、text_input、
-                          composer_input、dropdown、overlay、popup、vlist、psp_scrollbar
+                          composer_input、dropdown、overlay、popup、vlist、psp_scrollbar、
+                          tooltip、list_handle
   ui/kit/                 页面级组件库（**新页面只从这里取控件，禁就地手搓**）：
                           button（Btn+config_button）/ switch（三态开关）/ row（set_row、
                           field、文本块）/ layout（两栅骨架、LIST_W）/ badge（黊标·
