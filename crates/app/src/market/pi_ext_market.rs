@@ -1173,6 +1173,7 @@ fn pkg_card(
             gpui::div()
                 .flex_1()
                 .min_w_0()
+                .h_full()
                 .flex()
                 .flex_col()
                 .gap(gpui::px(space::SP2))
@@ -1180,7 +1181,9 @@ fn pkg_card(
                 .child(
                     gpui::div()
                         .flex()
-                        .items_center()
+                        // 顶部对齐：开关/版本徽标贴行顶，使「上边距 = 下边距」
+                        // （底行按钮贴卡片底内边距，两者都等于卡片 py）。
+                        .items_start()
                         .gap(gpui::px(space::SP4))
                         .min_w_0()
                         .child(name_link(row, t))
@@ -1203,6 +1206,9 @@ fn pkg_card(
                         .child(SharedString::from(row.desc.clone()))
                         .into_any_element()
                 }))
+                // 弹性占位：把底行顶到卡片底内边距上，
+                // 保证「上边距 = 下边距 = 卡片 py」恒成立
+                .child(gpui::div().flex_1())
                 // ③ 底行（v17：在「倒数第二行」的位置，即与标题/描述同列缩进）
                 .child(
                     gpui::div()
