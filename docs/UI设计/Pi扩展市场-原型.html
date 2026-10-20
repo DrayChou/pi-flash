@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>pi-flash · Pi扩展市场（040-1 设计稿 v27 · 单列卡片 · 50 条一屏滚屏 · 右缘一条线）</title>
+<title>pi-flash · Pi扩展市场（040-1 设计稿 v28 · 单列卡片 · 50 条一屏滚屏 · 工具栏贴卡片外框）</title>
 <style>
 /* ===================== 设计系统（mist / one-dark 双主题） ===================== */
 :root {
@@ -79,10 +79,10 @@ html[data-theme="dark"] .sheet-head button:hover { background: rgba(255,255,255,
 /* 对齐三常量（改一处全页跟随）：
    --pad-l   = 10  左缘：工具栏/摘要/列表/翻页条 ⊥ 卡片外框，同一条竖线
    --list-p  = 18  列表右内距 = 滚动条 8 + 10 间隙（滚动条不压卡片边框）
-   --pad-r   = 40  右缘：工具栏/摘要/翻页条/命令胶囊/动作 ⊥ 卡片内容右缘
-                   （18 列表右内距 + 8 滚动条槽 + 14 卡片右内距） */
+   --pad-r   = 26  右缘：工具栏按钮/摘要/翻页条 ⊥ **卡片外框**
+                   （18 列表右内距 + 8 滚动条槽，不再往里缩卡片内距） */
 .page { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center;
-  --pad-l: 10px; --list-p: 18px; --pad-r: 40px; }
+  --pad-l: 10px; --list-p: 18px; --pad-r: 26px; }
 /* 整页内容栏：限宽 + 居中。超宽窗口不再把卡片拉成横贯全屏的白条 */
 .col { flex: 1; min-height: 0; width: 100%; max-width: 1114px;
   display: flex; flex-direction: column; }
@@ -266,7 +266,7 @@ html[data-theme="dark"] .banner.warn { background: rgba(224,169,98,.14); color: 
 <body>
 
 <div class="sheet-head">
-  <b>040-1 Pi扩展市场 · v27（结果数右对齐 · 安装命令贴右 · 每页 50 条一屏滚屏 / 排序下拉带值 / 淡色按钮 / 限宽居中 / 无扩展标签）</b>
+  <b>040-1 Pi扩展市场 · v28（工具栏按钮/摘要/翻页条贴卡片外框右缘 · 安装命令贴卡片内容右缘 · 每页 50 条一屏滚屏）</b>
   <span>单列卡片（88 缩略 + 文本两列：标题行右端开关 / 底行右端命令胶囊+动作，全部贴同一条右缘）· 1180×760 · mist</span>
   <span class="spacer"></span>
   <button id="themeBtn">切换到 one-dark</button>
