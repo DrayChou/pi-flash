@@ -519,9 +519,6 @@ fn count_messages(path: &Path, start_byte: u64, base: u64) -> (u64, u64, Option<
     (count, consumed, name)
 }
 
-#[allow(dead_code)]
-const TAIL_BYTES: u64 = 64 * 1024;
-
 /// Salvage a preview from a prefix-truncated line. The 256KB prefix cuts
 /// the first user message mid-line exactly when it matters — a huge first
 /// paste (system-prompt line alone can be 40-100KB, so a 300KB+ first
