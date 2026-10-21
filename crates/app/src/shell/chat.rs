@@ -192,7 +192,7 @@ pub(crate) struct DlgUi {
     pub(crate) pill_menu: Option<PillMenu>,
     /// 「full+」档的扩展选择面板（勾选即生效；滚动位跨帧复用）
     pub(crate) plugin_picker: Option<crate::session::plugin_picker::PluginPicker>,
-    /// MCP 勾选菜单（043：全局 mcp.json 无条目时按钮不渲染，菜单自然不开）
+    /// MCP 勾选菜单（043；按钮常驻渲染，菜单从按钮开合）
     pub(crate) mcp_picker: Option<crate::session::mcp_picker::McpPicker>,
     /// 042：inputpanel 模型菜单（锚定 pill 卡片，替代原居中 ModelSelect 弹窗）
     pub(crate) model_picker: Option<crate::session::model_picker::ModelPicker>,

@@ -73,23 +73,16 @@ fn plugin_button(
     el.into_any_element()
 }
 
-/// MCP 按钮（043 定稿）：扩展按钮右边的兄弟节点。**不设档位守卫**——
-/// 扩展只在 full+ 档挂载，MCP 各档都装载；全局 mcp.json 无条目时整个
-/// 不渲染。点击开合 MCP 勾选菜单（勾选即生效，写盘 + 运行中标记重绑）。
+/// MCP 按钮（043 定稿 + 2026-11 改版）：扩展按钮右边的兄弟节点。**不设档位
+/// 守卫**——扩展只在 full+ 档挂载，MCP 各档都装载。按钮 = server 图标 +
+/// `[n]`（n=已启用数；n=0 也显示 `[0]`，与扩展按钮同款常驻提示），常驻渲染。
+/// 点击开合 MCP 勾选菜单（勾选即生效，写盘 + 运行中标记重绑）。
 fn mcp_button(
     chat: &mut Chat,
     t: &'static crate::appearance::theme::Theme,
     cx: &mut Context<Chat>,
 ) -> gpui::AnyElement {
     let ui = crate::appearance::ui_size;
-    let has_global = chat
-        .cfg
-        .mcp_servers
-        .iter()
-        .any(|s| s.scope == pi_link::mcp::Scope::Global);
-    if !has_global {
-        return div().into_any_element();
-    }
     let (n, open) = (
         chat.cfg
             .mcp_servers
@@ -98,11 +91,7 @@ fn mcp_button(
             .count(),
         chat.dlg.mcp_picker.is_some(),
     );
-    let label = if n > 0 {
-        format!("{}({n})", crate::i18n::tr("dock.mcp"))
-    } else {
-        crate::i18n::tr("dock.mcp").to_string()
-    };
+    let label = format!("[{n}]");
     let color = if open { t.accent } else { t.text_muted };
     let mut el = div()
         .id("mcp-menu")
@@ -522,7 +511,7 @@ fn bar_left_group(
             // 塞进胶囊里点它会冒泡触发工具菜单（用户踩过）。仅「full+」档
             // 激活，点开扩展菜单（勾选即生效，单列已勾置顶）。
             .child(plugin_button(chat, t, cx))
-            // MCP 按钮（043）：扩展按钮右边的兄弟节点（无条目时自隐藏）
+            // MCP 按钮（043）：扩展按钮右边的兄弟节点（常驻渲染，n=0 显 [0]）
             .child(mcp_button(chat, t, cx))
             .into_any_element()
     }
