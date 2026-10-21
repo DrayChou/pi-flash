@@ -179,6 +179,11 @@ impl Chat {
     }
 }
 
+/// 片段行相对块左缘的缩进：对齐组头标题的文字起始线
+/// （块内 `HEADER_PAD 4` + 条内 `pl 4` + 收展钮 28 + `gap 6` ≈ 24 偏低，实测
+/// 标题首字落在块左缘 +24，这里取同值）
+const SNIPPET_INDENT: f32 = 24.;
+
 /// 一行片段的高度（与项目搜索行高同源）
 fn line_h() -> f32 {
     (crate::appearance::file_font().size * 1.5).round()
@@ -431,6 +436,12 @@ fn snippet_row(
         .w_full()
         .flex()
         .items_start()
+        // 左缩到**与组头标题文字同一条竖线**（块内 4 + 条内 4 + 收展钮 28 +
+        // gap 6 ≈ 24 从块左缘起算），右侧同样收 24：片段一律收在组头之内、
+        // 呈「嵌套在会话标题下」的层级——2026-10-21 用户「内容缩进不够，
+        // 不能超出文件头，否则很难看」
+        .pl(px(SNIPPET_INDENT))
+        .pr(px(SNIPPET_INDENT))
         .cursor_pointer()
         .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
             let path = path.clone();

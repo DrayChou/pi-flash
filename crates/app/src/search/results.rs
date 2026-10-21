@@ -133,7 +133,7 @@ fn header_h() -> f32 {
 }
 
 /// 块内留白 = Zed `BUFFER_HEADER_PADDING`
-const HEADER_PAD: f32 = 4.;
+pub(super) const HEADER_PAD: f32 = 4.;
 
 /// 结果区：空态（Zed 的 landing page）或块列表。
 pub(super) fn view(
