@@ -261,8 +261,11 @@ impl Chat {
     }
 
     /// 关了一批 tab 后没人可激活（Close All / focus 也被关）时的内容区
-    /// 回退，与单关回退同源：优先最近的文件 tab；没有文件但还有 tab 回
-    /// 浏览区遗留（终端则激活最后一个）；全空回会话。
+    /// 回退，与单关回退同源：优先最近的文件 tab；文档全关回会话——会话
+    /// tab 常驻，直接跳回（2026-11-24 用户定夺，不再回 browse_last：
+    /// 文件 tab 已不剩时 browse_last 可能记着 File，落空渲染
+    /// 「在左侧文件树中选择一个文件」空提示页）；终端/搜索等 tab 仍在
+    /// 标签条上，点标签即回。
     pub(crate) fn fallback_after_closes(&mut self, cx: &mut Context<Self>) {
         if let Some(fix) = self
             .ws
@@ -272,15 +275,8 @@ impl Chat {
         {
             self.activate_panel_tab(fix, cx);
             self.set_content_view(ContentView::File);
-        } else if self.ws.panel_tabs.is_empty() {
-            self.set_content_view(ContentView::Chat);
         } else {
-            let v = self.layout.browse_last;
-            self.set_content_view(v);
-            if self.layout.content_view == ContentView::Term {
-                let last = self.ws.panel_tabs.len() - 1;
-                self.activate_panel_tab(last, cx);
-            }
+            self.set_content_view(ContentView::Chat);
         }
     }
 
@@ -319,12 +315,9 @@ impl Chat {
                     self.activate_panel_tab(fix, cx);
                 }
                 None => {
-                    let v = if self.ws.panel_tabs.is_empty() {
-                        ContentView::Chat
-                    } else {
-                        self.layout.browse_last
-                    };
-                    self.set_content_view(v);
+                    // 文档全关：直接回会话（会话 tab 常驻；browse_last 可能
+                    // 记着 File，回 File 只会渲染「选择一个文件」空提示页）
+                    self.set_content_view(ContentView::Chat);
                 }
                 _ => {}
             }
