@@ -8,8 +8,11 @@
 //! entries (latest wins) near the end.
 //!
 //! Startup-speed design: summaries never read whole files — the header and
-//! preview come from a bounded prefix, the name from a bounded tail, the
-//! message count from a single streaming pass. `(mtime, size)` fingerprints
+//! preview come from a bounded prefix, the name and the message count from a
+//! single streaming pass (the name rides the count scan: renames can sit
+//! anywhere in a megabytes-long file, so no fixed window is safe — the old
+//! 1MB tail cap silently dropped renames and the sidebar title "reverted").
+//! `(mtime, size)` fingerprints
 //! index results in memory and on disk, so a warm start stats files only
 //! (pi-web's scanner-index parity). The window between group directories
 //! (which encode the cwd) lets project lists read one directory instead of
@@ -30,8 +33,6 @@ use serde_json::{Value, json};
 
 /// Bounded prefix parsed for header + first user message (preview).
 const PREFIX_BYTES: u64 = 256 * 1024;
-/// Bounded tail parsed for the latest `session_info` rename.
-const TAIL_BYTES: u64 = 64 * 1024;
 /// Lines of the prefix considered when looking for the preview message.
 const PREVIEW_LINES: usize = 40;
 /// Degraded preview chars grabbed from a prefix-truncated line (see
@@ -167,7 +168,10 @@ pub fn sessions_root() -> Option<PathBuf> {
 /// v2: `scan_file` salvages previews from prefix-truncated first user
 /// lines (huge first paste ⇒ "(empty)" rows); v1 caches hold the old
 /// empty previews on dormant files, so they are dropped once on load.
-const INDEX_VERSION: u64 = 3;
+/// v4: 会话名不再来自尾窗（改名条目被后续聊天推出旧 1MB 上限后，侧栏
+/// 标题会"改回去"）；v3 缓存里这些文件的 name=None 是错的 → 丢一次
+/// 缓存全量重扫，从只追加的会话文件里找回真名。
+const INDEX_VERSION: u64 = 4;
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
 struct IndexEntry {
@@ -466,25 +470,30 @@ fn read_tail(path: &Path, bytes: u64) -> String {
     String::from_utf8_lossy(&buf).into_owned()
 }
 
-/// Streaming message count — one pass, no whole-file allocation.
-fn count_messages(path: &Path, start_byte: u64, base: u64) -> (u64, u64) {
-    // 返回 (总数, 已覆盖字节)。只统计 '\n' 结尾的完整行；文件尾未落盘完
-    // 的半行不计、不推进——半行既可能漏 needle 也可能把 needle 拆在边界，
-    // 留给下次扫描重数。start_byte 之前的字节默认已计过（pi 会话文件只
-    // 追加）：活跃会话每轮重扫从全量流读退化为 O(新增量)。
+/// Streaming message count + latest session name — one pass, no
+/// whole-file allocation.
+fn count_messages(path: &Path, start_byte: u64, base: u64) -> (u64, u64, Option<String>) {
+    // 返回 (总数, 已覆盖字节, 最新会话名)。只统计 '\n' 结尾的完整行；文件尾
+    // 未落盘完的半行不计、不推进——半行既可能漏 needle 也可能把 needle 拆在
+    // 边界，留给下次扫描重数。start_byte 之前的字节默认已计过（pi 会话文件
+    // 只追加）：活跃会话每轮重扫从全量流读退化为 O(新增量)。
+    // 名字与 pi getSessionName 同口径：最后一个 session_info 条目生效。流式
+    // 倒序做不到，正序扫到"最后一个"等价。needle 只是粗筛——嵌套结构里也
+    // 可能撞上子串，解析校验 type 后才认。
     use std::io::{BufRead, Seek, SeekFrom};
     let Ok(mut f) = std::fs::File::open(path) else {
-        return (base, start_byte);
+        return (base, start_byte, None);
     };
     let len = f.metadata().map(|m| m.len()).unwrap_or(0);
     let start = start_byte.min(len);
     if f.seek(SeekFrom::Start(start)).is_err() {
-        return (base, start);
+        return (base, start, None);
     }
     let mut reader = std::io::BufReader::with_capacity(128 * 1024, f);
     let mut line = String::new();
     let mut count = base;
     let mut consumed = start;
+    let mut name: Option<String> = None;
     loop {
         line.clear();
         match reader.read_line(&mut line) {
@@ -497,45 +506,21 @@ fn count_messages(path: &Path, start_byte: u64, base: u64) -> (u64, u64) {
                 if line.contains(NEEDLE_MESSAGE) {
                     count += 1;
                 }
+                if line.contains(NEEDLE_SESSION_INFO) {
+                    if let Ok(v) = crate::json::parse_value(line.trim_end()) {
+                        if v["type"].as_str() == Some("session_info") {
+                            name = v["name"].as_str().map(str::to_string);
+                        }
+                    }
+                }
             }
         }
     }
-    (count, consumed)
+    (count, consumed, name)
 }
 
-/// Upper bound for the session_info tail search. A rename record sits at
-/// the file position it was made at; a session kept chatting afterwards
-/// pushes it past any fixed tail window (real case: a 153KB file renamed
-/// on 09-25, chatted until 10-04 — the record fell out of 64KB). The
-/// window doubles from TAIL_BYTES up to this cap, so normal sessions pay
-/// one 64KB read and only pathological ones reach the bound.
-const SESSION_INFO_MAX_WINDOW: u64 = 1024 * 1024;
-
-/// Parse the LAST `session_info` line out of a tail window (the needle
-/// sits inside the JSON line — back up to its `{`).
-fn parse_last_session_info(tail: &str) -> Option<Value> {
-    let pos = tail.rfind(NEEDLE_SESSION_INFO)?;
-    let line_start = tail[..pos].rfind('\n').map(|i| i + 1).unwrap_or(0);
-    let rest = &tail[line_start..];
-    let line_end = rest.find('\n').unwrap_or(rest.len());
-    crate::json::parse_value(&rest[..line_end]).ok()
-}
-
-/// Latest `session_info` entry, growing the tail window as needed — a
-/// fixed window loses the rename once the session outgrows it.
-fn read_latest_session_info(path: &Path) -> Option<Value> {
-    let len = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
-    let mut window = TAIL_BYTES.min(len);
-    loop {
-        if let Some(v) = parse_last_session_info(&read_tail(path, window)) {
-            return Some(v);
-        }
-        if window >= len || window >= SESSION_INFO_MAX_WINDOW {
-            return None;
-        }
-        window = (window * 2).min(len).min(SESSION_INFO_MAX_WINDOW);
-    }
-}
+#[allow(dead_code)]
+const TAIL_BYTES: u64 = 64 * 1024;
 
 /// Salvage a preview from a prefix-truncated line. The 256KB prefix cuts
 /// the first user message mid-line exactly when it matters — a huge first
@@ -589,7 +574,7 @@ fn preview_from_partial_line(line: &str) -> Option<String> {
 }
 
 /// One bounded scan of a session file: header + preview from the prefix,
-/// name from the tail, count streamed. Never reads the whole file into
+/// name + count from one streaming pass. Never reads the whole file into
 /// memory at once.
 ///
 /// `prev` = 旧索引条目（指纹失效前的版本）：pi 会话文件只追加，计数从
@@ -657,8 +642,6 @@ fn scan_file(
     if id.is_empty() {
         return None;
     }
-    // renames append `session_info` entries; the latest wins
-    let name = read_latest_session_info(path).and_then(|v| v["name"].as_str().map(str::to_string));
     if preview.len() > 120 {
         // truncate at a char boundary
         let mut cut = 120;
@@ -670,15 +653,26 @@ fn scan_file(
     }
     preview = preview.replace('\n', " ");
     let dur = modified.duration_since(UNIX_EPOCH).unwrap_or_default();
-    let (message_count, count_bytes) = match prev {
+    // 名字与计数同一次流式扫描产出（口径同 pi getSessionName：最后一个
+    // session_info 生效）。改名条目会被后续聊天推出任何固定窗口——旧版
+    // 1MB 尾窗上限把改名"改回去"就是根因——所以不再独立找名字。
+    let incremental = prev.is_some_and(|p| p.count_bytes > 0 && size >= p.count_bytes);
+    let (message_count, count_bytes, scanned_name) = if incremental {
         // 只追加：从旧计数终点续读。count_bytes == 0 的旧版索引条目不算——
         // 那时的 message_count 是旧文件的全量计数，从 0 续读会把旧行重复
         // 计入，必须全量重数一次后落盘
-        Some(p) if p.count_bytes > 0 && size >= p.count_bytes => {
-            count_messages(path, p.count_bytes, p.message_count)
-        }
-        // 文件缩水 / 无可靠基线 = 外部改写，全量重数
-        _ => count_messages(path, 0, 0),
+        let p = prev.expect("incremental implies prev");
+        count_messages(path, p.count_bytes, p.message_count)
+    } else {
+        // 文件缩水 / 无可靠基线 = 外部改写，全量重数（名字同样以全量为
+        // 准，旧条目名字不可信）
+        count_messages(path, 0, 0)
+    };
+    let name = if incremental {
+        // 增量后缀里出现新改名就用新的，否则沿用旧条目的名字
+        scanned_name.or_else(|| prev.and_then(|p| p.name.clone()))
+    } else {
+        scanned_name
     };
     Some(IndexEntry {
         mtime_sec: dur.as_secs(),
@@ -1037,11 +1031,10 @@ pub fn search_sessions_in_dir(group: &Path, query: &str) -> SearchResponse {
             let Ok(entry) = crate::json::parse_value(line) else {
                 continue;
             };
+            // pi 落盘的 session_info：name 在顶层（不是 content.name——
+            // 旧写法永远取不到，搜索结果标题从来只显示预览）
             if entry["type"] == "session_info" {
-                session_name = entry["content"]["name"]
-                    .as_str()
-                    .map(str::to_string)
-                    .or(session_name);
+                session_name = entry["name"].as_str().map(str::to_string).or(session_name);
                 continue;
             }
             if entry["type"] != "message" {
@@ -1292,6 +1285,88 @@ mod tests {
         assert_eq!(e.preview, "hello 世界");
         assert_eq!(e.name.as_deref(), Some("renamed"));
         assert_eq!(e.message_count, 3);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn rename_survives_growth_beyond_old_tail_window() {
+        // 回归：改名条目被 1MB+ 后续聊天推出旧版尾窗上限后，侧栏标题会
+        // "改回去"（回落首条用户消息预览）。名字现随计数流全量扫描，
+        // 与条目在文件中的位置无关。
+        let root = temp_root("rename-growth");
+        let pad = json!({"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"padpadpadpadpadpadpadpadpadpad"}]}})
+            .to_string();
+        let mut body = String::from(BODY);
+        for _ in 0..12_000 {
+            body.push_str(&pad);
+            body.push('\n');
+        }
+        assert!(body.len() > 1_048_576, "必须真超过旧 1MB 尾窗上限");
+        let path = write_session(&root, "D:\\proj-g", "g1", &body);
+        let meta = std::fs::metadata(&path).unwrap();
+        let e = scan_file(&path, meta.modified().unwrap(), meta.len(), None).expect("scan ok");
+        assert_eq!(e.name.as_deref(), Some("renamed"));
+        assert_eq!(e.message_count, 3 + 12_000);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn incremental_rescan_tracks_new_rename_and_keeps_old_name() {
+        let root = temp_root("rename-incr");
+        let path = write_session(&root, "D:\\proj-r", "r1", BODY);
+        let meta = std::fs::metadata(&path).unwrap();
+        let e1 = scan_file(&path, meta.modified().unwrap(), meta.len(), None).expect("scan ok");
+        assert_eq!(e1.name.as_deref(), Some("renamed"));
+        use std::io::Write;
+        // 追加新改名 + 一条消息 → 增量续读后缀，名字更新
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap()
+            .write_all(
+                concat!(
+                    "{\"type\":\"session_info\",\"name\":\"renamed-2\"}\n",
+                    "{\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":\"more\"}}\n"
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+        let meta = std::fs::metadata(&path).unwrap();
+        let e2 =
+            scan_file(&path, meta.modified().unwrap(), meta.len(), Some(&e1)).expect("scan ok");
+        assert_eq!(e2.name.as_deref(), Some("renamed-2"));
+        assert_eq!(e2.message_count, e1.message_count + 1);
+        // 再追加一条普通消息（无改名）→ 沿用旧名，不回落预览
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap()
+            .write_all(
+                b"{\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":\"even more\"}}\n",
+            )
+            .unwrap();
+        let meta = std::fs::metadata(&path).unwrap();
+        let e3 =
+            scan_file(&path, meta.modified().unwrap(), meta.len(), Some(&e2)).expect("scan ok");
+        assert_eq!(e3.name.as_deref(), Some("renamed-2"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn needle_substring_in_other_entries_never_shadows_rename() {
+        // 改名之后的行里出现 `"type":"session_info"` 裸子串（嵌套结构，
+        // 比如讨论本仓源码的会话），不得冒充改名条目——解析校验 type 后
+        // 才认。旧尾窗 rfind 版会把子串所在行当条目行，名字丢失。
+        let root = temp_root("rename-shadow");
+        let body = concat!(
+            "{\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":\"hello\"}}\n",
+            "{\"type\":\"session_info\",\"name\":\"real name\"}\n",
+            "{\"type\":\"custom\",\"customType\":\"x\",\"details\":{\"type\":\"session_info\"}}\n",
+        );
+        let path = write_session(&root, "D:\\proj-s2", "s2", body);
+        let meta = std::fs::metadata(&path).unwrap();
+        let e = scan_file(&path, meta.modified().unwrap(), meta.len(), None).expect("scan ok");
+        assert_eq!(e.name.as_deref(), Some("real name"));
         let _ = std::fs::remove_dir_all(&root);
     }
 
