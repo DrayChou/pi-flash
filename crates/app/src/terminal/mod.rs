@@ -159,11 +159,55 @@ pub struct SelPt {
     pub col: usize,
 }
 
+/// 默认 shell：Windows = `ComSpec ?? cmd.exe` 无参；macOS/Linux = `$SHELL -l`
+/// （terminal-manager.ts 同款：win32 走 ComSpec，其余走 `$SHELL`。`-l` 与
+/// Terminal.app 一致——不读 `.zprofile` 就拿不到 Homebrew 的 PATH，Finder
+/// 启动的 .app 起终端会找不到 node/python3）。
+pub fn default_shell() -> Shell {
+    #[cfg(windows)]
+    {
+        Shell::new(
+            std::env::var("ComSpec").unwrap_or_else(|_| "cmd.exe".to_string()),
+            Vec::new(),
+        )
+    }
+    #[cfg(not(windows))]
+    {
+        Shell::new(user_shell(), vec!["-l".into()])
+    }
+}
+
+/// 021 右键【执行】用的 shell：Windows `ComSpec /k <执行串>`；macOS/Linux
+/// `$SHELL -lc <执行串>`（`-c` 跑完即退，脚本输出留在 tab 里）。
+pub fn command_shell(command: String) -> Shell {
+    #[cfg(windows)]
+    {
+        Shell::new(
+            std::env::var("ComSpec").unwrap_or_else(|_| "cmd.exe".to_string()),
+            vec!["/k".into(), command],
+        )
+    }
+    #[cfg(not(windows))]
+    {
+        Shell::new(user_shell(), vec!["-lc".into(), command])
+    }
+}
+
+/// `$SHELL`（登录 shell 绝对路径）；空值或已卸载的 shell 退回 `/bin/zsh`
+/// （macOS 10.15+ 系统默认，一定存在）。
+#[cfg(not(windows))]
+fn user_shell() -> String {
+    std::env::var("SHELL")
+        .ok()
+        .filter(|s| !s.trim().is_empty() && std::path::Path::new(s).is_file())
+        .unwrap_or_else(|| "/bin/zsh".to_string())
+}
+
 /// Spawn the PTY + alacritty event loop for one tab.
 /// `cell_w`/`line_h` come from measuring the mono font in the opening window;
 /// `font_size` 是它们所按的字号戳（restart 沿用旧 tab 时一并继承）。
-/// `shell_override` = 021 右键【执行】（`cmd /k <脚本命令>` 进 tab）；
-/// None = 默认 shell（ComSpec ?? cmd.exe，terminal-manager.ts 同款）。
+/// `shell_override` = 021 右键【执行】（`command_shell`）或 restart 沿用；
+/// None = `default_shell()`。
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_terminal(
     id: usize,
@@ -186,13 +230,7 @@ pub fn spawn_terminal(
     let term = Arc::new(FairMutex::new(Term::new(config, &dims, proxy.clone())));
 
     let mut options = tty::Options::default();
-    // terminal-manager.ts: win32 -> ComSpec ?? cmd.exe with no args
-    let shell = shell_override.unwrap_or_else(|| {
-        Shell::new(
-            std::env::var("ComSpec").unwrap_or_else(|_| "cmd.exe".to_string()),
-            Vec::new(),
-        )
-    });
+    let shell = shell_override.unwrap_or_else(default_shell);
     options.shell = Some(shell);
     options.working_directory = Some(cwd.clone());
     options.env = shell_env();
@@ -1375,9 +1413,10 @@ impl Chat {
         }
     }
 
-    /// 021 文件树右键【执行】：脚本进新终端 tab——`cmd /k cd /d <目录> &&
-    /// <命令>`，脚本退出留提示符，交互/续敲都行。PTY working_directory 落
-    /// 文件目录；命令里的 cd 另一半是 cmd 引号规则护盾（script_exec 模块头）。
+    /// 021 文件树右键【执行】：脚本进新终端 tab——Windows `cmd /k cd /d
+    /// <目录> && <命令>`，macOS `$SHELL -lc cd <目录> && <命令>`；脚本退出
+    /// 留提示符（Windows /k）。PTY working_directory 落文件目录；命令里的
+    /// cd 另一半是 cmd 引号规则护盾（script_exec 模块头）。
     pub(crate) fn open_script_terminal(
         &mut self,
         file: PathBuf,
@@ -1397,10 +1436,7 @@ impl Chat {
         let id = self.ws.term_seq;
         let focus = cx.focus_handle();
         let proxy = terminal::Proxy { tab: id, tx };
-        let shell = Shell::new(
-            std::env::var("ComSpec").unwrap_or_else(|_| "cmd.exe".to_string()),
-            vec!["/k".into(), plan.command],
-        );
+        let shell = terminal::command_shell(plan.command);
         match terminal::spawn_terminal(
             id,
             dir,

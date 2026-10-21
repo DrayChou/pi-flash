@@ -7,10 +7,14 @@
 //! - **探测链回答"解释器在哪"**，仅 py / sh 两类需要：点击时懒执行 +
 //!   会话内正/负缓存；PATH 扫描按驱动器类型只走固定磁盘，UNC/网络/可移
 //!   动盘跳过——焊死死网络路径 SMB 秒级超时这一唯一慢源
-//! - **执行通道 = PF 内置终端新开 tab**：`cmd /k cd /d "<目录>" && <命令>`。
-//!   前置 `cd` 一半是 cwd 语义（bat 的 %~dp0 依赖、相对路径），另一半是
-//!   cmd 引号规则护盾——cmd /? 规则 2 只在 /k 后**首字符是引号**时剥首尾
-//!   引号，先垫一个裸词 `cd` 整串免疫；PTY 的 working_directory 另行落目录
+//! - **执行通道 = PF 内置终端新开 tab**：Windows `cmd /k cd /d "<目录>" &&
+//!   <命令>`，macOS/Linux `$SHELL -lc 'cd <目录> && <命令>'`。前置 `cd` 一半
+//!   是 cwd 语义（bat 的 %~dp0 依赖、相对路径），另一半是 cmd 引号规则护盾
+//!   ——cmd /? 规则 2 只在 /k 后**首字符是引号**时剥首尾引号，先垫一个裸词
+//!   `cd` 整串免疫；PTY 的 working_directory 另行落目录
+//!
+//! 平台差异只有三处：配方表（`.exe/.bat/.ps1` 仅 Windows）、引号风格
+//! （POSIX 单引号）、解释器探测链（`python3`/`bash` 走 PATH）。
 
 use std::path::{Path, PathBuf};
 
@@ -18,8 +22,11 @@ use std::path::{Path, PathBuf};
 pub(crate) fn exec_kind(path: &Path) -> Option<&'static str> {
     let ext = path.extension()?.to_str()?.to_ascii_lowercase();
     match ext.as_str() {
+        #[cfg(windows)]
         "exe" | "com" => Some("exe"),
+        #[cfg(windows)]
         "bat" | "cmd" => Some("bat"),
+        #[cfg(windows)]
         "ps1" => Some("ps1"),
         "js" | "mjs" | "cjs" => Some("js"),
         "py" => Some("py"),
@@ -28,13 +35,14 @@ pub(crate) fn exec_kind(path: &Path) -> Option<&'static str> {
     }
 }
 
-/// 一次执行所需的一切：菜单展示名 + `cmd /k ` 后面的整串命令
+/// 一次执行所需的一切：菜单展示名 + shell 要跑的整串命令（Windows 给
+/// `cmd /k`，POSIX 给 `$SHELL -lc`）
 #[derive(Clone)]
 pub(crate) struct ExecPlan {
     /// 菜单后缀（`执行 · {label}`）。取解释器名而非版本号——探测不许起
     /// 子进程（`--version` 要 spawn + 闪控制台，与懒解析相悖）
     pub(crate) label: String,
-    /// `cmd /k ` 之后的命令串（含 cd 护盾前缀）
+    /// `cmd /k ` / `$SHELL -lc` 之后的命令串（含 cd 前缀）
     pub(crate) command: String,
 }
 
@@ -45,8 +53,11 @@ pub(crate) fn resolve(path: &Path, ws_cwd: Option<&Path>) -> Option<ExecPlan> {
     let file = quote(path);
     let (label, inner) = match kind {
         // exe/com 是自己；bat/cmd 在外层 cmd 实例里直接跑
+        #[cfg(windows)]
         "exe" => (String::new(), file),
+        #[cfg(windows)]
         "bat" => ("bat".to_string(), file),
+        #[cfg(windows)]
         "ps1" => (
             "powershell".to_string(),
             format!("powershell -NoProfile -ExecutionPolicy Bypass -File {file}"),
@@ -58,6 +69,7 @@ pub(crate) fn resolve(path: &Path, ws_cwd: Option<&Path>) -> Option<ExecPlan> {
             ("node".to_string(), format!("{} {file}", q(&node)))
         }
         "py" => match probe_py(ws_cwd)? {
+            #[cfg(windows)]
             PyInterp::Launcher(p) => ("py -3".to_string(), format!("{} -3 {file}", quote(&p))),
             PyInterp::Direct(p) => (py_label(&p), format!("{} {file}", quote(&p))),
         },
@@ -67,10 +79,12 @@ pub(crate) fn resolve(path: &Path, ws_cwd: Option<&Path>) -> Option<ExecPlan> {
         }
         _ => return None,
     };
-    Some(ExecPlan {
-        label,
-        command: format!("cd /d {} && {inner}", quote(&dir)),
-    })
+    // cd 前缀：Windows 要 `/d` 跨盘符；POSIX 直接 cd（引号风格由 quote 分平台）
+    #[cfg(windows)]
+    let command = format!("cd /d {} && {inner}", quote(&dir));
+    #[cfg(not(windows))]
+    let command = format!("cd {} && {inner}", quote(&dir));
+    Some(ExecPlan { label, command })
 }
 
 // ---------------------------------------------------------------------------
@@ -80,51 +94,81 @@ pub(crate) fn resolve(path: &Path, ws_cwd: Option<&Path>) -> Option<ExecPlan> {
 #[derive(Clone)]
 enum PyInterp {
     /// PEP 397 py 启动器（python.org 安装必落 %SystemRoot%，调用带 -3）
+    #[cfg(windows)]
     Launcher(PathBuf),
-    /// python.exe 直调
+    /// 解释器直调（python.exe / python3）
     Direct(PathBuf),
 }
 
 /// py 探测链：项目 venv（每次现查，只 1~2 个 stat，切项目即换）→
-/// py.exe → PATH python.exe（跳过 WindowsApps 假别名）。全局段走缓存。
+/// Windows: py.exe → PATH python.exe（跳过 WindowsApps 假别名）；
+/// POSIX: PATH python3 → python。全局段走缓存。
 fn probe_py(ws_cwd: Option<&Path>) -> Option<PyInterp> {
     if let Some(cwd) = ws_cwd {
         // venv 里的依赖几乎总比全局 python 正确——编码工具的第一优先
-        for name in [".venv", "venv"] {
-            let p = cwd.join(name).join("Scripts").join("python.exe");
+        #[cfg(windows)]
+        let venv_py = [
+            (".venv", "Scripts/python.exe"),
+            ("venv", "Scripts/python.exe"),
+        ];
+        #[cfg(not(windows))]
+        let venv_py = [(".venv", "bin/python3"), ("venv", "bin/python3")];
+        for (root, tail) in venv_py {
+            let p = cwd.join(root).join(tail);
             if p.is_file() {
                 return Some(PyInterp::Direct(p));
             }
         }
     }
     cached_py(|| {
-        if let Some(root) = std::env::var_os("SystemRoot") {
-            let p = PathBuf::from(root).join("py.exe");
-            if p.is_file() {
-                return Some(PyInterp::Launcher(p));
+        #[cfg(windows)]
+        {
+            if let Some(root) = std::env::var_os("SystemRoot") {
+                let p = PathBuf::from(root).join("py.exe");
+                if p.is_file() {
+                    return Some(PyInterp::Launcher(p));
+                }
             }
+            find_in_path("python.exe", &is_store_alias_dir).map(PyInterp::Direct)
         }
-        find_in_path("python.exe", &is_store_alias_dir).map(PyInterp::Direct)
+        #[cfg(not(windows))]
+        {
+            let any = |_: &Path| false;
+            find_in_path("python3", &any)
+                .or_else(|| find_in_path("python", &any))
+                .map(PyInterp::Direct)
+        }
     })
 }
 
-/// sh 探测链：PATH bash.exe（排除 System32——那是 WSL 启动器）→ Git for
-/// Windows / scoop 固定安装位。
+/// sh 探测链：Windows PATH bash.exe（排除 System32——那是 WSL 启动器）→
+/// Git for Windows / scoop 固定安装位；POSIX PATH bash → `/bin/bash`。
 fn probe_sh() -> Option<PathBuf> {
     cached_sh(|| {
-        find_in_path("bash.exe", &is_under_system32).or_else(|| {
-            [
-                ("ProgramFiles", r"Git\bin\bash.exe"),
-                ("ProgramFiles(x86)", r"Git\bin\bash.exe"),
-                ("LOCALAPPDATA", r"Programs\Git\bin\bash.exe"),
-                ("USERPROFILE", r"scoop\apps\git\current\bin\bash.exe"),
-            ]
-            .iter()
-            .find_map(|(var, tail)| {
-                let p = std::env::var_os(var).map(|base| PathBuf::from(base).join(tail));
-                p.filter(|p| p.is_file())
+        #[cfg(windows)]
+        {
+            find_in_path("bash.exe", &is_under_system32).or_else(|| {
+                [
+                    ("ProgramFiles", r"Git\bin\bash.exe"),
+                    ("ProgramFiles(x86)", r"Git\bin\bash.exe"),
+                    ("LOCALAPPDATA", r"Programs\Git\bin\bash.exe"),
+                    ("USERPROFILE", r"scoop\apps\git\current\bin\bash.exe"),
+                ]
+                .iter()
+                .find_map(|(var, tail)| {
+                    let p = std::env::var_os(var).map(|base| PathBuf::from(base).join(tail));
+                    p.filter(|p| p.is_file())
+                })
             })
-        })
+        }
+        #[cfg(not(windows))]
+        {
+            let any = |_: &Path| false;
+            find_in_path("bash", &any).or_else(|| {
+                let p = PathBuf::from("/bin/bash");
+                p.is_file().then_some(p)
+            })
+        }
     })
 }
 
@@ -158,12 +202,14 @@ fn find_in_path(file: &str, skip: &dyn Fn(&Path) -> bool) -> Option<PathBuf> {
 }
 
 /// Microsoft Store 执行别名目录（假 python3/python 点了弹商店）
+#[cfg(windows)]
 fn is_store_alias_dir(dir: &Path) -> bool {
     dir.components()
         .any(|c| c.as_os_str().eq_ignore_ascii_case("WindowsApps"))
 }
 
 /// System32 子树（bash.exe 同名 WSL 启动器驻地）
+#[cfg(windows)]
 fn is_under_system32(dir: &Path) -> bool {
     let low = dir.to_string_lossy().to_ascii_lowercase();
     std::env::var("SystemRoot")
@@ -204,9 +250,15 @@ fn fixed_local_dir(_dir: &Path) -> bool {
 // 拼装辅助
 // ---------------------------------------------------------------------------
 
-/// 路径加引号（NTFS 文件名不可能含 `"`，直包即可）
+/// 路径加引号：Windows 用双引号（NTFS 文件名不可能含 `"`，直包即可）；
+/// POSIX 用单引号（`'` 转义成 `'\''`），`$`/反引号/空格都不再被 shell 展开。
+#[cfg(windows)]
 fn quote(p: &Path) -> String {
     format!("\"{}\"", p.display())
+}
+#[cfg(not(windows))]
+fn quote(p: &Path) -> String {
+    format!("'{}'", p.display().to_string().replace('\'', r"'\''"))
 }
 
 /// 裸命令名（node_bin 可能是 "node" 也可能是绝对路径）仅含空格才包引号
@@ -232,15 +284,27 @@ mod tests {
 
     #[test]
     fn exec_kind_maps_case_insensitively() {
-        assert_eq!(exec_kind(Path::new("A.BAT")), Some("bat"));
-        assert_eq!(exec_kind(Path::new("x.Script.PS1")), Some("ps1"));
-        assert_eq!(exec_kind(Path::new("app.EXE")), Some("exe"));
+        #[cfg(windows)]
+        {
+            assert_eq!(exec_kind(Path::new("A.BAT")), Some("bat"));
+            assert_eq!(exec_kind(Path::new("x.Script.PS1")), Some("ps1"));
+            assert_eq!(exec_kind(Path::new("app.EXE")), Some("exe"));
+        }
+        #[cfg(not(windows))]
+        {
+            // Windows 专属配方不上菜单（macOS/Linux 上点开只会「解释器未找到」）
+            assert_eq!(exec_kind(Path::new("A.BAT")), None);
+            assert_eq!(exec_kind(Path::new("x.Script.PS1")), None);
+            assert_eq!(exec_kind(Path::new("app.EXE")), None);
+        }
+        assert_eq!(exec_kind(Path::new("a.SH")), Some("sh"));
         assert_eq!(exec_kind(Path::new("noext")), None);
         assert_eq!(exec_kind(Path::new("readme.txt")), None);
     }
 
     /// cmd 引号规则护盾：`cd` 垫词让 /k 后首字符不是引号，规则 2（剥首尾
     /// 引号）整串免疫；空格路径全程保持引号
+    #[cfg(windows)]
     #[test]
     fn bat_plan_has_cd_shield_and_quoted_paths() {
         let dir = std::env::temp_dir().join(format!("pf_exec_test_{}", std::process::id()));
@@ -256,6 +320,7 @@ mod tests {
         std::fs::remove_dir(&dir).ok();
     }
 
+    #[cfg(windows)]
     #[test]
     fn ps1_carries_bypass_flag() {
         let dir = std::env::temp_dir().join(format!("pf_exec_test2_{}", std::process::id()));
@@ -265,6 +330,27 @@ mod tests {
         let plan = resolve(&f, None).unwrap();
         assert!(
             plan.command.contains("-ExecutionPolicy Bypass -File \""),
+            "got: {}",
+            plan.command
+        );
+        std::fs::remove_file(&f).ok();
+        std::fs::remove_dir(&dir).ok();
+    }
+
+    /// POSIX 配方：单引号包路径（空格不再需要转义、`$` 不被展开），
+    /// 前缀是裸 `cd` 而不是 `cd /d`
+    #[cfg(not(windows))]
+    #[test]
+    fn sh_plan_uses_posix_quoting() {
+        let dir = std::env::temp_dir().join(format!("pf_exec_test3_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("run me.sh");
+        std::fs::write(&f, b"echo hi").unwrap();
+        let plan = resolve(&f, None).expect("sh 配方在 macOS/Linux 必可解析");
+        assert_eq!(plan.label, "bash");
+        assert!(plan.command.starts_with("cd '"), "got: {}", plan.command);
+        assert!(
+            plan.command.ends_with("/run me.sh'"),
             "got: {}",
             plan.command
         );

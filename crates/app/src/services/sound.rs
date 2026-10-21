@@ -5,7 +5,8 @@
 //! 四次泛音（×4，横梁振动的非谐近似），泛音衰减远快于基频（0.12 s vs 0.4 s），
 //! 听感厚实温和、不打扰。两音相隔 0.16 s 触发，基频包络 5 ms 线性淡入后指数
 //! 衰减到 0.001。Rust 侧合成 16-bit PCM WAV，Windows 用
-//! `PlaySoundW(SND_MEMORY)` 播放，不依赖任何音频资源文件。
+//! `PlaySoundW(SND_MEMORY)` 直接放内存，macOS 写临时 WAV 交给 `afplay`
+//! （两者都不依赖任何音频资源文件）。
 //!
 //! 候选试听稿见 `tmp/sound/gen.js`（A 钟声 / B 玻璃琶音 / C 本实现，用户选 C）。
 
@@ -90,7 +91,8 @@ pub fn done_chime_wav() -> Vec<u8> {
     wav
 }
 
-/// 播放 agent-run 结束提示音（暖木琴双音）；非 Windows 平台为 no-op。
+/// 播放 agent-run 结束提示音（暖木琴双音）；Windows 走 winmm，macOS 走
+/// `afplay`，其余平台为 no-op。
 pub fn play_notify_sound() {
     #[cfg(windows)]
     {
@@ -118,9 +120,27 @@ pub fn play_notify_sound() {
             );
         }
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
     {
-        // 其他平台暂无内置播放器，保持 no-op（与旧 MessageBeep 实现一致）。
+        use std::sync::OnceLock;
+        // afplay 只吃文件路径，WAV 落一次临时文件常驻（与 Windows 的
+        // OnceLock 等价：合成成本只付一次，连跑不重复写盘）。
+        static WAV_PATH: OnceLock<Option<std::path::PathBuf>> = OnceLock::new();
+        let path = WAV_PATH.get_or_init(|| {
+            let dir = std::env::temp_dir().join("pi-flash");
+            std::fs::create_dir_all(&dir).ok()?;
+            let p = dir.join("done-chime.wav");
+            std::fs::write(&p, done_chime_wav()).ok()?;
+            Some(p)
+        });
+        if let Some(p) = path {
+            // 不等它放完（与 SND_ASYNC 同语义）；afplay 缺失/失败只静默
+            let _ = std::process::Command::new("afplay").arg(p).spawn();
+        }
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        // 其他平台暂无内置播放器，保持 no-op。
     }
 }
 
