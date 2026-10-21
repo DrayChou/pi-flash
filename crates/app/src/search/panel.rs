@@ -49,7 +49,7 @@ pub(crate) fn view(
         .bg(rgb(t.bg))
         .text_color(rgb(t.text))
         .child(search_bar(chat, weak, t))
-        .child(results::view(chat, weak, t))
+        .child(results::view(chat, weak, _cx, t))
         .into_any_element()
 }
 

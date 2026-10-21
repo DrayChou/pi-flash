@@ -43,10 +43,74 @@ fn line_h() -> f32 {
     (crate::appearance::file_font().size * LINE_HEIGHT).round()
 }
 
-/// 行号列宽：随字号缩放（44/13 ≈ 3.4 字符），并留出 12px 与正文的间隙——
-/// 固定 46px 在 16px 字号下会贴脸（用户 2026-10-21 实测「行号拥挤」）
-fn gutter_w() -> f32 {
-    (crate::appearance::file_font().size * 3.4).round().max(44.)
+/// 行号列几何——**照 Zed `Editor::gutter_dimensions`（editor.rs:12178-12270）**
+/// 逐项算，不再拍死一个宽度：
+/// - `digit_count = widest_line_number.ilog10() + 1`；
+/// - `max_line_number_width = column_pixels(digit_count)`（该字体下 digit_count
+///   个空格的推进宽）；
+/// - `line_gutter_width = max(上面那个, ch_advance × min_line_number_digits)`，
+///   默认设置 `min_line_number_digits = 4`（`assets/settings/default.json:753`）
+///   ——不足 4 位也按 4 位留宽，行号位数增长时列宽才不会跳；
+/// - `left_padding = ch_width`、`right_padding = ch_width`（只开行号时各 1 字符）；
+/// - 列宽 = `line_gutter_width + left + right`。
+///
+/// 号码取**整个结果集的**最宽行号（Zed 的 `widest_line_number()` 也是整份
+/// multibuffer 一个宽），否则各块行号左右错位。
+#[derive(Clone, Copy, Debug)]
+struct Gutter {
+    /// 行号数字区宽（右对齐）
+    num: f32,
+    left: f32,
+    right: f32,
+}
+
+impl Gutter {
+    fn total(&self) -> f32 {
+        self.num + self.left + self.right
+    }
+}
+
+/// `min_line_number_digits`（Zed 默认 4）
+const MIN_LINE_NUMBER_DIGITS: usize = 4;
+
+fn gutter_for(blocks: &[ResultBlock], cx: &gpui::App) -> Gutter {
+    let widest = blocks
+        .iter()
+        .flat_map(|b| b.segments.iter().flatten())
+        .map(|l| l.line)
+        .max()
+        .unwrap_or(1);
+    let digits = (vidx_digits(widest)).max(1);
+    let font = crate::appearance::file_font();
+    let font_id = cx
+        .text_system()
+        .resolve_font(&gpui::font(font.family.clone()));
+    let size = px(font.size);
+    let ch_adv = f32::from(
+        cx.text_system()
+            .ch_advance(font_id, size)
+            .unwrap_or(px(font.size * 0.6)),
+    );
+    let ch_w = f32::from(
+        cx.text_system()
+            .ch_width(font_id, size)
+            .unwrap_or(px(ch_adv)),
+    );
+    Gutter {
+        num: (ch_adv * digits.max(MIN_LINE_NUMBER_DIGITS) as f32).round(),
+        left: ch_w.round(),
+        right: ch_w.round(),
+    }
+}
+
+/// 十进制位数（`ilog10` 在 1 上返回 0，得补 1）
+fn vidx_digits(mut n: u32) -> usize {
+    let mut d = 1;
+    while n >= 10 {
+        n /= 10;
+        d += 1;
+    }
+    d
 }
 
 // ---------------------------------------------------------------------------
@@ -72,7 +136,12 @@ fn header_h() -> f32 {
 const HEADER_PAD: f32 = 4.;
 
 /// 结果区：空态（Zed 的 landing page）或块列表。
-pub(super) fn view(chat: &mut Chat, weak: &WeakEntity<Chat>, t: &'static Theme) -> AnyElement {
+pub(super) fn view(
+    chat: &mut Chat,
+    weak: &WeakEntity<Chat>,
+    cx: &gpui::App,
+    t: &'static Theme,
+) -> AnyElement {
     if chat.ws.search.blocks.is_empty() {
         return landing(chat, weak, t);
     }
@@ -82,6 +151,7 @@ pub(super) fn view(chat: &mut Chat, weak: &WeakEntity<Chat>, t: &'static Theme) 
     let active = ui.active;
     let list = ui.list.clone();
     let scrollbar = ui.scrollbar.clone();
+    let gutter = gutter_for(&blocks, cx);
     let weak_rows = weak.clone();
     let weak_toggle = weak.clone();
     let on_toggle: OnToggle = Rc::new(move |block_ix, cx| {
@@ -104,6 +174,7 @@ pub(super) fn view(chat: &mut Chat, weak: &WeakEntity<Chat>, t: &'static Theme) 
                 &on_open,
                 &on_toggle,
                 collapsed.contains(&block.rel),
+                gutter,
             ),
             None => div().into_any_element(),
         })
@@ -332,6 +403,7 @@ fn render_block(
     on_open: &OnOpen,
     on_toggle: &OnToggle,
     collapsed: bool,
+    gutter: Gutter,
 ) -> AnyElement {
     let t = T();
     let mut card = div()
@@ -354,7 +426,7 @@ fn render_block(
         }
         for (line_ix, line) in segment.iter().enumerate() {
             card = card.child(render_line(
-                block_ix, line, active, on_open, seg_ix, line_ix,
+                block_ix, line, active, on_open, seg_ix, line_ix, gutter,
             ));
         }
     }
@@ -499,6 +571,7 @@ fn render_line(
     on_open: &OnOpen,
     seg_ix: usize,
     line_ix: usize,
+    gutter: Gutter,
 ) -> AnyElement {
     let t = T();
     let font = crate::appearance::file_font();
@@ -528,12 +601,15 @@ fn render_line(
         .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
             click(block_ix, line_no, ordinal, cx);
         })
-        // 行号 gutter：与正文同族同号，右对齐，右侧留 12px
+        // 行号 gutter：与正文同族同号；左留 1ch、数字区右对齐、右留 1ch
+        // （宽度随最宽行号位数动态算，见 [`Gutter`]）
         .child(
             div()
-                .w(px(gutter_w()))
+                .w(px(gutter.total()))
                 .flex_shrink_0()
-                .pr(px(12.))
+                .pl(px(gutter.left))
+                .pr(px(gutter.right))
+                .whitespace_nowrap()
                 .text_align(gpui::TextAlign::Right)
                 .font_family(font.family.clone())
                 .text_size(px(font.size))
@@ -691,7 +767,17 @@ mod tests {
                         match blocks.get(ix) {
                             Some(block) => {
                                 let el = super::render_block(
-                                    ix, block, None, &on_open, &on_toggle, collapsed,
+                                    ix,
+                                    block,
+                                    None,
+                                    &on_open,
+                                    &on_toggle,
+                                    collapsed,
+                                    super::Gutter {
+                                        num: 40.,
+                                        left: 9.,
+                                        right: 9.,
+                                    },
                                 );
                                 div()
                                     .w_full()
@@ -830,6 +916,52 @@ mod tests {
         assert_eq!(super::header_h(), (super::line_h() * 2.).round());
         assert_eq!(super::HEADER_PAD, 4.);
         assert_eq!(super::HEADER_PAD * 2., 8.);
+    }
+
+    /// 行号列宽锁（2026-10-21 用户「line num 列不够宽，Zed 是动态调整」）：
+    /// 宽度 = `max(位数, 4) × ch_advance + 2 × ch_width`（Zed
+    /// `gutter_dimensions` + 默认 `min_line_number_digits = 4`）。
+    #[gpui::test]
+    fn gutter_width_follows_widest_line_number(cx: &mut TestAppContext) {
+        fn block_with_line(line: u32) -> Vec<ResultBlock> {
+            vec![ResultBlock {
+                rel: "a.md".into(),
+                path_only: false,
+                count: 1,
+                segments: vec![vec![ResultLine {
+                    line,
+                    text: "x".into(),
+                    spans: vec![0..1],
+                    hit: true,
+                    ordinal: Some(0),
+                }]],
+            }]
+        }
+        let (three, four, five) = cx.read(|cx| {
+            (
+                super::gutter_for(&block_with_line(137), cx),
+                super::gutter_for(&block_with_line(2219), cx),
+                super::gutter_for(&block_with_line(22198), cx),
+            )
+        });
+        assert_eq!(
+            three.num, four.num,
+            "不足 min_line_number_digits(4) 位按 4 位留宽，不随位数抖动"
+        );
+        let step = five.num - four.num;
+        assert!(
+            step > 1.0,
+            "5 位行号必须比 4 位更宽（实测 +{step}），否则 22198 会折行"
+        );
+        // 数字区够放 5 个字符：5 位时 num ≥ 5 × (step 即一个字符的推进宽)
+        assert!(
+            five.num >= step * 5.0 - 2.0,
+            "5 位数要放得下 5 个字符（num={} step={step}）",
+            five.num
+        );
+        assert!(three.left > 0.0 && three.right > 0.0, "左右各留 1ch");
+        assert_eq!(super::vidx_digits(u32::MAX), 10);
+        assert_eq!(super::vidx_digits(1), 1);
     }
 
     /// 命中区间必须进 highlight（Zed 的命中底色），且 run 不重叠、按序。
