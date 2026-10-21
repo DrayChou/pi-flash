@@ -4,11 +4,12 @@
 //! 1. 搜索框不加 border（`TextInput::flat()`）；
 //! 2. 组头不能是黑色（`bg_subtle` 是 RRGGBBAA，`rgb()` 读会成近黑 → 用 `bg_panel`）；
 //! 3. 文件块 100% 宽度（无外边距/圆角/边框/块间空隙）；
-//! 4. 内容区与 editor 内容区对齐：字体/字号/语法高亮都取 editor 那一套
-//!    （`appearance::file_font()` + `editor::markdown::highlight::cached_highlight_segments`）；
-//! 5. **排版照 Zed**：长行**折行**、行高 1.5、组头高 ≈1.35 行且用正文字号、
-//!    行号列随字号加宽（`字号 × 3.4`）不与正文贴脸、命中底色用主题的中性
-//!    selection 色（`bg_selected`，不是 accent 洗底）。
+//! 4. 内容区与 editor 内容区对齐：字体族/字号取 `appearance::file_font()`；
+//! 5. **排版照 Zed**：长行折行、行高 1.5、组头圆角+投影+加高、行号列随字号
+//!    加宽、两侧留白（右侧让出滚动条宽度）、命中底色用中性 selection 色；
+//! 6. **不做语法着色**：结果区是单色正文（syntect 在 markdown 上会给出红/橙/
+//!    橄榄一堆颜色，用户评「五花八门」）；也**无 hover 变色**、活跃命中
+//!    **只有左缘竖条**不刷整行底（2026-10-21 用户定案，逐条对齐 Zed）。
 //!
 //! 显示规则（在 `search/mod.rs` 落实）：**标题命中且内容也命中的文件只显示
 //! 内容组；只有标题命中才显示文件栏**——所以这里 `path_only` 的块是纯文件栏。
@@ -110,6 +111,11 @@ fn results_shell(t: &'static Theme, list: impl gpui::IntoElement) -> gpui::State
         .bg(rgb(t.bg))
         // 第一条文件头与搜索框留 5px 间隙（2026-10-21 用户定案）
         .pt(px(5.))
+        // 两侧留白 + 右侧让出滚动条宽度：Zed 的文件头与代码行都从这条左线起，
+        // 右边留出滚动条（2026-10-21 用户实测「两侧要有明显 padding，右侧还要
+        // 留滚动条的宽度」）
+        .pl(px(8.))
+        .pr(px(18.))
         .child(list)
 }
 
@@ -130,37 +136,17 @@ fn render_block(
     if block.path_only {
         return card.into_any_element();
     }
-    // 语法高亮的语言 token：直接用扩展名（syntect `find_syntax_by_token`
-    // 同时认扩展名与语法名，未知扩展回落纯文本——与 markdown 代码块同路径）
-    let lang = std::path::Path::new(&block.rel)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_string();
+    // 不做语法着色：结果区是单色正文（用户 2026-10-21：syntect 在 markdown 上
+    // 给出红/橙/柠等一堆颜色，「五花八门」）
     for (seg_ix, segment) in block.segments.iter().enumerate() {
         if seg_ix > 0 {
             // 段间分隔：1px 细线（Zed 的 excerpt 之间是头尾控制条，PF 用细线
             // 表达同一件事，不占高度、不刷底色）
             card = card.child(div().w_full().h(px(1.)).bg(rgb(t.border)));
         }
-        // 整段一次性过 syntect（跨行上下文比逐行准），再按行切分
-        let seg_text = segment
-            .iter()
-            .map(|l| l.text.as_str())
-            .collect::<Vec<_>>()
-            .join("\n");
-        let runs =
-            crate::editor::markdown::highlight::cached_highlight_segments(&seg_text, &lang, t.dark);
-        let per_line = split_runs_by_line(&runs, segment.len());
         for (line_ix, line) in segment.iter().enumerate() {
             card = card.child(render_line(
-                block_ix,
-                line,
-                active,
-                on_open,
-                seg_ix,
-                line_ix,
-                per_line.get(line_ix).map(Vec::as_slice).unwrap_or(&[]),
+                block_ix, line, active, on_open, seg_ix, line_ix,
             ));
         }
     }
@@ -184,11 +170,6 @@ fn header_row(block_ix: usize, block: &ResultBlock, on_open: &OnOpen) -> AnyElem
         let d = &block.rel[..block.rel.len().saturating_sub(name.len())];
         d.trim_end_matches('/').to_string().into()
     };
-    let hint: SharedString = if block.path_only {
-        tr("search.path_match").into()
-    } else {
-        crate::i18n::tf("search.match_count", &[("n", block.count.to_string())]).into()
-    };
     let click = on_open.clone();
     div()
         .id(SharedString::from(format!("psb-h-{block_ix}")))
@@ -206,7 +187,6 @@ fn header_row(block_ix: usize, block: &ResultBlock, on_open: &OnOpen) -> AnyElem
         .rounded(px(8.))
         .shadow_sm()
         .cursor_pointer()
-        .hover(move |s| s.bg(rgb(t.bg_hover)))
         .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
             click(block_ix, 1, None, cx);
         })
@@ -241,18 +221,21 @@ fn header_row(block_ix: usize, block: &ResultBlock, on_open: &OnOpen) -> AnyElem
                 .text_color(rgb(t.text_faint))
                 .child(dir),
         )
-        .child(
-            div()
-                .flex_shrink_0()
-                .font_family(crate::appearance::panel_font().family)
-                .text_size(crate::appearance::ui_size(11.))
-                .text_color(rgb(t.text_dim))
-                .child(hint),
-        )
+        // 只有「仅文件名命中」的文件栏带这个标签（Zed 同：内容命中组不带）
+        .when(block.path_only, |d| {
+            d.child(
+                div()
+                    .flex_shrink_0()
+                    .font_family(crate::appearance::panel_font().family)
+                    .text_size(crate::appearance::ui_size(11.))
+                    .text_color(rgb(t.text_dim))
+                    .child(tr("search.path_match").to_string()),
+            )
+        })
         .into_any_element()
 }
 
-/// 摘录行：行号 gutter + 正文（editor 同族同号 + syntect 高亮 + 命中洗底）。
+/// 摘录行：行号 gutter + 单色正文 + 命中底色。
 /// 长行**折行**（`StyledText` 原生换行），行高随内容增长，与 Zed 一致。
 fn render_line(
     block_ix: usize,
@@ -261,7 +244,6 @@ fn render_line(
     on_open: &OnOpen,
     seg_ix: usize,
     line_ix: usize,
-    runs: &[(String, [u8; 3])],
 ) -> AnyElement {
     let t = T();
     let font = crate::appearance::file_font();
@@ -270,8 +252,8 @@ fn render_line(
     let ordinal = line.ordinal;
     let line_no = line.line;
     let row_h = line_h();
-    let highlights = line_highlights(&line.text, runs, &line.spans, t);
-    let mut el = div()
+    let highlights = match_highlights(&line.text, &line.spans, t);
+    div()
         .id(SharedString::from(format!(
             "psb-l-{block_ix}-{seg_ix}-{line_ix}"
         )))
@@ -280,17 +262,14 @@ fn render_line(
         .flex()
         // 折行后行会变高：gutter 与正文都从顶对齐
         .items_start()
-        .when(is_active, |d| {
-            let a: gpui::Hsla = rgb(t.accent).into();
-            d.bg(gpui::hsla(a.h, a.s, a.l, 0.10))
-                .border_l_2()
-                .border_color(rgb(t.accent))
-        })
+        // 活跃命中：**只有左缘竖条**，不刷整行底色（Zed 同；此前刷 accent 洗底
+        // 是用户评「颜色五花八门」的主因之一）
+        .when(is_active, |d| d.border_l_2().border_color(rgb(t.accent)))
         .when(!is_active, |d| {
             d.border_l_2().border_color(gpui::rgba(0x00000000))
         })
+        // 无 hover 变色：Zed 结果区鼠标划过不变色（用户 2026-10-21 定案）
         .cursor_pointer()
-        .hover(move |s| s.bg(rgb(t.bg_hover)))
         .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
             click(block_ix, line_no, ordinal, cx);
         })
@@ -304,11 +283,10 @@ fn render_line(
                 .font_family(font.family.clone())
                 .text_size(px(font.size))
                 .line_height(gpui::relative(LINE_HEIGHT))
-                .text_color(rgb(if line.hit { t.text_faint } else { t.text_faint }))
+                .text_color(rgb(t.text_faint))
                 .child(SharedString::from(line.line.to_string())),
         )
-        // 正文：editor 同族/同号/同行高；syntect 高亮 + 命中底色（StyledText
-        // 原生折行，不再逐 run 拼 div —— 逐 run 拼的节点无法换行，长行被裁切）
+        // 正文：单色 + 命中底色（StyledText 原生折行）
         .child(
             div()
                 .flex_1()
@@ -317,56 +295,36 @@ fn render_line(
                 .font_family(font.family.clone())
                 .text_size(px(font.size))
                 .line_height(gpui::relative(LINE_HEIGHT))
-                .text_color(rgb(if line.hit { t.text } else { t.text_muted }))
+                .text_color(rgb(t.text))
                 .child(StyledText::new(line.text.clone()).with_highlights(highlights)),
-        );
-    if !line.hit {
-        el = el.opacity(0.85);
-    }
-    el.into_any_element()
+        )
+        .into_any_element()
 }
 
-/// 语法 run + 命中区间 → 不重叠、按字节序的 highlight 列表（`StyledText`
-/// 契约：run 必须按序且不重叠）。
-fn line_highlights(
+/// 命中区间 → `StyledText` 的 highlight 列表（不重叠、按字节序）。
+///
+/// 只产出「命中底色」，不掺任何语法色——结果区是单色正文（见 [`render_line`]
+/// 的视觉口径）。底色用主题中性 selection 色 `bg_selected`（Zed 的命中底色
+/// 同样是中性色，不是 accent 洗底）。
+fn match_highlights(
     line: &str,
-    runs: &[(String, [u8; 3])],
     spans: &[Range<usize>],
     t: &'static Theme,
 ) -> Vec<(Range<usize>, gpui::HighlightStyle)> {
-    if line.is_empty() {
+    if line.is_empty() || spans.is_empty() {
         return Vec::new();
     }
-    // 语法色按字节查表（run 是连续切分，前缀和定位）
-    let mut run_bounds = Vec::with_capacity(runs.len() + 1);
-    let mut pos = 0usize;
-    run_bounds.push(0usize);
-    for (text, _) in runs {
-        pos += text.len();
-        run_bounds.push(pos.min(line.len()));
-    }
-    let syntax_color = |at: usize| -> Option<[u8; 3]> {
-        if runs.is_empty() {
-            return None;
-        }
-        let ix = run_bounds
-            .windows(2)
-            .position(|w| at >= w[0] && at < w[1])?;
-        runs.get(ix).map(|(_, c)| *c)
-    };
-    // 边界集合：run 边界 + 命中区间边界
-    let mut bounds: Vec<usize> = run_bounds.clone();
+    let match_bg: gpui::Hsla = rgb(t.bg_selected).into();
+    let mut bounds: Vec<usize> = vec![0, line.len()];
     for span in spans {
         bounds.push(span.start.min(line.len()));
         bounds.push(span.end.min(line.len()));
     }
-    bounds.push(line.len());
     bounds.retain(|b| line.is_char_boundary(*b));
     bounds.sort_unstable();
     bounds.dedup();
 
-    let match_bg: gpui::Hsla = rgb(t.bg_selected).into();
-    let mut out: Vec<(Range<usize>, gpui::HighlightStyle)> = Vec::new();
+    let mut out = Vec::new();
     for pair in bounds.windows(2) {
         let (start, end) = (pair[0], pair[1]);
         if start >= end {
@@ -375,37 +333,10 @@ fn line_highlights(
         let hit = spans.iter().any(|s| s.contains(&start));
         let mut style = gpui::HighlightStyle::default();
         if hit {
-            // Zed 的命中底色是中性 selection 色（不是 accent 洗底）
             style.background_color = Some(match_bg);
             style.color = Some(rgb(t.text).into());
-        } else if let Some([r, g, b]) = syntax_color(start) {
-            style.color = Some(gpui::rgb(u32::from_be_bytes([0, r, g, b])).into());
         }
         out.push((start..end, style));
-    }
-    out
-}
-
-/// syntect run 串 → 按行切分（`highlight_segments` 保证 run 不跨行，
-/// 行尾 `\n` 落在该行最后一段里，这里剥掉）。
-fn split_runs_by_line(
-    runs: &[(String, [u8; 3])],
-    line_count: usize,
-) -> Vec<Vec<(String, [u8; 3])>> {
-    let mut out: Vec<Vec<(String, [u8; 3])>> = vec![Vec::new(); line_count];
-    let mut line_ix = 0usize;
-    for (text, color) in runs {
-        let mut rest = text.as_str();
-        while let Some(nl) = rest.find('\n') {
-            if line_ix < line_count && nl > 0 {
-                out[line_ix].push((rest[..nl].to_string(), *color));
-            }
-            rest = &rest[nl + 1..];
-            line_ix += 1;
-        }
-        if !rest.is_empty() && line_ix < line_count {
-            out[line_ix].push((rest.to_string(), *color));
-        }
     }
     out
 }
@@ -566,8 +497,7 @@ mod tests {
     fn match_spans_become_highlights(_cx: &mut TestAppContext) {
         let t = crate::appearance::theme::theme();
         let line = "abc openai def";
-        let runs = vec![("abc openai def".to_string(), [200u8, 100, 50])];
-        let hs = super::line_highlights(line, &runs, &[4..10], t);
+        let hs = super::match_highlights(line, &[4..10], t);
         assert!(!hs.is_empty());
         let mut last_end = 0usize;
         for (range, _) in &hs {
