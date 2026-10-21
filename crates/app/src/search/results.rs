@@ -326,6 +326,7 @@ fn landing_row(
     let weak = weak.clone();
     div()
         .id(id)
+        // ui-raw: ok Zed landing 行几何逐值复刻（高22/px4/gap4/rounded4），非 PF 档位
         .h(px(22.))
         .px(px(4.))
         .flex()
@@ -460,6 +461,7 @@ pub(super) fn card_header(
     // 块：p(4) + 高 2 行 → 条四周留 4px（块间因此有 8px 间隙）
     div()
         .id(SharedString::from(format!("psb-h-{id}")))
+        // ui-raw: ok Zed render_buffer_header 逐值复刻（块p4/内条 pl4 pr8 gap6 rounded4）
         .w_full()
         .h(px(header_h()))
         .p(px(HEADER_PAD))
@@ -492,7 +494,7 @@ pub(super) fn card_header(
                     div()
                         .id(SharedString::from(format!("psb-t-{id}")))
                         .flex_shrink_0()
-                        // Zed 的 `rems_from_px(28)`：默认 rem 下就是 28px，
+                        // ui-raw: ok Zed 收展钜 28×28（`rems_from_px(28)`），
                         // 不套 PF 的 `ui_size`（那套基准是 12，会把 28 放大成 31）
                         .size(px(28.))
                         .flex()

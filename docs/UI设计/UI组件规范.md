@@ -455,6 +455,14 @@ thread_local——paint 期每帧重注册闭包，局部变量活不过一次�
 - **圆角 5 vs 6**：不是漂移，是两条语义——**被塞进行里的容器件（输入框/触发器/列表行/菜单行/键帽）走 5**，**能点的散件（文字按钮/图标按钮/tab）走 6**。已入 §4 为 R_INLINE。
 - **间距出现 7.5 / 9 / 13 / 14 这类非 2px 网格值**：settings 是 pi-web 逐像素复刻，这批值已全站验收，**归 10 章的「设置页专用密度」**，不改；新页面照抄含义（行 py13 / 行内 gap14 / 导航 py7.5 / 标签↔控件 gap5），不要搬去其他面（会话区仍按 §1 网格）。
 
+### 10.8 ui-raw: ok 豁免登记（特殊控件 · 逐条可追溯）
+
+| 位置 | 几何 | 理由 |
+|---|---|---|
+| `search/results.rs` `landing_row` | 行高 22 / px 4 / gap 4 / rounded 4 | Zed search landing 行逐值复刻，非 PF 档位 |
+| `search/results.rs` `card_header` 外壳 | 块 p 4 / 内条 pl 4 pr 8 gap 6 rounded 4 | Zed `render_buffer_header` 逐值复刻（083 定案） |
+| `search/results.rs` `card_header` 收展钮 | 28×28 / rounded 2 | Zed `rems_from_px(28)`；不套 `ui_size`（12 基准会放大成 31） |
+
 ---
 
 ## 附：参照出处

@@ -17,6 +17,8 @@ crates/app/src/function_panel/psp_row_views.rs 2
 crates/app/src/function_panel/tab_menu.rs 1
 crates/app/src/market/pi_ext_market/mod.rs 2
 crates/app/src/remote_control/mod.rs 1
+# search/results.rs：0 违规 / 3 豁免（Zed ProjectSearch 逐值复刻，§10.8 登记）
+crates/app/src/search/results.rs 0
 crates/app/src/session/actions_bar.rs 1
 crates/app/src/session/input/area.rs 3
 crates/app/src/session/input/bar.rs 7
