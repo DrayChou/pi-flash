@@ -2,6 +2,42 @@
 
 All notable changes to released versions live here; see `docs/CHANGELOG规范.md` for the format.
 
+## [0.2.2] - 2026-10-21
+
+I'm quite fond of this release myself —
+1. Added a Run action for runnable files in the file tree: bat/ps1/py/js scripts can now be launched right from the file context menu. Super handy, haha — PF has truly become my project manager.
+2. Search has been greatly improved.
+
+### Install & Update
+
+```bash
+npm install -g pi-flash@latest   # same command for first install and updates
+pi-flash
+```
+
+Requires Node.js ≥ 22.19.
+You can also download the zip, unzip it and double-click `pi-flash.exe` — no Node needed.
+Windows x64 only.
+
+### New
+
+- Project search overhaul (083): file name + full-text content search, low-latency with no index. The results panel mirrors Zed: rounded file-header cards, group headers, right-aligned line numbers with dynamic column width, match highlight background; landing page for the empty state, focus on open, scrollbar added; the old search dialog is retired. (bb00f49, ca86852, f54db1d, afd6179, 6fcbe25, 37b8d89, 3c1beb7, 1cc44db, e9f3474, 7d4f788)
+- Session search rebuild (013): a query panel sharing the file-search layout (search only, no replace); upgraded to full cross-project search — sessions from all projects are searchable, with results grouped per session showing the owning project and session name (absolute-time subtitles). (66c3832, 6c3fdfb, e68722c, fec5ffd, d60635e)
+- File-tree context-menu Run (021): run script files in a new built-in terminal tab with one click. An extension recipe table covers exe/bat/ps1/js/py/sh; Python resolves via project venv → py.exe → PATH (skipping WindowsApps fake aliases), sh finds bash; menu items show the interpreter name and are greyed out with a reason when resolution fails. (2a8d285)
+- Model picker, four fixes: menu widened 40px (model names no longer crowd the star); scrollbar appears when content overflows; ↑/↓ selection auto-scrolls into view; starred default model pinned to top. (295d149)
+- The file-tree "search files" tooltip now shows a keybinding chip (Ctrl+L). (4d8de11)
+
+### Bug fixes
+
+- Renamed sessions reverted to their old sidebar title: rename entries were dropped by the 1MB tail-window scan (15MB sessions always hit; 4 of 8 renamed sessions on real machines). Name scanning now rides the streaming message-count scan, covering the entire session file, matching pi's own semantics. (d3cbc89)
+- Editor: with terminal/search tabs still open, closing the last document tab now returns to the chat page instead of a blank placeholder. (d2c2258)
+- Chat "scroll to bottom" floating button: ghost shadow removed and enlarged (32→36px) for easier clicking. (9124b14)
+
+### Improvements
+
+- The "auto-hide actions" toggle now also covers the two maximize buttons in the panel control bar and file-tree action bar. (e3831f7)
+- Session panel search entry demoted to a small icon merged into the right-side button group, subject to auto-hide. (1b95258, d051780)
+- Theme "厨房笔记" (Kitchen Notes) renamed to "秋叶" (Autumn Leaves). (af81ffc)
 ## [0.2.1] - 2026-10-20
 
 This release focuses on crash fixes and performance:
