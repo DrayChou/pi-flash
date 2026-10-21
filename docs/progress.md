@@ -364,3 +364,9 @@
 - **052 步长 5**（2026-10-18 用户定夺）：自动清理天数 −/+ 步进步长 5
   （0/5/…/100）；通用 stepper 加 step 参数 + 网格对齐（存量非格点值如老
   默认 3 也能干净落到格点），会话显示数 step=1 不受影响。
+- **084 会话查询**（2026-10-21 用户定案「照文件查询的界面改造，只查询、不要
+  replace 之类」）：删掉 013 的 `Dialog::SessionSearch` 弹窗，改成与 083 同版式的
+  内容区面板 `PanelTab::SessionSearch`（Ctrl+K / psp 钮，Esc 收起）；组头直接复用
+  `search::results::card_header`（2 行块 + 4px 留白 + 28×28 收展钮）、正文复用
+  `match_highlights`（单色 + 中性命中底色）、滚动条常显；查询框 flat、打开当帧
+  聚焦（`focus_soon`）；引擎与防抖/代际丢弃沿用 013（`search_sessions_for_cwd`）。

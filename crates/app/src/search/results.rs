@@ -411,7 +411,9 @@ fn render_block(
         .w_full()
         .flex()
         .flex_col()
-        .child(header_row(block_ix, block, on_open, on_toggle, collapsed));
+        .child(header_row(
+            block_ix, block, on_open, on_toggle, collapsed, t,
+        ));
     // 收起 = 只留文件头；纯文件栏本来就没有内容行
     if block.path_only || collapsed {
         return card.into_any_element();
@@ -435,39 +437,36 @@ fn render_block(
 
 /// 组头（文件操作栏）——版式逐项照 `crates/editor/src/element/header.rs`
 /// 的 `render_buffer_header`：块 `p 4` + 内条 `rounded_sm(4) / border_1 /
-/// pl 4 pr 8 / gap 6`，左起「收展钮（28×28）→ 文件名 → 目录」。
-fn header_row(
-    block_ix: usize,
-    block: &ResultBlock,
-    on_open: &OnOpen,
-    on_toggle: &OnToggle,
+/// pl 4 pr 8 / gap 6`，左起「收展钮（28×28）→ 标题 → 副标题」。
+///
+/// 会话查询（`search/sessions.rs`）复用同一个 [`card_header`]，保证两种结果
+/// 面板的组头一模一样（用户 2026-10-21：会话查询「根据文件查询的界面改造」）。
+pub(super) struct HeaderCallbacks {
+    pub(super) open: Rc<dyn Fn(&mut gpui::App)>,
+    pub(super) toggle: Rc<dyn Fn(&mut gpui::App)>,
+}
+
+pub(super) fn card_header(
+    id: String,
+    title: SharedString,
+    sub: SharedString,
+    tail: Option<&'static str>,
     collapsed: bool,
+    cb: HeaderCallbacks,
+    t: &'static Theme,
 ) -> AnyElement {
-    let t = T();
     let font = crate::appearance::file_font();
-    let name: SharedString = block
-        .rel
-        .rsplit('/')
-        .next()
-        .unwrap_or(&block.rel)
-        .to_string()
-        .into();
-    let dir: SharedString = {
-        let d = &block.rel[..block.rel.len().saturating_sub(name.len())];
-        d.trim_end_matches('/').to_string().into()
-    };
-    let click = on_open.clone();
-    let toggle = on_toggle.clone();
+    let HeaderCallbacks { open, toggle } = cb;
     // 块：p(4) + 高 2 行 → 条四周留 4px（块间因此有 8px 间隙）
     div()
-        .id(SharedString::from(format!("psb-h-{block_ix}")))
+        .id(SharedString::from(format!("psb-h-{id}")))
         .w_full()
         .h(px(header_h()))
         .p(px(HEADER_PAD))
         .child(
             // 内条
             div()
-                .id(SharedString::from(format!("psb-b-{block_ix}")))
+                .id(SharedString::from(format!("psb-b-{id}")))
                 .w_full()
                 .h_full()
                 .flex()
@@ -485,13 +484,13 @@ fn header_row(
                 // Zed 内条本身就有 hover 底（`element_hover`）——源码行为，不是发明
                 .hover(move |s| s.bg(rgb(t.bg_hover)))
                 .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
-                    click(block_ix, 1, None, cx);
+                    open(cx);
                 })
                 // 收展钮：Zed 的 28×28 方钮（**不带 tooltip**——用户定案）。
-                // 点它只收展，不打开文件。
+                // 点它只收展，不打开。
                 .child(
                     div()
-                        .id(SharedString::from(format!("psb-t-{block_ix}")))
+                        .id(SharedString::from(format!("psb-t-{id}")))
                         .flex_shrink_0()
                         // Zed 的 `rems_from_px(28)`：默认 rem 下就是 28px，
                         // 不套 PF 的 `ui_size`（那套基准是 12，会把 28 放大成 31）
@@ -503,9 +502,9 @@ fn header_row(
                         .hover(move |s| s.bg(rgb(t.bg_selected)))
                         .cursor_pointer()
                         .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
-                            // 别让点击冒泡到内条（那会直接打开文件）
+                            // 别让点击冒泡到内条（那会直接打开）
                             cx.stop_propagation();
-                            toggle(block_ix, cx);
+                            toggle(cx);
                         })
                         .child(crate::ui::icon(
                             if collapsed {
@@ -517,7 +516,7 @@ fn header_row(
                             t.text_dim,
                         )),
                 )
-                // 文件名 + 目录（Zed 的 `gap_0p5` = 2px，整块 flex_1）
+                // 标题 + 副标题（Zed 的 `gap_0p5` = 2px，整块 flex_1）
                 .child(
                     div()
                         .flex_1()
@@ -532,7 +531,7 @@ fn header_row(
                                 .text_size(px(font.size))
                                 .font_weight(gpui::FontWeight::MEDIUM)
                                 .text_color(rgb(t.text))
-                                .child(name),
+                                .child(title),
                         )
                         .child(
                             div()
@@ -544,22 +543,56 @@ fn header_row(
                                 .font_family(font.family.clone())
                                 .text_size(px(font.size))
                                 .text_color(rgb(t.text_muted))
-                                .child(dir),
+                                .child(sub),
                         ),
                 )
-                // 只有「仅文件名命中」的文件栏带这个标签（Zed 同：内容命中组不带）
-                .when(block.path_only, |d| {
+                .when_some(tail, |d, label| {
                     d.child(
                         div()
                             .flex_shrink_0()
                             .font_family(crate::appearance::panel_font().family)
                             .text_size(crate::appearance::ui_size(11.))
                             .text_color(rgb(t.text_dim))
-                            .child(tr("search.path_match").to_string()),
+                            .child(SharedString::from(label)),
                     )
                 }),
         )
         .into_any_element()
+}
+
+fn header_row(
+    block_ix: usize,
+    block: &ResultBlock,
+    on_open: &OnOpen,
+    on_toggle: &OnToggle,
+    collapsed: bool,
+    t: &'static Theme,
+) -> AnyElement {
+    let name: SharedString = block
+        .rel
+        .rsplit('/')
+        .next()
+        .unwrap_or(&block.rel)
+        .to_string()
+        .into();
+    let dir: SharedString = {
+        let d = &block.rel[..block.rel.len().saturating_sub(name.len())];
+        d.trim_end_matches('/').to_string().into()
+    };
+    let open = on_open.clone();
+    let toggle = on_toggle.clone();
+    card_header(
+        block_ix.to_string(),
+        name,
+        dir,
+        block.path_only.then(|| tr("search.path_match")),
+        collapsed,
+        HeaderCallbacks {
+            open: Rc::new(move |cx| open(block_ix, 1, None, cx)),
+            toggle: Rc::new(move |cx| toggle(block_ix, cx)),
+        },
+        t,
+    )
 }
 
 /// 摘录行：行号 gutter + 单色正文 + 命中底色。
@@ -637,7 +670,7 @@ fn render_line(
 /// 只产出「命中底色」，不掺任何语法色——结果区是单色正文（见 [`render_line`]
 /// 的视觉口径）。底色用主题中性 selection 色 `bg_selected`（Zed 的命中底色
 /// 同样是中性色，不是 accent 洗底）。
-fn match_highlights(
+pub(super) fn match_highlights(
     line: &str,
     spans: &[Range<usize>],
     t: &'static Theme,

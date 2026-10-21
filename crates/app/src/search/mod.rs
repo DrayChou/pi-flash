@@ -6,7 +6,10 @@
 //! - [`engine`]：执行层（候选路径 → `match_path` 过滤 → 读盘扫 → 流式回传），
 //!   函数逐条对照 Zed `project_search.rs`；
 //! - [`panel`] / [`results`]：搜索条（Zed `ProjectSearchBar::render` 版式）与
-//!   结果面板（Zed 多缓冲结果编辑器的视觉等价物）。
+//!   结果面板（Zed 多缓冲结果编辑器的视觉等价物）；
+//! - [`sessions`]：**会话查询**（2026-10-21 把 013 的弹窗版改成同版式面板，
+//!   只查询、不替换/过滤）——组头复用 [`results::card_header`]，正文同一条
+//!   单色 + 命中底色口径。见 `docs/模块设计/084-会话查询.md`。
 //!
 //! 产品级唯一差异：Zed 的「找文件」（Ctrl+P 文件查找器）与「找内容」
 //! （Ctrl+Shift+F 项目搜索）是两个面板，PF 合并进同一结果列表——因为它替换
@@ -20,9 +23,11 @@ pub(crate) mod engine;
 mod panel;
 mod query;
 mod results;
+mod sessions;
 
 pub(crate) use panel::{opts_labels, view};
 pub(crate) use query::PathMatcher;
+pub(crate) use sessions::view as session_view;
 
 use std::ops::Range;
 use std::sync::Arc;
@@ -525,13 +530,21 @@ impl Chat {
     /// 搜索框打不进字）。
     pub(crate) fn search_input_focused(&self, window: &gpui::Window, cx: &gpui::App) -> bool {
         let ui = &self.ws.search;
-        [&ui.query, &ui.replace, &ui.include, &ui.exclude]
-            .iter()
-            .any(|slot| {
-                slot.as_ref().is_some_and(|e| {
-                    e.read(cx).has_inner() && e.read(cx).focus_handle_in(cx).is_focused(window)
-                })
+        // 会话查询（PanelTab::SessionSearch）的查询框同享白名单：它的面板与
+        // 项目搜索同版式，焦点仲裁走同一条判据
+        [
+            &ui.query,
+            &ui.replace,
+            &ui.include,
+            &ui.exclude,
+            &self.psp.session_query,
+        ]
+        .iter()
+        .any(|slot| {
+            slot.as_ref().is_some_and(|e| {
+                e.read(cx).has_inner() && e.read(cx).focus_handle_in(cx).is_focused(window)
             })
+        })
     }
 
     // -------------------------------------------------------------------

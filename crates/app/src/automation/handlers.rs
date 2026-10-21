@@ -322,6 +322,7 @@ pub(super) fn dispatch(
                     ContentView::Changelog => "changelog",
                     ContentView::PiExtMarket => "pi-ext-market",
                     ContentView::Search => "search",
+                    ContentView::SessionSearch => "session_search",
                 },
             }))
         }

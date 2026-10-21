@@ -737,7 +737,7 @@ fn psp_ctrl_bar(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -
             search_btn
                 .with_tip_action("psp.search_sessions", &crate::OpenSessionSearch)
                 .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                    let _ = w_search.update(cx, |c, cx| c.open_session_search(cx));
+                    let _ = w_search.update(cx, |c, cx| c.open_session_search_panel(cx));
                 })
                 .child(icon("search", crate::ui::tokens::icon::MD)),
         )

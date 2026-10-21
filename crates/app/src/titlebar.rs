@@ -336,6 +336,14 @@ fn tab_strip(chat: &mut Chat, cx: &mut gpui::Context<Chat>) -> gpui::AnyElement 
                 Some("search"),
                 ContentView::Search,
             ),
+            // 会话查询（同版式，只查询）
+            crate::PanelTab::SessionSearch => (
+                tr("session_search.tab").into(),
+                None,
+                false,
+                Some("search"),
+                ContentView::SessionSearch,
+            ),
         };
         // 文件 tab 行尾标记（023）：冲突 ! > 脏点。zed parity（DiskState::
         // Deleted）：文件已从磁盘消失不标 !——删除线是唯一标记，脏点照常

@@ -681,6 +681,7 @@ fn files_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
             crate::PanelTab::Changelog => json!({"changelog": true}),
             crate::PanelTab::PiExtMarket => json!({"pi_ext_market": true}),
             crate::PanelTab::Search => json!({"search": true}),
+            crate::PanelTab::SessionSearch => json!({"session_search": true}),
         }).collect::<Vec<_>>(),
         // 文件树标题项目下拉（树根跨项目快切）：开合/键盘高亮/项目清单，
         // files.project_menu + input.keys 的事务断言靠这条
@@ -781,7 +782,6 @@ fn dialogs_surface(chat: &Chat, cx: &Context<Chat>) -> Value {
     let dialog = chat.dlg.dialog.as_ref().map(|d| match d {
         Dialog::ProviderPicker { .. } => "provider_picker",
         Dialog::GitDiff { .. } => "git_diff",
-        Dialog::SessionSearch { .. } => "session_search",
         Dialog::ProjectPicker { .. } => "project_picker",
         Dialog::ImagePreview { .. } => "image_preview",
         Dialog::SessionInfo { .. } => "session_info",
@@ -867,6 +867,7 @@ fn content_view_str(v: crate::ContentView) -> &'static str {
         crate::ContentView::Changelog => "changelog",
         crate::ContentView::PiExtMarket => "pi-ext-market",
         crate::ContentView::Search => "search",
+        crate::ContentView::SessionSearch => "session_search",
     }
 }
 

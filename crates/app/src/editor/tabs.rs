@@ -174,7 +174,10 @@ impl Chat {
         if was_active && self.layout.content_view == view {
             if matches!(
                 view,
-                ContentView::Changelog | ContentView::PiExtMarket | ContentView::Search
+                ContentView::Changelog
+                    | ContentView::PiExtMarket
+                    | ContentView::Search
+                    | ContentView::SessionSearch
             ) {
                 match self.ws.active_panel_tab {
                     Some(nix) => {
@@ -583,6 +586,7 @@ impl Chat {
             Some(PanelTab::Changelog) => ContentView::Changelog,
             Some(PanelTab::PiExtMarket) => ContentView::PiExtMarket,
             Some(PanelTab::Search) => ContentView::Search,
+            Some(PanelTab::SessionSearch) => ContentView::SessionSearch,
             Some(PanelTab::File(_)) => ContentView::File,
             None => return,
         };

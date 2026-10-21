@@ -1,4 +1,4 @@
-//! Modal dialogs: ModelSelect / GitDiff / SessionSearch / ImagePreview
+//! Modal dialogs: ModelSelect / GitDiff / ImagePreview
 //! (pi-web parity surfaces layered over the app root). Free function over
 //! Chat state; entity split lands in phase E (ARCHITECTURE.md §2).
 use crate::*;
@@ -12,7 +12,6 @@ use crate::Dialog;
 use crate::TextInput;
 use crate::appearance::theme;
 use crate::i18n::{tf, tr};
-use crate::services::format::time_ago;
 use crate::session::model_picker::RegistryState;
 use crate::ui::{icon, icon_hover};
 
@@ -47,9 +46,6 @@ pub(crate) fn render_dialogs(
     }
     if let Some(Dialog::GitDiff { path, patch }) = chat.dlg.dialog.as_ref() {
         root = root.child(render_git_diff(chat, weak, path, patch, t, cx));
-    }
-    if let Some(Dialog::SessionSearch { input }) = chat.dlg.dialog.as_ref() {
-        root = root.child(render_session_search(chat, weak, input, t, cx));
     }
     if let Some(Dialog::ProjectPicker {
         input,
@@ -762,150 +758,6 @@ fn render_project_picker(
     dialog_shell(chat, weak, panel)
 }
 
-/// matched message (pi-web SessionSearch, dialog-mounted per 013).
-fn render_session_search(
-    chat: &Chat,
-    weak: &gpui::WeakEntity<Chat>,
-    input: &gpui::Entity<TextInput>,
-    t: &theme::Theme,
-    _cx: &App,
-) -> Div {
-    let status: SharedString = if chat.psp.search_running {
-        tr("session_search.searching").into()
-    } else if chat.psp.search_needle.is_empty() {
-        tr("session_search.hint").into()
-    } else if chat.psp.search_hits.is_empty() {
-        tr("session_search.no_match").into()
-    } else {
-        tr("dialogs.search_results")
-            .replace("{}", &chat.psp.search_hits.len().to_string())
-            .into()
-    };
-    let mut results = div().flex().flex_col();
-    let mut last_session: Option<PathBuf> = None;
-    for (hit_ix, hit) in chat.psp.search_hits.iter().enumerate() {
-        if last_session.as_ref() != Some(&hit.session_path) {
-            last_session = Some(hit.session_path.clone());
-            let age = time_ago(hit.modified);
-            let label: SharedString = hit
-                .session_name
-                .clone()
-                .unwrap_or_else(|| {
-                    if hit.preview.is_empty() {
-                        hit.session_path
-                            .file_stem()
-                            .map(|s| s.to_string_lossy().to_string())
-                            .unwrap_or_default()
-                    } else {
-                        hit.preview.clone()
-                    }
-                })
-                .into();
-            results = results.child(
-                div()
-                    .px_3()
-                    .pt_2()
-                    .pb_1()
-                    // §2 组头辅助档（原 text_xs 裸字号）
-                    .text_size(crate::appearance::ui_size(11.))
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .text_color(rgb(t.text))
-                    .flex()
-                    .items_baseline()
-                    .justify_between()
-                    .child(SharedString::from(label))
-                    .child(
-                        div()
-                            .text_size(crate::appearance::ui_size(10.))
-                            .font_weight(gpui::FontWeight::NORMAL)
-                            .text_color(rgb(t.text_dim))
-                            .child(SharedString::from(age)),
-                    ),
-            );
-        }
-        let path = hit.session_path.clone();
-        let ts = hit.ts;
-        let weak_row = weak.clone();
-        results = results.child(
-            div()
-                .id(SharedString::from(format!("hit-{hit_ix}")))
-                .px_3()
-                .py_1p5()
-                .cursor_pointer()
-                .hover(|s| s.bg(rgb(t.bg_hover)))
-                .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                    let path = path.clone();
-                    let _ = weak_row.update(cx, |c, cx| c.jump_to_hit(path, ts, cx));
-                })
-                .child(
-                    div()
-                        // §2 结果正文档（原 text_xs 裸字号）
-                        .text_size(crate::appearance::ui_size(12.))
-                        .line_height(relative(1.5))
-                        .text_color(rgb(t.text_muted))
-                        .flex()
-                        .flex_wrap()
-                        .items_baseline()
-                        .gap_1()
-                        .child(SharedString::from(hit.before.clone()))
-                        .child(
-                            div()
-                                .px_0p5()
-                                .rounded(px(3.))
-                                .bg(gpui::hsla(0., 0., 0.5, 0.15))
-                                .text_color(rgb(t.accent))
-                                .font_weight(gpui::FontWeight::SEMIBOLD)
-                                .child(SharedString::from(hit.match_text.clone())),
-                        )
-                        .child(SharedString::from(hit.after.clone())),
-                ),
-        );
-    }
-    let panel = div()
-        .w(px(620.))
-        .max_h(px(640.))
-        .bg(rgb(t.bg_panel))
-        .border_1()
-        .border_color(rgb(t.border))
-        .rounded(px(10.))
-        .p_3()
-        .flex()
-        .flex_col()
-        .gap_2()
-        .shadow_lg()
-        .on_mouse_down(MouseButton::Left, |_, _, cx| {
-            cx.stop_propagation();
-        })
-        .child(input.clone())
-        .child({
-            let label: SharedString = if chat.psp.search_truncated {
-                format!(
-                    "{status} · {partial}",
-                    partial = tr("session_search.partial")
-                )
-                .into()
-            } else {
-                status
-            };
-            div()
-                .px_1()
-                // §2 状态辅助档（原 text_xs 裸字号）
-                .text_size(crate::appearance::ui_size(11.))
-                .text_color(rgb(t.text_dim))
-                .child(label)
-        })
-        .child(
-            div()
-                .id("search-results")
-                .max_h(px(520.))
-                .overflow_y_scroll()
-                .flex()
-                .flex_col()
-                .child(results),
-        );
-    dialog_shell(chat, weak, panel)
-}
-
 // ---------------------------------------------------------------------------
 // 弹窗打开器 + 会话搜索（P2 归并自 actions_dialogs.rs）
 // ---------------------------------------------------------------------------
@@ -1059,86 +911,11 @@ impl Chat {
         }
     }
 
-    /// Open the session content search (013): query input + grouped results.
-    pub(crate) fn open_session_search(&mut self, cx: &mut Context<Self>) {
-        let weak = cx.weak_entity();
-        let weak_esc = weak.clone();
-        let input = cx.new(|cx| {
-            TextInput::new(cx)
-                .placeholder(tr("session_search.placeholder"))
-                .on_change(Box::new(move |q: &str, cx: &mut App| {
-                    let _ = weak.update(cx, |c, cx| c.search_changed(q, cx));
-                }))
-                .on_escape(Box::new(move |cx: &mut App| {
-                    let _ = weak_esc.update(cx, |c, cx| {
-                        c.dlg.dialog = None;
-                        cx.notify();
-                    });
-                }))
-        });
-        self.psp.search_hits.clear();
-        self.psp.search_truncated = false;
-        self.psp.search_needle.clear();
-        self.dlg.dialog = Some(Dialog::SessionSearch { input });
-        cx.notify();
-    }
-
-    /// Query text changed: bump the generation, debounce 300ms, then scan
-    /// this project's session files on the background executor (pi-web
-    /// SessionSearch debounce parity; stale responses drop by generation).
-    pub(crate) fn search_changed(&mut self, q: &str, cx: &mut Context<Self>) {
-        self.psp.search_gen += 1;
-        let epoch = self.psp.search_gen;
-        let needle = q.trim().to_string();
-        self.psp.search_needle = needle.clone();
-        self.psp.search_hits.clear();
-        self.psp.search_truncated = false;
-        if needle.is_empty() {
-            self.psp.search_running = false;
-            cx.notify();
-            return;
-        }
-        self.psp.search_running = true;
-        // 无项目态：没有可搜索的当前项目（psp 全局搜索不受影响，另入口）
-        let Some(cwd) = self.ws.cwd.clone() else {
-            self.psp.search_running = false;
-            return;
-        };
-        cx.spawn(async move |weak, cx| {
-            cx.background_executor()
-                .timer(std::time::Duration::from_millis(300))
-                .await;
-            let cancelled = weak
-                .update(cx, |c, _| c.psp.search_gen != epoch)
-                .unwrap_or(true);
-            if cancelled {
-                return;
-            }
-            let needle2 = needle.clone();
-            let resp = cx
-                .background_spawn(async move {
-                    pi_link::sessions::search_sessions_for_cwd(&cwd.to_string_lossy(), &needle2)
-                })
-                .await;
-            let _ = weak.update(cx, |c, cx| {
-                if c.psp.search_gen != epoch {
-                    return;
-                }
-                c.psp.search_running = false;
-                c.psp.search_truncated = resp.truncated;
-                c.psp.search_hits = resp.hits;
-                cx.notify();
-            });
-        })
-        .detach();
-    }
-
     /// Jump to a search hit: open (or switch to) the session, then reveal the
     /// matched row — located by payload timestamp, falling back to the first
     /// message containing the needle.
     pub(crate) fn jump_to_hit(&mut self, path: PathBuf, ts: Option<i64>, cx: &mut Context<Self>) {
         let needle = self.psp.search_needle.clone();
-        self.dlg.dialog = None;
         let key = path.to_string_lossy().to_string();
         let already_open = self.pool.active_key == key || self.pool.runtimes.contains_key(&key);
         if self.pool.active_key != key {

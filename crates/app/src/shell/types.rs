@@ -24,9 +24,6 @@ pub(crate) enum Dialog {
         path: PathBuf,
         patch: String,
     },
-    SessionSearch {
-        input: gpui::Entity<TextInput>,
-    },
     /// 004 projectManager 打开项目菜单：搜索框 + 打开文件夹 + 最近 30 天
     /// 项目列表（列表数据在 `project_hits`，扫描完异步回填）。`fresh` =
     /// 新会话页来源：选项目落**全新草稿**（new_session_in，不恢复
@@ -101,6 +98,8 @@ pub(crate) enum ContentView {
     PiExtMarket,
     /// 083 项目搜索 tab（PanelTab::Search；搜索面板 + 结果列表）
     Search,
+    /// 会话查询 tab（PanelTab::SessionSearch；同版式，只查询）
+    SessionSearch,
 }
 
 /// psp 列表方式（⋯ 菜单）。
@@ -254,6 +253,8 @@ pub(crate) enum PanelTab {
     PiExtMarket,
     /// 083 项目搜索（单例 tab；Ctrl+Shift+F 打开，Zed ProjectSearchView 同位）
     Search,
+    /// 会话查询（单例 tab；Ctrl+K 打开，与 083 同版式但**只查询**）
+    SessionSearch,
 }
 
 /// tab 稳定键（2026-10-14 标签拖拽换位引入）：拖拽发起时记 key，drop 时
@@ -266,6 +267,7 @@ pub(crate) enum TabKey {
     Changelog,
     PiExtMarket,
     Search,
+    SessionSearch,
 }
 
 impl PanelTab {
@@ -276,6 +278,7 @@ impl PanelTab {
             PanelTab::Changelog => TabKey::Changelog,
             PanelTab::PiExtMarket => TabKey::PiExtMarket,
             PanelTab::Search => TabKey::Search,
+            PanelTab::SessionSearch => TabKey::SessionSearch,
         }
     }
 }
@@ -298,6 +301,7 @@ impl PanelTab {
             PanelTab::Changelog => ContentView::Changelog,
             PanelTab::PiExtMarket => ContentView::PiExtMarket,
             PanelTab::Search => ContentView::Search,
+            PanelTab::SessionSearch => ContentView::SessionSearch,
         }
     }
 }

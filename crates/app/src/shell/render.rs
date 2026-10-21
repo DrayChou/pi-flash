@@ -68,7 +68,6 @@ impl Render for Chat {
         // otherwise, which would steal it back every redraw)
         let dialog_input = match &self.dlg.dialog {
             Some(Dialog::ProviderPicker { input, .. })
-            | Some(Dialog::SessionSearch { input })
             | Some(Dialog::ProjectPicker { input, .. }) => Some(input.clone()),
             _ => None,
         }
@@ -153,8 +152,10 @@ impl Render for Chat {
             {
                 window.focus(&self.dlg.dialog_focus);
             }
-        } else if self.layout.content_view == crate::ContentView::Search
-            && self.search_input_focused(window, cx)
+        } else if matches!(
+            self.layout.content_view,
+            crate::ContentView::Search | crate::ContentView::SessionSearch
+        ) && self.search_input_focused(window, cx)
         {
             // 083：搜索条输入框持焦不回收（同 040-1 市场搜索框白名单）——
             // 否则每帧仲裁把焦点推回中性锚点，搜索框打不进字
@@ -642,7 +643,7 @@ impl Render for Chat {
                 let _ = this.new_session(cx);
             }))
             .on_action(cx.listener(|this, _: &OpenSessionSearch, _window, cx| {
-                let _ = this.open_session_search(cx);
+                this.open_session_search_panel(cx);
             }))
             // 全局文件搜索（Ctrl+L，绑定见 main.rs）：与文件树工具栏
             // 「搜索文件」钮同一方法（toggle 语义，再按一次 = 关）

@@ -137,6 +137,13 @@ pub(crate) struct PspUi {
     pub(crate) search_running: bool,
     pub(crate) search_needle: String,
     pub(crate) search_gen: u64,
+    /// 会话查询面板（083 同款版式，只查询）：查询框懒建
+    pub(crate) session_query: Option<gpui::Entity<crate::ui::TextInput>>,
+    /// 会话查询里被收起的会话块（键 = 会话文件路径）
+    pub(crate) session_collapsed: std::collections::HashSet<String>,
+    /// 会话查询结果滚动（滚动条数据源）
+    pub(crate) session_scroll: gpui::ScrollHandle,
+    pub(crate) session_sb_state: gpui_component::scroll::ScrollbarState,
     pub(crate) pending_locate: Option<(PathBuf, Option<i64>, String)>,
     pub(crate) unread: HashSet<PathBuf>,
     /// 出错红点（agent 结束时窗口无焦点就点亮，重新获得焦点后切入清除）——
@@ -654,6 +661,10 @@ impl Chat {
                 search_running: false,
                 search_needle: String::new(),
                 search_gen: 0,
+                session_query: None,
+                session_collapsed: std::collections::HashSet::new(),
+                session_scroll: gpui::ScrollHandle::new(),
+                session_sb_state: gpui_component::scroll::ScrollbarState::default(),
                 pending_locate: None,
                 unread: HashSet::new(),
                 turn_errors: HashSet::new(),
