@@ -31,6 +31,9 @@ use crate::i18n::tr;
 /// 渲染层不依赖 `Chat`（无头布局测试能直接跑生产渲染代码，见 tests）。
 type OnOpen = Rc<dyn Fn(usize, u32, Option<usize>, &mut gpui::App)>;
 
+/// 收展一个文件块：`(块下标, &mut App)`。
+type OnToggle = Rc<dyn Fn(usize, &mut gpui::App)>;
+
 /// 行高倍数：Zed 结果编辑器偏紧凑（`editor/view.rs` 的 1.618 是文档阅读态，
 /// 搜索结果按 1.5 收，长行折行后不显松散）
 const LINE_HEIGHT: f32 = 1.5;
@@ -73,8 +76,13 @@ pub(super) fn view(chat: &mut Chat, weak: &WeakEntity<Chat>, t: &'static Theme) 
         return hint.into_any_element();
     }
     let blocks = ui.blocks.clone();
+    let collapsed = ui.collapsed.clone();
     let active = ui.active;
     let weak_rows = weak.clone();
+    let weak_toggle = weak.clone();
+    let on_toggle: OnToggle = Rc::new(move |block_ix, cx| {
+        let _ = weak_toggle.update(cx, |chat, cx| chat.search_toggle_block(block_ix, cx));
+    });
     let on_open: OnOpen = Rc::new(move |block_ix, line, ordinal, cx| {
         let _ = weak_rows.update(cx, |chat, cx| {
             chat.search_open_block(block_ix, line, ordinal, cx)
@@ -84,7 +92,14 @@ pub(super) fn view(chat: &mut Chat, weak: &WeakEntity<Chat>, t: &'static Theme) 
         t,
         gpui::list(ui.list.clone(), move |ix, _window, _cx| {
             match blocks.get(ix) {
-                Some(block) => render_block(ix, block, active, &on_open),
+                Some(block) => render_block(
+                    ix,
+                    block,
+                    active,
+                    &on_open,
+                    &on_toggle,
+                    collapsed.contains(&block.rel),
+                ),
                 None => div().into_any_element(),
             }
         })
@@ -125,6 +140,8 @@ fn render_block(
     block: &ResultBlock,
     active: Option<usize>,
     on_open: &OnOpen,
+    on_toggle: &OnToggle,
+    collapsed: bool,
 ) -> AnyElement {
     let t = T();
     let mut card = div()
@@ -132,8 +149,9 @@ fn render_block(
         .w_full()
         .flex()
         .flex_col()
-        .child(header_row(block_ix, block, on_open));
-    if block.path_only {
+        .child(header_row(block_ix, block, on_open, on_toggle, collapsed));
+    // 收起 = 只留文件头；纯文件栏本来就没有内容行
+    if block.path_only || collapsed {
         return card.into_any_element();
     }
     // 不做语法着色：结果区是单色正文（用户 2026-10-21：syntect 在 markdown 上
@@ -156,7 +174,13 @@ fn render_block(
 /// 组头（文件操作栏）：`▾ 文件名 路径 …… N 处  打开文件 Alt+Enter`。
 /// 高度 ≈1.35 行、字号 = 正文，左侧 `px 12`、右侧留白加大（此前固定 28px
 /// + 小字号 → 用户评「抠抠搜搜」）。
-fn header_row(block_ix: usize, block: &ResultBlock, on_open: &OnOpen) -> AnyElement {
+fn header_row(
+    block_ix: usize,
+    block: &ResultBlock,
+    on_open: &OnOpen,
+    on_toggle: &OnToggle,
+    collapsed: bool,
+) -> AnyElement {
     let t = T();
     let font = crate::appearance::file_font();
     let name: SharedString = block
@@ -171,6 +195,7 @@ fn header_row(block_ix: usize, block: &ResultBlock, on_open: &OnOpen) -> AnyElem
         d.trim_end_matches('/').to_string().into()
     };
     let click = on_open.clone();
+    let toggle = on_toggle.clone();
     div()
         .id(SharedString::from(format!("psb-h-{block_ix}")))
         .h(px(header_h()))
@@ -190,16 +215,35 @@ fn header_row(block_ix: usize, block: &ResultBlock, on_open: &OnOpen) -> AnyElem
         .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
             click(block_ix, 1, None, cx);
         })
-        .child(crate::ui::icon(
-            "chevron-down",
-            crate::ui::tokens::icon::XS,
-            t.text_dim,
-        ))
-        .child(crate::ui::icon_path(
-            crate::services::file_icons::get_icon(&std::path::PathBuf::from(&block.rel)),
-            14.,
-            t.text_dim,
-        ))
+        // 收展钮：Zed 的文件头左侧就是这个（展开 ▾ / 收起 ▸，悬停有圆角底，
+        // **不带 tooltip**——用户 2026-10-21 定案）。点它只收展，不打开文件。
+        .child(
+            div()
+                .id(SharedString::from(format!("psb-t-{block_ix}")))
+                .flex_shrink_0()
+                .size(px(18.))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded(px(4.))
+                .when(collapsed, |d| d.bg(rgb(t.bg_selected)))
+                .hover(move |s| s.bg(rgb(t.bg_hover)))
+                .cursor_pointer()
+                .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
+                    // 别让点击冒泡到文件头（那会直接打开文件）
+                    cx.stop_propagation();
+                    toggle(block_ix, cx);
+                })
+                .child(crate::ui::icon(
+                    if collapsed {
+                        "chevron-right"
+                    } else {
+                        "chevron-down"
+                    },
+                    crate::ui::tokens::icon::XS,
+                    t.text_dim,
+                )),
+        )
         .child(
             div()
                 .flex_shrink_0()
@@ -409,6 +453,7 @@ mod tests {
         heights: Rc<RefCell<Vec<f32>>>,
         list: gpui::ListState,
         blocks: Rc<Vec<ResultBlock>>,
+        collapsed: bool,
     }
 
     impl Render for TestView {
@@ -416,8 +461,10 @@ mod tests {
             let seen = self.seen.clone();
             let heights = self.heights.clone();
             let blocks = self.blocks.clone();
+            let collapsed = self.collapsed;
             let on_open: super::OnOpen =
                 Rc::new(|_: usize, _: u32, _: Option<usize>, _: &mut gpui::App| {});
+            let on_toggle: super::OnToggle = Rc::new(|_: usize, _: &mut gpui::App| {});
             // 外层 = 搜索面板内容列（定高，模拟 content 区）
             div()
                 .w(px(600.))
@@ -430,7 +477,9 @@ mod tests {
                         seen.borrow_mut().push(ix);
                         match blocks.get(ix) {
                             Some(block) => {
-                                let el = super::render_block(ix, block, None, &on_open);
+                                let el = super::render_block(
+                                    ix, block, None, &on_open, &on_toggle, collapsed,
+                                );
                                 div()
                                     .w_full()
                                     .on_children_prepainted({
@@ -458,15 +507,26 @@ mod tests {
         seen: &Rc<RefCell<Vec<usize>>>,
         heights: &Rc<RefCell<Vec<f32>>>,
     ) -> Vec<usize> {
+        frame_with(cx, seen, heights, sample_blocks(), false)
+    }
+
+    fn frame_with(
+        cx: &mut VisualTestContext,
+        seen: &Rc<RefCell<Vec<usize>>>,
+        heights: &Rc<RefCell<Vec<f32>>>,
+        blocks: Vec<ResultBlock>,
+        collapsed: bool,
+    ) -> Vec<usize> {
         seen.borrow_mut().clear();
         heights.borrow_mut().clear();
-        let blocks = Rc::new(sample_blocks());
+        let blocks = Rc::new(blocks);
         cx.draw::<Entity<TestView>>(point(px(0.), px(0.)), size(px(600.), px(240.)), |_, cx| {
             cx.new(|_| TestView {
                 seen: seen.clone(),
                 heights: heights.clone(),
                 list: gpui::ListState::new(blocks.len(), gpui::ListAlignment::Top, px(1000.)),
                 blocks,
+                collapsed,
             })
         });
         let mut rows = seen.borrow().clone();
@@ -489,6 +549,32 @@ mod tests {
         assert!(
             hs.iter().all(|h| *h > 0.),
             "块高度必须 > 0，实测 {hs:?}（0 = 结果区空白）"
+        );
+    }
+
+    /// 收起锁：收起后该块只剩文件头（高度回落到 `header_h()`），内容行不再
+    /// 参与布局——「点收展钮 → 该文件查询内容收起」的行为契约。
+    #[gpui::test]
+    fn collapsed_block_keeps_only_header(cx: &mut TestAppContext) {
+        let window = cx.add_empty_window();
+        let seen: Rc<RefCell<Vec<usize>>> = Default::default();
+        let heights: Rc<RefCell<Vec<f32>>> = Default::default();
+        let only_first = vec![sample_blocks().remove(0)];
+
+        frame_with(&mut *window, &seen, &heights, only_first.clone(), false);
+        let expanded = heights.borrow()[0];
+
+        frame_with(&mut *window, &seen, &heights, only_first, true);
+        let collapsed = heights.borrow()[0];
+
+        assert!(
+            (collapsed - super::header_h()).abs() < 2.0,
+            "收起后块高应等于文件头高 {}，实测 {collapsed}",
+            super::header_h()
+        );
+        assert!(
+            collapsed < expanded - 10.0,
+            "收起必须比展开矮（{collapsed} vs {expanded}）"
         );
     }
 

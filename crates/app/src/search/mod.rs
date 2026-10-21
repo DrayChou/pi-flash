@@ -93,6 +93,9 @@ pub(crate) struct SearchUi {
     pub(crate) phase: Phase,
     /// 结果块模型（跨帧只克隆 Arc；追加走 Arc::make_mut）
     pub(crate) blocks: Arc<Vec<ResultBlock>>,
+    /// 被收起（只留文件头）的块：**按相对路径记**——块下标会随查询重排，
+    /// 路径不会（Zed 的收起也是挂在 excerpt 头上，不跟序号走）
+    pub(crate) collapsed: Arc<std::collections::HashSet<String>>,
     /// 结果列表状态（变高块列表：每块 = 文件头 + 若干行）
     pub(crate) list: gpui::ListState,
     /// 命中的内容文件数 / 文件名命中数 / 命中行总数 / 已读盘文件数
@@ -132,6 +135,7 @@ impl Default for SearchUi {
             show_filters: false,
             phase: Phase::Idle,
             blocks: Arc::new(Vec::new()),
+            collapsed: Arc::new(std::collections::HashSet::new()),
             list: gpui::ListState::new(0, gpui::ListAlignment::Top, px(1000.)),
             files: 0,
             path_files: 0,
@@ -301,6 +305,8 @@ impl Chat {
         let generation = ui.generation;
         ui.cancel = Arc::new(AtomicBool::new(false));
         ui.blocks = Arc::new(Vec::new());
+        // 新查询 → 收起状态作废（旧展开/收起对不上新结果集）
+        ui.collapsed = Arc::new(std::collections::HashSet::new());
         ui.list.reset(0);
         ui.files = 0;
         ui.path_files = 0;
@@ -470,6 +476,22 @@ impl Chat {
         }
         Arc::make_mut(&mut ui.blocks).push(block);
         self.sync_search_list();
+    }
+
+    /// 文件头左侧的收展钮：收起 = 只留文件头（内容行不渲染）。状态按 `rel`
+    /// 记，切查询也不串门；只重测这一块（`ListState::splice` 同数量替换 =
+    /// 逼 gpui 重新量高，否则收起后列表还按旧高度留白）。
+    pub(crate) fn search_toggle_block(&mut self, block_ix: usize, cx: &mut Context<Self>) {
+        let ui = &mut self.ws.search;
+        let Some(rel) = ui.blocks.get(block_ix).map(|b| b.rel.clone()) else {
+            return;
+        };
+        let set = Arc::make_mut(&mut ui.collapsed);
+        if !set.remove(&rel) {
+            set.insert(rel);
+        }
+        ui.list.splice(block_ix..block_ix + 1, 1);
+        cx.notify();
     }
 
     /// 结果块数变化 → 同步 `ListState`（块数变了才动，滚动位按 Zed 的
