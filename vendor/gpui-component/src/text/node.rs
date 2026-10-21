@@ -888,6 +888,15 @@ impl Node {
                 1. / col_lens.len().max(1) as f32
             }
         };
+        if std::env::var("PI_FLASH_TABLE_DIAG").is_ok() {
+            let fracs: Vec<String> = weights
+                .iter()
+                .map(|w| format!("{:.3}", *w as f32 / total))
+                .collect();
+            eprintln!(
+                "[table-diag] col_lens={col_lens:?} weights={weights:?} total={total} fracs={fracs:?}"
+            );
+        }
 
         // pi-flash patch: 每列像素地板 = 列内最长不可断 token 的实测宽 +
         // 内边距。纯比例分配没有 min-content 概念：一个大列（如关联说明
@@ -914,20 +923,37 @@ impl Node {
                     if best.0 == 0 {
                         return px(0.);
                     }
-                    let line = window.text_system().layout_line(
-                        best.1.as_str(),
-                        text_style.font_size.to_pixels(window.rem_size()),
-                        &[TextRun {
-                            len: best.1.len(),
-                            font: text_style.font(),
-                            color: black(),
-                            background_color: None,
-                            underline: None,
-                            strikethrough: None,
-                        }],
-                        None,
-                    );
-                    line.width + cell_pad
+                    #[allow(clippy::let_and_return)]
+                    let floor = {
+                        let line = window.text_system().layout_line(
+                            best.1.as_str(),
+                            text_style.font_size.to_pixels(window.rem_size()),
+                            &[TextRun {
+                                len: best.1.len(),
+                                font: text_style.font(),
+                                color: black(),
+                                background_color: None,
+                                underline: None,
+                                strikethrough: None,
+                            }],
+                            None,
+                        );
+                        // ×1.2 安全系数：layout_line 无 hinting/取整，paint 实际
+                        // 步进更大（实测 15px 字号 6 位数字 48.5 vs ≈52，差
+                        // ~7%；表头 semibold 再宽 3~5%）——余量留到 20% 才能压住
+                        line.width * 1.2 + cell_pad
+                    };
+                    if std::env::var("PI_FLASH_TABLE_DIAG").is_ok() {
+                        eprintln!(
+                            "[table-diag] col={ix} units={} floor={:?} token={:?} font_size={:?} rem={:?}",
+                            best.0,
+                            floor,
+                            best.1,
+                            text_style.font_size,
+                            window.rem_size(),
+                        );
+                    }
+                    floor
                 })
                 .collect(),
             _ => vec![],
