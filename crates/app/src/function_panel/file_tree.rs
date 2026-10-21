@@ -669,9 +669,9 @@ fn changes_row(
 /// （accent 高亮）——「点击回目录树」语义。搜索文件 / 资源管理器 / 终端 /
 /// 最大化恒为功能 icon。按钮命中区 26px（§5.2 槽位），图标统一小档 MD16。
 ///
-/// **自动隐藏**：五颗功能 icon 常态不可见（opacity 0），鼠标进入操作栏
+/// **自动隐藏**：六颗功能 icon 常态不可见（opacity 0），鼠标进入操作栏
 /// （group `ft-bar-reveal`）才显影——只用绘制期 opacity，钮盒位置/命中区
-/// 不动，所以显隐不抖列对齐；最大化钮不参与（`reveal = false`）。
+/// 不动，所以显隐不抖列对齐；最大化钮同参与（`reveal = true`）。
 /// 受设置-界面「部分操作隐藏」总开关（`autohide_icons`，默认 on）控制。
 fn action_bar(
     chat: &Chat,
@@ -882,8 +882,8 @@ fn action_bar(
                     tr("file_tree.maximize"),
                     t,
                     false,
-                    // 最大化常显（自动隐藏的唯一例外）
-                    false,
+                    // 最大化与五颗低频钮同入显影组（自动隐藏，见 action_bar 头注）
+                    true,
                     Some(&crate::MaximizeFileTree),
                     move |_, _, cx| {
                         let _ = w_max.update(cx, |c, cx| {

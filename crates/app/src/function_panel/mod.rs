@@ -635,10 +635,11 @@ pub(crate) fn psp_view(
 /// 与右侧钮同宽 26 同档 MD16）。左缘 = ICON_LINE 12（容器 pl4 + 钮 px8）、
 /// 右缘 = LIST_PX 10，与文件树操作栏同线。
 ///
-/// **自动隐藏**：右侧「搜索」「列表切换」常态不可见（opacity 0），鼠标进入
-/// 本控制栏（group `psp-bar-reveal`）才显影——少两颗粒常驻图标减视觉冗余；
-/// 最大化钮不参与。只用绘制期 opacity，钮盒位置/命中区不变（列对齐不抖）。
-/// 受设置-界面「部分操作隐藏」总开关（`autohide_icons`，默认 on）控制。
+/// **自动隐藏**：右侧「搜索」「列表切换」「最大化」三颗常态不可见
+/// （opacity 0），鼠标进入本控制栏（group `psp-bar-reveal`）才显影——少三
+/// 颗粒常驻图标减视觉冗余。只用绘制期 opacity，钮盒位置/命中区不变（列
+/// 对齐不抖）。受设置-界面「部分操作隐藏」总开关（`autohide_icons`，默认
+/// on）控制。
 fn psp_ctrl_bar(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -> gpui::AnyElement {
     let grouped = chat.psp.list_mode == ListMode::Grouped;
     let w_open = weak.clone();
@@ -676,8 +677,8 @@ fn psp_ctrl_bar(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -
     };
     // 右缘三颗纯 icon 钮链外组好再进 child（child 实参位置不能写 let）。
     // 自动隐藏（设置-界面「部分操作隐藏」，默认 on）= 常态透明、控制栏
-    // hover 显影；命中区/布局不动，关掉开关则恒显。搜索与列表切换同属
-    // 低频入口（最大化常显），一并纳入显影组
+    // hover 显影；命中区/布局不动，关掉开关则恒显。搜索/列表切换/最大化
+    // 三颗低频入口一并纳入显影组
     let autohide = |b: gpui::Stateful<gpui::Div>| {
         if crate::services::workspace::autohide_icons() {
             b.opacity(0.)
@@ -695,7 +696,7 @@ fn psp_ctrl_bar(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -
     );
     div()
         .id("psp-ctrl")
-        // 自动隐藏的显影组：鼠标在本控制栏内 → 右侧列表切换钮显影
+        // 自动隐藏的显影组：鼠标在本控制栏内 → 右侧三颗低频钮显影
         .group("psp-bar-reveal")
         .w_full()
         .flex_shrink_0()
@@ -770,11 +771,9 @@ fn psp_ctrl_bar(chat: &Chat, weak: &gpui::WeakEntity<Chat>, t: &'static Theme) -
         )
         .child(
             // 最大化（单钮语义）：本面板填满，文件树收起到操作栏；拖分隔线
-            // 即退出最大态。Alt+1 = 同一键（082 全局绑定，chip 反查 keymap）
-            btn("psp-panel-max")
-                .w(px(26.))
-                .px(px(0.))
-                .justify_center()
+            // 即退出最大态。Alt+1 = 同一键（082 全局绑定，chip 反查 keymap）。
+            // 与搜索/列表切换同入显影组（自动隐藏，见 autohide 头注）
+            autohide(btn("psp-panel-max").w(px(26.)).px(px(0.)).justify_center())
                 .with_tip_action("psp.maximize_session_list", &crate::MaximizeSessionList)
                 .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                     let _ = w_max.update(cx, |c, cx| {
