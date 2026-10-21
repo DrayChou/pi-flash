@@ -937,6 +937,9 @@ const SEARCH_MAX_PER_SESSION: usize = 5;
 #[derive(Debug, Clone)]
 pub struct SearchHit {
     pub session_path: PathBuf,
+    /// 该会话所属项目的 cwd（会话文件首行 `type=="session"` 的 `cwd`；
+    /// 老文件缺失时回落 group 目录名解码）。跨项目全量搜索时上屏用。
+    pub project: Option<String>,
     pub session_name: Option<String>,
     pub preview: String,
     pub modified: SystemTime,
@@ -958,6 +961,34 @@ pub struct SearchResponse {
 /// Literal case-insensitive content search across one project's session
 /// files, newest first. Hits are capped per session so the grouped view
 /// stays readable; user/assistant text blocks only (pi-web scope).
+///
+/// **全量**：所有项目 group 目录一起搜（2026-10-21 用户定案——会话查询不能
+/// 只看当前项目），结果按会话文件 mtime 倒序排（跨项目混排、最近会话靠前），
+/// 同一会话的命中仍然连在一起。
+pub fn search_sessions_all(query: &str) -> SearchResponse {
+    match sessions_root() {
+        Some(root) => search_all_in_root(&root, query),
+        None => SearchResponse {
+            hits: Vec::new(),
+            truncated: true,
+        },
+    }
+}
+
+/// 全量搜索的可测入口（root 由调用方给，测试不碰真实 sessions 目录）。
+pub fn search_all_in_root(root: &Path, query: &str) -> SearchResponse {
+    let Ok(rd) = std::fs::read_dir(root) else {
+        return SearchResponse::default();
+    };
+    let groups: Vec<PathBuf> = rd
+        .flatten()
+        .filter(|e| e.path().is_dir())
+        .map(|e| e.path())
+        .collect();
+    search_in_groups(&groups, query)
+}
+
+/// 单项目（按 cwd 找 group 目录）——pi-web 原范围，保留给调用方/测试。
 pub fn search_sessions_for_cwd(cwd: &str, query: &str) -> SearchResponse {
     match sessions_root() {
         Some(root) => search_sessions_in_dir(&root.join(group_name_for_cwd(cwd)), query),
@@ -971,22 +1002,29 @@ pub fn search_sessions_for_cwd(cwd: &str, query: &str) -> SearchResponse {
 /// The scan itself, over one project group directory (testable without
 /// touching the real sessions root).
 pub fn search_sessions_in_dir(group: &Path, query: &str) -> SearchResponse {
+    search_in_groups(std::slice::from_ref(&group.to_path_buf()), query)
+}
+
+/// 多 group 扫描：收集所有会话文件 → 全局按 mtime 倒序 → 逐文件扫。
+fn search_in_groups(groups: &[PathBuf], query: &str) -> SearchResponse {
     let mut resp = SearchResponse::default();
     let needle = query.trim();
     if needle.is_empty() {
         return resp;
     }
     let mut files: Vec<(SystemTime, PathBuf)> = Vec::new();
-    let Ok(rd) = std::fs::read_dir(&group) else {
-        return resp;
-    };
-    for f in rd.flatten() {
-        let path = f.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+    for group in groups {
+        let Ok(rd) = std::fs::read_dir(group) else {
             continue;
+        };
+        for f in rd.flatten() {
+            let path = f.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+                continue;
+            }
+            let Ok(meta) = f.metadata() else { continue };
+            files.push((meta.modified().unwrap_or(SystemTime::UNIX_EPOCH), path));
         }
-        let Ok(meta) = f.metadata() else { continue };
-        files.push((meta.modified().unwrap_or(SystemTime::UNIX_EPOCH), path));
     }
     files.sort_by(|a, b| b.0.cmp(&a.0));
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(SEARCH_BUDGET_MS);
@@ -1013,6 +1051,13 @@ pub fn search_sessions_in_dir(group: &Path, query: &str) -> SearchResponse {
             continue;
         };
         let mut session_name: Option<String> = None;
+        // 项目 cwd：会话文件首行 `{"type":"session","cwd":...}`；老文件/截断
+        // 时回落 group 目录名（`--D--ai_workspace-pi-flash--` → 去掉 `--` 外壳）
+        let mut project: Option<String> = path
+            .parent()
+            .and_then(|p| p.file_name())
+            .map(|n| n.to_string_lossy().trim_matches('-').to_string())
+            .filter(|s| !s.is_empty());
         let mut preview = String::new();
         // (ts, role, before, match, after) gathered per file, assembled below
         let mut local: Vec<(Option<i64>, String, String, String, String)> = Vec::new();
@@ -1030,6 +1075,12 @@ pub fn search_sessions_in_dir(group: &Path, query: &str) -> SearchResponse {
             };
             // pi 落盘的 session_info：name 在顶层（不是 content.name——
             // 旧写法永远取不到，搜索结果标题从来只显示预览）
+            if entry["type"] == "session" {
+                if let Some(cwd) = entry["cwd"].as_str() {
+                    project = Some(cwd.to_string());
+                }
+                continue;
+            }
             if entry["type"] == "session_info" {
                 session_name = entry["name"].as_str().map(str::to_string).or(session_name);
                 continue;
@@ -1103,6 +1154,7 @@ pub fn search_sessions_in_dir(group: &Path, query: &str) -> SearchResponse {
             }
             resp.hits.push(SearchHit {
                 session_path: path.clone(),
+                project: project.clone(),
                 session_name: session_name.clone(),
                 preview: preview.clone(),
                 modified: mtime,
@@ -1225,6 +1277,36 @@ mod tests {
         // no match: clean empty response
         let miss = search_sessions_in_dir(&group, "quantum");
         assert!(miss.hits.is_empty() && !miss.truncated);
+    }
+
+    #[test]
+    fn all_projects_search_spans_groups() {
+        // 2026-10-21 用户定案：会话查询搜**全部**会话，不只看当前项目
+        let root = temp_root("all");
+        let body = concat!(
+            "{\"type\":\"message\",\"message\":{\"role\":\"user\",\"timestamp\":1790454123456,",
+            "\"content\":[{\"type\":\"text\",\"text\":\"跨项目 hello 世界\"}]}}\n"
+        );
+        let a = write_session(&root, r"D:\proj-a", "a1", body);
+        let b = write_session(&root, r"D:\proj-b", "b1", body);
+        // 让 proj-b 的会话更新一些，验证跨项目按 mtime 倒序
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(&a)
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+        let resp = search_all_in_root(&root, "世界");
+        assert!(!resp.truncated, "两个 group 都在预算内");
+        assert_eq!(resp.hits.len(), 2, "两个项目的会话都要命中");
+        assert_eq!(resp.hits[0].session_path, b, "更新的会话（proj-b）排在前");
+        assert_eq!(resp.hits[0].project.as_deref(), Some(r"D:\proj-b"));
+        assert_eq!(resp.hits[1].session_path, a);
+        assert_eq!(resp.hits[1].project.as_deref(), Some(r"D:\proj-a"));
+        // 单项目入口仍然只搜自己的 group
+        let only_a = search_sessions_in_dir(&root.join(group_name_for_cwd(r"D:\proj-a")), "世界");
+        assert_eq!(only_a.hits.len(), 1);
     }
 
     #[test]

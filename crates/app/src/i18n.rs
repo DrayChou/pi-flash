@@ -628,7 +628,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("session_search.tab", "会话查询", "會話查詢", "Session Search"),
     ("session_search.title", "搜索会话", "搜尋會話", "Search Sessions"),
     ("session_search.no_match_hint", "换个关键词，或确认会话已落盘", "換個關鍵詞，或確認會話已落盤", "Try another keyword, or make sure the session is saved"),
-    ("session_search.hint", "输入关键词，搜索当前项目的会话内容", "輸入關鍵詞，搜尋當前專案的會話內容", "Type a keyword to search this project's session content"),
+    ("session_search.hint", "输入关键词，搜索全部会话内容（跨项目）", "輸入關鍵詞，搜尋全部會話內容（跨專案）", "Type a keyword to search all sessions (every project)"),
     ("session_search.no_match", "没有匹配结果", "沒有符合結果", "No matching results"),
     ("session_search.placeholder", "搜索会话内容…", "搜尋會話內容…", "Search session content…"),
     ("session_search.searching", "搜索中…", "搜尋中…", "Searching…"),

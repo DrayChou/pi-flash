@@ -116,12 +116,6 @@ impl Chat {
             return;
         }
         self.psp.search_running = true;
-        // 无项目态：没有可搜的项目分组目录
-        let Some(cwd) = self.ws.cwd.clone() else {
-            self.psp.search_running = false;
-            cx.notify();
-            return;
-        };
         cx.spawn(async move |weak, cx| {
             cx.background_executor()
                 .timer(std::time::Duration::from_millis(DEBOUNCE_MS))
@@ -133,10 +127,9 @@ impl Chat {
                 return;
             }
             let needle2 = needle.clone();
+            // **全部会话**（跨项目）：按会话文件 mtime 倒序，最近的会话先出
             let resp = cx
-                .background_spawn(async move {
-                    pi_link::sessions::search_sessions_for_cwd(&cwd.to_string_lossy(), &needle2)
-                })
+                .background_spawn(async move { pi_link::sessions::search_sessions_all(&needle2) })
                 .await;
             let _ = weak.update(cx, |c, cx| {
                 if c.psp.search_gen != epoch {
@@ -412,6 +405,35 @@ fn results_shell(
     shell
 }
 
+/// 项目 cwd → 项目名（末段；Windows 反斜杠 / POSIX 斜杠都认）。
+/// 末段是 UUID（某些宿主应用按 id 建项目目录）时只留前 8 位——整串 UUID
+/// 上屏比时间还长，读不出任何信息。
+fn project_name(cwd: &str) -> Option<String> {
+    let trimmed = cwd.trim_end_matches(['\\', '/']);
+    let name = trimmed.rsplit(['\\', '/']).next().unwrap_or(trimmed);
+    if name.is_empty() {
+        return None;
+    }
+    let uuid_like = name.len() >= 32
+        && name.chars().filter(|c| *c == '-').count() == 4
+        && name.chars().all(|c| c == '-' || c.is_ascii_hexdigit());
+    Some(if uuid_like {
+        name.chars().take(8).collect()
+    } else {
+        name.to_string()
+    })
+}
+
+/// 单行截断（超出加省略号）
+fn cap_chars(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let mut out: String = s.chars().take(max).collect();
+    out.push('…');
+    out
+}
+
 /// 一条命中行：单色正文 + 命中底色（无行号列——会话片段不是文件行）。
 fn snippet_row(
     hit: &pi_link::sessions::SearchHit,
@@ -475,7 +497,7 @@ fn group_hits(hits: &[pi_link::sessions::SearchHit]) -> Vec<SessionGroup> {
     for hit in hits {
         let key = hit.session_path.to_string_lossy().to_string();
         if out.last().map(|g| g.key.as_str()) != Some(key.as_str()) {
-            let title: SharedString = hit
+            let raw_title: String = hit
                 .session_name
                 .clone()
                 .or_else(|| (!hit.preview.is_empty()).then(|| hit.preview.clone()))
@@ -484,9 +506,18 @@ fn group_hits(hits: &[pi_link::sessions::SearchHit]) -> Vec<SessionGroup> {
                         .file_stem()
                         .map(|s| s.to_string_lossy().to_string())
                         .unwrap_or_else(|| key.clone())
-                })
-                .into();
-            let sub: SharedString = crate::services::format::time_ago(hit.modified).into();
+                });
+            // 组头标题单行限长：会话名常常就是首条用户消息（很长），不限长会
+            // 把副标题（项目·时间）整块挤没
+            let title: SharedString = cap_chars(&raw_title, 64).into();
+            // 副标题 = 所属项目 · 相对时间。全量搜索（跨项目）后必须让用户
+            // 一眼看出是哪个项目的会话。
+            let age = crate::services::format::time_ago(hit.modified);
+            let project = hit.project.as_deref().and_then(project_name);
+            let sub: SharedString = match project {
+                Some(name) => format!("{name} · {age}").into(),
+                None => age.into(),
+            };
             out.push(SessionGroup {
                 key,
                 path: hit.session_path.clone(),
@@ -511,6 +542,7 @@ mod tests {
     fn hit(path: &str, name: Option<&str>, ts: i64) -> SearchHit {
         SearchHit {
             session_path: std::path::PathBuf::from(path),
+            project: Some(r"D:i_workspace\pi-flash".to_string()),
             session_name: name.map(str::to_string),
             preview: String::new(),
             modified: SystemTime::UNIX_EPOCH,
@@ -520,6 +552,20 @@ mod tests {
             match_text: "needle".into(),
             after: " bbb".into(),
         }
+    }
+
+    /// 项目名：末段路径；UUID 目录只留前 8 位
+    #[test]
+    fn project_name_takes_last_segment() {
+        assert_eq!(
+            project_name(r"D:\ai_workspace\pi-flash").as_deref(),
+            Some("pi-flash")
+        );
+        assert_eq!(project_name("/home/u/work/").as_deref(), Some("work"));
+        assert_eq!(
+            project_name(r"C:\x\projects\c57695c6-bfcf-45fa-a54f-8540fb673f8b").as_deref(),
+            Some("c57695c6")
+        );
     }
 
     /// 相邻同会话的命中归一块，换会话才开新块（组头 = 会话名 + 时间）。
@@ -537,5 +583,11 @@ mod tests {
         assert_eq!(groups[1].hits.len(), 1);
         // 无名字无预览 → 回落到文件名（stem）
         assert_eq!(groups[1].title.as_ref(), "b");
+        // 副标题 = 项目名 · 时间（全量搜索时用户要看清是哪个项目）
+        assert!(
+            groups[0].sub.starts_with("pi-flash · "),
+            "副标题应带项目名，实测 {:?}",
+            groups[0].sub
+        );
     }
 }
