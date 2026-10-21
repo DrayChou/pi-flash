@@ -494,9 +494,19 @@ struct SessionGroup {
 
 fn group_hits(hits: &[pi_link::sessions::SearchHit]) -> Vec<SessionGroup> {
     let mut out: Vec<SessionGroup> = Vec::new();
+    // 按 key 建索引而不是只看「相邻」：引擎按文件成段返回时相邻判断就够，
+    // 但一旦命中序列交错（未来加并发/分段扫描），同一个会话就会冒出多个
+    // 组头——用户看到的是「一个会话头出现 N 次」（2026-10-21 实测）。按 key
+    // 归并后**一个会话永远只有一个组头**，组序 = 首现序。
+    let mut index: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     for hit in hits {
         let key = hit.session_path.to_string_lossy().to_string();
-        if out.last().map(|g| g.key.as_str()) != Some(key.as_str()) {
+        if let Some(&ix) = index.get(&key) {
+            out[ix].hits.push(hit.clone());
+            continue;
+        }
+        index.insert(key.clone(), out.len());
+        {
             let raw_title: String = hit
                 .session_name
                 .clone()
@@ -510,24 +520,31 @@ fn group_hits(hits: &[pi_link::sessions::SearchHit]) -> Vec<SessionGroup> {
             // 组头标题单行限长：会话名常常就是首条用户消息（很长），不限长会
             // 把副标题（项目·时间）整块挤没
             let title: SharedString = cap_chars(&raw_title, 64).into();
-            // 副标题 = 所属项目 · 相对时间。全量搜索（跨项目）后必须让用户
-            // 一眼看出是哪个项目的会话。
-            let age = crate::services::format::time_ago(hit.modified);
+            // 副标题 = 所属项目 · **绝对时间**（`8月21日 09:21`）。
+            // 全量搜索后必须让用户看清是哪个项目的会话；时间用绝对时刻而不是
+            // 「2小时前」——同名会话（某些宿主应用每个任务都发同一段指令正文，
+            // 标题天然一样）只有精确到分钟才分得清，否则看起来像「同一个会话头
+            // 出现 N 次」（2026-10-21 用户实测）。
+            let stamp = {
+                let ms = hit
+                    .modified
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as i64)
+                    .unwrap_or(0);
+                crate::services::format::fmt_msg_time(ms)
+            };
             let project = hit.project.as_deref().and_then(project_name);
             let sub: SharedString = match project {
-                Some(name) => format!("{name} · {age}").into(),
-                None => age.into(),
+                Some(name) => format!("{name} · {stamp}").into(),
+                None => stamp.into(),
             };
             out.push(SessionGroup {
                 key,
                 path: hit.session_path.clone(),
                 title,
                 sub,
-                hits: Vec::new(),
+                hits: vec![hit.clone()],
             });
-        }
-        if let Some(g) = out.last_mut() {
-            g.hits.push(hit.clone());
         }
     }
     out
@@ -542,7 +559,7 @@ mod tests {
     fn hit(path: &str, name: Option<&str>, ts: i64) -> SearchHit {
         SearchHit {
             session_path: std::path::PathBuf::from(path),
-            project: Some(r"D:i_workspace\pi-flash".to_string()),
+            project: Some(r"D:\ai_workspace\pi-flash".to_string()),
             session_name: name.map(str::to_string),
             preview: String::new(),
             modified: SystemTime::UNIX_EPOCH,
@@ -552,6 +569,21 @@ mod tests {
             match_text: "needle".into(),
             after: " bbb".into(),
         }
+    }
+
+    /// 同一个会话即使命中交错出现，也只能有一个组头
+    #[test]
+    fn interleaved_hits_collapse_into_one_group() {
+        let hits = vec![
+            hit("a.jsonl", Some("会话A"), 1),
+            hit("b.jsonl", Some("会话B"), 2),
+            hit("a.jsonl", None, 3),
+        ];
+        let groups = group_hits(&hits);
+        assert_eq!(groups.len(), 2, "a/b/a 应归并成两个组");
+        assert_eq!(groups[0].key, "a.jsonl");
+        assert_eq!(groups[0].hits.len(), 2, "a 的两条命中归回同一组");
+        assert_eq!(groups[1].key, "b.jsonl");
     }
 
     /// 项目名：末段路径；UUID 目录只留前 8 位
