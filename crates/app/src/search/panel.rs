@@ -29,7 +29,6 @@ use super::engine::SearchOpts;
 use super::{Phase, SearchToggle, results};
 use crate::Chat;
 use crate::appearance::theme::{Theme, theme as T};
-use crate::i18n::tr;
 use crate::ui::kit::{icon_toggle, text_toggle};
 use crate::ui::tokens::space;
 
@@ -37,25 +36,10 @@ use crate::ui::tokens::space;
 pub(crate) fn view(
     chat: &mut Chat,
     weak: &gpui::WeakEntity<Chat>,
-    window: &mut Window,
-    cx: &mut Context<Chat>,
+    _window: &mut Window,
+    _cx: &mut Context<Chat>,
 ) -> gpui::AnyElement {
     let t = T();
-    // 首次进入 / 快捷键重复触发：把焦点交给查询框（每帧最多补一次，见
-    // 下面的 focus_query 消费点）
-    if chat.ws.search.focus_query {
-        // 首次开面板的当帧内件还没建（TextInput 懒建），保持请求到下一帧；
-        // 内件在树里了再推焦点，避免把 fallback 句柄推上空焦点位
-        if let Some(q) = chat.ws.search.query.clone() {
-            if q.read(cx).has_inner() {
-                chat.ws.search.focus_query = false;
-                let h = q.read(cx).focus_handle_in(cx);
-                window.focus(&h);
-            }
-        } else {
-            chat.ws.search.focus_query = false;
-        }
-    }
     div()
         .id("project-search")
         .flex_1()
@@ -120,7 +104,7 @@ fn search_bar(
                 ))
                 .child(text_toggle(
                     "psq-wd",
-                    "ab|",
+                    "wd",
                     opts.whole_word,
                     weak,
                     "search.whole_word",
@@ -327,16 +311,6 @@ fn search_bar(
         );
     }
     col.into_any_element()
-}
-
-/// 空态文案（结果区无行时由 [`results`] 调用）。
-pub(crate) fn empty_hint(phase: Phase, has_query: bool) -> &'static str {
-    match phase {
-        Phase::Idle if !has_query => tr("search.hint_idle"),
-        Phase::Idle => tr("search.hint_idle"),
-        Phase::Running => tr("search.searching"),
-        Phase::Done => tr("search.no_results"),
-    }
 }
 
 /// `SearchOpts` 的可读标签（自动化快照用）。

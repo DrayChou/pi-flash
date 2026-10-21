@@ -36,8 +36,8 @@ use query::SearchQuery;
 
 /// 结果列表行高（与 Zed 结果编辑器一致：命中等高行）。
 pub(crate) const LINE_H: f32 = 22.;
-/// 文件组头行高
-pub(crate) const HEADER_H: f32 = 28.;
+/// 文件组头**块**行高 = Zed `FILE_HEADER_HEIGHT`(2 行)；条 = 块 − 2×4px 留白
+pub(crate) const HEADER_H: f32 = LINE_H * 2.;
 /// 搜索联动的防抖（Zed `SEARCH_ON_TYPE_DEBOUNCE` = 250ms）
 const DEBOUNCE_MS: u64 = 250;
 
@@ -98,6 +98,8 @@ pub(crate) struct SearchUi {
     pub(crate) collapsed: Arc<std::collections::HashSet<String>>,
     /// 结果列表状态（变高块列表：每块 = 文件头 + 若干行）
     pub(crate) list: gpui::ListState,
+    /// 结果区竖向滚动条状态（gpui-component `Scrollbar`；与 md 预览同款）
+    pub(crate) scrollbar: gpui_component::scroll::ScrollbarState,
     /// 命中的内容文件数 / 文件名命中数 / 命中行总数 / 已读盘文件数
     pub(crate) files: usize,
     pub(crate) path_files: usize,
@@ -117,8 +119,6 @@ pub(crate) struct SearchUi {
     pub(crate) pending: Option<Task<()>>,
     /// 防抖任务（新输入 drop 旧任务 = 取消旧定时器）
     pub(crate) debounce: Option<Task<()>>,
-    /// 请求渲染帧把焦点交给查询框（面板打开 / 快捷键重复触发）
-    pub(crate) focus_query: bool,
 }
 
 impl Default for SearchUi {
@@ -137,6 +137,7 @@ impl Default for SearchUi {
             blocks: Arc::new(Vec::new()),
             collapsed: Arc::new(std::collections::HashSet::new()),
             list: gpui::ListState::new(0, gpui::ListAlignment::Top, px(1000.)),
+            scrollbar: gpui_component::scroll::ScrollbarState::default(),
             files: 0,
             path_files: 0,
             matches: 0,
@@ -149,7 +150,6 @@ impl Default for SearchUi {
             cancel: Arc::new(AtomicBool::new(false)),
             pending: None,
             debounce: None,
-            focus_query: false,
         }
     }
 }
@@ -164,7 +164,13 @@ impl Chat {
     /// （`Dialog::FileSearch`，2026-10-21 用户定案：一个入口，文件+内容）。
     pub(crate) fn open_project_search(&mut self, cx: &mut Context<Self>) {
         self.ensure_search_inputs(cx);
-        self.ws.search.focus_query = true;
+        // 焦点**当帧**交给查询框：`TextInput::focus_soon` 的请求在它自己那帧
+        // render 里兑现（内件建好即 `InputState::focus`，光标 blink 同帧启动）。
+        // 原来的「置 flag → 下一帧由 panel 补推焦点」会让光标晚一两帧才出现，
+        // 用户实测「打开时像卡顿、像丢了焦点」（2026-10-21 定案）。
+        if let Some(q) = self.ws.search.query.clone() {
+            q.update(cx, |input, cx| input.focus_soon(cx));
+        }
         let existing = self
             .ws
             .panel_tabs

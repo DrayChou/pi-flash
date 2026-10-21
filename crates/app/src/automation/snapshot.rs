@@ -555,6 +555,8 @@ pub(crate) fn search_surface(chat: &Chat) -> Value {
         "block_count": ui.blocks.len(),
         "line_h": crate::search::LINE_H,
         "header_h": crate::search::HEADER_H,
+        // 结果区可滚动距离（>0 才挂滚动条；UI 测试断言滚动条前提）
+        "scroll_max": f32::from(ui.list.max_offset_for_scrollbar().height),
         "blocks": blocks,
     })
 }

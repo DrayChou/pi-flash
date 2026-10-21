@@ -71,30 +71,17 @@ fn header_h() -> f32 {
 /// 块内留白 = Zed `BUFFER_HEADER_PADDING`
 const HEADER_PAD: f32 = 4.;
 
-/// 结果区：空态提示 或 块列表。
+/// 结果区：空态（Zed 的 landing page）或块列表。
 pub(super) fn view(chat: &mut Chat, weak: &WeakEntity<Chat>, t: &'static Theme) -> AnyElement {
-    let ui = &chat.ws.search;
-    if ui.blocks.is_empty() {
-        let text = super::panel::empty_hint(ui.phase, !ui.query_text.is_empty());
-        let mut hint = div()
-            .flex_1()
-            .min_h_0()
-            .flex()
-            .flex_col()
-            .items_center()
-            .justify_center()
-            .gap(px(crate::ui::tokens::space::SP3))
-            .text_size(crate::appearance::ui_size(11.))
-            .text_color(rgb(t.text_dim))
-            .child(SharedString::from(text.to_string()));
-        if ui.phase == Phase::Running {
-            hint = hint.child(crate::ui::spinner(14., t.accent));
-        }
-        return hint.into_any_element();
+    if chat.ws.search.blocks.is_empty() {
+        return landing(chat, weak, t);
     }
+    let ui = &chat.ws.search;
     let blocks = ui.blocks.clone();
     let collapsed = ui.collapsed.clone();
     let active = ui.active;
+    let list = ui.list.clone();
+    let scrollbar = ui.scrollbar.clone();
     let weak_rows = weak.clone();
     let weak_toggle = weak.clone();
     let on_toggle: OnToggle = Rc::new(move |block_ix, cx| {
@@ -107,18 +94,18 @@ pub(super) fn view(chat: &mut Chat, weak: &WeakEntity<Chat>, t: &'static Theme) 
     });
     results_shell(
         t,
-        gpui::list(ui.list.clone(), move |ix, _window, _cx| {
-            match blocks.get(ix) {
-                Some(block) => render_block(
-                    ix,
-                    block,
-                    active,
-                    &on_open,
-                    &on_toggle,
-                    collapsed.contains(&block.rel),
-                ),
-                None => div().into_any_element(),
-            }
+        &list,
+        &scrollbar,
+        gpui::list(list.clone(), move |ix, _window, _cx| match blocks.get(ix) {
+            Some(block) => render_block(
+                ix,
+                block,
+                active,
+                &on_open,
+                &on_toggle,
+                collapsed.contains(&block.rel),
+            ),
+            None => div().into_any_element(),
         })
         // list 自身要 flex_1 从父列拿高度（Auto 尺寸下会被布局成 0 高）
         .flex_1()
@@ -127,13 +114,181 @@ pub(super) fn view(chat: &mut Chat, weak: &WeakEntity<Chat>, t: &'static Theme) 
     .into_any_element()
 }
 
+/// 空态 = Zed `project_search.rs:1049-1092` 的 landing page：
+/// 标题（`LabelSize::Large` = **16px**）+ 副标题（`TextSize::Default` = 14px，
+/// muted，下留 8px）+ 一排「图标 + 文案」行（`ButtonStyle::Subtle`：
+/// 高 **22px**、`px 4`、`gap 4`、`rounded 4`、悬停 `ghost_element_hover`，
+/// 图标 `IconSize::Small` = 14px）。**不加任何快捷键徽标**（用户 2026-10-21
+/// 定案：一律不加快捷键）——点行等于点对应的开关按钮。
+fn landing(chat: &mut Chat, weak: &WeakEntity<Chat>, t: &'static Theme) -> AnyElement {
+    let ui = &chat.ws.search;
+    let (heading, body): (&'static str, Option<&'static str>) = match ui.phase {
+        Phase::Idle => (tr("search.landing_title"), None),
+        Phase::Running if ui.scanned == 0 => (tr("search.loading_project"), None),
+        Phase::Running => (tr("search.searching"), None),
+        Phase::Done => (tr("search.no_results"), Some(tr("search.no_results_body"))),
+    };
+    let mut col = div().flex().flex_col().gap(px(4.)).child(
+        div()
+            .text_size(px(16.))
+            .text_color(rgb(t.text))
+            .child(SharedString::from(heading)),
+    );
+    if ui.phase == Phase::Idle {
+        col = col.child(landing_rows(weak, t));
+    } else if let Some(body) = body {
+        col = col.child(
+            div()
+                .text_size(px(12.))
+                .text_color(rgb(t.text))
+                .child(SharedString::from(body)),
+        );
+    }
+    div()
+        .flex_1()
+        .min_h_0()
+        .flex()
+        .items_center()
+        .justify_center()
+        .overflow_hidden()
+        .bg(rgb(t.bg))
+        .child(col)
+        .into_any_element()
+}
+
+/// landing 的五条「图标 + 文案」行（Zed 顺序：过滤 / 替换 / 正则 / 大小写 / 整词）。
+fn landing_rows(weak: &WeakEntity<Chat>, t: &'static Theme) -> AnyElement {
+    use super::SearchToggle;
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(4.))
+        .child(
+            div()
+                .text_size(px(14.))
+                .text_color(rgb(t.text_muted))
+                // Zed：副标题 `.mb_2()` = 8px
+                .mb(px(8.))
+                .child(SharedString::from(tr("search.landing_hint"))),
+        )
+        .child(landing_row(
+            "psl-paths",
+            landing_glyph(None, t),
+            tr("search.landing_paths"),
+            weak,
+            SearchToggle::Filters,
+            t,
+        ))
+        .child(landing_row(
+            "psl-replace",
+            landing_glyph(Some("replace"), t),
+            tr("search.landing_replace"),
+            weak,
+            SearchToggle::Replace,
+            t,
+        ))
+        .child(landing_row(
+            "psl-regex",
+            landing_glyph(Some(GLYPH_REGEX), t),
+            tr("search.landing_regex"),
+            weak,
+            SearchToggle::Regex,
+            t,
+        ))
+        .child(landing_row(
+            "psl-case",
+            landing_glyph(Some(GLYPH_CASE), t),
+            tr("search.landing_case"),
+            weak,
+            SearchToggle::CaseSensitive,
+            t,
+        ))
+        .child(landing_row(
+            "psl-word",
+            landing_glyph(Some(GLYPH_WORD), t),
+            tr("search.landing_whole_word"),
+            weak,
+            SearchToggle::WholeWord,
+            t,
+        ))
+        .into_any_element()
+}
+
+/// 无 SVG 的三枚（Zed 本身就是字形图标：`.*` / `Aa` / `wd`）
+const GLYPH_REGEX: &str = ".*";
+const GLYPH_CASE: &str = "Aa";
+const GLYPH_WORD: &str = "wd";
+
+/// 行首图标位（14px，muted）：`Some(svg 名)` 走 svg，`Some(字形)` 走文字，
+/// `None` = Zed 的 `IconName::Filter`（PF 的 `sliders-horizontal`）。
+fn landing_glyph(icon: Option<&'static str>, t: &'static Theme) -> AnyElement {
+    let slot = div()
+        .w(px(14.))
+        .h(px(14.))
+        .flex_shrink_0()
+        .flex()
+        .items_center()
+        .justify_center()
+        .text_color(rgb(t.text_muted));
+    match icon {
+        Some("replace") => crate::ui::icon("replace", 14., t.text_muted),
+        Some("sliders-horizontal") | None => {
+            crate::ui::icon("sliders-horizontal", 14., t.text_muted)
+        }
+        Some(glyph) => slot
+            .font_family(crate::appearance::panel_font().family.clone())
+            .text_size(px(11.))
+            .child(SharedString::from(glyph))
+            .into_any_element(),
+    }
+}
+
+/// 一行：高 22、`px 4`、`gap 4`、`rounded 4`，悬停 `bg_hover`，点击切开关。
+fn landing_row(
+    id: &'static str,
+    glyph: AnyElement,
+    label: &'static str,
+    weak: &WeakEntity<Chat>,
+    toggle: super::SearchToggle,
+    t: &'static Theme,
+) -> AnyElement {
+    let weak = weak.clone();
+    div()
+        .id(id)
+        .h(px(22.))
+        .px(px(4.))
+        .flex()
+        .items_center()
+        .gap(px(4.))
+        .rounded(px(4.))
+        .cursor_pointer()
+        .hover(move |s| s.bg(rgb(t.bg_hover)))
+        .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
+            let _ = weak.update(cx, |chat, cx| chat.search_toggle(toggle, cx));
+        })
+        .child(glyph)
+        .child(
+            div()
+                .font_family(crate::appearance::panel_font().family.clone())
+                .text_size(px(14.))
+                .text_color(rgb(t.text))
+                .child(SharedString::from(label)),
+        )
+        .into_any_element()
+}
+
 /// 结果区外壳。**必须是 flex 列**：gpui 的 `div` 默认不是 flex 容器，缺
 /// `flex().flex_col()` 时内部 list 拿不到定高 → 高度 0，结果全丢（2026-10-21
 /// 用户实测「只显示计数 1/222 不显示内容」的根因）。与 md 预览
 /// （`editor/markdown/doc.rs`）的列表容器配方逐字一致；抽成函数是为了让
 /// [`tests::real_blocks_render_with_height`] 能直接测生产代码的布局。
-fn results_shell(t: &'static Theme, list: impl gpui::IntoElement) -> gpui::Stateful<gpui::Div> {
-    div()
+fn results_shell(
+    t: &'static Theme,
+    list_state: &gpui::ListState,
+    scrollbar: &gpui_component::scroll::ScrollbarState,
+    list: impl gpui::IntoElement,
+) -> gpui::Stateful<gpui::Div> {
+    let mut shell = div()
         .id("search-results")
         .flex_1()
         .min_h_0()
@@ -149,7 +304,24 @@ fn results_shell(t: &'static Theme, list: impl gpui::IntoElement) -> gpui::State
         // 留滚动条的宽度」）
         .pl(px(8.))
         .pr(px(18.))
-        .child(list)
+        .relative()
+        .child(list);
+    // 竖向滚动条（与 md 预览同一挂法：绝对定位叠在右缘，内容已留 18px）
+    if list_state.max_offset_for_scrollbar().height > px(0.) {
+        let handle = crate::ui::list_handle::ListStateHandle(list_state.clone());
+        shell = shell.child(
+            div()
+                .absolute()
+                .top(px(4.))
+                .bottom(px(4.))
+                .right(px(4.))
+                .w(px(8.))
+                .child(gpui_component::scroll::Scrollbar::vertical(
+                    scrollbar, &handle,
+                )),
+        );
+    }
+    shell
 }
 
 /// 一个文件结果块：组头 + 若干摘录段（整宽、无外边距、无圆角、块间无空隙）。
@@ -512,6 +684,8 @@ mod tests {
                 .flex_col()
                 .child(results_shell(
                     crate::appearance::theme::theme(),
+                    &self.list,
+                    &gpui_component::scroll::ScrollbarState::default(),
                     gpui::list(self.list.clone(), move |ix, _window, _cx| {
                         seen.borrow_mut().push(ix);
                         match blocks.get(ix) {
