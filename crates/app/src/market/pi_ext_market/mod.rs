@@ -1342,7 +1342,6 @@ pub(crate) fn menu_layer(
 mod tests {
     use super::*;
 
-
     #[test]
     fn thousands_groups() {
         assert_eq!(thousands(0), "0");
