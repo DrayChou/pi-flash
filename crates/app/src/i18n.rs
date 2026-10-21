@@ -730,7 +730,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("theme.mist", "雾青", "霧青", "Mist"),
     ("theme.rose", "蔷薇", "蔷薇", "Rose"),
     ("theme.latte", "薰衣草", "薰衣草", "Latte"),
-    ("theme.kitchen", "厨房笔记", "廚房筆記", "Kitchen Notes"),
+    ("theme.kitchen", "秋叶", "秋葉", "Autumn Leaves"),
     ("theme.pine", "松林", "松林", "Pine"),
     ("git.view_diff", "View Diff", "檢視差異", "View Diff"),
     ("action.close", "×", "×", "×"),
