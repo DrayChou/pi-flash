@@ -1226,8 +1226,18 @@ mod tests {
     /// 造一个「完整载荷目录」：exe（假文件）+ 版本戳。
     fn fake_payload(dir: &Path, ver: &str) {
         std::fs::create_dir_all(dir).unwrap();
-        std::fs::write(dir.join(exe_rel()), b"fake-exe").unwrap();
+        write_fake_exe(dir, b"fake-exe");
         std::fs::write(dir.join(".payload-version"), format!("{ver}\n")).unwrap();
+    }
+
+    /// 落一个假 exe：macOS 载荷是 `pi-flash.app/Contents/MacOS/pi-flash`，
+    /// 嵌套两级，必须先建父目录（Windows 是平铺的 `pi-flash.exe`）。
+    fn write_fake_exe(dir: &Path, bytes: &[u8]) {
+        let exe = dir.join(exe_rel());
+        if let Some(parent) = exe.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::write(exe, bytes).unwrap();
     }
 
     #[test]
@@ -1279,7 +1289,7 @@ mod tests {
         // 半截：目录名对、戳缺失
         let broken = root.join("payload-0.1.11");
         std::fs::create_dir_all(&broken).unwrap();
-        std::fs::write(broken.join(exe_rel()), b"fake-exe").unwrap();
+        write_fake_exe(&broken, b"fake-exe");
         // 名字与戳不符
         fake_payload(&root.join("payload-0.1.12"), "0.1.10");
 
@@ -1346,7 +1356,7 @@ mod tests {
         fake_payload(&me, "0.1.10");
         let old = root.join("payload.old-20261014215500");
         std::fs::create_dir_all(&old).unwrap();
-        std::fs::write(old.join(exe_rel()), b"x").unwrap();
+        write_fake_exe(&old, b"x");
         std::fs::write(root.join("update-swap.log"), b"log").unwrap();
         std::fs::write(root.join("update-staged.json"), b"{}").unwrap();
         let old_stage = root.join("payload.stage-0.1.8");

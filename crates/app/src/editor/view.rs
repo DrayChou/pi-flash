@@ -816,6 +816,7 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     /// 在 cwd 下的相对分段：每段路径累积正确，最后一段 = 全路径。
+    #[cfg(windows)]
     #[test]
     fn crumbs_relative_under_cwd() {
         let cwd = PathBuf::from("C:\\proj");
@@ -864,7 +865,15 @@ mod tests {
             unsupported_type_name(Path::new("fonts/JetBrainsMono-Bold.ttf")),
             "ttf"
         );
+        assert_eq!(
+            unsupported_type_name(Path::new("fonts/JetBrainsMono-Bold.ttf")),
+            "ttf"
+        );
+        // 无后缀二进制退文件名：Windows 上 `\` 是分隔符，POSIX 上不是
+        #[cfg(windows)]
         assert_eq!(unsupported_type_name(Path::new("bin\\app")), "app");
+        #[cfg(not(windows))]
+        assert_eq!(unsupported_type_name(Path::new("bin/app")), "app");
         assert_eq!(unsupported_type_name(Path::new("Makefile")), "Makefile");
     }
 }

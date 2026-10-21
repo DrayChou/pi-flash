@@ -340,6 +340,9 @@ mod status_tests {
             let root = std::env::temp_dir().join(format!("pif-git-{tag}-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&root);
             std::fs::create_dir_all(&root).unwrap();
+            // macOS 的 temp_dir 是 /var/folders/...，而 /var 是指向 /private/var
+            // 的软链：git 回读的是真路径，不对齐的话断言会 /var vs /private/var
+            let root = root.canonicalize().unwrap_or(root);
             Self::git(&root, &["init"]);
             Self { root }
         }
