@@ -704,6 +704,23 @@ fn cell_weight(runs: &[Run]) -> usize {
         .sum()
 }
 
+/// 最长**不可断行 token** 的显示宽度（>0x2E80 计 2）：换行只落在空白/
+/// CJK 字符边界，ASCII 连续段（002068、59.71）是单一 token，其像素宽
+/// 就是该列的 min-content（HTML auto layout 语义）
+fn token_units(runs: &[Run]) -> usize {
+    let text: String = runs.iter().map(|r| r.text.as_str()).collect();
+    let (mut best, mut cur) = (0usize, 0usize);
+    for c in text.chars() {
+        if c.is_whitespace() || (c as u32) > 0x2e80 {
+            best = best.max(cur);
+            cur = 0;
+        } else {
+            cur += 1;
+        }
+    }
+    best.max(cur)
+}
+
 fn render_table(head: &[Vec<Run>], rows: &[Vec<Vec<Run>>], t: &Theme) -> gpui::Div {
     // 列宽 = 列内最长单元格的显示宽度（钳制 [6,44]），归一化后全表共用
     // 同一组相对宽度——跨行对齐成网格，长单元格换行（pi-web HTML 表
@@ -726,7 +743,34 @@ fn render_table(head: &[Vec<Run>], rows: &[Vec<Vec<Run>>], t: &Theme) -> gpui::D
     let total: f32 = weights.iter().sum::<usize>() as f32;
     let fracs: Vec<f32> = weights.iter().map(|w| *w as f32 / total).collect();
 
-    let cell_div = |frac: f32| div().w(relative(frac)).min_w_0().px(px(10.)).py(px(6.));
+    // pi-flash patch: 每列像素地板——最长不可断 token × 0.7em（ASCII 实测
+    // advance 0.5~0.63em，0.7 取保守上限；CJK 一字 1em < 2×0.7em 亦安全）
+    // + px(10)×2 内边距 + 2 圆整。纯比例分配在大列（锁到 44）撑大分母时
+    // 会把窄列压到内容宽以下折行（"002068" 断成 00206/8），与 TextView
+    // 表格同坑同修；此处无 window 不做实测，按字号估算（表头 BASE/正文 13）
+    let mut token_w = vec![0usize; n_cols];
+    for (ci, cell) in head.iter().enumerate() {
+        token_w[ci] = token_w[ci].max(token_units(cell));
+    }
+    for row in rows {
+        for (ci, cell) in row.iter().enumerate().take(n_cols) {
+            token_w[ci] = token_w[ci].max(token_units(cell));
+        }
+    }
+    let min_ws: Vec<f32> = token_w
+        .iter()
+        .map(|&u| u as f32 * BASE * 0.7 + 22.)
+        .collect();
+
+    // 地板只抬不压：其余列按 flex_shrink 让位，各自地板仍受保护；
+    // 格内超长仍受 relative(frac) 约束换行
+    let cell_div = |frac: f32, min_w: f32| {
+        div()
+            .w(relative(frac))
+            .min_w(px(min_w))
+            .px(px(10.))
+            .py(px(6.))
+    };
 
     // 字体大小设置.md：表格头 = 槽位字号，表格内容 = 槽位字号 -1，行高 1.7
     // （字号经 sized_text 挂容器，见其注释）
@@ -734,7 +778,7 @@ fn render_table(head: &[Vec<Run>], rows: &[Vec<Vec<Run>>], t: &Theme) -> gpui::D
         .iter()
         .enumerate()
         .map(|(ci, cell)| {
-            cell_div(fracs[ci])
+            cell_div(fracs[ci], min_ws[ci])
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(rgb(crate::appearance::theme::mix_rgb(
                     t.text,
@@ -768,7 +812,7 @@ fn render_table(head: &[Vec<Run>], rows: &[Vec<Vec<Run>>], t: &Theme) -> gpui::D
                 line = line.bg(rgba(t.bg_subtle));
             }
             for (ci, cell) in row.iter().enumerate().take(n_cols) {
-                line = line.child(cell_div(fracs[ci]).child(sized_text(
+                line = line.child(cell_div(fracs[ci], min_ws[ci]).child(sized_text(
                     cell,
                     t,
                     13.,

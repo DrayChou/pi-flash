@@ -5,10 +5,10 @@ use std::{
 };
 
 use gpui::{
-    div, img, prelude::FluentBuilder as _, px, relative, rems, AnyElement, App, DefiniteLength,
-    Div, ElementId, FontStyle, FontWeight, Half, HighlightStyle, InteractiveElement as _,
-    IntoElement, Length, ObjectFit, ParentElement, SharedString, SharedUri,
-    StatefulInteractiveElement, Styled, StyledImage as _, Window,
+    black, div, img, prelude::FluentBuilder as _, px, relative, rems, AnyElement, App,
+    DefiniteLength, Div, ElementId, FontStyle, FontWeight, Half, HighlightStyle,
+    InteractiveElement as _, IntoElement, Length, ObjectFit, ParentElement, Pixels, SharedString,
+    SharedUri, StatefulInteractiveElement, Styled, StyledImage as _, TextRun, Window,
 };
 use markdown::mdast;
 use ropey::Rope;
@@ -305,6 +305,39 @@ impl Paragraph {
                     .sum::<usize>()
             })
             .sum()
+    }
+
+    /// pi-flash patch: 最长**不可断行 token** 的（显示宽度, 原文）。自动
+    /// 换行只能落在空白与 CJK 字符边界（cosmic-text 断行语义），ASCII 连
+    /// 续段（002068、59.71、URL）是单一 token——它的像素宽就是该列的
+    /// min-content（HTML auto layout 语义）。CJK 一字即可断（>0x2E80 单
+    /// 独成 token），长 CJK 列不会因此被撑到内容宽
+    pub(crate) fn longest_token(&self) -> (usize, String) {
+        let text: String = self.children.iter().map(|n| n.text.as_str()).collect();
+        let (mut b_units, mut b_start, mut b_end) = (0usize, 0usize, 0usize);
+        let (mut c_units, mut c_start) = (0usize, 0usize);
+        for (i, c) in text.char_indices() {
+            if c.is_whitespace() || (c as u32) > 0x2e80 {
+                if c_units > b_units {
+                    b_units = c_units;
+                    b_start = c_start;
+                    b_end = i;
+                }
+                c_units = 0;
+                c_start = i + c.len_utf8();
+            } else {
+                if c_units == 0 {
+                    c_start = i;
+                }
+                c_units += 1;
+            }
+        }
+        if c_units > b_units {
+            b_units = c_units;
+            b_start = c_start;
+            b_end = text.len();
+        }
+        (b_units, text[b_start..b_end].to_string())
     }
 
     pub(crate) fn merge(&mut self, other: Self) {
@@ -856,6 +889,50 @@ impl Node {
             }
         };
 
+        // pi-flash patch: 每列像素地板 = 列内最长不可断 token 的实测宽 +
+        // 内边距。纯比例分配没有 min-content 概念：一个大列（如关联说明
+        // 顶到 44）撑大归一化分母后，窄列 frac 跌破内容宽——"002068" 在
+        // 7% 列宽里断成 00206/8（150% DPI、千 px 级表宽正落临界区）。
+        // 用容器继承的 text_style（AgentMarkdown 容器已挂会话字体/字号）
+        // layout_line 实测 token advance，不做字体估算。地板只抬不压：
+        // 其余列按 flex_shrink 让位，各自地板仍受保护
+        let text_style = window.text_style();
+        // 单元格 px_2×2 + 边框圆整余量
+        let cell_pad = px(18.);
+        let col_min_w: Vec<Pixels> = match item {
+            Node::Table(table) => (0..col_lens.len())
+                .map(|ix| {
+                    let mut best = (0usize, String::new());
+                    for row in &table.children {
+                        if let Some(cell) = row.children.get(ix) {
+                            let token = cell.children.longest_token();
+                            if token.0 > best.0 {
+                                best = token;
+                            }
+                        }
+                    }
+                    if best.0 == 0 {
+                        return px(0.);
+                    }
+                    let line = window.text_system().layout_line(
+                        best.1.as_str(),
+                        text_style.font_size.to_pixels(window.rem_size()),
+                        &[TextRun {
+                            len: best.1.len(),
+                            font: text_style.font(),
+                            color: black(),
+                            background_color: None,
+                            underline: None,
+                            strikethrough: None,
+                        }],
+                        None,
+                    );
+                    line.width + cell_pad
+                })
+                .collect(),
+            _ => vec![],
+        };
+
         match item {
             Node::Table(table) => div()
                 .id("table")
@@ -889,7 +966,15 @@ impl Node {
                                             div()
                                                 .id("cell")
                                                 .flex()
-                                                .min_w_0()
+                                                // pi-flash patch: min_w_0 → 每列
+                                                // 像素地板（不可断 token 不折行）；
+                                                // 格内超长仍由内层 min_w_0 收口
+                                                .min_w(
+                                                    col_min_w
+                                                        .get(ix)
+                                                        .copied()
+                                                        .unwrap_or(px(0.)),
+                                                )
                                                 .when(is_header, |this| {
                                                     this.font_weight(FontWeight::SEMIBOLD)
                                                 })
