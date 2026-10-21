@@ -107,11 +107,9 @@ impl Chat {
         self.psp.search_needle = needle.clone();
         self.psp.search_hits.clear();
         self.psp.search_truncated = false;
-        // 结果集换了 → 收起状态作废（旧块对不上新结果），滚动回顶
+        // 结果集换了 → 收起状态作废（旧块对不上新结果），列表回顶
         self.psp.session_collapsed.clear();
-        self.psp
-            .session_scroll
-            .set_offset(gpui::point(px(0.), px(0.)));
+        self.psp.session_list.reset(0);
         if needle.is_empty() {
             self.psp.search_running = false;
             cx.notify();
@@ -157,6 +155,25 @@ impl Chat {
     pub(crate) fn session_search_toggle_block(&mut self, key: &str, cx: &mut Context<Self>) {
         if !self.psp.session_collapsed.remove(key) {
             self.psp.session_collapsed.insert(key.to_string());
+        }
+        // 块高变了：逼 `ListState` 重测这一项（否则收起后仍按旧高度留白）。
+        // 块下标 = 该会话在分组后的位置（按首现顺序数不同会话）
+        let mut ix = None;
+        let mut seen: Option<String> = None;
+        let mut n = 0usize;
+        for h in &self.psp.search_hits {
+            let k = h.session_path.to_string_lossy().to_string();
+            if seen.as_deref() != Some(k.as_str()) {
+                if k == key {
+                    ix = Some(n);
+                    break;
+                }
+                seen = Some(k);
+                n += 1;
+            }
+        }
+        if let Some(ix) = ix {
+            self.psp.session_list.splice(ix..ix + 1, 1);
         }
         cx.notify();
     }
@@ -247,6 +264,10 @@ fn bar(chat: &mut Chat, weak: &WeakEntity<Chat>, t: &'static Theme) -> AnyElemen
 }
 
 /// 结果区：空态（标题 + 提示）或「会话块」列表。
+///
+/// 列表用 `gpui::list`（与项目搜索同款虚拟化）：自建 `overflow_y_scroll`
+/// 容器会让长 URL 的**最小内容宽**把滚动容器顶宽，右边距被吃掉、版式变成
+/// 「左贴边右空一截」（2026-10-21 用户实测）。
 fn results(chat: &mut Chat, weak: &WeakEntity<Chat>, t: &'static Theme) -> AnyElement {
     if chat.psp.search_hits.is_empty() {
         let (title, hint): (SharedString, SharedString) =
@@ -292,45 +313,71 @@ fn results(chat: &mut Chat, weak: &WeakEntity<Chat>, t: &'static Theme) -> AnyEl
     }
 
     // 按会话分组（命中已按会话成段返回，相邻即同组）
-    let groups = group_hits(&chat.psp.search_hits);
-    let collapsed = &chat.psp.session_collapsed;
-    let weak_open = weak.clone();
-    let weak_toggle = weak.clone();
-    let mut body = div().flex().flex_col().w_full();
-    for (gix, group) in groups.iter().enumerate() {
-        let key = group.key.clone();
-        let collapsed_here = collapsed.contains(&group.key);
-        let first_ts = group.hits.first().and_then(|h| h.ts);
-        let path_open = group.path.clone();
-        let weak_row_open = weak_open.clone();
-        let open: Rc<dyn Fn(&mut gpui::App)> = Rc::new(move |cx| {
-            let path = path_open.clone();
-            let _ = weak_row_open.update(cx, |c, cx| c.jump_to_hit(path, first_ts, cx));
-        });
-        let key_toggle = key.clone();
-        let weak_t = weak_toggle.clone();
-        let toggle: Rc<dyn Fn(&mut gpui::App)> = Rc::new(move |cx| {
-            let k = key_toggle.clone();
-            let _ = weak_t.update(cx, |c, cx| c.session_search_toggle_block(&k, cx));
-        });
-        body = body.child(card_header(
-            format!("ss-{gix}"),
-            group.title.clone(),
-            group.sub.clone(),
-            None,
-            collapsed_here,
-            HeaderCallbacks { open, toggle },
-            t,
-        ));
-        if collapsed_here {
-            continue;
-        }
-        for hit in group.hits.iter() {
-            body = body.child(snippet_row(hit, weak, t));
-        }
+    let groups: Vec<SessionGroup> = group_hits(&chat.psp.search_hits);
+    let list = chat.psp.session_list.clone();
+    let scrollbar = chat.psp.session_sb_state.clone();
+    if list.item_count() != groups.len() {
+        list.reset(groups.len());
     }
+    let collapsed = chat.psp.session_collapsed.clone();
+    let groups = Rc::new(groups);
+    let weak_rows = weak.clone();
+    results_shell(
+        &list,
+        &scrollbar,
+        gpui::list(list.clone(), move |ix, _window, _cx| {
+            let Some(group) = groups.get(ix) else {
+                return div().into_any_element();
+            };
+            let is_collapsed = collapsed.contains(&group.key);
+            let first_ts = group.hits.first().and_then(|h| h.ts);
+            let path_open = group.path.clone();
+            let weak_open = weak_rows.clone();
+            let open: Rc<dyn Fn(&mut gpui::App)> = Rc::new(move |cx| {
+                let path = path_open.clone();
+                let _ = weak_open.update(cx, |c, cx| c.jump_to_hit(path, first_ts, cx));
+            });
+            let key = group.key.clone();
+            let weak_toggle = weak_rows.clone();
+            let toggle: Rc<dyn Fn(&mut gpui::App)> = Rc::new(move |cx| {
+                let k = key.clone();
+                let _ = weak_toggle.update(cx, |c, cx| c.session_search_toggle_block(&k, cx));
+            });
+            let mut item = div()
+                .w_full()
+                .flex()
+                .flex_col()
+                .min_w_0()
+                .child(card_header(
+                    format!("ss-{ix}"),
+                    group.title.clone(),
+                    group.sub.clone(),
+                    None,
+                    is_collapsed,
+                    HeaderCallbacks { open, toggle },
+                    t,
+                ));
+            if !is_collapsed {
+                for hit in group.hits.iter() {
+                    item = item.child(snippet_row(hit, &weak_rows, t));
+                }
+            }
+            item.into_any_element()
+        })
+        .flex_1()
+        .min_h_0()
+        .min_w_0(),
+    )
+    .into_any_element()
+}
 
-    // 两侧留白 + 右侧让出滚动条（与项目搜索同一条）
+/// 结果区外壳（与项目搜索 `results_shell` 同配方，抽出本地版是为了让会话块
+/// 与文件块用**完全一致**的边距：两侧等距 16px，滚动条画在右边距内）。
+fn results_shell(
+    list_state: &gpui::ListState,
+    scrollbar: &gpui_component::scroll::ScrollbarState,
+    list: impl gpui::IntoElement,
+) -> gpui::Stateful<gpui::Div> {
     let mut shell = div()
         .id("session-search-results")
         .flex_1()
@@ -340,18 +387,11 @@ fn results(chat: &mut Chat, weak: &WeakEntity<Chat>, t: &'static Theme) -> AnyEl
         .flex_col()
         .relative()
         .pt(px(1.))
-        .pl(px(8.))
-        .pr(px(18.))
-        .child(
-            div()
-                .id("session-search-scroll")
-                .flex_1()
-                .min_h_0()
-                .overflow_y_scroll()
-                .track_scroll(&chat.psp.session_scroll)
-                .child(body),
-        );
-    if chat.psp.session_scroll.max_offset().height > px(0.) {
+        .pl(px(16.))
+        .pr(px(16.))
+        .child(list);
+    if list_state.max_offset_for_scrollbar().height > px(0.) {
+        let handle = crate::ui::list_handle::ListStateHandle(list_state.clone());
         shell = shell.child(
             div()
                 .absolute()
@@ -360,12 +400,11 @@ fn results(chat: &mut Chat, weak: &WeakEntity<Chat>, t: &'static Theme) -> AnyEl
                 .right(px(4.))
                 .w(px(8.))
                 .child(gpui_component::scroll::Scrollbar::vertical(
-                    &chat.psp.session_sb_state,
-                    &chat.psp.session_scroll.clone(),
+                    scrollbar, &handle,
                 )),
         );
     }
-    shell.into_any_element()
+    shell
 }
 
 /// 一条命中行：单色正文 + 命中底色（无行号列——会话片段不是文件行）。
@@ -401,7 +440,6 @@ fn snippet_row(
             div()
                 .flex_1()
                 .min_w_0()
-                .pr(px(8.))
                 .font_family(font.family.clone())
                 .text_size(px(font.size))
                 .line_height(gpui::relative(1.5))
@@ -411,17 +449,18 @@ fn snippet_row(
         .into_any_element()
 }
 
-/// 一个会话块：组头 + 该会话的命中行。
-struct SessionGroup<'a> {
+/// 一个会话块：组头 + 该会话的命中行（拥有所有权——`gpui::list` 的构建闭包
+/// 需要 'static；命中总数上限 30，克隆代价可忽略）。
+struct SessionGroup {
     key: String,
     path: std::path::PathBuf,
     title: SharedString,
     sub: SharedString,
-    hits: Vec<&'a pi_link::sessions::SearchHit>,
+    hits: Vec<pi_link::sessions::SearchHit>,
 }
 
-fn group_hits(hits: &[pi_link::sessions::SearchHit]) -> Vec<SessionGroup<'_>> {
-    let mut out: Vec<SessionGroup<'_>> = Vec::new();
+fn group_hits(hits: &[pi_link::sessions::SearchHit]) -> Vec<SessionGroup> {
+    let mut out: Vec<SessionGroup> = Vec::new();
     for hit in hits {
         let key = hit.session_path.to_string_lossy().to_string();
         if out.last().map(|g| g.key.as_str()) != Some(key.as_str()) {
@@ -446,7 +485,7 @@ fn group_hits(hits: &[pi_link::sessions::SearchHit]) -> Vec<SessionGroup<'_>> {
             });
         }
         if let Some(g) = out.last_mut() {
-            g.hits.push(hit);
+            g.hits.push(hit.clone());
         }
     }
     out

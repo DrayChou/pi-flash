@@ -141,8 +141,9 @@ pub(crate) struct PspUi {
     pub(crate) session_query: Option<gpui::Entity<crate::ui::TextInput>>,
     /// 会话查询里被收起的会话块（键 = 会话文件路径）
     pub(crate) session_collapsed: std::collections::HashSet<String>,
-    /// 会话查询结果滚动（滚动条数据源）
-    pub(crate) session_scroll: gpui::ScrollHandle,
+    /// 会话查询结果列表（变高块列表：会话块 = 组头 + 片段行；与项目搜索同款
+    /// 虚拟化，避免自建滚动容器在长行时把宽度顶爆）
+    pub(crate) session_list: gpui::ListState,
     pub(crate) session_sb_state: gpui_component::scroll::ScrollbarState,
     pub(crate) pending_locate: Option<(PathBuf, Option<i64>, String)>,
     pub(crate) unread: HashSet<PathBuf>,
@@ -663,7 +664,7 @@ impl Chat {
                 search_gen: 0,
                 session_query: None,
                 session_collapsed: std::collections::HashSet::new(),
-                session_scroll: gpui::ScrollHandle::new(),
+                session_list: gpui::ListState::new(0, gpui::ListAlignment::Top, px(1000.)),
                 session_sb_state: gpui_component::scroll::ScrollbarState::default(),
                 pending_locate: None,
                 unread: HashSet::new(),
