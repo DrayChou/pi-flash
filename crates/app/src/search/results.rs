@@ -49,10 +49,27 @@ fn gutter_w() -> f32 {
     (crate::appearance::file_font().size * 3.4).round().max(44.)
 }
 
-/// 组头高：≈1.75 行（Zed 的 excerpt 头明显高于代码行），字号用正文字号
+// ---------------------------------------------------------------------------
+// 文件头几何——**逐值照抄 Zed**，不再自己拍：
+//   `crates/editor/src/editor.rs:298`  FILE_HEADER_HEIGHT = 2（行）
+//   `crates/editor/src/editor.rs:299`  BUFFER_HEADER_PADDING = rems(0.25) = 4px
+//   `crates/editor/src/element/header.rs:733`  .p(BUFFER_HEADER_PADDING)
+//        .w_full().h(FILE_HEADER_HEIGHT * line_height)   ← 块高 = 2 行
+//   `header.rs:718-760`  内条: .pl_1(4) .pr_2(8) .rounded_sm(4px) .gap_1p5(6px)
+//        .border_1(border) .bg(editor_subheader_background) .hover(element_hover)
+//   收展钮: `header.rs:747`  size 28×28（`rems_from_px(28)`）、rounded_xs(2px)、
+//        悬停底 `element_selected`；图标 `IconSize::Small` = 14px
+//   → 块高 2 行、条四周留 4px：**块与块之间自然有 8px 间隙**，条与自己的代码
+//     行之间有 4px 间隙。这就是用户问的「间隙」。
+// ---------------------------------------------------------------------------
+
+/// 文件头**块**高 = 2 行（Zed `FILE_HEADER_HEIGHT`）
 fn header_h() -> f32 {
-    (line_h() * 1.75).round().max(line_h() + 14.)
+    (line_h() * 2.).round()
 }
+
+/// 块内留白 = Zed `BUFFER_HEADER_PADDING`
+const HEADER_PAD: f32 = 4.;
 
 /// 结果区：空态提示 或 块列表。
 pub(super) fn view(chat: &mut Chat, weak: &WeakEntity<Chat>, t: &'static Theme) -> AnyElement {
@@ -124,8 +141,9 @@ fn results_shell(t: &'static Theme, list: impl gpui::IntoElement) -> gpui::State
         .flex()
         .flex_col()
         .bg(rgb(t.bg))
-        // 第一条文件头与搜索框留 5px 间隙（2026-10-21 用户定案）
-        .pt(px(5.))
+        // 第一条文件头与搜索框留 5px 间隙：文件头块自带 Zed 的 4px 内留白，
+        // 这里补 1px = 5px（用户 2026-10-21 定案的那个 5px）
+        .pt(px(1.))
         // 两侧留白 + 右侧让出滚动条宽度：Zed 的文件头与代码行都从这条左线起，
         // 右边留出滚动条（2026-10-21 用户实测「两侧要有明显 padding，右侧还要
         // 留滚动条的宽度」）
@@ -171,9 +189,9 @@ fn render_block(
     card.into_any_element()
 }
 
-/// 组头（文件操作栏）：`▾ 文件名 路径 …… N 处  打开文件 Alt+Enter`。
-/// 高度 ≈1.35 行、字号 = 正文，左侧 `px 12`、右侧留白加大（此前固定 28px
-/// + 小字号 → 用户评「抠抠搜搜」）。
+/// 组头（文件操作栏）——版式逐项照 `crates/editor/src/element/header.rs`
+/// 的 `render_buffer_header`：块 `p 4` + 内条 `rounded_sm(4) / border_1 /
+/// pl 4 pr 8 / gap 6`，左起「收展钮（28×28）→ 文件名 → 目录」。
 fn header_row(
     block_ix: usize,
     block: &ResultBlock,
@@ -196,86 +214,107 @@ fn header_row(
     };
     let click = on_open.clone();
     let toggle = on_toggle.clone();
+    // 块：p(4) + 高 2 行 → 条四周留 4px（块间因此有 8px 间隙）
     div()
         .id(SharedString::from(format!("psb-h-{block_ix}")))
-        .h(px(header_h()))
         .w_full()
-        .flex()
-        .items_center()
-        .gap(px(8.))
-        .px(px(12.))
-        // 组头底：bg_panel（`bg_subtle` 是 RRGGBBAA，rgb() 读会变近黑——2026-10-21
-        // 用户报的「黑色是配色错误」根因）
-        .bg(rgb(t.bg_panel))
-        // 对齐 Zed 的文件头：**明显圆角 + 下层投影 + 无描边**
-        // （此前是整宽平色带 + 1px 上边框，用户评「难看」）
-        .rounded(px(8.))
-        .shadow_sm()
-        .cursor_pointer()
-        .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
-            click(block_ix, 1, None, cx);
-        })
-        // 收展钮：Zed 的文件头左侧就是这个（展开 ▾ / 收起 ▸，悬停有圆角底，
-        // **不带 tooltip**——用户 2026-10-21 定案）。点它只收展，不打开文件。
+        .h(px(header_h()))
+        .p(px(HEADER_PAD))
         .child(
+            // 内条
             div()
-                .id(SharedString::from(format!("psb-t-{block_ix}")))
-                .flex_shrink_0()
-                .size(px(18.))
+                .id(SharedString::from(format!("psb-b-{block_ix}")))
+                .w_full()
+                .h_full()
                 .flex()
                 .items_center()
-                .justify_center()
+                .pl(px(4.))
+                .pr(px(8.))
+                .gap(px(6.))
                 .rounded(px(4.))
-                .when(collapsed, |d| d.bg(rgb(t.bg_selected)))
-                .hover(move |s| s.bg(rgb(t.bg_hover)))
+                .border_1()
+                .border_color(rgb(t.border))
+                // 组头底：bg_panel（`bg_subtle` 是 RRGGBBAA，rgb() 读会变近黑）
+                .bg(rgb(t.bg_panel))
+                .shadow_sm()
                 .cursor_pointer()
+                // Zed 内条本身就有 hover 底（`element_hover`）——源码行为，不是发明
+                .hover(move |s| s.bg(rgb(t.bg_hover)))
                 .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
-                    // 别让点击冒泡到文件头（那会直接打开文件）
-                    cx.stop_propagation();
-                    toggle(block_ix, cx);
+                    click(block_ix, 1, None, cx);
                 })
-                .child(crate::ui::icon(
-                    if collapsed {
-                        "chevron-right"
-                    } else {
-                        "chevron-down"
-                    },
-                    crate::ui::tokens::icon::XS,
-                    t.text_dim,
-                )),
+                // 收展钮：Zed 的 28×28 方钮（**不带 tooltip**——用户定案）。
+                // 点它只收展，不打开文件。
+                .child(
+                    div()
+                        .id(SharedString::from(format!("psb-t-{block_ix}")))
+                        .flex_shrink_0()
+                        // Zed 的 `rems_from_px(28)`：默认 rem 下就是 28px，
+                        // 不套 PF 的 `ui_size`（那套基准是 12，会把 28 放大成 31）
+                        .size(px(28.))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(px(2.))
+                        .hover(move |s| s.bg(rgb(t.bg_selected)))
+                        .cursor_pointer()
+                        .on_mouse_down(gpui::MouseButton::Left, move |_, _, cx| {
+                            // 别让点击冒泡到内条（那会直接打开文件）
+                            cx.stop_propagation();
+                            toggle(block_ix, cx);
+                        })
+                        .child(crate::ui::icon(
+                            if collapsed {
+                                "chevron-right"
+                            } else {
+                                "chevron-down"
+                            },
+                            14.,
+                            t.text_dim,
+                        )),
+                )
+                // 文件名 + 目录（Zed 的 `gap_0p5` = 2px，整块 flex_1）
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .flex()
+                        .items_center()
+                        .gap(px(2.))
+                        .child(
+                            div()
+                                .flex_shrink_0()
+                                .font_family(font.family.clone())
+                                .text_size(px(font.size))
+                                .font_weight(gpui::FontWeight::MEDIUM)
+                                .text_color(rgb(t.text))
+                                .child(name),
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .overflow_hidden()
+                                .whitespace_nowrap()
+                                .text_ellipsis()
+                                .font_family(font.family.clone())
+                                .text_size(px(font.size))
+                                .text_color(rgb(t.text_muted))
+                                .child(dir),
+                        ),
+                )
+                // 只有「仅文件名命中」的文件栏带这个标签（Zed 同：内容命中组不带）
+                .when(block.path_only, |d| {
+                    d.child(
+                        div()
+                            .flex_shrink_0()
+                            .font_family(crate::appearance::panel_font().family)
+                            .text_size(crate::appearance::ui_size(11.))
+                            .text_color(rgb(t.text_dim))
+                            .child(tr("search.path_match").to_string()),
+                    )
+                }),
         )
-        .child(
-            div()
-                .flex_shrink_0()
-                .font_family(font.family.clone())
-                .text_size(px(font.size))
-                .font_weight(gpui::FontWeight::MEDIUM)
-                .text_color(rgb(t.text))
-                .child(name),
-        )
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .overflow_hidden()
-                .whitespace_nowrap()
-                .text_ellipsis()
-                .font_family(font.family.clone())
-                .text_size(px(font.size * 0.95))
-                .text_color(rgb(t.text_faint))
-                .child(dir),
-        )
-        // 只有「仅文件名命中」的文件栏带这个标签（Zed 同：内容命中组不带）
-        .when(block.path_only, |d| {
-            d.child(
-                div()
-                    .flex_shrink_0()
-                    .font_family(crate::appearance::panel_font().family)
-                    .text_size(crate::appearance::ui_size(11.))
-                    .text_color(rgb(t.text_dim))
-                    .child(tr("search.path_match").to_string()),
-            )
-        })
         .into_any_element()
 }
 
@@ -450,7 +489,7 @@ mod tests {
     /// 记下本帧真正构建了哪些块 + 块高（列表有高度才会构建 → 布局探针）。
     struct TestView {
         seen: Rc<RefCell<Vec<usize>>>,
-        heights: Rc<RefCell<Vec<f32>>>,
+        heights: Rc<RefCell<Vec<(f32, f32)>>>,
         list: gpui::ListState,
         blocks: Rc<Vec<ResultBlock>>,
         collapsed: bool,
@@ -486,7 +525,10 @@ mod tests {
                                         let heights = heights.clone();
                                         move |bounds, _, _| {
                                             if let Some(b) = bounds.first() {
-                                                heights.borrow_mut().push(f32::from(b.size.height));
+                                                heights.borrow_mut().push((
+                                                    f32::from(b.origin.y),
+                                                    f32::from(b.size.height),
+                                                ));
                                             }
                                         }
                                     })
@@ -505,7 +547,7 @@ mod tests {
     fn frame(
         cx: &mut VisualTestContext,
         seen: &Rc<RefCell<Vec<usize>>>,
-        heights: &Rc<RefCell<Vec<f32>>>,
+        heights: &Rc<RefCell<Vec<(f32, f32)>>>,
     ) -> Vec<usize> {
         frame_with(cx, seen, heights, sample_blocks(), false)
     }
@@ -513,7 +555,7 @@ mod tests {
     fn frame_with(
         cx: &mut VisualTestContext,
         seen: &Rc<RefCell<Vec<usize>>>,
-        heights: &Rc<RefCell<Vec<f32>>>,
+        heights: &Rc<RefCell<Vec<(f32, f32)>>>,
         blocks: Vec<ResultBlock>,
         collapsed: bool,
     ) -> Vec<usize> {
@@ -541,13 +583,13 @@ mod tests {
     fn real_blocks_render_with_height(cx: &mut TestAppContext) {
         let window = cx.add_empty_window();
         let seen: Rc<RefCell<Vec<usize>>> = Default::default();
-        let heights: Rc<RefCell<Vec<f32>>> = Default::default();
+        let heights: Rc<RefCell<Vec<(f32, f32)>>> = Default::default();
         let rows = frame(window, &seen, &heights);
         assert_eq!(rows, vec![0, 1], "两个结果块都必须被构建");
         let hs = heights.borrow().clone();
         assert!(!hs.is_empty(), "块必须完成一次 prepaint（有实际 bounds）");
         assert!(
-            hs.iter().all(|h| *h > 0.),
+            hs.iter().all(|(_, h)| *h > 0.),
             "块高度必须 > 0，实测 {hs:?}（0 = 结果区空白）"
         );
     }
@@ -558,14 +600,14 @@ mod tests {
     fn collapsed_block_keeps_only_header(cx: &mut TestAppContext) {
         let window = cx.add_empty_window();
         let seen: Rc<RefCell<Vec<usize>>> = Default::default();
-        let heights: Rc<RefCell<Vec<f32>>> = Default::default();
+        let heights: Rc<RefCell<Vec<(f32, f32)>>> = Default::default();
         let only_first = vec![sample_blocks().remove(0)];
 
         frame_with(&mut *window, &seen, &heights, only_first.clone(), false);
-        let expanded = heights.borrow()[0];
+        let expanded = heights.borrow()[0].1;
 
         frame_with(&mut *window, &seen, &heights, only_first, true);
-        let collapsed = heights.borrow()[0];
+        let collapsed = heights.borrow()[0].1;
 
         assert!(
             (collapsed - super::header_h()).abs() < 2.0,
@@ -576,6 +618,44 @@ mod tests {
             collapsed < expanded - 10.0,
             "收起必须比展开矮（{collapsed} vs {expanded}）"
         );
+    }
+
+    /// 间隙锁（2026-10-21 用户问「间隙呢？？」）：Zed 的间隙**来自块内**
+    /// `BUFFER_HEADER_PADDING`（4px）而不是列表 gap——所以块在列表里必须紧贴
+    /// （gap 0），块高 = 2 行，条上下各留 4px ⇒ 相邻两条之间可视间隙 8px、
+    /// 条与自己代码行之间 4px。这里把这三条一起锁住。
+    #[gpui::test]
+    fn adjacent_headers_keep_eight_px_gap(cx: &mut TestAppContext) {
+        let window = cx.add_empty_window();
+        let seen: Rc<RefCell<Vec<usize>>> = Default::default();
+        let heights: Rc<RefCell<Vec<(f32, f32)>>> = Default::default();
+        let blocks: Vec<ResultBlock> = sample_blocks()
+            .into_iter()
+            .map(|mut b| {
+                b.segments.clear();
+                b
+            })
+            .collect();
+
+        frame_with(&mut *window, &seen, &heights, blocks, true);
+        let hs = heights.borrow().clone();
+        assert_eq!(hs.len(), 2, "两个块都要有 bounds，实测 {hs:?}");
+        let (top0, h0) = hs[0];
+        let (top1, _) = hs[1];
+        let item_gap = top1 - (top0 + h0);
+        assert!(
+            item_gap.abs() < 0.6,
+            "列表项之间必须紧贴（间隙来自块内留白），实测 {item_gap}"
+        );
+        assert!(
+            (h0 - super::header_h()).abs() < 0.6,
+            "折叠块高应 = 2 行（{}），实测 {h0}",
+            super::header_h()
+        );
+        // 块高 = 2 行、条四周 4px → 条与条的可视间隙 = 8px
+        assert_eq!(super::header_h(), (super::line_h() * 2.).round());
+        assert_eq!(super::HEADER_PAD, 4.);
+        assert_eq!(super::HEADER_PAD * 2., 8.);
     }
 
     /// 命中区间必须进 highlight（Zed 的命中底色），且 run 不重叠、按序。
